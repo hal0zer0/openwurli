@@ -126,7 +126,7 @@ Reed vibration
 | C-3 | 100 pF | TR-1 collector-base feedback capacitor (Miller) | VERIFIED — schematic |
 | C-4 | 100 pF | TR-2 collector-base feedback capacitor (Miller) | VERIFIED — schematic |
 | C20 | 220 pF | Input shunt cap (HPF bass rolloff) | RESOLVED — schematic reads 220 pF (confirmed at 1500 DPI). GroupDIY cited 270 pF, likely tolerance variation or production change. See Note 2 |
-| C-1 | Unknown | RF shunt protection capacitor | VERIFIED (existence) — service manual; may be same as C20 or not separately visible on schematic |
+| C-1 | = C20 (220 pF) | RF shunt protection capacitor | RESOLVED — C-1 (service manual designation) = C20/C-2 (schematic position 2) = 220 pF. Same physical component, different naming systems. See Note 3 |
 | D-1 | 25 PIV, 10 mA (part #142136) | Reverse-polarity transient protection at input | VERIFIED — schematic |
 | Input coupling | .022 uF | AC coupling at preamp input | VERIFIED — schematic |
 | LG-1 | CdS LDR in lightproof enclosure with LED | Tremolo gain modulation in feedback network | VERIFIED — service manual, schematic |
@@ -138,6 +138,8 @@ Reed vibration
 The schematic label may be a misread, a factory error, or confusion with the component reference number "2". **Use 2M for modeling.**
 
 **Note 2 (C20 — RESOLVED as 220 pF):** The schematic reads 220 pF (confirmed at 1500 DPI). GroupDIY's analysis cites 270 pF and derives a bass-cut at ~1750 Hz. The 270 pF figure likely reflects tolerance variation in ceramic capacitors or a production change. With C20 = 220 pF and R_eff = 380K, the HPF cutoff is 1903 Hz. **Use 220 pF for modeling.**
+
+**Note 3 (C-1 — RESOLVED as same component as C20):** The service manual mentions "shunt capacitor C-1" for RF protection. This is the same physical component as C20 (220 pF at TR-1 base to ground). The naming discrepancy arises because the service manual uses "C-1" (functional designation) while the schematic uses board position "2" (= C-2 in standard designator format). The PCB layout on page 1 of the schematic shows R-x/C-x silk screen labels. No separate C-1 component exists — confirmed by schematic examination at 2400 DPI and absence of any repair community discussion about a missing C-1.
 
 ### 2.3 Polarizing Voltage Circuit
 
@@ -1311,10 +1313,10 @@ kPreampInputDrive = should be ~1.0 if gain staging is correct
 
 Most component values have been resolved by reading the BustedGear 200A schematic at 900 DPI. Remaining questions:
 
-1. **C-1 (RF shunt capacitor)**: Not separately identified on the schematic. May be the same physical component as C20, or may be a small cap not visible at the resolution examined. The service manual lists it separately. Low priority — RF shunt has no audible effect in the audio band.
+1. **C-1 (RF shunt capacitor) — RESOLVED as C20 (220 pF)**: C-1 (service manual designation) is the same physical component as C20 (schematic board position "2") = 220 pF shunt cap at TR-1 base. The service manual and schematic use different naming systems: the service manual calls it "C-1" (functional designation as the RF shunt cap), while the schematic labels it as component position "2" on the preamp board. PCB layout (page 1) shows standard R-x/C-x designators on the silk screen. Evidence: (a) the service manual describes C-1 as a "shunt capacitor" — the 220 pF cap is the only shunt-to-ground cap at the input; (b) no separate C-1 component visible on schematic at 2400 DPI; (c) zero community discussion about a "missing" C-1 in repair forums (GroupDIY, EP-Forum).
 
 2. **R-2 value — RESOLVED as 2 MEG**: Schematic reads "1 MEG" (confirmed at 1500 DPI), but three independent lines of evidence confirm R-2 = 2M: (a) GroupDIY's PRR uses "380K" for the parallel impedance R-2||R-3 — 2M||470K=380K matches, 1M||470K=320K does not; (b) DC analysis with R-2=1M requires hFE=9 to produce Vb=2.45V (physically impossible), while R-2=2M requires hFE≈62 (plausible); (c) carbon composition resistor tolerances (10-20%) easily close the remaining voltage gap. **This does not affect gain or harmonic calculations** which are derived from collector-side voltages (Vc, Ve) and resistances (Rc, Re).
 
 3. **C20 value — RESOLVED as 220 pF**: Schematic reads 220 pF (confirmed at 1500 DPI). GroupDIY cited 270 pF from measured instruments, likely reflecting tolerance variation in ceramic capacitors or a production change. With C20 = 220 pF and R_eff = 380K, the HPF cutoff is 1903 Hz. **Use 220 pF for modeling.**
 
-**Resolved (from this schematic reading):** Rc1, Rc2, Re1, Re2, C-3, C-4, R-9, R-10, R-1, Ce1, Ce2, D-1 type, input coupling cap, all DC operating voltages, C20 (220 pF), R_feed (1 MEG).
+**Resolved (from this schematic reading):** Rc1, Rc2, Re1, Re2, C-3, C-4, R-9, R-10, R-1, Ce1, Ce2, D-1 type, input coupling cap, all DC operating voltages, C20 (220 pF), R_feed (1 MEG), C-1 (= C20, naming discrepancy).

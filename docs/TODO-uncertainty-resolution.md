@@ -79,7 +79,7 @@ With C-3 = C-4 = 100 pF now known:
 
 ### 1.6 Redo Appendix C
 
-Appendix C (Open Questions) should be replaced with a summary of resolved values and remaining disputes. 8 of 11 items are now resolved. Only C-1 remains unresolved (see Section 5 below).
+Appendix C (Open Questions) should be replaced with a summary of resolved values and remaining disputes. **All items now resolved**, including C-1 (= C20, naming discrepancy — see Section 5.3).
 
 ---
 
@@ -197,14 +197,17 @@ Schematic reads "1 MEG" (confirmed at 1500 DPI), but three independent lines of 
 - [x] GroupDIY thread 62917 actual measurement: Vb=2.447V, consistent with R-2=2M and carbon comp tolerances
 - [x] Carbon composition resistor tolerance (10-20%) closes remaining Vb gap: R-2=2.2M, R-3=420K → Vth=2.42V ≈ 2.447V measured
 
-### 5.3 MEDIUM PRIORITY — C-1 (RF shunt cap)
+### 5.3 ~~MEDIUM PRIORITY — C-1 (RF shunt cap)~~ **RESOLVED — C-1 = C20 = 220 pF (Feb 2026)**
 
-Service manual mentions "shunt capacitor C-1" as separate from C-3/C-4. Not visible as a distinct component on the schematic. Possibilities:
-- C-1 is the same physical component as C-2/C20 (220 pF) under different naming
-- C-1 is present but not labeled in the schematic region we examined
-- C-1 was added in a later production revision
-- [ ] Search schematic more thoroughly — check if there's a cap between base and ground near TR-1 that we missed
-- [ ] Accept as unresolvable without physical inspection
+~~Service manual mentions "shunt capacitor C-1" as separate from C-3/C-4. Not visible as a distinct component on the schematic.~~
+
+**Resolution:** C-1 (service manual designation) is the **same physical component** as C20/C-2 (schematic board position "2") = 220 pF shunt cap at TR-1 base to ground. The naming discrepancy arises because the service manual uses "C-1" (functional designation as the first/primary RF shunt cap) while the schematic uses board position numbering ("2"). Evidence:
+1. Service manual describes C-1 as a "shunt capacitor" — the 220 pF cap is the only shunt-to-ground cap at the preamp input
+2. No separate C-1 component visible on schematic at 2400 DPI examination
+3. PCB physical layout (schematic page 1) shows R-x/C-x designators on silk screen; "C-3" clearly visible at position 3
+4. Zero community discussion (GroupDIY, EP-Forum, BustedGear) about a "missing" C-1 — technicians recognize it as the 220 pF cap
+- [x] Search schematic more thoroughly — **confirmed: no separate C-1 at 2400 DPI**
+- [x] ~~Accept as unresolvable without physical inspection~~ → **Resolved: naming discrepancy, not a missing component**
 
 ### 5.4 MEDIUM PRIORITY — Speaker size verification (4"x6" vs 4"x8")
 
@@ -258,8 +261,8 @@ Depends on preamp doc rewrite (Section 1). ~~Once that's done:~~
 
 - [x] Update preamp gain parameters throughout — **DONE Feb 2026**: Stage 1 gain 145→420, Stage 2 gain 252→238, all satLimit/cutoffLimit/re values corrected, C-3=C-4=100pF reflected
 - [x] Update Miller pole frequency references — **DONE Feb 2026**: ~200-500 Hz→~25 Hz (Stage 1 open-loop), ~500-2000 Hz→~3.3 kHz (Stage 2), closed-loop BW ~3.7 kHz noted
-- [x] Update speaker model parameters — **DONE Feb 2026**: 4"x6" per schematic noted (previously 4"x8")
-- [x] Review oversampling rationale — **DONE Feb 2026**: Still valid; C20 HPF frequency range updated to ~1550-1900 Hz
+- [x] Update speaker model parameters — **DONE Feb 2026**: RESOLVED as 4"x8" (all vendors/forums confirm; schematic's "4x6" is pre-production spec)
+- [x] Review oversampling rationale — **DONE Feb 2026**: Still valid; C20 HPF frequency updated to ~1903 Hz
 - [x] Add kPreampInputDrive recalibration note — **DONE Feb 2026**: Current value of 28.0 was calibrated against old incorrect gains, flagged for recalibration
 
 ---
@@ -282,7 +285,7 @@ The schematic uses a numbering scheme that doesn't always match our docs' naming
 | R-10 | R-10 | 56K | Feedback to LG-1 network |
 | C-3 | C-3 | 100 pF | TR-1 Ccb feedback |
 | C-4 | C-4 | 100 pF | TR-2 Ccb feedback |
-| "2" (cap) | C20 / C-2 | **220 pF** (RESOLVED, see 5.1) | Input shunt — confirmed at 1500 DPI |
+| "2" (cap) | C20 / C-2 / **C-1** (service manual) | **220 pF** (RESOLVED, see 5.1, 5.3) | Input shunt — confirmed at 1500 DPI. C-1 = same component (naming discrepancy) |
 | D-1 | D-1 | 25PIV/10mA/#142136 | Input protection |
 
 **Action:** Standardize naming convention across all docs. Recommend using the **schematic reference numbers** as canonical, with our descriptive names in parentheses.
