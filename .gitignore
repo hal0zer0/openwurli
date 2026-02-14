@@ -1,0 +1,28 @@
+# Python virtual environment
+.venv/
+
+# Claude Code local settings
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Build artifacts (future)
+build/
+cmake-build-*/
+*.o
+*.so
+*.dylib
+*.dll
+
+# Python bytecode
+__pycache__/
+*.pyc
