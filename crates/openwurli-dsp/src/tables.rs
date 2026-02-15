@@ -129,6 +129,54 @@ pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES]
     rates
 }
 
+/// Per-note output scaling to balance the keyboard.
+///
+/// On a real 200A, the technician adjusts each pickup gap to voice the
+/// keyboard. High notes naturally produce more signal (smaller gap, stiffer
+/// reed) and need to be attenuated. This function simulates that voicing.
+///
+/// Measured from V2 renders: treble (A6) is ~12 dB louder than bass (A2)
+/// at the same velocity. Real 200As are typically voiced to ~6 dB spread.
+/// We apply a gentle rolloff above C4 (MIDI 60) to compensate.
+pub fn output_scale(midi: u8) -> f64 {
+    let m = midi as f64;
+    if m <= 60.0 {
+        // Bass to mid: unity (no attenuation)
+        1.0
+    } else {
+        // Above C4: gentle rolloff, ~6 dB down at A6 (MIDI 93)
+        // -0.18 dB/semitone above C4 → -6 dB at +33 semitones (A6)
+        let semitones_above_c4 = m - 60.0;
+        f64::powf(10.0, -0.18 * semitones_above_c4 / 20.0)
+    }
+}
+
+/// Register-dependent velocity exponent for dynamic expression.
+///
+/// On a real 200A, mid-register notes (C3-C5) have the most dynamic range
+/// because the hammer weight and reed stiffness are well-matched. Bass reeds
+/// are heavy (compressed dynamics), treble reeds are light (quick saturation).
+///
+/// The velocity curve is: amplitude = velocity^exponent
+///   exponent < 1.0: compressed dynamics (bass, treble)
+///   exponent = 1.0: linear
+///   exponent > 1.0: expanded dynamics (mid-register)
+///
+/// This gives ~22-24 dB dynamic range in the mid-register and ~15-17 dB
+/// at the extremes.
+pub fn velocity_exponent(midi: u8) -> f64 {
+    let m = midi as f64;
+    // Bell curve centered at MIDI 62 (D4, mid-register sweet spot)
+    // Peak exponent 1.4 (expanded dynamics)
+    // Edges (A1, C7) at 0.75 (compressed dynamics)
+    let center = 62.0;
+    let sigma = 11.0; // Narrow bell: bass/treble compress, mid-register expressive
+    let min_exp = 0.75;
+    let max_exp = 1.4;
+    let t = f64::exp(-0.5 * ((m - center) / sigma).powi(2));
+    min_exp + t * (max_exp - min_exp)
+}
+
 /// Full parameter set for one note.
 pub struct NoteParams {
     pub fundamental_hz: f64,

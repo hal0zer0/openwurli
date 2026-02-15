@@ -19,7 +19,7 @@
 ///   - H2 > H3 at all dynamics
 
 use crate::bjt_stage::BjtStage;
-use crate::filters::DcBlocker;
+use crate::filters::{DcBlocker, OnePoleLpf};
 
 /// PreampModel trait — swappable implementations for A/B testing.
 pub trait PreampModel {
@@ -39,6 +39,20 @@ pub struct EbersMollPreamp {
     stage2: BjtStage,
     /// Output DC blocker
     dc_block: DcBlocker,
+    /// Bandwidth LPF — models Stage 2 Miller effect + stray capacitance.
+    ///
+    /// The Stage 2 Miller pole (C-4=100pF, Rc1||ro1=135K source impedance,
+    /// Av2=-2.06) calculates to 3.85 kHz. However, placing this pole inside
+    /// the discrete feedback loop causes resonance due to the one-sample delay
+    /// (9.5° phase margin at crossover). Instead, we model the combined HF
+    /// rolloff as a post-loop LPF calibrated to match SPICE: -3 dB at 9.9 kHz.
+    ///
+    /// Known limitation: with low feedback (tremolo bright, R_ldr=19K), the
+    /// feedback loop's natural BW is ~6.5 kHz vs SPICE's 8.3 kHz. This is
+    /// inherent to the single-dominant-pole discrete model and cannot be
+    /// corrected by the post-loop LPF. The error only affects the brief peak
+    /// of the tremolo cycle, at frequencies above the highest fundamental.
+    bw_lpf: OnePoleLpf,
     /// Feedback fraction: how much of prev_output reaches Stage 1 emitter.
     /// Calibrated to match SPICE: fb = 0.509 * R_ldr / (R_ldr + 20K).
     /// Range: ~0 (LDR bright, gain 4x) to ~0.5 (LDR dark, gain 2x).
@@ -50,10 +64,18 @@ pub struct EbersMollPreamp {
 impl EbersMollPreamp {
     /// Create a new Ebers-Moll preamp at the given (oversampled) sample rate.
     pub fn new(sample_rate: f64) -> Self {
+        // Bandwidth LPF cutoff: calibrated so the closed-loop preamp response
+        // (with the one-sample feedback delay) matches SPICE's -3 dB at 9.9 kHz.
+        // The delay makes the feedback less effective at HF, widening BW to ~16 kHz.
+        // This 16 kHz post-loop LPF compensates, representing Stage 2 Miller
+        // effect + stray capacitance that can't be placed inside the loop.
+        let bw_cutoff = 16_000.0;
+
         Self {
             stage1: BjtStage::stage1(sample_rate),
             stage2: BjtStage::stage2(sample_rate),
             dc_block: DcBlocker::new(sample_rate),
+            bw_lpf: OnePoleLpf::new(bw_cutoff, sample_rate),
             fb_fraction: Self::calc_fb_fraction(1_000_000.0),
             prev_output: 0.0,
         }
@@ -84,11 +106,15 @@ impl PreampModel for EbersMollPreamp {
         // 2. Direct coupling to Stage 2 (no coupling cap)
         let stage2_out = self.stage2.process(stage1_out, 0.0);
 
-        // 3. DC block (20 Hz HPF)
-        let output = self.dc_block.process(stage2_out);
+        // 3. Bandwidth LPF (Stage 2 Miller effect + stray capacitance)
+        let bw_out = self.bw_lpf.process(stage2_out);
 
-        // Store for next sample's feedback
-        self.prev_output = stage2_out; // Tap before DC block (R-10 taps from output)
+        // 4. DC block (20 Hz HPF)
+        let output = self.dc_block.process(bw_out);
+
+        // Store for next sample's feedback (tap before BW LPF and DC block,
+        // matching the real circuit where R-10 taps from Stage 2 collector)
+        self.prev_output = stage2_out;
 
         output
     }
@@ -100,6 +126,7 @@ impl PreampModel for EbersMollPreamp {
     fn reset(&mut self) {
         self.stage1.reset();
         self.stage2.reset();
+        self.bw_lpf.reset();
         self.dc_block.reset();
         self.prev_output = 0.0;
     }
