@@ -59,7 +59,7 @@ Keypress
      - Total gain 6.0 dB (2.0x) no tremolo / 12.1 dB (4.0x) tremolo bright [SPICE-measured Feb 2026]
      - Output: 2-7 mV AC at volume pot (Avenson measurement; his replacement design has ~15 dB gain)
   -> Tremolo (LDR optocoupler modulates preamp emitter feedback)
-     - LFO (~6 Hz phase-shift oscillator) drives LED inside LG-1 optocoupler
+     - LFO (~5.6 Hz twin-T oscillator, TR-3/TR-4) drives LED inside LG-1 optocoupler
      - R-10 (56K) feeds back from output to fb_junct; Ce1 (4.7 MFD) couples fb_junct to TR-1 emitter
      - LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO → 18K → LG-1
      - Modulates preamp GAIN (not post-preamp volume): series-series emitter feedback topology
@@ -614,7 +614,9 @@ First-order HPF at 20 Hz after Stage 2. Removes residual DC from asymmetric clip
 
 The 200A tremolo modulates the preamp's closed-loop gain via an LDR (LG-1) that shunts the emitter feedback junction to ground. R-10 (56K) feeds back from the output to fb_junct; Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter. The LDR path (cable Pin 1 → 50K VIBRATO → 18K → LG-1 → GND) diverts feedback current away from the emitter. This is **gain modulation**, not simple amplitude modulation — the distortion character changes through the tremolo cycle.
 
-### LFO (Phase-Shift Oscillator, TR-3/TR-4)
+### LFO (Twin-T Oscillator, TR-3/TR-4)
+
+The oscillator is a twin-T (parallel-T) notch filter oscillator, NOT a phase-shift oscillator as previously documented. SPICE-validated at 5.63 Hz with 11.8 Vpp output swing. See `spice/subcircuits/tremolo_osc.cir` and `docs/output-stage.md` Section 2.1 for full topology.
 
 ```
 lfo = sin(2*PI * rate * t)
@@ -1079,7 +1081,16 @@ Get a playable instrument with correct pitch and basic dynamics:
 
 **Test:** Play notes, verify correct pitch across full range, velocity responds, notes decay. No preamp yet -- output is the raw oscillator.
 
-### Phase 2: Pickup and Summation (1 day)
+### Phase 2: SPICE Validation (COMPLETED Feb 2026)
+
+All critical analog subcircuits validated in ngspice before DSP implementation:
+
+1. **Preamp** — `spice/subcircuits/preamp.cir`: Two-stage CE amp with emitter feedback via Ce1. DC operating points match schematic. Closed-loop gain 6.0 dB (no tremolo) to 12.1 dB (tremolo bright). THD < 0.04% at normal levels.
+2. **Tremolo oscillator** — `spice/subcircuits/tremolo_osc.cir`: Twin-T oscillator, TR-3/TR-4 shared collector. Freq=5.63 Hz, Vpp=11.82V, DC matches within 1%.
+3. **LDR behavioral model** — `spice/models/ldr_behavioral.lib`: VTL5C3-like power-law with asymmetric time constants (tau_on=2.5ms, tau_off=30ms).
+4. **LDR sweep** — `spice/testbench/topology_b_ldr_sweep.cir`: Verified gain modulation range of 6.1 dB across LDR sweep.
+
+### Phase 3: Pickup and Summation (1 day)
 
 1. Constant-charge pickup model per voice
 2. Gap scaling by register
@@ -1087,30 +1098,32 @@ Get a playable instrument with correct pitch and basic dynamics:
 
 **Test:** Verify pickup doesn't alter pitch, minGap clamp works at extreme ff.
 
-### Phase 3: Oversampler and Preamp (3-5 days)
+### Phase 4: Oversampler and Preamp (3-5 days)
 
-This is the most complex and sonically important stage:
+This is the most complex and sonically important stage. All component values and topology are SPICE-validated (Phase 2).
 
 1. Integrate HIIR library, build oversampler wrapper
 2. Implement BjtStage class (NR solver, asymmetric soft-clip)
-3. Implement C20 HPF
-4. Implement Miller LPFs
+3. Implement C20 HPF (f_c = 1903 Hz)
+4. Implement Miller LPFs (C-3 = C-4 = 100 pF)
 5. Wire up Wurlitzer200APreamp (Stage 1 -> Miller -> Stage 2 -> Miller -> DC Block)
-6. Calibrate kPreampInputDrive and preampGain
-7. Implement feedback caps (CORRECT polarity this time)
+6. Implement emitter feedback path: R-10 (56K) -> fb_junction -> Ce1 (4.7µF) -> TR-1 emitter
+7. Calibrate kPreampInputDrive and preampGain against SPICE gain targets (2.0x no-trem, 4.0x trem-bright)
 
-**Test:** Verify H2 > H3 on all notes at mf. Check that pp is clean, mf has moderate bark, ff has aggressive bark. Check dynamic range: pp should be at least 15 dB quieter than ff.
+**Test:** Verify H2 > H3 on all notes at mf. Check that pp is clean, mf has moderate bark, ff has aggressive bark. Check dynamic range: pp should be at least 15 dB quieter than ff. Cross-validate gain and THD against SPICE measurements.
 
-### Phase 4: Post-Processing (1-2 days)
+### Phase 5: Post-Processing (1-2 days)
 
-1. Tremolo (LDR model)
-2. Speaker cabinet (biquad HPF + LPF)
-3. Output limiter
-4. Mono-to-stereo
+1. Tremolo LFO (twin-T oscillator model, ~5.6 Hz, mildly distorted sinusoid)
+2. LDR model (asymmetric attack/release, power-law R vs illumination)
+3. Feedback modulation (LDR path shunts fb_junction — gain modulation, not volume)
+4. Speaker cabinet (biquad HPF + LPF)
+5. Output limiter
+6. Mono-to-stereo
 
-**Test:** Full signal chain test. Compare spectra to OldBassMan recordings.
+**Test:** Full signal chain test. Compare spectra to OldBassMan recordings. Verify tremolo produces timbral modulation (not just amplitude).
 
-### Phase 5: Release and Polish (2-3 days)
+### Phase 6: Release and Polish (2-3 days)
 
 1. Damper model (progressive, per-mode)
 2. Attack noise burst
@@ -1120,7 +1133,7 @@ This is the most complex and sonically important stage:
 
 **Test:** Play musical passages. Verify damper release sounds natural, no CPU spikes on voice release.
 
-### Phase 6: Tuning and Calibration (Ongoing)
+### Phase 7: Tuning and Calibration (Ongoing)
 
 1. Register balance test (10 notes, mf and ff)
 2. Compare H2/H1 slope to target: `H2_dB = -0.48 * MIDI + 17.5`
@@ -1128,7 +1141,7 @@ This is the most complex and sonically important stage:
 4. Dynamic range verification (pp vs ff: target 20-30 dB)
 5. Polyphonic chord test (compression, intermodulation)
 
-### Phase 7: ML Correction (Future)
+### Phase 8: ML Correction (Future)
 
 1. Train MLP: `(pitch, velocity) -> (amp_offsets, freq_offsets, decay_offsets, d0_correction)`
 2. Generate baked weights header file

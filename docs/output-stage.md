@@ -494,7 +494,7 @@ LPF: 2nd-order lowpass at 8-10 kHz, Q = 0.707 (Butterworth)
 
 ```
 // Oscillator
-rate = 5.5-6.0 Hz (phase-shift oscillator, approximately sinusoidal)
+rate = 5.6 Hz (twin-T oscillator, approximately sinusoidal — SPICE-validated Feb 2026)
 
 // LDR time constants (VTL5C3-like)
 attack_tau = 2.5-3.0 ms  (fast on)

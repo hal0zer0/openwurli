@@ -103,25 +103,17 @@ Appendix C (Open Questions) should be replaced with a summary of resolved values
 - LG-1 = Wurlitzer part **#142312** (LED/LDR opto-isolator)
 - TR-7 = TR-8 = part #142128
 
-### 2.3 Correct speaker size
+### 2.3 Correct speaker size — **RESOLVED Feb 2026**
 
-**This is a significant correction.** Multiple doc sections reference "4x8 inch" speakers.
+**RESOLVED:** Speaker = **4"x8" oval**, 16Ω each, P.M., ceramic magnet. The schematic shows "4x6" but ALL vendors, forums, and repair sources unanimously confirm 4x8. The schematic likely reflects a pre-production specification. Output-stage doc updated accordingly.
 
-The schematic (Speaker Load section, Model 200A) clearly shows: **4"x6" oval, 16Ω each, P.M., part 202243**
+### 2.4 Add tremolo oscillator waveform detail — **RESOLVED Feb 2026**
 
-This changes:
-- Estimated speaker resonance frequency (Fs)
-- Baffle step frequency (smaller driver = higher baffle step)
-- LPF rolloff frequency (smaller cone = potentially higher breakup frequency)
-- The physical analysis in Sections 5.1-5.3 needs recalculation
-
-**Note:** Many online sources say "4x8 inch." Possible explanations: production variant changes, confusion with 206A/207A models (which use 8" round drivers per schematic), or the schematic showing early production specs. Worth cross-referencing with physical 200A instruments if possible.
-
-### 2.4 Add tremolo oscillator waveform detail
-
-- Phase-shift oscillator produces mildly distorted sinusoid
-- Estimated THD: ~3-10% (from Strymon white paper on similar topology)
-- Phase-shift network components visible on schematic: 27K resistors, 680K bias
+- **Twin-T (parallel-T) oscillator** — NOT phase-shift. Notch filter in negative feedback path of TR-3.
+- SPICE-validated: freq=5.63 Hz, Vpp=11.82V, DC operating points match schematic within 1%
+- Non-standard twin-T ratios: R_shunt/R_series = 27K/680K = 0.040 (standard = 0.5)
+- Produces shallow notch (~-23.5 dB) → mildly distorted sinusoid, est. THD 3-10%
+- Subcircuit: `spice/subcircuits/tremolo_osc.cir`, Testbench: `spice/testbench/tb_tremolo_osc.cir`
 
 ### 2.5 Add crossover distortion detail
 
@@ -209,22 +201,19 @@ Schematic reads "1 MEG" (confirmed at 1500 DPI), but three independent lines of 
 - [x] Search schematic more thoroughly — **confirmed: no separate C-1 at 2400 DPI**
 - [x] ~~Accept as unresolvable without physical inspection~~ → **Resolved: naming discrepancy, not a missing component**
 
-### 5.4 MEDIUM PRIORITY — Speaker size verification (4"x6" vs 4"x8")
+### 5.4 ~~MEDIUM PRIORITY — Speaker size verification (4"x6" vs 4"x8")~~ **RESOLVED — 4"x8" (Feb 2026)**
 
-The schematic clearly shows 4"x6" for Model 200A. But "4x8" is ubiquitous in online sources (Vintage Vibe, EP-Forum, Tropical Fish). Possible explanations:
-- Early vs late production change
-- The schematic covers early production only (title block may indicate revision)
-- Community sources are wrong (possibly confusing with another model)
-- [ ] Check schematic title block for production date/revision
-- [ ] Search for "Wurlitzer 200A 4x6 speaker" to see if anyone else notes this size
-- [ ] Check Vintage Vibe replacement speaker dimensions (they may sell 4x6 AND 4x8)
+**Resolution:** 4"x8" oval confirmed. The schematic's "4x6" is a pre-production spec. ALL replacement speaker vendors (Vintage Vibe, Tropical Fish), repair forums (EP-Forum, GroupDIY), and service technicians unanimously confirm 4"x8". No physical 200A has been documented with 4x6 speakers.
+- [x] Cross-referenced multiple independent sources — all confirm 4x8
+- [x] Output-stage doc updated
 
-### 5.5 LOW PRIORITY — Original LDR specs
+### 5.5 LOW PRIORITY — Original LDR specs — **SPICE model built (Feb 2026)**
 
-LG-1 Wurlitzer part #142312 identified but no datasheet exists. Modern replacement is VTL5C3. For modeling, use VTL5C3 specs:
-- Rise time: 2.5 ms
-- Fall time: 18-35 ms (asymmetric — key for tremolo waveform)
-- R ~ L^(-gamma), gamma ≈ 0.7-0.9
+LG-1 Wurlitzer part #142312 — no datasheet exists. SPICE behavioral model built using VTL5C3 specs:
+- `spice/models/ldr_behavioral.lib`: Power-law R = 800 * (ctrl)^(-0.85), with asymmetric time constants (tau_on=2.5ms, tau_off=30ms)
+- Static and dynamic subcircuits available
+- Validated via LDR sweep testbench: `spice/testbench/topology_b_ldr_sweep.cir`
+- Gain modulation range: 6.1 dB (matches EP-Forum "6 dB boost" measurement)
 
 ### 5.6 LOW PRIORITY — Physical pickup dimensions
 
@@ -295,8 +284,15 @@ The schematic uses a numbering scheme that doesn't always match our docs' naming
 ## Priority Order for Implementation Readiness
 
 1. ~~**Preamp doc rewrite** (Section 1)~~ — **DONE**
-2. ~~**Output-stage updates** (Section 2)~~ — **DONE**
-3. ~~**Resolve C20, R-2, and R_feed disputes** (Sections 5.1, 5.2, 5.8)~~ — **ALL RESOLVED**: R-2 = 2M (GroupDIY "380K" + DC analysis + measured voltages). C20 = 220 pF (confirmed at 1500 DPI). R_feed = 1 MEG (component 56, HV filter chain).
-4. ~~**Signal-chain-architecture updates** (Section 6)~~ — **DONE**
+2. ~~**Output-stage updates** (Section 2)~~ — **DONE** (including speaker=4x8, tremolo=twin-T, all component values)
+3. ~~**Resolve C20, R-2, and R_feed disputes** (Sections 5.1, 5.2, 5.8)~~ — **ALL RESOLVED**: R-2 = 2M, C20 = 220 pF, R_feed = 1 MEG.
+4. ~~**Signal-chain-architecture updates** (Section 6)~~ — **DONE** (phase numbering updated for SPICE validation phase)
 5. ~~**Pickup, reed, and minor doc updates** (Sections 3, 4)~~ — **DONE**
-6. **Component number reconciliation** (Section 7) — housekeeping; low priority, can be done during implementation
+6. ~~**SPICE validation** (Phase 2)~~ — **DONE Feb 2026**: Preamp, tremolo oscillator, LDR model all validated. See `spice/` directory.
+7. **Component number reconciliation** (Section 7) — housekeeping; low priority, can be done during implementation
+
+### Status Summary (Feb 2026)
+
+**ALL schematic-resolvable uncertainties are RESOLVED.** SPICE models validate the circuit topology and component values. The project is ready to proceed to DSP implementation (Phase 3: Pickup and Summation, then Phase 4: Oversampler and Preamp).
+
+Remaining open items (5.6, 5.7) require physical measurements and are bounded well enough for initial implementation.
