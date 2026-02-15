@@ -39,15 +39,22 @@ impl OnePoleHpf {
 /// 1-pole low-pass filter: y[n] = alpha * x[n] + (1 - alpha) * y[n-1]
 pub struct OnePoleLpf {
     alpha: f64,
+    dt: f64,
     prev_y: f64,
 }
 
 impl OnePoleLpf {
     pub fn new(cutoff_hz: f64, sample_rate: f64) -> Self {
-        let rc = 1.0 / (2.0 * PI * cutoff_hz);
         let dt = 1.0 / sample_rate;
+        let rc = 1.0 / (2.0 * PI * cutoff_hz);
         let alpha = dt / (rc + dt);
-        Self { alpha, prev_y: 0.0 }
+        Self { alpha, dt, prev_y: 0.0 }
+    }
+
+    /// Update cutoff frequency without resetting filter state.
+    pub fn set_cutoff(&mut self, cutoff_hz: f64) {
+        let rc = 1.0 / (2.0 * PI * cutoff_hz);
+        self.alpha = self.dt / (rc + self.dt);
     }
 
     pub fn process(&mut self, x: f64) -> f64 {

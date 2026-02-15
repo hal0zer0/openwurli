@@ -16,11 +16,11 @@ use params::OpenWurliParams;
 const MAX_VOICES: usize = 12;
 const MAX_BLOCK_SIZE: usize = 8192;
 
-/// Scale voice sum into preamp's millivolt operating range.
-/// Without this, voices (~100-500 mV peak) overdrive the preamp's BJT stages
-/// (calibrated at ~1-10 mV input), causing symmetric hard-clipping that kills
-/// H2 dominance, centroid, and dynamic range — especially at high velocity.
-const PREAMP_INPUT_SCALE: f64 = 0.03;
+// Note: PREAMP_INPUT_SCALE is no longer needed. The pickup model now includes
+// DISPLACEMENT_SCALE (0.075) which converts reed displacement to physical y = x/d_0,
+// applies the nonlinear 1/(1-y) capacitance model, and outputs calibrated millivolt
+// signals that feed directly to the preamp. The nonlinear pickup is where the
+// Wurlitzer bark comes from — not the preamp (which is a clean gain stage).
 
 // ── Voice management ────────────────────────────────────────────────────────
 
@@ -176,11 +176,6 @@ impl OpenWurli {
             for i in 0..len {
                 self.sum_buf[i] += self.voice_buf[i];
             }
-        }
-
-        // Scale voice sum into preamp's millivolt operating range
-        for s in &mut self.sum_buf[..len] {
-            *s *= PREAMP_INPUT_SCALE;
         }
 
         // Upsample to 2x rate

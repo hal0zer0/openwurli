@@ -79,15 +79,16 @@ fn measure_gain_at(preamp: &mut EbersMollPreamp, freq: f64, amplitude: f64) -> f
     let n_settle = (BASE_SR * 0.3) as usize;
     let n_measure = (BASE_SR * 0.2) as usize;
 
-    // Settle
+    // Settle — exercise the FULL signal path (upsample + preamp + downsample)
+    // so that all filter states are primed before measurement begins.
     for i in 0..n_settle {
         let t = i as f64 / BASE_SR;
         let input = amplitude * (2.0 * PI * freq * t).sin();
         let mut up = [0.0f64; 2];
         os.upsample_2x(&[input], &mut up);
-        for s in &up {
-            preamp.process_sample(*s);
-        }
+        let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
+        let mut down = [0.0f64; 1];
+        os.downsample_2x(&processed, &mut down);
     }
 
     // Measure (downsample to get output at base rate)
@@ -287,8 +288,9 @@ fn cmd_render(args: &[String]) {
     // Render reed voice
     let reed_output = Voice::render_note(note, velocity as f64 / 127.0, duration, BASE_SR);
 
-    // Scale into preamp's millivolt operating range (same as plugin)
-    const PREAMP_INPUT_SCALE: f64 = 0.03;
+    // The pickup model now outputs calibrated millivolt signals
+    // (via DISPLACEMENT_SCALE + nonlinear 1/(1-y) + SENSITIVITY + HPF).
+    // No additional scaling needed — feed directly to preamp.
 
     // Process through oversampled preamp
     let mut preamp = EbersMollPreamp::new(OVERSAMPLED_SR);
@@ -298,7 +300,7 @@ fn cmd_render(args: &[String]) {
     let n_samples = reed_output.len();
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
-        let scaled = reed_output[i] * PREAMP_INPUT_SCALE;
+        let scaled = reed_output[i];
         let mut up = [0.0f64; 2];
         os.upsample_2x(&[scaled], &mut up);
         let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];

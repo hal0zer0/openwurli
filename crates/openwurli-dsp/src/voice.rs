@@ -36,9 +36,12 @@ impl Voice {
             amplitudes[i] = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i];
         }
 
-        let vel_scale = velocity;
+        // Register-dependent velocity curve and output voicing
+        let vel_exp = tables::velocity_exponent(midi_note);
+        let vel_scale = velocity.powf(vel_exp);
+        let out_scale = tables::output_scale(midi_note);
         for a in &mut amplitudes {
-            *a *= vel_scale;
+            *a *= vel_scale * out_scale;
         }
 
         let reed = ModalReed::new(
