@@ -18,7 +18,7 @@ const MAX_VOICES: usize = 12;
 const MAX_BLOCK_SIZE: usize = 8192;
 
 // Note: PREAMP_INPUT_SCALE is no longer needed. The pickup model now includes
-// DISPLACEMENT_SCALE (0.075) which converts reed displacement to physical y = x/d_0,
+// DISPLACEMENT_SCALE (0.30) which converts reed displacement to physical y = x/d_0,
 // applies the nonlinear 1/(1-y) capacitance model, and outputs calibrated millivolt
 // signals that feed directly to the preamp. The nonlinear pickup is where the
 // Wurlitzer bark comes from — not the preamp (which is a clean gain stage).

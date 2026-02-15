@@ -45,7 +45,6 @@ The Wurlitzer 200A reed-bar preamp is a **two-stage direct-coupled NPN common-em
 Reed vibration
   -> Electrostatic pickup (all 64 reeds summed at single pickup plate)
   -> Polarizing network (R-1 = 22K series, R-2 = 2M to +15V, R-3 = 470K to ground)
-  -> C20 (220 pF shunt cap, HPF ~1900 Hz)
   -> D-1 (25 PIV, 10 mA protection diode, Wurlitzer part #142136)
   -> .022 uF input coupling cap
   -> TR-1 base (Stage 1)
@@ -76,10 +75,10 @@ Reed vibration
      |               |    |TR-1  |          |TR-2  |
      +---R-3 (470K)--+  C B     |        C B      |
      |               |    |--+   |          |--+   |
-     |    C20(220pF) |    |  |   |          |  |   |
-     |      |        |    |  E   |          |  E   |
-     |     GND  D1---+    |  |   |          |  |   |
-     |           |   |    | Re1(33K)        | Re2a(270)+Ce2(22MFD bypass)
+     |          D1---+    |  |   |          |  |   |
+     |           |        |  E   |          |  E   |
+     |          GND       |  |   |          |  |   |
+     |                    | Re1(33K)        | Re2a(270)+Ce2(22MFD bypass)
      |          GND  |    |  |              |  |
      |               |    | Ce1(4.7MFD)     | Re2b(820) unbypassed
      |          .022uF    | (coupling cap)  |  |
@@ -116,17 +115,13 @@ Reed vibration
 | R-10 | 56K | Feedback resistor from output to TR-1 emitter junction (via Ce1); LDR shunts this junction for tremolo |
 | C-3 | 100 pF | TR-1 collector-base feedback capacitor (Miller) |
 | C-4 | 100 pF | TR-2 collector-base feedback capacitor (Miller) |
-| C20 | 220 pF | Input shunt cap (HPF bass rolloff). See Note 2 |
-| C-1 | = C20 (220 pF) | RF shunt protection capacitor. See Note 3 |
 | D-1 | 25 PIV, 10 mA (part #142136) | Reverse-polarity transient protection at input |
 | Input coupling | .022 uF | AC coupling at preamp input |
 | LG-1 | CdS LDR in lightproof enclosure with LED | Tremolo gain modulation in feedback network |
 
 **Note 1 (R-2):** Schematic reads "1 MEG" but DC analysis and GroupDIY's 380K impedance (= 2M || 470K) confirm 2M. Use 2M.
 
-**Note 2 (C20):** Schematic reads 220 pF (confirmed at 1500 DPI). GroupDIY's 270 pF is tolerance variation. Use 220 pF.
-
-**Note 3 (C-1):** C-1 (service manual designation) = C20 (schematic board position "2") = 220 pF. Same component, different naming.
+**Note 2 (C20/C-1):** The 220 pF capacitor labeled C20 or C-1 in some Wurlitzer schematics appears only on the 206A board. The verified 200A schematic (#203720-S-3, serial 102905+) does NOT include this component. Bass rolloff in the 200A comes from the pickup's system RC HPF (f_c = 2312 Hz, see pickup-system.md Section 3.7), not from a preamp input capacitor.
 
 ### 2.3 Polarizing Voltage Circuit
 
@@ -381,39 +376,16 @@ The pickup system delivers millivolt-level signals to the preamp input. Based on
 | Bass (A1 at mf) | ~0.05-0.2 mV peak | Heavily attenuated by pickup RC HPF |
 | Treble (C6 at mf) | ~5-20 mV peak | Less attenuation, smaller displacement |
 
-### 5.2 Input Coupling Network (C20 HPF)
+### 5.2 Input Coupling Network
 
-C20 (220 pF) forms a first-order high-pass filter by shunting low frequencies to ground relative to the signal source impedance.
+The input coupling network consists of:
+- **.022 µF coupling cap** — blocks the 147V DC polarizing voltage from reaching the preamp
+- **R-2 (2M) and R-3 (470K)** — bias divider providing DC path to TR-1 base
+- **D-1 protection diode** — clamps transient overvoltages (e.g., from reed-to-plate shorts during tuning)
 
-```
-f_c = 1 / (2 * pi * R_eff * C20)
-```
+The .022 µF coupling cap has a corner frequency of ~19 Hz (with the 380K bias network), so it's effectively a short circuit at all audio frequencies.
 
-The effective resistance is the Thevenin impedance of the bias network:
-```
-R_eff = R-2 || R-3 = 2M || 470K = (2M * 470K) / (2M + 470K) = 380K
-```
-
-| C20 Value | R_eff | f_c (Hz) |
-|-----------|-------|----------|
-| 220 pF | 380K | 1903 Hz |
-
-GroupDIY explicitly states: "270pFd against 380K creates a bass-cut at 1,750Hz" — their 270 pF figure likely reflects tolerance variation in ceramic capacitors or a production change. The schematic confirms 220 pF at 1500 DPI.
-
-**Use f_c = 1903 Hz** (from C20 = 220 pF and R_eff = 380K) as the canonical value for modeling.
-
-**Frequency response of C20 HPF:**
-
-| Note | MIDI | Freq (Hz) | Attenuation (dB) |
-|------|------|-----------|------------------|
-| A1 | 33 | 55 | -30.8 |
-| C3 | 48 | 131 | -23.3 |
-| C4 | 60 | 262 | -17.3 |
-| C5 | 72 | 523 | -11.5 |
-| C6 | 84 | 1047 | -6.3 |
-| C7 | 96 | 2093 | -2.6 |
-
-(Computed for f_c = 1903 Hz, first-order HPF: |H(f)| = f / sqrt(f^2 + f_c^2))
+**IMPORTANT — C20 is NOT on the 200A:** The 220 pF capacitor labeled C20 or C-1 in some Wurlitzer schematics appears only on the 206A board. The verified 200A schematic (#203720-S-3, serial 102905+) does NOT include this component at the preamp input. Bass rolloff in the 200A comes from the **pickup's system RC HPF** (f_c = 2312 Hz from R_total = 287K and C_total = 240 pF; see pickup-system.md Section 3.7), not from a preamp input capacitor.
 
 ### 5.3 Small-Signal Gain of Each Stage
 
@@ -591,29 +563,23 @@ The emitter feedback (R-10 via Ce1) holds the gain at ~2.0x (6.0 dB) without tre
 
 With tremolo at bright peak (Rldr_path = 19K), gain increases to 4.0x (12.1 dB), and BW narrows to ~8.3 kHz (constant GBW product).
 
-### 5.7 Combined Preamp Frequency Response (with C20 HPF)
+### 5.7 Preamp Frequency Response
 
-The total preamp response combines the C20 input HPF (~1903 Hz) with the closed-loop amplifier response (flat 19 Hz – 9.9 kHz at 6.0 dB, no tremolo):
+The preamp's closed-loop response (no tremolo, Rldr_path = 1M):
 
-| Note | MIDI | Freq (Hz) | C20 HPF (dB) | Amp Gain (dB) | Total (dB) | Notes |
-|------|------|-----------|-------------|---------------|-----------|-------|
-| A1 | 33 | 55 | -30.8 | 6.0 | -24.8 | Heavy bass attenuation |
-| C3 | 48 | 131 | -23.3 | 6.0 | -17.3 | Still very attenuated |
-| C4 | 60 | 262 | -17.3 | 6.0 | -11.3 | Approaching passband |
-| A3 | 57 | 220 | -18.8 | 6.0 | -12.8 | |
-| ~447 Hz | — | 447 | -12.6 | ~6.4 | **-6.2** | **Passband peak** (SPICE-measured) |
-| C5 | 72 | 523 | -11.5 | 6.0 | -5.5 | |
-| C6 | 84 | 1047 | -6.3 | 6.0 | -0.3 | Near unity |
-| C7 | 96 | 2093 | -2.6 | 6.0 | 3.4 | Above unity |
-| — | — | 5000 | -0.7 | ~5.6 | ~4.9 | Near peak of combined response |
-| — | — | 9900 | 0.0 | ~3.0 | ~3.0 | Amp -3 dB point |
-| — | — | 20000 | 0.0 | ~-3.1 | ~-3.1 | Significant HF rolloff |
+| Frequency | Gain (dB) | Notes |
+|-----------|-----------|-------|
+| 19 Hz | ~3.0 | Low-frequency -3 dB point |
+| 100 Hz | 6.0 | Passband |
+| 447 Hz | ~6.4 | Mild gain peak from feedback loop resonance (SPICE) |
+| 1 kHz | 6.0 | Reference measurement point |
+| 5 kHz | ~5.6 | Approaching HF rolloff |
+| 9.9 kHz | ~3.0 | High-frequency -3 dB point |
+| 20 kHz | ~-3.1 | Significant HF rolloff |
 
-> **Note:** The combined passband has a broad peak around 2-5 kHz where the C20 HPF attenuation has diminished but the amplifier hasn't rolled off yet. The gain peak at ~447 Hz noted in the SPICE AC sweep (Section 7.3) reflects a mild resonance in the feedback loop, separate from the combined C20+BW shaping shown here.
+**Tonal shaping:** The preamp itself has nearly flat gain from 19 Hz to 9.9 kHz (with a mild peak at ~447 Hz from feedback loop resonance). The Wurlitzer's characteristic mid-forward tonal balance comes from the **pickup's system RC HPF at 2312 Hz** (which heavily attenuates bass fundamentals before they reach the preamp) combined with the preamp's HF rolloff. This creates the signature sound: bass notes sound thin and "reedy" (harmonics dominate over fundamentals), while the midrange (500 Hz - 5 kHz) has body and bark.
 
-**The preamp's combined frequency response has two distinct features:** (1) a broad mid-high emphasis from ~500 Hz to ~10 kHz where C20 attenuation is small and the amp gain is still near its 6 dB plateau, and (2) a SPICE-measured mild gain peak at ~447 Hz from feedback loop dynamics. Below ~500 Hz, the C20 HPF dominates, heavily attenuating bass fundamentals. Above ~10 kHz, the Miller-effect bandwidth limit rolls off.
-
-**This is a key tonal design feature:** The preamp does not amplify all frequencies equally. Bass fundamentals are heavily attenuated (A1 at 55 Hz sees -24.8 dB net), while the upper-mid range gets the full 6 dB of gain (up to 12 dB with tremolo at bright peak). This explains why the Wurlitzer's bass notes sound thin and "reedy" while the midrange has body and bark.
+With tremolo at bright peak (Rldr_path = 19K), gain increases to 12.1 dB (4.0x), and the HF -3 dB point shifts down to 8.3 kHz due to reduced loop bandwidth.
 
 ### 5.8 Emitter Bypass Cap Corner Effects
 
@@ -920,23 +886,22 @@ Taylor-expand the transfer function to 3rd or 4th order: `y = a1*x + a2*x^2 + a3
 
 For a perceptually accurate Wurlitzer 200A preamp model, the minimum implementation should include:
 
-1. **Input HPF** at ~1903 Hz (C20 = 220 pF, first-order)
-2. **Stage 1 exponential** with gm1 = 2.54-2.80 mA/V (Ic1 = 66-73 uA)
-3. **Asymmetric soft-clip** with satLimit = 10.9V, cutoffLimit = 2.05V (Stage 1)
-4. **Frequency-dependent feedback** via C-3 (100 pF) Miller effect — dominant pole at ~23 Hz. CORRECT polarity: less feedback at LF (more gain/distortion), more feedback at HF (less gain/distortion)
-5. **Closed-loop gain** of ~6 dB (2.0x) without tremolo, up to ~12 dB (4.0x) at tremolo peak, set by R-10 emitter feedback via Ce1
-6. **Closed-loop bandwidth** ~10 kHz without tremolo, ~8.3 kHz at tremolo peak
-7. **Direct coupling** to Stage 2 (can be instantaneous coupling for simplicity)
-8. **Stage 2** with Av = 2.2, nearly symmetric soft-clip (satLimit = 6.2V, cutoffLimit = 5.3V)
-9. **Output DC block** at ~20 Hz
-10. **R-9 series output** (6.8K) — provides output impedance for volume pot interaction
+1. **Stage 1 exponential** with gm1 = 2.54-2.80 mA/V (Ic1 = 66-73 uA)
+2. **Asymmetric soft-clip** with satLimit = 10.9V, cutoffLimit = 2.05V (Stage 1)
+3. **Frequency-dependent feedback** via C-3 (100 pF) Miller effect — dominant pole at ~23 Hz. CORRECT polarity: less feedback at LF (more gain/distortion), more feedback at HF (less gain/distortion)
+4. **Closed-loop gain** of ~6 dB (2.0x) without tremolo, up to ~12 dB (4.0x) at tremolo peak, set by R-10 emitter feedback via Ce1
+5. **Closed-loop bandwidth** ~10 kHz without tremolo, ~8.3 kHz at tremolo peak
+6. **Direct coupling** to Stage 2 (can be instantaneous coupling for simplicity)
+7. **Stage 2** with Av = 2.2, nearly symmetric soft-clip (satLimit = 6.2V, cutoffLimit = 5.3V)
+8. **Output DC block** at ~20 Hz
+9. **R-9 series output** (6.8K) — provides output impedance for volume pot interaction
 
 ### 8.5 Enhanced Model (for Future Implementation)
 
 Add to the minimum model:
 
-11. **DC bias-shift dynamics**: Track Stage 1's average collector voltage (10-100 ms time constant); feed this to Stage 2's operating point. This produces the "sag" compression and "bloom" heard at ff polyphonic.
-12. **Tremolo as emitter feedback modulation**: Modulate the LDR path impedance (which controls how much R-10 feedback reaches TR-1's emitter via Ce1), rather than applying tremolo as a post-preamp volume multiplier.
+10. **DC bias-shift dynamics**: Track Stage 1's average collector voltage (10-100 ms time constant); feed this to Stage 2's operating point. This produces the "sag" compression and "bloom" heard at ff polyphonic.
+11. **Tremolo as emitter feedback modulation**: Modulate the LDR path impedance (which controls how much R-10 feedback reaches TR-1's emitter via Ce1), rather than applying tremolo as a post-preamp volume multiplier.
 13. **WDF or coupled NR solver**: Solve both stages simultaneously to capture the inter-stage coupling dynamics.
 
 ---
@@ -1077,12 +1042,7 @@ R_9 = 6.8K (series output resistor)
 R_10 = 56K (feedback resistor)
 LG_1 = CdS LDR (variable, tremolo modulation)
 
-// Input HPF
-C20 = 220 pF
-R_eff = 380K (R-2 || R-3 = 2M || 470K)
-f_hpf = 1903 Hz
-
-// Input coupling
+// Input coupling (.022 uF, corner ~19 Hz with 380K bias network)
 C_input = .022 uF
 R_1 = 22K (series from reed bar)
 
@@ -1099,6 +1059,9 @@ total_closed_loop_gain_trem_bright = 12.1 dB (4.0x) [Rldr_path = 19K]
 tremolo_modulation_range = 6.1 dB
 closed_loop_bandwidth_no_trem = 19 Hz - 9.9 kHz
 closed_loop_bandwidth_trem_bright = 19 Hz - 8.3 kHz
-passband_peak = ~450 Hz (from C20/Cin HPF and BW limit)
+passband_peak = ~450 Hz (from feedback loop resonance)
 kPreampInputDrive = should be ~1.0 if gain staging is correct
+
+// Note: C20 (220 pF) appears only on 206A board, NOT on 200A.
+// Bass rolloff comes from pickup RC (f_c = 2312 Hz), not from preamp.
 ```

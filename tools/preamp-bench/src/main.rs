@@ -11,8 +11,13 @@
 
 use std::f64::consts::PI;
 
+use openwurli_dsp::filters::OnePoleHpf;
 use openwurli_dsp::oversampler::Oversampler;
 use openwurli_dsp::preamp::{EbersMollPreamp, PreampModel};
+use openwurli_dsp::reed::ModalReed;
+use openwurli_dsp::hammer::dwell_attenuation;
+use openwurli_dsp::tables::{self, NUM_MODES};
+use openwurli_dsp::variation;
 use openwurli_dsp::voice::Voice;
 
 const BASE_SR: f64 = 44100.0;
@@ -31,6 +36,7 @@ fn main() {
         "harmonics" => cmd_harmonics(&args[2..]),
         "tremolo-sweep" => cmd_tremolo_sweep(&args[2..]),
         "render" => cmd_render(&args[2..]),
+        "bark-audit" => cmd_bark_audit(&args[2..]),
         _ => {
             eprintln!("Unknown subcommand: {}", args[1]);
             print_usage();
@@ -47,6 +53,7 @@ fn print_usage() {
     eprintln!("  harmonics       Measure harmonic distortion (H2/H3)");
     eprintln!("  tremolo-sweep   Gain vs LDR resistance sweep");
     eprintln!("  render          Reed -> preamp -> WAV output");
+    eprintln!("  bark-audit      Measure H2/H1 at each signal chain stage");
     eprintln!();
     eprintln!("Use --help after any subcommand for options.");
 }
@@ -339,6 +346,166 @@ fn cmd_render(args: &[String]) {
     println!("  LDR:       {r_ldr:.0} Ω");
     println!("  Peak:      {peak_dbfs:.1} dBFS (raw)");
     println!("  Output:    {output_path}");
+}
+
+// ─── Bark audit ─────────────────────────────────────────────────────────────
+
+/// Measure H2/H1 at every stage of the signal chain to diagnose bark deficiency.
+///
+/// Stages measured:
+///   1. Raw reed (modal synthesis)
+///   2. After pickup nonlinearity (y/(1-y) * SENSITIVITY, no HPF)
+///   3. After pickup HPF (full pickup output)
+///   4. After preamp (oversampled)
+fn cmd_bark_audit(args: &[String]) {
+    // Pickup constants (duplicated here since they're private in pickup.rs)
+    const SENSITIVITY: f64 = 1.8375;
+    const DISPLACEMENT_SCALE: f64 = 0.30;
+    const MAX_Y: f64 = 0.90;
+    const PICKUP_HPF_HZ: f64 = 2312.0;
+
+    let notes: Vec<u8> = if args.iter().any(|a| a == "--notes") {
+        let s = parse_flag_str(args, "--notes", "36,48,60,72,84");
+        s.split(',').filter_map(|n| n.trim().parse().ok()).collect()
+    } else {
+        vec![36, 48, 60, 72, 84]
+    };
+    let velocities: Vec<u8> = if args.iter().any(|a| a == "--velocities") {
+        let s = parse_flag_str(args, "--velocities", "40,80,100,127");
+        s.split(',').filter_map(|v| v.trim().parse().ok()).collect()
+    } else {
+        vec![40, 80, 100, 127]
+    };
+
+    let duration = 0.5; // seconds
+    let measure_start = 0.25; // start measuring at 250ms (steady state)
+
+    println!("=== BARK AUDIT: H2/H1 at each signal chain stage ===");
+    println!();
+    println!("{:>6} {:>4}  {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "Note", "Vel",
+        "Reed pk", "y_peak",
+        "NL H2/H1", "NL pk(mV)",
+        "HPF H2/H1", "HPF pk(mV)",
+        "Pre H2/H1");
+    println!("{}", "-".repeat(100));
+
+    for &note in &notes {
+        let params = tables::note_params(note);
+        let freq = params.fundamental_hz;
+        let h2_freq = freq * 2.0;
+
+        for &vel_byte in &velocities {
+            let velocity = vel_byte as f64 / 127.0;
+
+            // ── Stage 1: Raw reed ──
+            let detuned = params.fundamental_hz * variation::freq_detune(note);
+            let dwell = dwell_attenuation(velocity, detuned, &params.mode_ratios);
+            let amp_offsets = variation::mode_amplitude_offsets(note);
+            let vel_exp = tables::velocity_exponent(note);
+            let vel_scale = velocity.powf(vel_exp);
+            let out_scale = tables::output_scale(note);
+
+            let mut amplitudes = [0.0f64; NUM_MODES];
+            for i in 0..NUM_MODES {
+                amplitudes[i] = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i]
+                    * vel_scale * out_scale;
+            }
+
+            let mut reed = ModalReed::new(
+                detuned, &params.mode_ratios, &amplitudes,
+                &params.mode_decay_rates, BASE_SR,
+            );
+
+            let n_samples = (duration * BASE_SR) as usize;
+            let measure_offset = (measure_start * BASE_SR) as usize;
+            let mut reed_buf = vec![0.0f64; n_samples];
+            reed.render(&mut reed_buf);
+
+            let reed_steady = &reed_buf[measure_offset..];
+            let reed_peak = reed_steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+            let _reed_h1 = dft_magnitude(reed_steady, freq, BASE_SR);
+            let _reed_h2 = dft_magnitude(reed_steady, h2_freq, BASE_SR);
+
+            // ── Stage 2: After nonlinearity (before HPF) ──
+            let mut nl_buf = reed_buf.clone();
+            for s in &mut nl_buf {
+                let y = (*s * DISPLACEMENT_SCALE).clamp(-MAX_Y, MAX_Y);
+                *s = (y / (1.0 - y)) * SENSITIVITY;
+            }
+            let nl_steady = &nl_buf[measure_offset..];
+            let nl_peak = nl_steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+            let nl_h1 = dft_magnitude(nl_steady, freq, BASE_SR);
+            let nl_h2 = dft_magnitude(nl_steady, h2_freq, BASE_SR);
+            let nl_h2_h1 = if nl_h1 > 1e-15 { nl_h2 / nl_h1 } else { 0.0 };
+            let y_peak = reed_peak * DISPLACEMENT_SCALE;
+
+            // ── Stage 3: After pickup HPF ──
+            let mut hpf = OnePoleHpf::new(PICKUP_HPF_HZ, BASE_SR);
+            let mut hpf_buf = nl_buf.clone();
+            for s in &mut hpf_buf {
+                *s = hpf.process(*s);
+            }
+            let hpf_steady = &hpf_buf[measure_offset..];
+            let hpf_peak = hpf_steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+            let hpf_h1 = dft_magnitude(hpf_steady, freq, BASE_SR);
+            let hpf_h2 = dft_magnitude(hpf_steady, h2_freq, BASE_SR);
+            let hpf_h2_h1 = if hpf_h1 > 1e-15 { hpf_h2 / hpf_h1 } else { 0.0 };
+
+            // ── Stage 4: After preamp (oversampled) ──
+            let mut preamp = EbersMollPreamp::new(OVERSAMPLED_SR);
+            preamp.set_ldr_resistance(1_000_000.0);
+            let mut os = Oversampler::new();
+
+            let mut preamp_buf = vec![0.0f64; n_samples];
+            for i in 0..n_samples {
+                let mut up = [0.0f64; 2];
+                os.upsample_2x(&[hpf_buf[i]], &mut up);
+                let processed = [
+                    preamp.process_sample(up[0]),
+                    preamp.process_sample(up[1]),
+                ];
+                let mut down = [0.0f64; 1];
+                os.downsample_2x(&processed, &mut down);
+                preamp_buf[i] = down[0];
+            }
+            let pre_steady = &preamp_buf[measure_offset..];
+            let pre_h1 = dft_magnitude(pre_steady, freq, BASE_SR);
+            let pre_h2 = dft_magnitude(pre_steady, h2_freq, BASE_SR);
+            let pre_h2_h1 = if pre_h1 > 1e-15 { pre_h2 / pre_h1 } else { 0.0 };
+
+            // ── Report ──
+            let note_name = midi_note_name(note);
+            println!(
+                "{:>6} {:>4}  {:>10.4} {:>10.4} {:>9.1}% {:>10.2} {:>9.1}% {:>10.2} {:>9.1}%",
+                note_name, vel_byte,
+                reed_peak, y_peak,
+                nl_h2_h1 * 100.0, nl_peak * 1000.0,
+                hpf_h2_h1 * 100.0, hpf_peak * 1000.0,
+                pre_h2_h1 * 100.0,
+            );
+        }
+        println!();
+    }
+
+    // Summary
+    println!("Legend:");
+    println!("  Reed pk   = peak reed displacement (model units)");
+    println!("  y_peak    = physical displacement fraction (y = reed_pk * {DISPLACEMENT_SCALE})");
+    println!("  NL H2/H1  = H2/H1 after 1/(1-y) nonlinearity, before HPF");
+    println!("  NL pk(mV) = peak signal after nonlinearity (millivolts)");
+    println!("  HPF H2/H1 = H2/H1 after pickup RC HPF at {PICKUP_HPF_HZ} Hz");
+    println!("  HPF pk(mV)= peak signal after HPF (millivolts, feeds preamp)");
+    println!("  Pre H2/H1 = H2/H1 after preamp (2x gain, no tremolo)");
+    println!();
+    println!("SPICE targets: y=0.10 → NL H2/H1 = 8.7%, HPF boosts H2 ~1.9x relative to H1");
+}
+
+fn midi_note_name(note: u8) -> String {
+    const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let name = NAMES[(note % 12) as usize];
+    let octave = (note as i32 / 12) - 1;
+    format!("{name}{octave}")
 }
 
 // ─── DFT helper ─────────────────────────────────────────────────────────────
