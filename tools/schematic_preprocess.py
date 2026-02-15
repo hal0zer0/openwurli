@@ -13,7 +13,7 @@ Usage:
     python tools/schematic_preprocess.py render --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --region preamp
 
     # Render a custom rectangle (normalized 0-1 coordinates)
-    python tools/schematic_preprocess.py render --pdf docs/verified_wurlitzer_200A_series_schematic.pdf \
+    python tools/schematic_preprocess.py render --pdf docs/verified_wurlitzer_200A_series_schematic.pdf \\
         --rect 0.05,0.3,0.45,0.7 --dpi 600
 
     # Enhance an existing PNG
@@ -21,9 +21,28 @@ Usage:
 
     # Generate overlapping tiles from a large image
     python tools/schematic_preprocess.py tile input.png --tile-size 1400 --overlap 200
+
+    # Detect text/annotation regions in a schematic area
+    python tools/schematic_preprocess.py detect-text \\
+        --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --region preamp \\
+        --output-dir /tmp/text_detect/
+
+    # Detect text from an existing image file
+    python tools/schematic_preprocess.py detect-text --input preamp_600dpi.png \\
+        --output-dir /tmp/text_detect/ --min-area 200
+
+    # OCR a schematic region (requires: pip install easyocr)
+    python tools/schematic_preprocess.py ocr \\
+        --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --region preamp-detail \\
+        --output /tmp/ocr_results.json
+
+    # OCR with annotated output image
+    python tools/schematic_preprocess.py ocr --input preamp-detail_900dpi.png \\
+        --annotate /tmp/ocr_annotated.png --min-confidence 0.5
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -242,6 +261,168 @@ def render_from_pdf(pdf_path: str, rect: tuple[float, float, float, float],
     return img
 
 
+def _resolve_rect_and_dpi(args: argparse.Namespace) -> tuple[tuple[float, ...], int]:
+    """Resolve region/rect/dpi from args. Returns (rect, dpi)."""
+    if hasattr(args, "region") and args.region:
+        if args.region not in NAMED_REGIONS:
+            print(f"Error: Unknown region '{args.region}'. Available: {', '.join(NAMED_REGIONS)}", file=sys.stderr)
+            sys.exit(1)
+        region = NAMED_REGIONS[args.region]
+        rect = region["rect"]
+        dpi = getattr(args, "dpi", None) or region["dpi"]
+    elif hasattr(args, "rect") and args.rect:
+        rect = tuple(float(x) for x in args.rect.split(","))
+        if len(rect) != 4:
+            print("Error: --rect must be 4 comma-separated values: x0,y0,x1,y1", file=sys.stderr)
+            sys.exit(1)
+        dpi = getattr(args, "dpi", None) or 600
+    else:
+        rect = None
+        dpi = getattr(args, "dpi", None) or 600
+    return rect, dpi
+
+
+def _load_grayscale(args: argparse.Namespace) -> np.ndarray:
+    """Load a grayscale image from either --input file or --pdf + --region/--rect.
+
+    Shared by detect-text and ocr subcommands.
+    """
+    input_path = getattr(args, "input", None)
+    pdf_path = getattr(args, "pdf", None)
+
+    if input_path:
+        path = Path(input_path)
+        if not path.exists():
+            print(f"Error: File not found: {path}", file=sys.stderr)
+            sys.exit(1)
+        img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        if img is None:
+            print(f"Error: Could not read image: {path}", file=sys.stderr)
+            sys.exit(1)
+        if len(img.shape) == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        return img
+    elif pdf_path:
+        rect, dpi = _resolve_rect_and_dpi(args)
+        if rect is None:
+            print("Error: --pdf requires --region or --rect", file=sys.stderr)
+            sys.exit(1)
+        page = getattr(args, "page", 0)
+        return render_from_pdf(pdf_path, rect, dpi, page)
+    else:
+        print("Error: Must specify --input or --pdf (with --region/--rect)", file=sys.stderr)
+        sys.exit(1)
+
+
+def detect_text_regions(
+    img_gray: np.ndarray,
+    kernel_w: int = 15,
+    kernel_h: int = 5,
+    min_area: int = 100,
+    max_area: int = 50000,
+    margin: int = 8,
+) -> list[dict]:
+    """Detect text/annotation regions in a grayscale schematic image.
+
+    Uses adaptive thresholding + morphological dilation to cluster nearby
+    text characters into bounding boxes.
+
+    Returns list of {x, y, w, h} dicts sorted top-to-bottom, left-to-right.
+    """
+    # Adaptive threshold to get binary text mask (white text on black bg)
+    binary = cv2.adaptiveThreshold(
+        img_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 8
+    )
+
+    # Dilate to merge nearby characters into text blocks
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_w, kernel_h))
+    dilated = cv2.dilate(binary, kernel, iterations=1)
+
+    # Find contours of the merged text blocks
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    img_h, img_w = img_gray.shape[:2]
+    regions = []
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        area = w * h
+
+        # Filter by area
+        if area < min_area or area > max_area:
+            continue
+
+        # Filter out very extreme aspect ratios (likely wire segments, not text)
+        aspect = w / h if h > 0 else 0
+        if aspect > 30 or aspect < 0.03:
+            continue
+
+        # Expand with margin, clamped to image bounds
+        x0 = max(0, x - margin)
+        y0 = max(0, y - margin)
+        x1 = min(img_w, x + w + margin)
+        y1 = min(img_h, y + h + margin)
+
+        regions.append({"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0})
+
+    # Sort top-to-bottom, then left-to-right (with row tolerance)
+    if regions:
+        avg_h = sum(r["h"] for r in regions) / len(regions)
+        row_tolerance = avg_h * 0.6
+        regions.sort(key=lambda r: (round(r["y"] / row_tolerance) * row_tolerance, r["x"]))
+
+    return regions
+
+
+def _import_easyocr():
+    """Import easyocr with graceful fallback."""
+    try:
+        import easyocr
+        return easyocr
+    except ImportError:
+        print("Error: easyocr not installed. Run: pip install easyocr", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_ocr(
+    img_gray: np.ndarray,
+    min_confidence: float = 0.3,
+) -> list[dict]:
+    """Run OCR on a grayscale image using easyocr.
+
+    Returns list of {text, confidence, bbox: {x, y, w, h}} dicts.
+    """
+    easyocr = _import_easyocr()
+
+    reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+    results = reader.readtext(img_gray)
+
+    detections = []
+    for bbox_pts, text, conf in results:
+        if conf < min_confidence:
+            continue
+
+        # Convert polygon points to bounding rect
+        pts = np.array(bbox_pts, dtype=np.int32)
+        x, y, w, h = cv2.boundingRect(pts)
+
+        detections.append({
+            "text": text,
+            "confidence": round(float(conf), 4),
+            "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
+        })
+
+    # Sort same way as detect_text_regions
+    if detections:
+        avg_h = sum(d["bbox"]["h"] for d in detections) / len(detections)
+        row_tolerance = max(avg_h * 0.6, 1)
+        detections.sort(key=lambda d: (
+            round(d["bbox"]["y"] / row_tolerance) * row_tolerance,
+            d["bbox"]["x"],
+        ))
+
+    return detections
+
+
 def cmd_render(args: argparse.Namespace) -> None:
     """Handle the 'render' subcommand."""
     if args.region:
@@ -361,6 +542,97 @@ def cmd_list_regions(args: argparse.Namespace) -> None:
         print()
 
 
+def cmd_detect_text(args: argparse.Namespace) -> None:
+    """Handle the 'detect-text' subcommand."""
+    img = _load_grayscale(args)
+    print(f"Input: {img.shape[1]}x{img.shape[0]} ({img.shape[0]*img.shape[1]:,} pixels)")
+
+    regions = detect_text_regions(
+        img,
+        kernel_w=args.kernel_w,
+        kernel_h=args.kernel_h,
+        min_area=args.min_area,
+        max_area=args.max_area,
+        margin=args.margin,
+    )
+    print(f"Detected {len(regions)} text regions")
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save annotated overview
+    annotated = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    for i, r in enumerate(regions):
+        cv2.rectangle(annotated, (r["x"], r["y"]), (r["x"] + r["w"], r["y"] + r["h"]), (0, 0, 255), 2)
+        # Put index number above the box
+        label_y = max(r["y"] - 4, 12)
+        cv2.putText(annotated, str(i), (r["x"], label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+    # Resize the color annotated image to fit Claude's vision limits
+    h, w = annotated.shape[:2]
+    scale = 1.0
+    if max(h, w) > MAX_LONG_EDGE:
+        scale = min(scale, MAX_LONG_EDGE / max(h, w))
+    if h * w > MAX_PIXELS:
+        scale = min(scale, (MAX_PIXELS / (h * w)) ** 0.5)
+    if scale < 1.0:
+        annotated = cv2.resize(annotated, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
+    overview_path = output_dir / "detected_regions.png"
+    cv2.imwrite(str(overview_path), annotated)
+    print(f"  Overview: {overview_path}")
+
+    # Save manifest JSON
+    manifest = {"region_count": len(regions), "source_size": {"w": img.shape[1], "h": img.shape[0]}, "regions": regions}
+    manifest_path = output_dir / "detected_regions.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    print(f"  Manifest: {manifest_path}")
+
+    # Save individual enhanced crops
+    for i, r in enumerate(regions):
+        crop = img[r["y"]:r["y"] + r["h"], r["x"]:r["x"] + r["w"]]
+        enhanced = enhance_image(crop)
+        crop_path = output_dir / f"text_region_{i:03d}.png"
+        cv2.imwrite(str(crop_path), enhanced)
+
+    print(f"  Crops: {len(regions)} files in {output_dir}/")
+
+
+def cmd_ocr(args: argparse.Namespace) -> None:
+    """Handle the 'ocr' subcommand."""
+    img = _load_grayscale(args)
+    print(f"Input: {img.shape[1]}x{img.shape[0]} ({img.shape[0]*img.shape[1]:,} pixels)")
+
+    # Enhance before OCR for better recognition
+    enhanced = enhance_image(img)
+
+    detections = run_ocr(enhanced, min_confidence=args.min_confidence)
+    print(f"Detected {len(detections)} text elements")
+
+    # Output JSON
+    result_json = json.dumps(detections, indent=2)
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(result_json)
+        print(f"Results: {output_path}")
+    else:
+        print(result_json)
+
+    # Optional annotated image
+    if args.annotate:
+        annotated = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+        for det in detections:
+            b = det["bbox"]
+            cv2.rectangle(annotated, (b["x"], b["y"]), (b["x"] + b["w"], b["y"] + b["h"]), (0, 255, 0), 2)
+            label = f"{det['text']} ({det['confidence']:.2f})"
+            label_y = max(b["y"] - 4, 12)
+            cv2.putText(annotated, label, (b["x"], label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
+
+        annotate_path = Path(args.annotate)
+        annotate_path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(annotate_path), annotated)
+        print(f"Annotated: {annotate_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Preprocess schematic images for Claude's vision pipeline",
@@ -396,6 +668,35 @@ def main() -> None:
     # regions subcommand
     p_regions = subparsers.add_parser("regions", help="List named schematic regions")
     p_regions.set_defaults(func=cmd_list_regions)
+
+    # detect-text subcommand
+    p_detect = subparsers.add_parser("detect-text", help="Detect text/annotation regions in a schematic")
+    p_detect.add_argument("--input", help="Input image file")
+    p_detect.add_argument("--pdf", help="PDF file (use with --region or --rect)")
+    p_detect.add_argument("--region", help="Named region")
+    p_detect.add_argument("--rect", help="Custom rect as x0,y0,x1,y1 (normalized 0-1)")
+    p_detect.add_argument("--dpi", type=int, help="Override DPI")
+    p_detect.add_argument("--page", type=int, default=0, help="PDF page number (default: 0)")
+    p_detect.add_argument("--output-dir", default="/tmp/detect_text", help="Output directory")
+    p_detect.add_argument("--kernel-w", type=int, default=15, help="Dilation kernel width (default: 15)")
+    p_detect.add_argument("--kernel-h", type=int, default=5, help="Dilation kernel height (default: 5)")
+    p_detect.add_argument("--min-area", type=int, default=100, help="Min region area in pixels (default: 100)")
+    p_detect.add_argument("--max-area", type=int, default=50000, help="Max region area in pixels (default: 50000)")
+    p_detect.add_argument("--margin", type=int, default=8, help="Margin around detected regions (default: 8)")
+    p_detect.set_defaults(func=cmd_detect_text)
+
+    # ocr subcommand
+    p_ocr = subparsers.add_parser("ocr", help="OCR text from a schematic (requires easyocr)")
+    p_ocr.add_argument("--input", help="Input image file")
+    p_ocr.add_argument("--pdf", help="PDF file (use with --region or --rect)")
+    p_ocr.add_argument("--region", help="Named region")
+    p_ocr.add_argument("--rect", help="Custom rect as x0,y0,x1,y1 (normalized 0-1)")
+    p_ocr.add_argument("--dpi", type=int, help="Override DPI")
+    p_ocr.add_argument("--page", type=int, default=0, help="PDF page number (default: 0)")
+    p_ocr.add_argument("--output", help="Output JSON file (default: stdout)")
+    p_ocr.add_argument("--annotate", help="Save annotated image with OCR results to this path")
+    p_ocr.add_argument("--min-confidence", type=float, default=0.3, help="Min OCR confidence (default: 0.3)")
+    p_ocr.set_defaults(func=cmd_ocr)
 
     args = parser.parse_args()
     args.func(args)

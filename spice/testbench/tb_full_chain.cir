@@ -1,0 +1,202 @@
+* Wurlitzer 200A Full Signal Chain — End-to-End Validation
+* ========================================================
+* Wires all four subcircuits: Pickup -> Preamp -> Power Amp -> Speaker
+*
+* Signal chain:
+*   Reed displacement (sine) -> Pickup (B-source variable cap) ->
+*   R-1 (22K) -> Preamp (2-stage CE with feedback) ->
+*   Volume pot (3K wiper Z) -> Power Amp (Class AB, ±22.5V) ->
+*   8 ohm speaker load
+*
+* Tremolo: Static LDR resistance from fb_junct to ground
+*   Rldr=1M: no tremolo (~2.0x preamp gain)
+*   Rldr=19K: tremolo bright (~4.0x preamp gain)
+*
+* NOTE: Uses 'reset' between transient runs (not 'destroy all')
+*   because pickup B-source ddt() loses state after 'destroy all'.
+*
+* Run: ngspice -b tb_full_chain.cir
+
+.title Full Signal Chain Validation
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/pickup.cir
+.include ../subcircuits/preamp.cir
+.include ../subcircuits/power_amp.cir
+
+* ============================================================
+* POWER SUPPLIES
+* ============================================================
+Vhv    vhv_node   0    DC 147
+Vcc    vcc_node   0    DC 15
+Vpos   vp_node    0    DC 22.5
+Vneg   vn_node    0    DC -22.5
+
+* ============================================================
+* PICKUP
+* ============================================================
+Xpickup  pickup_out  reed_disp  vhv_node  0  wurli_pickup
+
+* Reed displacement source
+Vdisp  reed_disp  0  DC 0 SIN(0 0.10 440 0 0)
+
+* ============================================================
+* R-1: Series input resistor (external to both pickup and preamp)
+* ============================================================
+R1  pickup_out  preamp_in  22K
+
+* ============================================================
+* PREAMP
+* ============================================================
+Xpre  preamp_in  preamp_out  vcc_node  0  fb_junct  wurli_preamp
+
+* LDR path: static resistance for tremolo (1M = no tremolo)
+Rldr  fb_junct  0  1MEG
+
+* ============================================================
+* VOLUME POT (modeled as voltage divider)
+* ============================================================
+* 200A volume pot is ~3K total. At mid-position:
+*   Source impedance ~750 ohm, load sees ~half signal.
+* For simplicity: resistive divider, 50% position.
+Rpot_top   preamp_out  vol_wiper  1.5K
+Rpot_bot   vol_wiper   0          1.5K
+
+* ============================================================
+* POWER AMPLIFIER
+* ============================================================
+Xamp  vol_wiper  spkr_out  vp_node  vn_node  0  wurli_power_amp
+
+* ============================================================
+* SPEAKER LOAD
+* ============================================================
+* 200A: two 16 ohm speakers in parallel = 8 ohm
+Rload  spkr_out  0  8
+
+* ============================================================
+.control
+
+set filetype = ascii
+
+echo "============================================================"
+echo "Wurlitzer 200A Full Signal Chain Validation"
+echo "============================================================"
+
+* ----------------------------------------------------------
+* 1. DC OPERATING POINT
+* ----------------------------------------------------------
+echo ""
+echo "=== DC OPERATING POINT ==="
+op
+
+echo "--- Pickup ---"
+echo "Plate voltage (target 147V):"
+print v(xpickup.plate)
+
+echo "--- Preamp ---"
+echo "TR-1: B (2.45V), E (1.95V), C (4.1V):"
+print v(xpre.base1) v(xpre.emit1) v(xpre.coll1)
+echo "TR-2: B (4.1V), E (3.4V), C (8.8V):"
+print v(xpre.coll1) v(xpre.emit2) v(xpre.coll2)
+echo "Preamp output (target ~8.8V DC):"
+print v(preamp_out)
+echo "Feedback junction (target ~8V):"
+print v(fb_junct)
+
+echo "--- Power Amp ---"
+echo "Output (target ~0V):"
+print v(spkr_out)
+echo "VAS out, drv_bot:"
+print v(xamp.vas_out) v(xamp.drv_bot)
+
+echo "--- Signal levels at boundaries ---"
+echo "pickup_out, preamp_in, preamp_out, vol_wiper, spkr_out:"
+print v(pickup_out) v(preamp_in) v(preamp_out) v(vol_wiper) v(spkr_out)
+reset
+
+* ----------------------------------------------------------
+* 2. TRANSIENT: Normal playing level (y=0.10, 440 Hz, no tremolo)
+* ----------------------------------------------------------
+echo ""
+echo "=== TRANSIENT: y=0.10, 440 Hz, Rldr=1M (no tremolo) ==="
+
+alter @vdisp[sin] = [ 0 0.10 440 0 0 ]
+tran 1u 200m 100m 1u
+
+echo "Signal levels at each stage:"
+meas tran pickup_pp PP v(pickup_out) from=100m to=200m
+meas tran preamp_in_pp PP v(preamp_in) from=100m to=200m
+meas tran preamp_out_pp PP v(preamp_out) from=100m to=200m
+meas tran vol_wiper_pp PP v(vol_wiper) from=100m to=200m
+meas tran spkr_pp PP v(spkr_out) from=100m to=200m
+
+echo ""
+echo "Fourier at speaker output:"
+fourier 440 v(spkr_out)
+
+reset
+
+* ----------------------------------------------------------
+* 3. TRANSIENT: Same but with tremolo bright (Rldr=19K)
+* ----------------------------------------------------------
+echo ""
+echo "=== TRANSIENT: y=0.10, 440 Hz, Rldr=19K (tremolo bright) ==="
+
+alter @vdisp[sin] = [ 0 0.10 440 0 0 ]
+alter rldr = 19000
+tran 1u 200m 100m 1u
+
+meas tran pickup_pp PP v(pickup_out) from=100m to=200m
+meas tran preamp_out_pp PP v(preamp_out) from=100m to=200m
+meas tran spkr_pp PP v(spkr_out) from=100m to=200m
+
+echo ""
+echo "Fourier at speaker output (tremolo bright):"
+fourier 440 v(spkr_out)
+
+reset
+
+* ----------------------------------------------------------
+* 4. TRANSIENT: Fortissimo level (y=0.30, 440 Hz, no tremolo)
+* ----------------------------------------------------------
+echo ""
+echo "=== TRANSIENT: y=0.30, 440 Hz, Rldr=1M (fortissimo) ==="
+
+alter @vdisp[sin] = [ 0 0.30 440 0 0 ]
+tran 1u 200m 100m 1u
+
+meas tran pickup_pp PP v(pickup_out) from=100m to=200m
+meas tran preamp_out_pp PP v(preamp_out) from=100m to=200m
+meas tran spkr_pp PP v(spkr_out) from=100m to=200m
+
+echo ""
+echo "Fourier at speaker output (fortissimo):"
+fourier 440 v(spkr_out)
+
+reset
+
+* ----------------------------------------------------------
+* 5. FREQUENCY SWEEP: Signal level at speaker across frequencies
+* ----------------------------------------------------------
+echo ""
+echo "=== FREQUENCY SWEEP: y=0.10, Rldr=1M ==="
+echo "freq  spkr_pp"
+
+foreach freq_val 110 220 440 880 1760 3520
+  alter @vdisp[sin] = [ 0 0.10 $freq_val 0 0 ]
+  tran 1u 200m 100m 1u
+  meas tran spkr_pp PP v(spkr_out) from=100m to=200m
+  reset
+end
+
+echo ""
+echo "============================================================"
+echo "Full chain validation complete."
+echo "============================================================"
+
+quit
+
+.endc
+
+.end

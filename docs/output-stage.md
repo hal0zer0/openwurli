@@ -52,8 +52,8 @@ The Wurlitzer 200A service manual explicitly states:
 
 **Implications for modeling:**
 - Tremolo modulates preamp GAIN via emitter feedback, which means the distortion character changes with the tremolo cycle
-- At the low-gain phase of the tremolo (LDR resistance low, feedback junction shunted to ground, emitter AC-grounded via Ce1), the preamp runs at higher gain and distorts more
-- At the high-gain phase (LDR resistance high, full feedback reaches emitter), the preamp has lower gain and operates more linearly
+- At the high-gain phase of the tremolo (LDR resistance low / LED on, feedback junction shunted to ground, feedback can't reach emitter), the preamp runs at higher gain and distorts more
+- At the low-gain phase (LDR resistance high / LED off, full feedback reaches emitter via Ce1), the preamp has lower gain and operates more linearly
 - This is more complex than simple amplitude modulation and produces subtle timbral variation during the tremolo cycle
 
 **Confidence level:** HIGH. Topology traced directly from correct 200A schematic at high resolution. SPICE simulation confirms circuit is stable with emitter feedback and oscillates with the old node_A feedback topology.
@@ -342,7 +342,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 - With component aging, bias drifts toward zero, increasing the dead zone
 - Crossover distortion produces odd harmonics, especially audible at low signal levels
 - This is a well-documented repair issue in the Wurlitzer community
-- Repair involves adjusting R-33/R-34 to restore 5 mV across R-37/R-38
+- Repair involves adjusting R-34/R-35 (Vbe multiplier network) to restore 5 mV across R-37/R-38
 
 ### 4.7 Does the Power Amplifier Contribute to Tone?
 
@@ -689,9 +689,9 @@ Per-voice processing (oscillator, pickup)
 | Ceramic vs alnico tonal difference | MEDIUM | Community observations, general speaker engineering |
 | Tremolo gain modulation produces timbral variation | MEDIUM | Logical inference from feedback-loop position |
 | R-34 = 160 ohm | HIGH | Schematic verified, confirmed by GroupDIY measurement of 150-160 ohm |
-| R-35 = 220 ohm | MEDIUM | Single GroupDIY source |
+| R-35 = 220 ohm | HIGH | Schematic verified, confirmed by GroupDIY measurement |
 | R-31 = 15K (negative feedback) | HIGH | Schematic verified |
 | C-8 = 4.7 MFD, C-12 = 100 MFD | HIGH | Schematic verified |
 | LG-1 = Wurlitzer part #142312 | HIGH | Schematic verified |
-| Power amp contributes minimal tone at mf | MEDIUM | General engineering analysis, Brad Avenson "15 dB" comment |
+| Power amp contributes minimal tone at mf | MEDIUM | General engineering analysis; preamp gain is only 6.0 dB (SPICE-measured), so power amp operates well within linear range at mf |
 | Speaker frequency response measurements | LOW | No direct measurements found anywhere |

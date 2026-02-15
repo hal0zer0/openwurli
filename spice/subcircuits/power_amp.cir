@@ -1,0 +1,112 @@
+* Wurlitzer 200A Power Amplifier Subcircuit
+* ==========================================
+* Quasi-complementary Class AB push-pull, ~20W into 8 ohms.
+* Topology from verified 200A schematic (#203720-S-3).
+*
+* Signal chain:
+*   PNP diff pair (TR-7/TR-8) -> NPN VAS (TR-14) ->
+*   Vbe multiplier (TR-9) -> Sziklai output pairs
+*
+* Key topology points (traced from schematic Feb 2026):
+*   - R-29 (1K) is TR-7 collector load to -Vcc (NOT VAS emitter degen)
+*   - TR-14 emitter directly on -Vcc rail (no degeneration)
+*   - R-32/R-33 (1.8K each) form bootstrapped VAS collector load
+*   - C-12 (100u) bootstraps from mid-point of R32/R33 to output
+*   - C-11 (100pF) Miller comp: VAS collector to VAS base
+*   - Output stage: Sziklai/CFP pairs (TR-10/TR-11, TR-12/TR-13)
+*   - Output tapped between emitter resistors R-37 and R-38
+
+.SUBCKT wurli_power_amp in out vp vn gnd
+
+* ============================================================
+* INPUT COUPLING AND BIAS
+* ============================================================
+C8    in     in_ac   4.7U
+C9    in_ac  gnd     1N
+
+* ============================================================
+* DIFFERENTIAL PAIR (TR-7, TR-8: PNP 2N5087)
+* ============================================================
+* R-28 (10K): tail current source for diff pair (emitters to +Vcc).
+* Schematic note: "select R28 for 0V DC at point [16]"
+R28   emit_pair  vp    10K
+Q7    coll7    in_ac     emit_pair   Q2N5087
+Q8    coll8    fb_inv    emit_pair   Q2N5087
+
+* Collector loads to -Vcc rail
+* R-29 (1K): TR-7 collector load to -Vcc. Single-ended output diff pair:
+*   only coll7 drives VAS. TR-8 collector goes directly to -Vcc rail
+*   (traced to -22.5V node in power supply section, no separate load).
+R29      coll7   vn    1K
+R_coll8  coll8   vn    1m
+
+* ============================================================
+* NEGATIVE FEEDBACK NETWORK
+* ============================================================
+* R-27 (15K): input bias resistor, TR-7 base to ground.
+R27   in_ac  gnd      15K
+*
+R31   out     fb_inv   15K
+* R-30 + C-10 in series: sets AC gain = 1 + R31/R30 = 69x (37 dB)
+* At DC: C-10 open -> 100% feedback -> output locked to ~0V
+* Corner freq = 1/(2*pi*220*22u) = 33 Hz
+R30   fb_inv  c10_node 220
+C10   c10_node gnd     22U
+
+* ============================================================
+* VAS / PRE-DRIVER (TR-14: NPN MPSA06)
+* ============================================================
+* Base = coll7 (-22V), emitter = -Vcc (-22.5V), Vbe ~= 0.5V.
+* Feedback adjusts diff pair balance to set correct VAS current.
+* Q14 collector = drv_bot (below Vbe multiplier). VAS sinks current
+* from drv_bot, pulling it to -0.65V. Current chain: load -> vas_out -> Q9 -> drv_bot -> Q14 -> -Vcc
+Q14   drv_bot   coll7    vn   QMPSA06
+
+* Miller compensation: VAS collector to VAS base
+C11   drv_bot   coll7   100P
+
+* ============================================================
+* BOOTSTRAPPED VAS COLLECTOR LOAD
+* ============================================================
+* +Vcc -> R-32 (1.8K) -> boot -> R-33 (1.8K) -> vas_out
+* C-12 bootstraps boot node to output for high AC impedance.
+R32   vp     boot      1.8K
+R33   boot   vas_out   1.8K
+C12   boot   out       100U
+
+* ============================================================
+* VBE MULTIPLIER / BIAS CONTROL (TR-9: NPN MPSA06)
+* ============================================================
+* Sets ~1.1V drop between vas_out and drv_bot for class AB bias.
+* Vce = Vbe * (1 + R34/R35) = ~0.65 * 1.73 = ~1.12V
+Q9    vas_out   bias_mid   drv_bot   QMPSA06
+R34   vas_out   bias_mid   160
+R35   bias_mid  drv_bot    220
+
+* ============================================================
+* TOP SZIKLAI: TR-10 (NPN driver) + TR-11 (PNP output)
+* ============================================================
+* TR-10: B=vas_out, C=base11, E=nodeC
+* TR-11: E=+Vcc, B=base11 (from TR-10 C), C=nodeC
+Q10   base11   vas_out   nodeC    QMPSA06
+Q11   nodeC    base11    vp       QTIP36C
+R36   base11   vp        270
+
+* ============================================================
+* BOTTOM SZIKLAI: TR-12 (PNP driver) + TR-13 (NPN output)
+* ============================================================
+* TR-12: B=drv_bot, C=base13, E=nodeD
+* TR-13: E=-Vcc, B=base13 (from TR-12 C), C=nodeD
+Q12   base13   drv_bot   nodeD    QMPSA56
+Q13   nodeD    base13    vn       QTIP35C
+R39   base13   vn        270
+
+* ============================================================
+* OUTPUT EMITTER RESISTORS
+* ============================================================
+* nodeC -> R37 -> output -> R38 -> nodeD
+* (Fuses F-1 and F-2 omitted in simulation)
+R37   nodeC   out   0.47
+R38   nodeD   out   0.47
+
+.ENDS wurli_power_amp
