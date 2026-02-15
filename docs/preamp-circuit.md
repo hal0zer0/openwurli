@@ -849,37 +849,43 @@ At low preamp drive levels (pp), the distinction between gain modulation and vol
 
 ### 8.1 Modeling Approaches (Ranked by Fidelity)
 
-#### Approach 1: Full SPICE-Level Simulation (Highest Fidelity)
+**ARCHITECTURE DECISION: Trait-based A/B testing.** Implement a `PreampModel` trait (Rust) or abstract interface (C++) with `process_sample()`, `set_ldr_resistance()`, `reset()`. Build two implementations behind this interface:
+1. Full SPICE-derived model (ground truth / reference)
+2. Simplified Ebers-Moll (candidate for shipping)
 
-Model the complete circuit with Ebers-Moll equations for both transistors, explicit feedback networks (C-3, C-4, R-10 emitter feedback via Ce1, LG-1 LDR shunt), and direct coupling.
+The voice holds a swappable `PreampModel` implementation. A/B testing compares the two until the simplified version is perceptually indistinguishable from the reference. If CPU allows, ship both as a quality toggle.
+
+#### Approach 1: Full SPICE-Level Simulation (Highest Fidelity) — REFERENCE IMPLEMENTATION
+
+Model the complete circuit with Ebers-Moll equations for both transistors, explicit feedback networks (C-3, C-4, R-10 emitter feedback via Ce1, LG-1 LDR shunt), and direct coupling. Coupled NR solver for both stages simultaneously.
 
 **Pros:** Most accurate harmonic content, correct frequency-dependent gain, proper bias-shift dynamics
-**Cons:** Requires solving two coupled implicit equations per sample (or Newton-Raphson iteration); computationally expensive at audio rates
-**Status:** The current Vurli model partially implements this (NR solver for each stage separately, but stages not coupled for DC bias modulation)
+**Cons:** Requires solving two coupled implicit equations per sample (Newton-Raphson iteration); computationally expensive at audio rates
+**Role:** Ground truth for A/B comparison. Use this to validate that the simplified model sounds correct.
 
-#### Approach 2: Simplified Ebers-Moll with Feedback Caps (Recommended)
+#### Approach 2: Simplified Ebers-Moll with Feedback Caps — SHIPPING CANDIDATE
 
 Two independent BjtStage objects with exponential transfer functions, NR solver for feedback, and asymmetric soft-clip for collector limits.
 
 **Pros:** Captures the key H2 mechanism; reasonable computational cost; NR converges quickly at physical signal levels
 **Cons:** Misses inter-stage DC bias modulation ("sag"); feedback cap implementation must have correct polarity (see Section 9)
-**Status:** Previously implemented in preamp.h; needs parameter update with correct component values
+**Role:** Primary shipping implementation. A/B tested against Approach 1.
 
-#### Approach 3: Wave Digital Filter (WDF) Model
+#### Approach 3: Wave Digital Filter (WDF) Model — DEFERRED
 
 Model each resistor, capacitor, and transistor junction as a WDF element. Solves the full circuit implicitly at each sample.
 
 **Pros:** Correct at all operating points; handles direct coupling naturally; well-suited for real-time
-**Cons:** Complex to implement; debugging is difficult; WDF junction models for BJTs are nontrivial
-**Status:** chowdsp_wdf library is included in dependencies but not yet used
+**Cons:** Complex to implement; debugging is difficult; WDF junction models for BJTs are nontrivial; delay-free feedback loop from R-10/Ce1/LDR topology requires special handling
+**Status:** Deferred. May revisit if Approach 2 proves insufficient.
 
-#### Approach 4: Polynomial Approximation (Lowest Fidelity)
+#### Approach 4: Polynomial Approximation — NOT RECOMMENDED
 
 Taylor-expand the transfer function to 3rd or 4th order: `y = a1*x + a2*x^2 + a3*x^3 + ...`
 
 **Pros:** Very fast; simple; easy to tune H2/H3 ratio directly
 **Cons:** Wrong at large signals (polynomial diverges); no saturation; no frequency-dependent behavior; cannot capture bias dynamics
-**Status:** Available as `--poly` fallback in preamp.h for A/B comparison
+**Status:** Not recommended. Too low fidelity for a project targeting physical accuracy.
 
 ### 8.2 Perceptually Important Nonlinearities (Priority Order)
 

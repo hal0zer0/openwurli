@@ -1,0 +1,8 @@
+[package]
+name = "reed-renderer"
+version = "0.1.0"
+edition = "2021"
+description = "Wurlitzer 200A reed modal synthesis — standalone WAV renderer"
+
+[dependencies]
+hound = "3.5"

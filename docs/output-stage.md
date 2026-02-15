@@ -165,6 +165,8 @@ The 3K audio pot is unusually low impedance for a volume control. This has impli
 
 **The volume pot is between the preamp (on the reed bar) and the power amp (on the main amp board).** The wiring runs from the reed bar preamp PCB through the volume pot to the amp board input via C-8 coupling capacitor.
 
+**DECISION: Model as real attenuator, not output gain.** The volume pot must sit between preamp and power amp in the plugin signal chain, not at the output. At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the character of the distortion (more odd harmonics from the dead zone). This interaction is audible and should be preserved. Implementation: audio-taper gain curve applied between preamp output and power amp input.
+
 ---
 
 ## 4. Power Amplifier
@@ -511,13 +513,21 @@ if abs(input) < dead_zone_threshold:
 
 ### 7.3 Speaker Model
 
-**Current model is adequate.** The HPF 85 Hz Q=0.75 + LPF 8 kHz Butterworth captures the essential bandwidth limiting.
+**DECISION: Variable speaker emulation with bypass-to-authentic range.**
 
-Possible refinements:
-- Raise HPF to 90-100 Hz
-- Add 2-3 dB resonant bump near the HPF corner frequency
-- Lower LPF to 7-8 kHz for ceramic speakers
-- Consider adding a mild midrange presence peak (1-3 kHz) from the speaker's natural response
+The speaker HPF/LPF are a physical limitation, not a design choice. The plugin exposes a "Speaker Character" knob that blends from bypass (full-range, no filtering) to authentic (full HPF + LPF). This lets users who want more bass or treble simply dial back the speaker emulation.
+
+Implementation: variable-cutoff biquad HPF and LPF with smoothed coefficient updates. At "authentic" position:
+- HPF: 85-100 Hz, Q=0.7-0.8, ~12 dB/oct
+- LPF: 7-8 kHz, Q=0.707 (Butterworth)
+- Optional: 2-3 dB resonant bump near HPF corner (speaker resonance)
+
+At "bypass" position: both filters disabled (flat passthrough). Intermediate positions interpolate the cutoff frequencies toward their extremes (HPF toward 20 Hz, LPF toward 20 kHz).
+
+Possible refinements for "authentic" mode:
+- Raise HPF to 90-100 Hz based on physical analysis
+- Lower LPF to 7 kHz for ceramic-magnet drivers
+- Add mild midrange presence peak (1-3 kHz) from speaker's natural response
 
 ### 7.4 Signal Chain Order
 
