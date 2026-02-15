@@ -3,10 +3,9 @@
 /// Signal flow per oversampled sample:
 ///   input -> Stage 1 (with R-10 feedback) -> Stage 2 -> DC block -> output
 ///
-/// Note: C20 (220 pF shunt cap at input) is an RF protection cap with f_c ~33 kHz
-/// (relative to R-1 = 22K source impedance). Its effect is negligible at audio
-/// frequencies because the .022µF coupling cap provides a much lower impedance
-/// path to TR-1 base. Not modeled here.
+/// Note: C20 (220 pF) appears only on the 206A board, NOT the 200A board.
+/// The 200A uses only the .022µF input coupling cap. Bass rolloff comes from
+/// the pickup's system RC (f_c = 2312 Hz) and the preamp's own bandwidth limit.
 ///
 /// Emitter feedback from R-10 (56K):
 ///   output -> R-10 -> fb_junction -> Ce1 -> TR-1 emitter

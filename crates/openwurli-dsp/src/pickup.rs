@@ -38,13 +38,17 @@ const SENSITIVITY: f64 = 1.8375;
 /// This constant converts to the physical ratio y = x/d_0 where d_0 is the
 /// rest gap between reed tip and pickup plate.
 ///
-/// Calibrated against measured reed steady-state amplitudes so that forte
-/// playing (vel 100/127) at mid-register (C4, reed_ss=0.615) produces
-/// y_peak ≈ 0.12, giving ~8-9% THD averaged over the sustain — matching
-/// SPICE pickup simulations (y=0.10 → 8.7% THD). At ff (v127), y ≈ 0.16.
-/// Bass notes reach y ≈ 0.18 at ff (more bark), treble stays y ≈ 0.05
-/// (cleaner). Max attack-peak y ≈ 0.24 — well within the 0.9 clamp.
-const DISPLACEMENT_SCALE: f64 = 0.20;
+/// Calibrated so mid-register forte (C4, vel 100) achieves y_peak ≈ 0.20,
+/// producing ~12-15% H2/H1 after HPF — enough for authentic Wurlitzer bark.
+/// The multi-mode reed waveform generates about half the H2 of a pure sine
+/// at the same peak y, so this is higher than the SPICE pure-sine calibration
+/// (y=0.10 → 8.7% H2/H1) to compensate.
+///
+/// Typical y_peak values at vel 100:
+///   C2 (bass):   y ≈ 0.35  — heavy bark, growl
+///   C4 (mid):    y ≈ 0.20  — clear bark character
+///   C6 (treble): y ≈ 0.08  — cleaner, some warmth
+const DISPLACEMENT_SCALE: f64 = 0.30;
 
 /// Maximum allowed displacement fraction (safety clamp).
 /// The reed physically cannot touch the plate (y=1.0 is a singularity).
@@ -107,8 +111,8 @@ mod tests {
         // At 10 kHz, the HPF is nearly unity gain.
         // Input: unit sine (displacement). After DISPLACEMENT_SCALE + nonlinear + SENSITIVITY + HPF,
         // output ≈ SENSITIVITY * (DISPLACEMENT_SCALE / (1 - DISPLACEMENT_SCALE)) * HPF_gain
-        // With DISPLACEMENT_SCALE = 0.20: y_peak = 0.20, y/(1-y) = 0.25
-        // Output ≈ 0.25 * 1.8375 * ~0.97 = 0.446
+        // With DISPLACEMENT_SCALE = 0.30: y_peak = 0.30, y/(1-y) = 0.4286
+        // Output ≈ 0.4286 * 1.8375 * ~0.97 = 0.764
         let sr = 44100.0;
         let mut pickup = Pickup::new(sr);
         let freq = 10000.0;
@@ -120,8 +124,8 @@ mod tests {
         pickup.process(&mut buf);
 
         let peak = buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        assert!(peak > 0.35, "pickup output too low at 10kHz: {peak}");
-        assert!(peak < 0.55, "pickup output too high at 10kHz: {peak}");
+        assert!(peak > 0.50, "pickup output too low at 10kHz: {peak}");
+        assert!(peak < 0.85, "pickup output too high at 10kHz: {peak}");
     }
 
     #[test]
@@ -138,8 +142,8 @@ mod tests {
         pickup.process(&mut buf);
 
         let peak = buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        // With DISPLACEMENT_SCALE=0.20: Output ≈ 0.25 * 1.8375 * 0.043 = 0.020
-        assert!(peak < 0.03, "pickup should heavily attenuate 100Hz: {peak}");
+        // With DISPLACEMENT_SCALE=0.30: Output ≈ 0.4286 * 1.8375 * 0.043 = 0.034
+        assert!(peak < 0.05, "pickup should heavily attenuate 100Hz: {peak}");
     }
 
     #[test]
@@ -166,7 +170,7 @@ mod tests {
         let h3 = dft_magnitude(signal, 3.0 * freq, sr);
 
         assert!(h2 > h3, "H2 ({h2:.2e}) should dominate H3 ({h3:.2e}) from 1/(1-y)");
-        // At y_peak = 0.20: H2/H1 ≈ y/2 * HPF_boost ≈ 10% * ~1.1 ≈ 11%
+        // At y_peak = 0.30: H2/H1 ≈ y/2 * HPF_boost ≈ 15% * ~1.1 ≈ 17%
         let h2_ratio = h2 / h1;
         assert!(
             h2_ratio > 0.07,

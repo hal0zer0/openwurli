@@ -112,8 +112,7 @@ MIDI note-on (key, velocity, channel, note_id)
 
   Mono shared processing:
      -> 2x Upsample (HIIR polyphase IIR, 12 coefficients, ~100 dB rejection)
-        [F] Input Coupling HPF (C20, ~1903 Hz, 1st order)
-        [G] Two-Stage Ebers-Moll Preamp WITH INTEGRATED TREMOLO
+        [F] Two-Stage Ebers-Moll Preamp WITH INTEGRATED TREMOLO
             Tremolo: LDR (LG-1) + R-10 (56K) modulate feedback ratio
             Stage 1: gain=420, B=38.5, satLimit=10.9V, cutoffLimit=2.05V
               -> Miller pole (~25 Hz open-loop; ~9.9 kHz closed-loop BW no trem)
@@ -139,7 +138,6 @@ MIDI note-on (key, velocity, channel, note_id)
 | Noise Burst | Yes (filtered noise, envelope) | No (broadband, no harmonics generated) | Base |
 | Pickup | NO (1/(1-y) nonlinearity, primary H2 source) | YES (dominant at normal dynamics) | Base |
 | Voice Sum | Yes (addition) | No | Base |
-| C20 HPF | Yes (1st order filter) | No | 2x |
 | Preamp Stage 1 | NO (exponential + asymmetric soft-clip) | YES | 2x |
 | Miller LPF 1 | Yes (1st order) | No (already at 2x) | 2x |
 | Preamp Stage 2 | NO (exponential + asymmetric soft-clip) | YES | 2x |
@@ -151,7 +149,7 @@ MIDI note-on (key, velocity, channel, note_id)
 | Speaker | Yes (biquad filters) | No | Base |
 | Output Limiter | Mildly nonlinear (tanh/soft-clip) | No (at output, minimal aliasing concern) | Base |
 
-**Conclusion:** Only the preamp requires oversampling. 2x is sufficient because the preamp's input signal is already bandlimited by the C20 HPF (~1903 Hz) and the pickup's natural bandwidth. The preamp generates harmonics, but with the C20 HPF removing fundamentals below ~1903 Hz, the highest-energy harmonics that could alias are well below Nyquist at 2x.
+**Conclusion:** Only the preamp requires oversampling. 2x is sufficient because the preamp's input signal is already bandlimited by the pickup's natural bandwidth and the preamp's own Miller-effect rolloff. The preamp generates harmonics, but the highest-energy harmonics that could alias are well below Nyquist at 2x.
 
 ---
 
@@ -470,7 +468,7 @@ The voice holds a swappable `PreampModel`. A/B test until the simplified version
 The preamp runs at 2x the base sample rate inside an HIIR polyphase IIR oversampler:
 
 1. **Upsample:** HIIR 2x upsampler (12 coefficients, ~100 dB stopband rejection, transition band 0.01)
-2. **Process:** Run C20 HPF + Stage 1 + Miller LPF + Stage 2 + Miller LPF + DC Block at 2x rate
+2. **Process:** Run Stage 1 + Miller LPF + Stage 2 + Miller LPF + DC Block at 2x rate
 3. **Downsample:** HIIR 2x downsampler (matching filter)
 
 The oversampler uses minimum-phase IIR filters (HIIR library), which have lower latency than linear-phase FIR alternatives at the cost of slight phase distortion. For a musical instrument, the phase behavior is inaudible and the reduced latency is beneficial.
@@ -492,19 +490,7 @@ The `kPreampInputDrive` parameter is an artificial scaling factor that compensat
 - At ff: `B * input` ~ 5-10 (moderate saturation)
 - At ff 6-note chord: `B * input` ~ 15-30 (heavy saturation, compression)
 
-With B = 38.5 V^-1, this means the preamp input signal should be in the range 0.003V (pp) to 0.5V (ff chord). The kPreampInputDrive value should be calibrated to produce these input levels. A value of 28.0 with the current oscillator output levels puts mf single-note in the 0.03-0.08 * 28 = 0.8-2.2 range after C20 HPF attenuation, which is reasonable.
-
-### C20 Input Coupling HPF
-
-First-order HPF at ~1903 Hz. Models the C20 shunt capacitor at the preamp input (C20 = 220 pF, R = 380K):
-
-```
-RC = 1 / (2*PI*1903)   // f_c20 = 1903 Hz (C20 = 220 pF, R = 380K)
-alpha = RC / (RC + dt)  // where dt = 1/(2*sampleRate) at 2x rate
-y[n] = alpha * (y[n-1] + x[n] - x[n-1])
-```
-
-This is the primary bass rolloff mechanism. At C2 (65 Hz), attenuation is approximately -27 dB. At C4 (262 Hz), approximately -15 dB. The C20 HPF profoundly shapes the Wurlitzer's tonal balance: bass fundamentals are heavily attenuated, leaving the pickup-generated H2 (130 Hz for C2) as the dominant component in the bass register.
+With B = 38.5 V^-1, this means the preamp input signal should be in the range 0.003V (pp) to 0.5V (ff chord). The kPreampInputDrive value should be calibrated to produce these input levels.
 
 ### BJT Stage Model
 
@@ -837,14 +823,14 @@ The pickup's 1/(1-y) nonlinearity generates harmonics but does so at the base sa
 
 ### Why 2x Is Sufficient
 
-The preamp's input is pre-filtered by the C20 HPF at ~1903 Hz. This means:
-- The highest-energy input component is around 1903-4000 Hz (fundamental of mid/treble register, or H2 of bass)
+The preamp's input is naturally bandlimited by the pickup's RC HPF (~2312 Hz) and the modal oscillator's finite mode count. This means:
+- The highest-energy input component is around 2-4 kHz (fundamental of mid/treble register, or H2 of bass)
 - The preamp generates harmonics at 2x, 3x, 4x, ... of this input
 - At 48 kHz base rate, 2x oversampling gives 96 kHz processing rate with 48 kHz Nyquist
 - H8 of a 4 kHz input = 32 kHz, safely below 48 kHz Nyquist
 - H12 of a 4 kHz input = 48 kHz, at Nyquist -- but H12 is typically -50 dB or lower
 
-For 44.1 kHz base rate, 2x gives 88.2 kHz with 44.1 kHz Nyquist. Still adequate because the C20 HPF limits input bandwidth.
+For 44.1 kHz base rate, 2x gives 88.2 kHz with 44.1 kHz Nyquist. Still adequate given the natural input bandwidth.
 
 ### Filter Choice: HIIR Polyphase IIR
 
@@ -950,7 +936,6 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 | Stage 2 satLimit | 6.2 V | Vcc - Vc2 = 15 - 8.8 |
 | Stage 2 cutoffLimit | 5.3 V | Vc2 - Ve2 - Vce_sat = 8.8 - 3.4 - 0.1 |
 | Stage 2 re | 0.456 | Re2_unbypassed / Rc2 = 820Ω / 1.8K |
-| C20 HPF frequency | ~1903 Hz | C20 = 220 pF, R = 380K |
 | Miller pole 1 (open-loop) | ~25 Hz | Stage 1 dominant pole (C-3=100pF, Miller-multiplied) |
 | Miller pole 2 | ~3300 Hz | Stage 2 (C-4=100pF, low Miller multiplication) |
 | Closed-loop bandwidth | ~9900 Hz (no trem) / ~8300 Hz (trem bright) | Combined preamp with R-10 emitter feedback |
@@ -1118,11 +1103,10 @@ This is the most complex and sonically important stage. Component values and top
 
 1. Integrate HIIR library, build oversampler wrapper
 2. Implement BjtStage class (NR solver, asymmetric soft-clip)
-3. Implement C20 HPF (f_c = 1903 Hz)
-4. Implement Miller LPFs (C-3 = C-4 = 100 pF)
-5. Wire up Wurlitzer200APreamp (Stage 1 -> Miller -> Stage 2 -> Miller -> DC Block)
-6. Implement emitter feedback path: R-10 (56K) -> fb_junction -> Ce1 (4.7µF) -> TR-1 emitter
-7. Calibrate kPreampInputDrive and preampGain against SPICE gain targets (2.0x no-trem, 4.0x trem-bright)
+3. Implement Miller LPFs (C-3 = C-4 = 100 pF)
+4. Wire up Wurlitzer200APreamp (Stage 1 -> Miller -> Stage 2 -> Miller -> DC Block)
+5. Implement emitter feedback path: R-10 (56K) -> fb_junction -> Ce1 (4.7µF) -> TR-1 emitter
+6. Calibrate kPreampInputDrive and preampGain against SPICE gain targets (2.0x no-trem, 4.0x trem-bright)
 
 **Test:** Verify H2 > H3 on all notes at mf. Check that pp is clean, mf has moderate bark, ff has aggressive bark. Check dynamic range: pp should be at least 15 dB quieter than ff. Cross-validate gain and THD against SPICE measurements.
 
