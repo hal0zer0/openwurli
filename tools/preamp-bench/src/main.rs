@@ -13,9 +13,11 @@ use std::f64::consts::PI;
 
 use openwurli_dsp::filters::OnePoleHpf;
 use openwurli_dsp::oversampler::Oversampler;
+use openwurli_dsp::power_amp::PowerAmp;
 use openwurli_dsp::preamp::{EbersMollPreamp, PreampModel};
 use openwurli_dsp::reed::ModalReed;
 use openwurli_dsp::hammer::dwell_attenuation;
+use openwurli_dsp::speaker::Speaker;
 use openwurli_dsp::tables::{self, NUM_MODES};
 use openwurli_dsp::variation;
 use openwurli_dsp::voice::Voice;
@@ -290,14 +292,13 @@ fn cmd_render(args: &[String]) {
     let velocity = parse_flag(args, "--velocity", 100.0) as u8;
     let duration = parse_flag(args, "--duration", 2.0);
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
+    let preamp_gain = parse_flag(args, "--gain", 40.0);
+    let volume = parse_flag(args, "--volume", 0.05);
+    let speaker_char = parse_flag(args, "--speaker", 1.0);
     let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render.wav");
 
-    // Render reed voice
+    // Render reed voice (reed → pickup with nonlinearity + HPF)
     let reed_output = Voice::render_note(note, velocity as f64 / 127.0, duration, BASE_SR);
-
-    // The pickup model now outputs calibrated millivolt signals
-    // (via DISPLACEMENT_SCALE + nonlinear 1/(1-y) + SENSITIVITY + HPF).
-    // No additional scaling needed — feed directly to preamp.
 
     // Process through oversampled preamp
     let mut preamp = EbersMollPreamp::new(OVERSAMPLED_SR);
@@ -305,15 +306,27 @@ fn cmd_render(args: &[String]) {
     let mut os = Oversampler::new();
 
     let n_samples = reed_output.len();
-    let mut final_output = vec![0.0f64; n_samples];
+    let mut preamp_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
-        let scaled = reed_output[i];
         let mut up = [0.0f64; 2];
-        os.upsample_2x(&[scaled], &mut up);
+        os.upsample_2x(&[reed_output[i]], &mut up);
         let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
         let mut down = [0.0f64; 1];
         os.downsample_2x(&processed, &mut down);
-        final_output[i] = down[0];
+        preamp_output[i] = down[0];
+    }
+
+    // Output stage: gain → volume → power amp → speaker
+    // Matches the plugin signal chain in lib.rs
+    let mut power_amp = PowerAmp::new();
+    let mut speaker = Speaker::new(BASE_SR);
+    speaker.set_character(speaker_char);
+
+    let mut final_output = vec![0.0f64; n_samples];
+    for i in 0..n_samples {
+        let attenuated = preamp_output[i] * preamp_gain * volume;
+        let amplified = power_amp.process(attenuated);
+        final_output[i] = speaker.process(amplified);
     }
 
     // Normalize and write WAV
@@ -344,6 +357,8 @@ fn cmd_render(args: &[String]) {
     println!("  Velocity:  {velocity}");
     println!("  Duration:  {duration:.1}s");
     println!("  LDR:       {r_ldr:.0} Ω");
+    println!("  Gain:      {preamp_gain:.1}x, Volume: {volume:.3}");
+    println!("  Speaker:   {speaker_char:.1}");
     println!("  Peak:      {peak_dbfs:.1} dBFS (raw)");
     println!("  Output:    {output_path}");
 }
