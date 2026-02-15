@@ -28,7 +28,6 @@ pub fn midi_to_freq(midi: u8) -> f64 {
 /// Linear interpolation between anchors.
 pub fn tip_mass_ratio(midi: u8) -> f64 {
     let m = midi as f64;
-    // Piecewise linear through anchor points
     let anchors: &[(f64, f64)] = &[
         (33.0, 0.10),
         (52.0, 0.00),
@@ -37,7 +36,6 @@ pub fn tip_mass_ratio(midi: u8) -> f64 {
         (96.0, 0.01),
     ];
 
-    // Clamp to range
     if m <= anchors[0].0 {
         return anchors[0].1;
     }
@@ -45,7 +43,6 @@ pub fn tip_mass_ratio(midi: u8) -> f64 {
         return anchors[anchors.len() - 1].1;
     }
 
-    // Find segment and interpolate
     for i in 0..anchors.len() - 1 {
         let (x0, y0) = anchors[i];
         let (x1, y1) = anchors[i + 1];
@@ -59,18 +56,11 @@ pub fn tip_mass_ratio(midi: u8) -> f64 {
 
 /// Mode frequency ratios f_n/f_1 for a cantilever beam with tip mass ratio mu.
 ///
-/// From Section 2.5 eigenvalue table. Uses cubic interpolation on the eigenvalue
-/// solutions of: 1 + cos(λ)cosh(λ) + λμ(cos(λ)sinh(λ) - sin(λ)cosh(λ)) = 0
+/// From Section 2.5 eigenvalue table. Uses linear interpolation on the eigenvalue
+/// solutions of: 1 + cos(lambda)cosh(lambda) + lambda*mu*(cos(lambda)sinh(lambda) - sin(lambda)cosh(lambda)) = 0
 ///
 /// Returns ratios for modes 1-7 (mode 1 is always 1.0).
 pub fn mode_ratios(mu: f64) -> [f64; NUM_MODES] {
-    // Eigenvalue table: (mu, [lambda_1..lambda_7])
-    // lambda values from numerical solution of the characteristic equation.
-    // f_n/f_1 = (lambda_n / lambda_1)^2
-    //
-    // Source: Section 2.5 table, extended to 7 modes.
-    // Modes 5-7 extrapolated from the asymptotic spacing pattern:
-    // lambda_{n+1} ≈ lambda_n + pi for large n.
     struct EigRow {
         mu: f64,
         lambdas: [f64; NUM_MODES],
@@ -87,10 +77,8 @@ pub fn mode_ratios(mu: f64) -> [f64; NUM_MODES] {
         EigRow { mu: 0.50, lambdas: [1.3853, 4.3601, 7.6745, 10.8970, 14.0650, 17.2252, 20.3814] },
     ];
 
-    // Clamp mu
     let mu_clamped = mu.clamp(0.0, 0.50);
 
-    // Find bracketing rows
     let mut lo = 0;
     for i in 0..table.len() - 1 {
         if table[i + 1].mu > mu_clamped {
@@ -101,7 +89,6 @@ pub fn mode_ratios(mu: f64) -> [f64; NUM_MODES] {
     }
     let hi = (lo + 1).min(table.len() - 1);
 
-    // Linear interpolation of eigenvalues
     let t = if table[hi].mu > table[lo].mu {
         (mu_clamped - table[lo].mu) / (table[hi].mu - table[lo].mu)
     } else {
@@ -113,7 +100,6 @@ pub fn mode_ratios(mu: f64) -> [f64; NUM_MODES] {
         lambdas[i] = table[lo].lambdas[i] + t * (table[hi].lambdas[i] - table[lo].lambdas[i]);
     }
 
-    // Convert to frequency ratios: f_n/f_1 = (lambda_n/lambda_1)^2
     let l1_sq = lambdas[0] * lambdas[0];
     let mut ratios = [0.0f64; NUM_MODES];
     for i in 0..NUM_MODES {
@@ -134,12 +120,10 @@ pub fn fundamental_decay_rate(midi: u8) -> f64 {
 ///
 /// Constant-Q model with mounting floor (Section 5.8):
 ///   decay_n = decay_1 * mode_ratio_n
-/// with a minimum of 0.03 * mode_ratio_n for modes 4+ (mounting loss floor).
 pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES] {
     let base = fundamental_decay_rate(midi);
     let mut rates = [0.0f64; NUM_MODES];
     for i in 0..NUM_MODES {
-        // Constant-Q: decay rate scales with frequency ratio
         rates[i] = base * ratios[i];
     }
     rates
@@ -190,15 +174,12 @@ mod tests {
     #[test]
     fn test_mode_ratios_with_tip_mass() {
         let r = mode_ratios(0.10);
-        // With mu=0.10, f2/f1 should be ~7.13 (Section 2.5)
         assert!((r[1] - 7.13).abs() < 0.05);
     }
 
     #[test]
     fn test_tip_mass_ratio_range() {
-        // Bass has highest mu
         assert!(tip_mass_ratio(33) > 0.05);
-        // Mid-register has near-zero mu
         assert!(tip_mass_ratio(57) < 0.02);
     }
 

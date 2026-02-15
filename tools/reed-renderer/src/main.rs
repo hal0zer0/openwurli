@@ -3,14 +3,8 @@
 /// Standalone CLI tool for rendering reed tones to WAV files.
 /// Uses physics-derived parameters from docs/reed-and-hammer-physics.md.
 
-mod hammer;
-mod pickup;
-mod reed;
-mod tables;
-mod variation;
-mod voice;
-
-use voice::Voice;
+use openwurli_dsp::tables;
+use openwurli_dsp::voice::Voice;
 
 const SAMPLE_RATE: f64 = 44100.0;
 
@@ -23,7 +17,6 @@ fn main() {
     let mut output_dir = String::from(".");
     let mut output_file: Option<String> = None;
 
-    // Simple arg parsing (no external dep)
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -52,7 +45,6 @@ fn main() {
                 output_dir = args[i].clone();
             }
             "--sweep" => {
-                // Frequency sweep across keyboard
                 notes = vec![33, 45, 57, 60, 69, 72, 81, 93, 96];
             }
             "--help" | "-h" => {
@@ -68,15 +60,13 @@ fn main() {
         i += 1;
     }
 
-    // Defaults
     if notes.is_empty() {
-        notes.push(60); // Middle C
+        notes.push(60);
     }
     if velocities.is_empty() {
         velocities.push(100);
     }
 
-    // Validate
     for &n in &notes {
         if n < tables::MIDI_LO || n > tables::MIDI_HI {
             eprintln!("MIDI note {n} out of range ({}-{})", tables::MIDI_LO, tables::MIDI_HI);
@@ -84,7 +74,6 @@ fn main() {
         }
     }
 
-    // Render
     for &midi_note in &notes {
         for &vel in &velocities {
             let velocity_f = vel as f64 / 127.0;
@@ -106,7 +95,6 @@ fn main() {
 
             let samples = Voice::render_note(midi_note, velocity_f, duration, SAMPLE_RATE);
 
-            // Find peak for normalization info
             let peak = samples.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
             eprintln!("  Peak amplitude: {peak:.6} ({:.1} dBFS)", 20.0 * peak.log10());
 

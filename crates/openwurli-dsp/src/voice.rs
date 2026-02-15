@@ -1,6 +1,6 @@
 /// Single voice: reed + hammer + pickup + decay.
 ///
-/// Signal flow: modal_oscillator → pickup_hpf → output
+/// Signal flow: modal_oscillator -> pickup_hpf -> output
 /// Attack noise mixed in during first ~15 ms.
 
 use crate::hammer::{dwell_attenuation, AttackNoise};
@@ -13,8 +13,8 @@ pub struct Voice {
     reed: ModalReed,
     pickup: Pickup,
     noise: AttackNoise,
-    #[allow(dead_code)]
     sample_rate: f64,
+    midi_note: u8,
 }
 
 impl Voice {
@@ -26,10 +26,8 @@ impl Voice {
     pub fn note_on(midi_note: u8, velocity: f64, sample_rate: f64) -> Self {
         let params = tables::note_params(midi_note);
 
-        // Apply per-note detuning
         let detuned_fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
 
-        // Apply dwell filter to base amplitudes
         let dwell = dwell_attenuation(velocity, detuned_fundamental, &params.mode_ratios);
         let amp_offsets = variation::mode_amplitude_offsets(midi_note);
 
@@ -38,8 +36,6 @@ impl Voice {
             amplitudes[i] = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i];
         }
 
-        // Scale overall amplitude by velocity (roughly linear — the mechanical
-        // hammer force is proportional to key velocity)
         let vel_scale = velocity;
         for a in &mut amplitudes {
             *a *= vel_scale;
@@ -61,31 +57,38 @@ impl Voice {
             pickup,
             noise,
             sample_rate,
+            midi_note,
         }
+    }
+
+    /// Start the damper (called on note_off).
+    /// Activates progressive damping — higher modes die first.
+    pub fn note_off(&mut self) {
+        self.reed.start_damper(self.midi_note, self.sample_rate);
     }
 
     /// Render samples into the output buffer.
     /// Buffer is cleared first, then filled with the voice output.
     pub fn render(&mut self, output: &mut [f64]) {
-        // Clear
         for s in output.iter_mut() {
             *s = 0.0;
         }
 
-        // Reed oscillator (additive into buffer)
         self.reed.render(output);
 
-        // Attack noise (additive into buffer)
         if !self.noise.is_done() {
             self.noise.render(output);
         }
 
-        // Pickup HPF (in-place)
         self.pickup.process(output);
     }
 
     /// Check if the voice has decayed to silence.
+    /// Also returns true after 10 seconds of release (safety timeout).
     pub fn is_silent(&self) -> bool {
+        if self.reed.is_damping() && self.reed.release_seconds(self.sample_rate) > 10.0 {
+            return true;
+        }
         self.reed.is_silent(-80.0)
     }
 
@@ -95,7 +98,6 @@ impl Voice {
         let num_samples = (duration_secs * sample_rate) as usize;
         let mut output = vec![0.0f64; num_samples];
 
-        // Render in chunks for efficiency
         let chunk_size = 1024;
         let mut offset = 0;
         while offset < num_samples {
