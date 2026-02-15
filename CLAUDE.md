@@ -98,9 +98,39 @@ python tools/schematic_preprocess.py enhance some_image.png
 
 Output goes to `schematic_tiles/` (gitignored). The pipeline: grayscale -> denoise -> CLAHE contrast -> unsharp mask -> border crop -> resize to fit Claude's limits.
 
+**Automatic text region detection** — find component labels without manual coordinate hunting:
+
+```bash
+# Detect all text/annotation regions in a schematic area
+python tools/schematic_preprocess.py detect-text \
+    --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --region preamp \
+    --output-dir /tmp/text_detect/
+
+# From an existing tile image
+python tools/schematic_preprocess.py detect-text --input schematic_tiles/preamp_600dpi.png \
+    --output-dir /tmp/text_detect/
+
+# Tune detection sensitivity
+python tools/schematic_preprocess.py detect-text --input img.png \
+    --min-area 200 --max-area 30000 --kernel-w 20 --kernel-h 8 --output-dir /tmp/td/
+```
+
+Outputs: `detected_regions.png` (annotated overview with red boxes), `detected_regions.json` (manifest), `text_region_NNN.png` (individual enhanced crops). Mr Schemey reads the overview image to locate labels, then reads individual crops to decipher values.
+
+**Optional OCR** (requires `pip install easyocr`):
+
+```bash
+python tools/schematic_preprocess.py ocr \
+    --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --region preamp-detail \
+    --output /tmp/ocr_results.json --annotate /tmp/ocr_annotated.png
+```
+
+OCR is supplementary — Claude's vision on enhanced crops is more reliable for schematic text. Use OCR as a cross-check or when processing many regions programmatically.
+
 **Two-pass strategy for circuit analysis:**
 1. Overview crop at low DPI (150-300) to understand topology and signal flow
 2. Detail crops at higher DPI (600-900) to read specific component values
+3. (Optional) `detect-text` to automatically find and crop annotation regions for closer inspection
 
 ## Rules
 

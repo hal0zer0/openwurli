@@ -1,0 +1,113 @@
+* Wurlitzer 200A Electrostatic Pickup — Validation Testbench
+* ==========================================================
+* Validates:
+*   1. DC operating point (plate at ~147V)
+*   2. HPF frequency response (f_c = 2312 Hz)
+*   3. Signal level (microvolts to millivolts)
+*   4. Nonlinearity (H2/H1 vs displacement)
+*
+* Expected HPF: |H(f)| = f / sqrt(f^2 + 2312^2)
+*   131 Hz (C3): -25 dB   |   523 Hz (C5): -13 dB
+*   1047 Hz (C6): -7.0 dB |   2093 Hz (C7): -3.8 dB
+*   4186 Hz (C8): -1.3 dB
+*
+* Expected signal: V_peak ~ V_hv * C_0/(C_0+C_p) * y * |H(f)|
+*   = 147 * 3/240 * y * |H(f)| = 1.84 * y * |H(f)| volts
+*   At y=0.10, 440 Hz: 1.84 * 0.10 * 0.187 = 34.4 mV peak (before load)
+*
+* NOTE: B-source ddt() requires 'reset' between transient runs.
+*   'destroy all' corrupts ddt() internal state. Use 'reset' instead.
+*
+* Run: ngspice -b tb_pickup.cir
+
+.title Pickup Model Validation
+
+.include ../subcircuits/pickup.cir
+
+* ============================================================
+* HV Polarizing Supply
+* ============================================================
+Vhv   vhv_node  0   DC 147
+
+* ============================================================
+* Pickup Instance
+* ============================================================
+Xpickup  sig_out  reed_disp  vhv_node  0  wurli_pickup
+
+* ============================================================
+* Preamp Input Load (external to pickup subcircuit)
+* ============================================================
+* R-1 (22K) in series, then R-2||R-3 = 380K and C20 (220pF).
+R1_ext    sig_out   preamp_in   22K
+R_load    preamp_in 0           380K
+C20       preamp_in 0           220P
+
+* ============================================================
+* Reed Displacement Source
+* ============================================================
+Vdisp  reed_disp  0  DC 0 SIN(0 0.05 440 0 0)
+
+* ============================================================
+.control
+
+set filetype = ascii
+
+echo "============================================================"
+echo "Wurlitzer 200A Pickup Model Validation"
+echo "============================================================"
+
+* ----------------------------------------------------------
+* 1. DC OPERATING POINT
+* ----------------------------------------------------------
+echo ""
+echo "=== DC OPERATING POINT ==="
+op
+echo "Plate voltage (target ~147V):"
+print v(xpickup.plate)
+echo "Signal output (target ~0V DC):"
+print v(sig_out)
+reset
+
+* ----------------------------------------------------------
+* 2. FREQUENCY RESPONSE (transient at multiple frequencies)
+* ----------------------------------------------------------
+echo ""
+echo "=== FREQUENCY RESPONSE (y=0.05, small signal) ==="
+echo "Expected HPF: f_c ~ 2312 Hz"
+echo "freq_Hz  sig_pp_mV"
+
+foreach freq_val 110 220 440 880 1760 3520 5000 8000
+  alter @vdisp[sin] = [ 0 0.05 $freq_val 0 0 ]
+  tran 1u 200m 100m 1u
+  meas tran sig_pp PP v(preamp_in) from=100m to=200m
+  reset
+end
+
+* ----------------------------------------------------------
+* 3. SIGNAL LEVEL + NONLINEARITY vs DISPLACEMENT (440 Hz)
+* ----------------------------------------------------------
+echo ""
+echo "=== SIGNAL LEVEL + HARMONICS vs DISPLACEMENT (440 Hz) ==="
+echo ""
+
+foreach amp_val 0.02 0.05 0.10 0.20 0.40
+  alter @vdisp[sin] = [ 0 $amp_val 440 0 0 ]
+  tran 0.5u 200m 100m 0.5u
+
+  echo "--- y = $amp_val ---"
+  meas tran sig_pp PP v(preamp_in) from=100m to=200m
+  fourier 440 v(preamp_in)
+
+  reset
+end
+
+echo ""
+echo "============================================================"
+echo "Pickup validation complete."
+echo "============================================================"
+
+quit
+
+.endc
+
+.end

@@ -1,0 +1,93 @@
+* Wurlitzer 200A Power Amplifier — DC and AC Validation
+* Run: ngspice -b tb_power_amp.cir
+
+.title Power Amp DC and AC Validation
+
+.include ../models/transistors.lib
+.include ../subcircuits/power_amp.cir
+
+Vpos  vp  0   DC 22.5
+Vneg  vn  0   DC -22.5
+
+Xamp  in_sig  out  vp  vn  0  wurli_power_amp
+
+Vin   in_sig  0   DC 0 AC 1 SIN(0 10M 440 0 0)
+Rload  out  0   8
+
+.control
+
+set filetype = ascii
+
+echo "=== DC OPERATING POINT ==="
+op
+
+echo ""
+echo "Output (target 0V):"
+print v(out)
+echo "VAS out (target +0.65V):"
+print v(xamp.vas_out)
+echo "coll7 / VAS base (target -22V):"
+print v(xamp.coll7)
+echo "coll8 (target -22V):"
+print v(xamp.coll8)
+echo "boot node:"
+print v(xamp.boot)
+echo "bias_mid (target 0V):"
+print v(xamp.bias_mid)
+echo "drv_bot (target -0.65V):"
+print v(xamp.drv_bot)
+echo "emit_pair (target +0.64V):"
+print v(xamp.emit_pair)
+echo "fb_inv, in_ac:"
+print v(xamp.fb_inv) v(xamp.in_ac)
+echo "base11, base13:"
+print v(xamp.base11) v(xamp.base13)
+echo "nodeC, nodeD:"
+print v(xamp.nodeC) v(xamp.nodeD)
+
+echo ""
+echo "Transistor Ic:"
+print @q.xamp.q7[ic] @q.xamp.q8[ic] @q.xamp.q14[ic]
+print @q.xamp.q9[ic] @q.xamp.q10[ic] @q.xamp.q12[ic]
+print @q.xamp.q13[ic] @q.xamp.q11[ic]
+
+echo ""
+echo "Output bias (target ~5mV across 0.47 ohm):"
+let v_r37 = v(xamp.nodeC) - v(out)
+let v_r38 = v(out) - v(xamp.nodeD)
+print v_r37 v_r38
+
+destroy all
+
+echo ""
+echo "=== AC FREQUENCY RESPONSE ==="
+ac dec 50 10 100K
+let gain_db = db(v(out))
+meas ac gain_1k FIND gain_db AT=1000
+meas ac gain_10k FIND gain_db AT=10000
+meas ac bw_3db WHEN gain_db = {gain_1k - 3} CROSS=LAST
+destroy all
+
+echo ""
+echo "=== TRANSIENT: 10mV input ==="
+tran 1u 50m 10m 1u
+fourier 440 v(out)
+meas tran out_pp PP v(out) from=10m to=50m
+destroy all
+
+echo ""
+echo "=== TRANSIENT: 500mV input ==="
+alter @vin[sin] = [ 0 0.5 440 0 0 ]
+tran 1u 50m 10m 1u
+fourier 440 v(out)
+meas tran out_pp_500mv PP v(out) from=10m to=50m
+meas tran out_max MAX v(out) from=10m to=50m
+meas tran out_min MIN v(out) from=10m to=50m
+destroy all
+
+echo "Done."
+quit
+
+.endc
+
+.end

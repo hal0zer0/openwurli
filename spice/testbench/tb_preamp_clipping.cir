@@ -1,0 +1,124 @@
+* Wurlitzer 200A Preamp — Comprehensive Harmonic Characterization
+* ===============================================================
+* Maps the harmonic spectrum (H1-H9) across drive levels, frequencies,
+* and tremolo states to produce DSP reference targets.
+*
+* Sweep dimensions:
+*   Drive levels: 0.5mV, 2mV, 5mV, 10mV, 50mV, 200mV (pp -> extreme ff)
+*   Frequencies:  110 Hz (bass), 440 Hz (mid), 1760 Hz (treble)
+*   LDR states:   Rldr=1M (no tremolo, 2.0x gain)
+*                 Rldr=19K (tremolo bright, 4.0x gain)
+*
+* Signal path: Vin -> R-1 (22K) -> preamp -> Rload (100K)
+*
+* Expected results:
+*   - H2 > H3 at all levels (asymmetric Stage 1 clipping)
+*   - H2/H1 near-zero at pp (0.5mV), measurable at ff (50-200mV)
+*   - Higher gain (trem bright) clips at lower input levels
+*   - THD at mf (5mV): ~0.0004% | THD at extreme (200mV): ~0.04%
+*
+* Run: ngspice -b tb_preamp_clipping.cir
+
+.title Preamp Harmonic Characterization
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* ===============================================================
+* Circuit
+* ===============================================================
+
+* Supply
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp
+Xpre  in_sig out vcc 0 fb_junct  wurli_preamp
+
+* Input: sine through R-1 (22K)
+* Initial values overridden in .control block
+Vin  src 0  DC 0 SIN(0 5M 440 0 0)
+R1   src in_sig  22K
+
+* LDR path (overridden in .control block)
+Rldr fb_junct 0  1MEG
+
+* Load resistor (volume pot + next stage input impedance)
+Rload out 0  100K
+
+* ===============================================================
+* Scripted sweep using ngspice .control block
+* ===============================================================
+
+.control
+
+set filetype = ascii
+
+echo "================================================================="
+echo "Wurlitzer 200A Preamp Harmonic Characterization"
+echo "================================================================="
+echo ""
+
+* Nested sweep: LDR state -> frequency -> amplitude
+foreach rldr_val 1000000 19000
+  alter rldr = $rldr_val
+
+  if $rldr_val = 1000000
+    echo "--- LDR = 1M (no tremolo, ~2.0x gain) ---"
+  else
+    echo "--- LDR = 19K (tremolo bright, ~4.0x gain) ---"
+  end
+
+  foreach freq_val 110 440 1760
+
+    echo ""
+    echo "  Frequency: $freq_val Hz, Rldr: $rldr_val"
+    echo "  -----------------------------------------------"
+
+    foreach amp_val 0.0005 0.002 0.005 0.01 0.05 0.2
+      * Alter source waveform
+      alter @vin[sin] = [ 0 $amp_val $freq_val 0 0 ]
+
+      * Run transient: 200ms total, record from 100ms, 0.5us step
+      tran 0.5u 200m 100m 0.5u
+
+      * Fourier analysis: 9 harmonics on output and Stage 1 collector
+      fourier $freq_val v(out)
+      fourier $freq_val v(xpre.coll1)
+
+      * Measurements: output swing
+      meas tran out_max MAX v(out) from=100m to=200m
+      meas tran out_min MIN v(out) from=100m to=200m
+      meas tran out_pp PP v(out) from=100m to=200m
+      meas tran out_dc AVG v(out) from=100m to=200m
+
+      * Measurements: Stage 1 collector swing (clips toward Vce_sat)
+      meas tran coll1_max MAX v(xpre.coll1) from=100m to=200m
+      meas tran coll1_min MIN v(xpre.coll1) from=100m to=200m
+
+      * Measurements: Stage 1 emitter swing
+      meas tran emit1_max MAX v(xpre.emit1) from=100m to=200m
+      meas tran emit1_min MIN v(xpre.emit1) from=100m to=200m
+
+      * Measurements: Stage 2 collector swing
+      meas tran coll2_max MAX v(xpre.coll2) from=100m to=200m
+      meas tran coll2_min MIN v(xpre.coll2) from=100m to=200m
+
+      * Measurements: input swing (for gain calculation)
+      meas tran in_pp PP v(in_sig) from=100m to=200m
+
+      destroy all
+    end
+  end
+end
+
+echo ""
+echo "================================================================="
+echo "Characterization complete."
+echo "================================================================="
+
+quit
+
+.endc
+
+.end

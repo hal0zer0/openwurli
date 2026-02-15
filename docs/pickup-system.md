@@ -722,7 +722,7 @@ After the C20 HPF (1903 Hz) attenuates C4's 262 Hz by another factor of ~0.14:
 V_preamp_input = 21 mV * 0.14 = ~2.9 mV
 ```
 
-This is consistent with Brad Avenson's measurement of **2-7 mV AC at the volume pot output** (which is AFTER ~15 dB of preamp gain), implying the preamp input signal is sub-millivolt to low millivolts.
+This is consistent with Brad Avenson's measurement of **2-7 mV AC at the volume pot output** (which is AFTER ~6 dB of preamp gain in the original 200A circuit — SPICE-measured closed-loop gain is 2.0x/6.0 dB at 1 kHz; Avenson's "15 dB" figure was from his replacement preamp design, not the stock 200A), implying the preamp input signal is sub-millivolt to low millivolts.
 
 [INFERRED — computed from verified/estimated values; consistent with Avenson's measurements]
 

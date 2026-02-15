@@ -116,7 +116,7 @@ MIDI note-on (key, velocity, channel, note_id)
         [G] Two-Stage Ebers-Moll Preamp WITH INTEGRATED TREMOLO
             Tremolo: LDR (LG-1) + R-10 (56K) modulate feedback ratio
             Stage 1: gain=420, B=38.5, satLimit=10.9V, cutoffLimit=2.05V
-              -> Miller pole (~25 Hz open-loop; ~3.7 kHz closed-loop BW)
+              -> Miller pole (~25 Hz open-loop; ~9.9 kHz closed-loop BW no trem)
               -> Direct coupling
             Stage 2: gain=238, B=38.5, satLimit=6.2V, cutoffLimit=5.3V, re=0.456
               -> Miller pole ~3.3 kHz
@@ -577,10 +577,10 @@ Target corner frequencies based on physical Miller multiplication (C-3 = C-4 = 1
 ### Miller LPF (After Each Stage)
 
 First-order LPF modeling Miller-effect bandwidth limitation. With verified C-3 = C-4 = 100 pF:
-- After Stage 1: dominant pole at ~25 Hz open-loop; closed-loop BW ~3.7 kHz
+- After Stage 1: dominant pole at ~25 Hz open-loop; closed-loop BW ~9.9 kHz (no trem) / ~8.3 kHz (trem bright)
 - After Stage 2: ~3.3 kHz (Stage 2 has low gain of ~2.2, so Miller multiplication is mild)
 
-> **Note (Feb 2026):** The corrected values show Stage 1's Miller pole is much lower than previously estimated (~25 Hz vs ~200-500 Hz). This is the dominant open-loop pole. With the global feedback loop (R-10 = 56K), the closed-loop bandwidth extends to ~3.7 kHz. The plugin's per-stage Miller LPF implementation may need restructuring to properly model this feedback topology — see preamp-circuit.md Sections 5-6 for full analysis.
+> **Note (Feb 2026):** The corrected values show Stage 1's Miller pole is much lower than previously estimated (~25 Hz vs ~200-500 Hz). This is the dominant open-loop pole. With the global feedback loop (R-10 = 56K via Ce1 to emitter), the SPICE-measured closed-loop bandwidth is ~9.9 kHz (no tremolo) / ~8.3 kHz (tremolo bright). GBW/Acl = ~21 kHz / 2.0 = 10.5 kHz, consistent with SPICE. The plugin's per-stage Miller LPF implementation may need restructuring to properly model this feedback topology — see preamp-circuit.md Sections 5-6 for full analysis.
 
 ### Stage 2 Parameters
 
@@ -943,7 +943,7 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 | C20 HPF frequency | ~1903 Hz | C20 = 220 pF (RESOLVED), R = 380K |
 | Miller pole 1 (open-loop) | ~25 Hz | Stage 1 dominant pole (C-3=100pF, Miller-multiplied) |
 | Miller pole 2 | ~3300 Hz | Stage 2 (C-4=100pF, low Miller multiplication) |
-| Closed-loop bandwidth | ~3700 Hz | Combined preamp with R-10 feedback |
+| Closed-loop bandwidth | ~9900 Hz (no trem) / ~8300 Hz (trem bright) | SPICE-measured, combined preamp with R-10 emitter feedback |
 | DC block frequency | 20 Hz | Output DC removal |
 | Speaker HPF | 85 Hz, Q=0.75 | Sealed box resonance |
 | Speaker LPF | 8000 Hz, Q=0.707 | Cone breakup |

@@ -356,7 +356,7 @@ re2 = 1/gm2 = 1/127 mA/V = 7.9 ohm
 | Vbe | 0.50V | 0.70V | CALCULATED (Stage 1 is low — see Section 4.3 note) |
 | Vce | 2.15V | 5.4V | CALCULATED |
 | Rc | 150K | 1.8K | VERIFIED — schematic |
-| Re | 33K (bypassed by 4.7 MFD) | 270 ohm (bypassed) + 820 ohm | VERIFIED — schematic |
+| Re | 33K (Ce1 = 4.7 MFD couples emitter to fb_junct) | 270 ohm (bypassed) + 820 ohm | VERIFIED — schematic |
 | Ic | ~66 uA | ~3.3 mA | CALCULATED |
 | gm | ~2.54 mA/V | ~127 mA/V | CALCULATED |
 | re (1/gm) | 394 ohm | 7.9 ohm | CALCULATED |
@@ -426,12 +426,12 @@ The pickup system delivers millivolt-level signals to the preamp input. Based on
 | Condition | Estimated Preamp Input Level | Source |
 |-----------|------------------------------|--------|
 | C4 at pp (vel=0.3) | ~0.1-0.5 mV peak | ESTIMATED — electrostatic calculation |
-| C4 at mf (vel=0.7) | ~1-5 mV peak | ESTIMATED — consistent with Avenson 2-7 mV output / 5.6x gain |
+| C4 at mf (vel=0.7) | ~1-5 mV peak | ESTIMATED — Avenson measured 2-7 mV at output; his 15 dB gain was a replacement design, original 200A gain is 6.0 dB (2.0x) |
 | C4 at ff (vel=0.95) | ~5-15 mV peak | ESTIMATED |
 | Bass (A1 at mf) | ~0.05-0.2 mV peak | ESTIMATED — heavily attenuated by pickup RC HPF |
 | Treble (C6 at mf) | ~5-20 mV peak | ESTIMATED — less attenuation, smaller displacement |
 
-[ESTIMATED — derived from pickup system signal level estimates in pickup-system.md, consistent with Brad Avenson's measurement of 2-7 mV at volume pot output after approximately 15 dB gain]
+[ESTIMATED — derived from pickup system signal level estimates in pickup-system.md. Note: Brad Avenson's measurement of 2-7 mV at volume pot output was from his replacement preamp design (~15 dB gain), NOT the original 200A circuit (6.0 dB / 2.0x gain). With 2.0x gain, 2-7 mV output implies ~1-3.5 mV input.]
 
 ### 5.2 Input Coupling Network (C20 HPF)
 
@@ -640,60 +640,58 @@ The bandwidth DECREASES as gain increases (tremolo bright → higher gain, narro
 | 500 Hz | 19.3 | 2.17 | 42 | |
 | 1 kHz | 9.7 | 2.17 | 21 | |
 | 2 kHz | 4.8 | 2.17 | 10.5 | |
-| 3.7 kHz | 2.6 | 2.17 | 5.6 | Open-loop = closed-loop here |
+| 3.7 kHz | 2.6 | 2.17 | 5.6 | Open-loop still well above closed-loop (2.0x) |
 | 5 kHz | 1.93 | 2.17 | 4.2 | Below closed-loop target |
 | 10 kHz | 0.97 | 2.17 | 2.1 | Stage 1 < unity; no feedback possible |
 | 20 kHz | 0.48 | 2.17 | 1.05 | |
 
-**Closed-loop gain at key frequencies:**
+**Closed-loop gain at key frequencies (SPICE-measured, Feb 2026):**
 
-> **REVISION NOTE (Feb 2026):** The tables below use the original 5.6x gain assumption from the old shunt-feedback model (R10/R1 = 56K/22K). The topology has been corrected to emitter feedback (R-10 → Ce1 → emitter). The frequency response shape (bandpass with C20 HPF and Miller rolloff) is qualitatively correct, but the absolute gain values need re-derivation from the SPICE AC sweep of the corrected topology (preamp_emitter_fb.cir). Treat the numerical values below as provisional.
-
-At low frequencies, the emitter feedback holds the gain at a value determined by the feedback loop. Above the point where open-loop gain drops to match the closed-loop gain, the gain rolls off at -20 dB/decade.
+The emitter feedback (R-10 via Ce1) holds the gain at ~2.0x (6.0 dB) without tremolo. The -3 dB bandwidth is ~9.9 kHz. Above this, gain rolls off as the open-loop gain drops below the closed-loop target.
 
 | Frequency | Closed-Loop Gain | Closed-Loop (dB) | Notes |
 |-----------|-----------------|-------------------|-------|
-| 100 Hz | 5.6 | 15.0 | Feedback-controlled |
-| 500 Hz | 5.6 | 15.0 | Feedback-controlled |
-| 1 kHz | 5.6 | 15.0 | Feedback-controlled |
-| 2 kHz | 5.6 | 15.0 | Feedback-controlled |
-| 3.7 kHz | 5.6 | 15.0 | -3 dB point (open-loop = closed-loop) |
-| 5 kHz | 4.2 (2.4) | 12.4 (7.6) | Rolling off |
-| 10 kHz | 2.1 (1.53) | 6.4 (3.7) | Significant rolloff |
-| 20 kHz | 1.05 (0.88) | 0.4 (-1.1) | Nearly unity |
+| 19 Hz | 2.0 | 6.0 | Low-frequency -3 dB point |
+| 100 Hz | 2.0 | 6.0 | Feedback-controlled |
+| 447 Hz | ~2.1 | ~6.4 | Peak gain (mild peaking) |
+| 1 kHz | 2.0 | 6.0 | SPICE reference measurement point |
+| 5 kHz | ~1.9 | ~5.6 | Still feedback-controlled |
+| 9.9 kHz | ~1.4 | ~3.0 | -3 dB point |
+| 20 kHz | ~0.7 | ~-3.1 | Significant rolloff |
 
-> **Approximation note:** Values above 3.7 kHz use Acl ≈ Aol (feedback ignored). The parenthesized values use the full feedback formula Acl = Aol/(1 + Aol*beta) with beta=0.179, which gives 1.5-5 dB lower gain at HF because R-10 feedback still attenuates even when loop gain < 1. The full formula is more accurate; implementation should use it.
+With tremolo at bright peak (Rldr_path = 19K), gain increases to 4.0x (12.1 dB), and BW narrows to ~8.3 kHz (constant GBW product).
 
 ### 5.7 Combined Preamp Frequency Response (with C20 HPF)
 
-The total preamp response combines the C20 input HPF (~1903 Hz) with the closed-loop amplifier response (flat to ~3.7 kHz, then rolling off):
+The total preamp response combines the C20 input HPF (~1903 Hz) with the closed-loop amplifier response (flat 19 Hz – 9.9 kHz at 6.0 dB, no tremolo):
 
 | Note | MIDI | Freq (Hz) | C20 HPF (dB) | Amp Gain (dB) | Total (dB) | Notes |
 |------|------|-----------|-------------|---------------|-----------|-------|
-| A1 | 33 | 55 | -30.8 | 15.0 | -15.8 | Heavy bass attenuation |
-| C3 | 48 | 131 | -23.3 | 15.0 | -8.3 | Still very attenuated |
-| C4 | 60 | 262 | -17.3 | 15.0 | -2.3 | Approaching passband |
-| C5 | 72 | 523 | -11.5 | 15.0 | 3.5 | |
-| C6 | 84 | 1047 | -6.3 | 15.0 | 8.7 | |
-| C7 | 96 | 2093 | -2.6 | 15.0 | 12.4 | Near peak |
-| — | — | 3700 | -1.0 | 15.0 | 14.0 | Passband peak |
-| — | — | 5000 | 0.0 | 12.4 (7.6) | 12.4 (7.6) | Rolling off from amp BW |
-| — | — | 10000 | 0.0 | 6.4 (3.7) | 6.4 (3.7) | Significant HF rolloff |
-| — | — | 20000 | 0.0 | 0.4 (-1.1) | 0.4 (-1.1) | Nearly unity |
+| A1 | 33 | 55 | -30.8 | 6.0 | -24.8 | Heavy bass attenuation |
+| C3 | 48 | 131 | -23.3 | 6.0 | -17.3 | Still very attenuated |
+| C4 | 60 | 262 | -17.3 | 6.0 | -11.3 | Approaching passband |
+| A3 | 57 | 220 | -18.8 | 6.0 | -12.8 | |
+| ~447 Hz | — | 447 | -12.6 | ~6.4 | **-6.2** | **Passband peak** (SPICE-measured) |
+| C5 | 72 | 523 | -11.5 | 6.0 | -5.5 | |
+| C6 | 84 | 1047 | -6.3 | 6.0 | -0.3 | Near unity |
+| C7 | 96 | 2093 | -2.6 | 6.0 | 3.4 | Above unity |
+| — | — | 5000 | -0.7 | ~5.6 | ~4.9 | Near peak of combined response |
+| — | — | 9900 | 0.0 | ~3.0 | ~3.0 | Amp -3 dB point |
+| — | — | 20000 | 0.0 | ~-3.1 | ~-3.1 | Significant HF rolloff |
 
-> **Note:** Parenthesized values use the full feedback formula (see Section 5.6 note). For implementation, use the full formula values.
+> **Note:** The combined passband has a broad peak around 2-5 kHz where the C20 HPF attenuation has diminished but the amplifier hasn't rolled off yet. The gain peak at ~447 Hz noted in the SPICE AC sweep (Section 7.3) reflects a mild resonance in the feedback loop, separate from the combined C20+BW shaping shown here.
 
-**The preamp's passband peak is approximately 2-4 kHz.** Below this, the C20 HPF attenuates. Above this, the Miller-effect feedback bandwidth limit attenuates. This mid-frequency emphasis naturally puts the most gain in the 2-4 kHz "bark" frequency region — the range where the human ear is most sensitive and where the Wurlitzer's characteristic bite lives.
+**The preamp's combined frequency response has two distinct features:** (1) a broad mid-high emphasis from ~500 Hz to ~10 kHz where C20 attenuation is small and the amp gain is still near its 6 dB plateau, and (2) a SPICE-measured mild gain peak at ~447 Hz from feedback loop dynamics. Below ~500 Hz, the C20 HPF dominates, heavily attenuating bass fundamentals. Above ~10 kHz, the Miller-effect bandwidth limit rolls off.
 
-**This is a key tonal design feature:** The preamp does not amplify all frequencies equally. Bass fundamentals are heavily attenuated (A1 at 55 Hz sees -15.8 dB net), while the 2-4 kHz range gets the full 15 dB of gain. This explains why the Wurlitzer's bass notes sound thin and "reedy" while the midrange has body and bark.
+**This is a key tonal design feature:** The preamp does not amplify all frequencies equally. Bass fundamentals are heavily attenuated (A1 at 55 Hz sees -24.8 dB net), while the upper-mid range gets the full 6 dB of gain (up to 12 dB with tremolo at bright peak). This explains why the Wurlitzer's bass notes sound thin and "reedy" while the midrange has body and bark.
 
-[CALCULATED — from verified component values; the 2-4 kHz passband peak is a natural consequence of the C20 HPF and Miller-effect bandwidth limit]
+[VERIFIED — SPICE AC sweep of corrected emitter feedback topology, Feb 2026]
 
 ### 5.8 Emitter Bypass Cap Corner Effects
 
-#### Stage 1 (Ce1 = 4.7 MFD across Re1 = 33K)
+#### Stage 1 (Ce1 = 4.7 MFD coupling emitter to fb_junct; Re1 = 33K DC path to GND)
 
-Corner frequency: f = 1/(2*pi*33K*4.7uF) = **1.03 Hz**. Ce1 is fully effective across the entire audio band. No audible transition.
+Corner frequency of Ce1 relative to Re1: f = 1/(2*pi*33K*4.7uF) = **1.03 Hz**. Ce1's impedance is negligible across the entire audio band, so it effectively couples the emitter to fb_junct at all audible frequencies.
 
 #### Stage 2 (Ce2 = 22 MFD across Re2a = 270 ohm)
 
@@ -775,7 +773,7 @@ The preamp input sees millivolt signals. The signal at TR-1's base (after the bi
 
 With Stage 1's open-loop gain of ~420, an input of 5 mV would produce a collector swing of 2.1V — very close to the saturation headroom limit of 2.05V. This means **forte playing drives Stage 1 right to its clipping boundary**, which is exactly where the Wurlitzer's characteristic bark emerges.
 
-[ESTIMATED — consistent with the electrostatic pickup signal levels and the 15 dB closed-loop gain producing 2-7 mV at the volume pot output]
+[ESTIMATED — consistent with electrostatic pickup signal levels. Note: Avenson's 2-7 mV at volume pot was measured on his replacement preamp (15 dB gain), not the original 200A (6.0 dB / 2.0x gain per SPICE).]
 
 ### 6.4 Why Single-Ended CE Produces H2 — The Physical Story
 
@@ -911,7 +909,7 @@ When LDR path impedance is **HIGH** (dark phase): fb_junct carries the full R-10
 - **Tremolo bright peak** (Rldr_path ≈ 19K): Gain = 12.1 dB (4.0x)
 - **Modulation range: 6.1 dB** — matches EP-Forum "6 dB gain boost" measurement exactly
 - **Bandwidth decreases with gain:** 9.9 kHz at 2x gain → 8.3 kHz at 4x gain (constant GBW product)
-- **Gain is remarkably constant with input level** (2.007x from 0.5mV to 200mV) — the strong feedback linearizes the circuit, producing very low THD (0.0001% at pp, 0.04% at extreme 200mV)
+- **Gain is remarkably constant with input level** (2.007x from 0.5mV to 200mV) — the strong feedback linearizes the circuit, producing very low THD (0.0004% at mf, 0.04% at extreme 200mV)
 
 The distortion character changes through the tremolo cycle: at the gain peak (LDR low, weak feedback), the preamp is driven harder into its nonlinear region, producing more H2 and "bark." At the gain trough (LDR high, strong feedback), the preamp operates more linearly. This creates a subtle but important **timbral modulation** that distinguishes the real 200A tremolo from simple volume modulation.
 
@@ -925,7 +923,7 @@ The distortion character changes through the tremolo cycle: at the gain peak (LD
 | Topology | Twin-T (parallel-T) oscillator (notch filter feedback) | VERIFIED — schematic + SPICE Feb 2026 |
 | Frequency | approximately 6 Hz (service manual); measured 5.3-7 Hz | VERIFIED |
 | Waveform | Approximately sinusoidal (mild distortion from twin-T topology, est. THD 3-10%) | SPICE-VALIDATED Feb 2026 |
-| Depth control | R-17 trimpot + front panel vibrato pot (100k) | VERIFIED — service manual, EP-Forum |
+| Depth control | Front panel vibrato pot (50K) | VERIFIED — schematic |
 
 ### 7.5 Implications for Modeling
 
@@ -996,7 +994,7 @@ Taylor-expand the transfer function to 3rd or 4th order: `y = a1*x + a2*x^2 + a3
 | Asymmetric soft-clip (Stage 1 Vce headroom 2.05V vs 10.9V) | Primary source of H2 "bark" | CRITICAL | CALCULATED from verified DC analysis |
 | Exponential transfer function (exp(Vbe/nVt)) | H2 >> H3 harmonic ratio | HIGH | VERIFIED — till.com, Art of Electronics |
 | Frequency-dependent feedback (C-3 100pF Miller, dominant pole ~23 Hz) | Register-dependent gain and distortion | HIGH | CALCULATED from verified component values |
-| Closed-loop bandwidth limit (~3.7 kHz) | Natural 2-4 kHz emphasis, HF rolloff | HIGH | CALCULATED |
+| Closed-loop bandwidth limit (~9.9 kHz no trem / ~8.3 kHz trem bright) | HF rolloff above ~10 kHz | HIGH | SPICE-MEASURED Feb 2026 |
 | Direct-coupling bias shift (Stage 1 DC modulates Stage 2) | Dynamic compression, "sag", "bloom" | MEDIUM-HIGH | VERIFIED — schematic topology; not yet modeled |
 | Tremolo gain modulation (R-10=56K/LG-1 in feedback) | Timbral variation through tremolo cycle | MEDIUM | VERIFIED — service manual |
 | Cascaded Stage 2 nonlinearity (harmonics-of-harmonics) | Spectral enrichment at ff | MEDIUM | INFERRED |
@@ -1121,7 +1119,7 @@ With correct component values, the Miller-effect dominant pole is at ~23 Hz. Thi
 
 The closed-loop gain is held at the emitter-feedback-determined level by R-10 feedback (via Ce1) up to the point where open-loop gain drops to match the closed-loop gain. Above that, the gain rolls off because there is not enough open-loop gain to sustain the feedback-controlled closed-loop gain. (Exact closed-loop gain TBD from SPICE AC sweep of corrected topology.)
 
-This is fundamentally different from the previous analysis which treated the Miller poles as "somewhere in the 100-500 Hz range" and wondered why the feedback corners seemed too low. In reality, the dominant pole IS very low (23 Hz), and the resulting GBW (~21 kHz) determines the closed-loop bandwidth (~3.7 kHz).
+This is fundamentally different from the previous analysis which treated the Miller poles as "somewhere in the 100-500 Hz range" and wondered why the feedback corners seemed too low. In reality, the dominant pole IS very low (23 Hz), and the resulting GBW (~21 kHz) determines the closed-loop bandwidth. With the SPICE-measured closed-loop gain of 2.0x (no tremolo), the -3 dB bandwidth is ~9.9 kHz (consistent with GBW/Acl = 21 kHz / 2.0 = 10.5 kHz).
 
 [CALCULATED — from verified C-3 = 100 pF and circuit impedances]
 
@@ -1151,7 +1149,7 @@ Multiple listening evaluations described the model's output as sounding like "a 
 | Use the CORRECT schematic PDF | 874 KB PDF = 200A; 3 MB PDF = 200/203/206/207. Mixed tiles caused topology confusion | VERIFIED — Feb 2026 |
 | The preamp IS the Wurlitzer's voice | Pickup is nearly linear; speaker is EQ; preamp creates the character | VERIFIED — calibration data, listening tests |
 | Use correct schematic values | Estimated values were wrong by factors of 3-5x, cascading errors through all analysis | VERIFIED — BustedGear schematic |
-| The preamp has a ~2-4 kHz passband peak | C20 HPF from below, Miller BW limit from above | CALCULATED from verified values |
+| The combined preamp response peaks in the upper-mid range (~500 Hz – 10 kHz) | C20 HPF from below (~1903 Hz), Miller BW limit from above (~9.9 kHz); SPICE shows mild gain peak at ~447 Hz | SPICE-MEASURED Feb 2026 |
 
 ---
 

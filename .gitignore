@@ -30,6 +30,9 @@ __pycache__/
 # Rendered schematic tiles (large PNGs, regenerate from PDF as needed)
 schematic_tiles/
 
+# External tools (cloned repos, not part of this project)
+netlistify/
+
 # SPICE simulation output (regenerate by running testbenches)
 spice/output/
 *.dat
