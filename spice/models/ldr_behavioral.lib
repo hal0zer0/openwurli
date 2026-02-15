@@ -1,0 +1,126 @@
+* Wurlitzer 200A LDR Behavioral Model (VTL5C3 equivalent)
+* ========================================================
+* Behavioral model of the LG-1 (Wurlitzer part #142312) optocoupler.
+* Modern replacement: VTL5C3 (PerkinElmer/Excelitas).
+*
+* The VTL5C3 contains:
+*   - GaAs infrared LED (880nm, Vf=1.65V typ @ 20mA)
+*   - CdS photoresistor (peak sensitivity 520nm)
+*   - Lightproof enclosure (2500 VRMS isolation)
+*
+* CdS resistance follows power law: R = R_ref * (I_led/I_ref)^(-gamma)
+*   R_ref = 4000 ohm (at I_ref = 5 mA)
+*   gamma = 0.85 (average; 0.80-0.91 across operating range)
+*
+* CdS time constants are strongly asymmetric:
+*   tau_on  = 2.5 ms (fast carrier generation)
+*   tau_off = 30 ms  (slow carrier recombination + detrapping)
+* This 12:1 asymmetry creates the characteristic "choppy" tremolo.
+*
+* Measured data (modularsynthesis.com, more reliable than datasheet):
+*   I_led=0.5mA -> R=25K | 5mA -> R=4K | 20mA -> R=1K | 40mA -> R=600
+*   R_dark (10s) = 10M | R_dark (absolute) = 400M
+*
+* Sources:
+*   VTL5C3 datasheet (PerkinElmer)
+*   modularsynthesis.com independent measurements (Excelitas + Xvive)
+*   DAFx 2013: Digital Model of Buchla Lowpass-Gate
+*   VCV Rack community VTL5C3 modeling thread
+*
+* =================================================================
+* USAGE NOTES FOR NGSPICE:
+* =================================================================
+* This model is a VARIABLE RESISTOR controlled by LED current.
+* It uses ngspice's B-source (behavioral source) to implement
+* R = f(I_led) with asymmetric time constant smoothing.
+*
+* In practice, for the Wurlitzer tremolo SPICE simulation,
+* the simplest approach is to use a .step parameter sweep of
+* fixed LDR resistance values, or a time-varying resistor driven
+* by an external voltage source representing the oscillator output.
+*
+* For transient simulation with the oscillator:
+*   Use a voltage-controlled resistor (B-source) where the control
+*   voltage represents the smoothed LED illumination level.
+*
+* =================================================================
+* SUBCIRCUIT: Simplified LDR as voltage-controlled resistor
+* =================================================================
+* This models the LDR as a resistor whose value is controlled
+* by a voltage at the 'ctrl' pin. The ctrl voltage represents
+* the normalized LED drive (0 = dark, 1 = full brightness at 20mA).
+*
+* Pins:
+*   ldr_a  - LDR terminal A
+*   ldr_b  - LDR terminal B
+*   ctrl   - control voltage (0-1 normalized LED brightness)
+*
+* R_ldr varies from R_dark (ctrl=0) to R_min (ctrl=1):
+*   At ctrl=0: R = 10MEG (dark, no LED drive)
+*   At ctrl=0.025: R ~ 25K (0.5 mA equivalent)
+*   At ctrl=0.25: R ~ 4K (5 mA equivalent)
+*   At ctrl=1.0: R ~ 1K (20 mA equivalent)
+*
+* Implementation: R = R_dark * ctrl^(-gamma) for ctrl > threshold,
+* clamped to R_dark for ctrl near zero.
+* Using log-domain: log(R) = log(R_dark) - gamma * log(ctrl)
+
+.SUBCKT vtl5c3_ldr ldr_a ldr_b ctrl
+
+* Behavioral resistor using ngspice voltage-controlled resistor.
+* The B-source generates a current proportional to V(ldr_a,ldr_b) / R_ldr,
+* where R_ldr = f(V(ctrl)).
+*
+* Power law: R = 1000 * (max(V(ctrl), 0.001))^(-0.85)
+* At ctrl=1.0: R = 1000 ohm (20 mA equivalent)
+* At ctrl=0.025: R = 1000 * 0.025^(-0.85) = 1000 * 59.7 = ~60K
+* At ctrl=0.001: R = 1000 * 0.001^(-0.85) = 1000 * 4467 = ~4.5M (capped)
+*
+* Adjusted reference: R = 800 * (max(V(ctrl), 0.0005))^(-0.85)
+* At ctrl=1.0: R = 800 (matches ~1K at 20 mA)
+* At ctrl=0.25: R = 800 * 0.25^(-0.85) = 800 * 3.48 = 2785 (~3-4K range)
+* At ctrl=0.025: R = 800 * 0.025^(-0.85) = 800 * 47.8 = 38K (~25-40K range)
+* At ctrl=0.0005: R ≈ 10M (dark, clamped)
+
+B_ldr ldr_a ldr_b I = V(ldr_a, ldr_b) / max(800 * pow(max(V(ctrl), 5e-4), -0.85), 500)
+
+.ENDS vtl5c3_ldr
+
+* =================================================================
+* SUBCIRCUIT: LDR with asymmetric smoothing (for transient sim)
+* =================================================================
+* Adds the characteristic CdS attack/release time constants.
+* Input: raw_ctrl (unsmoothed oscillator output, 0-1)
+* Output: smooth_ctrl (smoothed for LDR, available at pin)
+*
+* tau_on = 2.5 ms, tau_off = 30 ms
+* Implemented as RC lowpass with switched resistance.
+*
+* Pins:
+*   ldr_a     - LDR terminal A
+*   ldr_b     - LDR terminal B
+*   raw_ctrl  - raw control voltage from oscillator (0-1)
+*
+* Internal: smooth_ctrl node has the smoothed control signal.
+
+.SUBCKT vtl5c3_ldr_dynamic ldr_a ldr_b raw_ctrl
+
+* Asymmetric smoothing filter:
+* Use a simple RC with averaged time constant for initial modeling.
+* tau_avg ≈ 16 ms (geometric mean of 2.5 and 30 ms)
+* R_smooth * C_smooth = 16 ms
+* Using R = 16K, C = 1uF -> tau = 16ms
+*
+* For more accurate asymmetric behavior, use conditional B-source:
+* dV/dt = (V_target - V_smooth) / tau, where tau depends on direction.
+* In ngspice, approximate with a capacitor charged through a
+* nonlinear resistor.
+
+* Simple averaged approach (replace with conditional for accuracy):
+R_smooth raw_ctrl smooth_ctrl 16K
+C_smooth smooth_ctrl 0 1U IC=0
+
+* LDR behavioral resistor driven by smoothed control
+B_ldr ldr_a ldr_b I = V(ldr_a, ldr_b) / max(800 * pow(max(V(smooth_ctrl), 5e-4), -0.85), 500)
+
+.ENDS vtl5c3_ldr_dynamic

@@ -1,0 +1,80 @@
+* Wurlitzer 200A Tremolo Oscillator Testbench
+* =============================================
+* Validates the twin-T oscillator standalone operation.
+*
+* Expected results:
+*   - Sustained oscillation at approximately 5.3-6 Hz
+*   - Node G (led_out) output: ~11.5 Vpp (near rail-to-rail)
+*   - TR-3 DC: B~1.25V, E=0.68V, C=5.9V (shared)
+*   - TR-4 DC: B=0.68V, E=0V, C=5.9V (shared)
+*   - Waveform: mildly distorted sinusoidal
+*
+* Run:
+*   cd spice/testbench && ngspice -b tb_tremolo_osc.cir
+
+.title Wurlitzer 200A Tremolo Oscillator - Standalone Validation
+
+* --- Include models ---
+.include ../models/transistors.lib
+.include ../subcircuits/tremolo_osc.cir
+
+* --- Power supply ---
+Vcc vcc 0 DC 15
+
+* --- Instantiate oscillator ---
+Xosc led_out vcc 0 wurli_tremolo_osc
+
+* --- Analysis ---
+
+* Transient: 5 seconds to capture ~25 cycles at ~5 Hz
+* Let SPICE find the DC operating point (no UIC).
+* Oscillator should self-start from numerical noise.
+.tran 0.1m 5
+
+.control
+  run
+
+  echo ""
+  echo "========================================="
+  echo "  Tremolo Oscillator DC Operating Point"
+  echo "========================================="
+  echo "Expected: TR-3: B~1.25V, E=0.68V, C=5.9V"
+  echo "Expected: TR-4: B=0.68V, E=0V, C=5.9V"
+  echo ""
+
+  * Print key node voltages (initial DC from transient)
+  * Note: TR-3 collector = TR-4 collector = led_out (shared Node G)
+  print v(xosc.base3)[0] v(xosc.emit3)[0] v(led_out)[0]
+
+  echo ""
+  echo "========================================="
+  echo "  Oscillation Measurements"
+  echo "========================================="
+
+  * Measure oscillation frequency from the last 3 seconds
+  * (skip first 2s for startup transient)
+  meas tran t1 when v(led_out)=7 rise=10
+  meas tran t2 when v(led_out)=7 rise=11
+  let osc_period = t2 - t1
+  let osc_freq = 1 / osc_period
+  echo "Oscillation period:"
+  print osc_period
+  echo "Oscillation frequency (target: 5.3-6 Hz):"
+  print osc_freq
+
+  * Measure peak-to-peak output
+  meas tran v_max max v(led_out) from=2 to=5
+  meas tran v_min min v(led_out) from=2 to=5
+  let vpp = v_max - v_min
+  echo "Output Vpp (target: ~11.5V):"
+  print vpp
+
+  echo ""
+  echo "========================================="
+
+  * Save waveform data
+  wrdata ../output/tremolo_osc_transient.dat v(led_out) v(xosc.base3) v(xosc.emit3)
+
+.endc
+
+.end

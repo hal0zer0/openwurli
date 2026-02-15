@@ -1,0 +1,116 @@
+* Wurlitzer 200A Tremolo Oscillator Subcircuit
+* =============================================
+* Twin-T (parallel-T) oscillator using TR-3 (2N2924 NPN) with
+* TR-4 (2N2924 NPN) as LED driver buffer.
+*
+* Topology CORRECTED Feb 2026: This is a TWIN-T oscillator, NOT
+* a phase-shift oscillator. The twin-T network forms a notch filter
+* in the negative feedback path of TR-3. At the notch frequency,
+* feedback is minimized and loop gain peaks, satisfying the
+* Barkhausen criterion for oscillation.
+*
+* The twin-T has non-standard component ratios:
+*   R_shunt/R_series = 27K/680K = 0.040 (standard = 0.5)
+*   C_shunt/C_series = 0.12/0.12 = 1.0 (standard = 2.0)
+* This produces a shallow notch (~-23.5 dB) rather than a deep null,
+* making oscillation easier to start and sustain at the cost of
+* waveform purity (mildly distorted sinusoidal, est. THD 3-10%).
+*
+* Calculated notch/oscillation frequency: ~5.3 Hz
+* Service manual specification: approximately 6 Hz
+* Measured instruments: 5.3-7 Hz (component tolerance explains spread)
+*
+* CIRCUIT TOPOLOGY (verified from schematic screenshots Feb 2026):
+*
+*   TR-3 and TR-4 share a common collector node (Node G / led_out).
+*   R17 (4.7K) from Vcc to Node G is the only collector load for both.
+*   In the real circuit, R17 is in series with LG-1 LED (pin 1=cathode),
+*   with LED anode (pin 2) returning to Vcc via cable. For the subcircuit
+*   we approximate the LED path as a direct 4.7K to Vcc.
+*
+*   R15 (680K) pulls TR-3 base to GROUND (not Vcc!). The DC bias is set
+*   by the voltage divider between:
+*     - Twin-T DC feedback (R14+R13 = 1360K from collector to base)
+*     - R15 (680K from base to ground)
+*   This gives Vb3 ~ 1.25V (confirmed by Ebers-Moll: Vbe=0.57V at Ic~77uA).
+*
+*   TR-3 emitter connects directly to TR-4 base at the .68V junction.
+*   R16 (10K) from this junction to ground provides the emitter DC path.
+*   Most emitter current (~68uA) flows through R16; a small fraction
+*   (~9uA) drives TR-4 base. TR-4 amplifies this to ~1.9mA, providing
+*   the bulk of the shared collector current through 4.7K.
+*
+* Verified from docs/verified_wurlitzer_200A_series_schematic.pdf
+* page 0, lower-left "VIBRATO OSCILLATOR" section.
+* User-traced wiring confirmed Feb 2026.
+*
+* Pins:
+*   led_out  - Shared collector output (Node G, connects to LG-1 LED)
+*   vcc      - +15V supply
+*   gnd      - Ground reference
+*
+* DC operating points (schematic annotations):
+*   TR-3: B=1.25V, E=0.68V, C=5.9V (shared)
+*   TR-4: B=0.68V, E=0V, C=5.9V (shared)
+*   Output swing: 11.5 Vpp (near rail-to-rail)
+
+.SUBCKT wurli_tremolo_osc led_out vcc gnd
+
+* ============================================================
+* Twin-T feedback network
+* ============================================================
+* Connected between shared collector (led_out) and TR-3 base (base3).
+*
+* Path 1 (C-R-C highpass T):
+*   led_out --[C17 .12uF]-- node_hp --[C16 .12uF]-- base3
+*   with R12 (27K) from node_hp to GND
+*
+* Path 2 (R-C-R lowpass T):
+*   led_out --[R14 680K]-- node_lp --[R13 680K]-- base3
+*   with C18 (0.12uF) from node_lp to GND
+
+* --- Highpass T branch ---
+C17   led_out  node_hp  0.12U
+C16   node_hp  base3    0.12U
+R12   node_hp  gnd      27K
+
+* --- Lowpass T branch ---
+R14   led_out  node_lp  680K
+R13   node_lp  base3    680K
+C18   node_lp  gnd      0.12U
+
+* ============================================================
+* TR-3: Oscillator amplifier (2N2924 NPN, common-emitter)
+* ============================================================
+* R15 (680K) pulls base to GROUND (bias pull-down).
+* DC bias set by divider: twin-T DC path (1360K) vs R15 (680K).
+* Collector connects to shared bus (led_out).
+* Emitter connects to .68V junction (emit3 = TR-4 base).
+Q3    led_out base3 emit3  Q2N2924
+R15   base3   gnd   680K
+
+* ============================================================
+* Emitter / TR-4 base junction (.68V)
+* ============================================================
+* R16 (10K) provides DC emitter current path to ground.
+* TR-3 emitter and TR-4 base share this node directly.
+R16   emit3   gnd   10K
+
+* ============================================================
+* TR-4: LED driver buffer (2N2924 NPN, common-emitter)
+* ============================================================
+* Base driven directly from TR-3 emitter (.68V junction).
+* Emitter grounded. Collector shares Node G with TR-3.
+* TR-4 provides the bulk of collector current (~1.9mA)
+* and the large output swing (11.5 Vpp).
+Q4    led_out emit3 gnd  Q2N2924
+
+* ============================================================
+* Shared collector load: R17 (4.7K) from Vcc to Node G
+* ============================================================
+* In real circuit: Vcc -> LG-1 pin 2 (LED anode) -> LED ->
+* pin 1 (cathode) -> 4.7K -> Node G. LED adds ~1.5V drop.
+* Approximated here as direct 4.7K to Vcc.
+R17_load vcc led_out 4.7K
+
+.ENDS wurli_tremolo_osc

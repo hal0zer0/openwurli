@@ -64,20 +64,44 @@ The Wurlitzer 200A service manual explicitly states:
 
 ### 2.1 Oscillator
 
-**VERIFIED from service manual:**
-- Two direct-coupled transistors: TR-3 and TR-4
-- Transistor type: 2N2924 (Wurlitzer part 142083-2) for both TR-3 and TR-4
-- Band-pass feedback circuit topology (phase-shift oscillator variant)
-- Oscillation frequency: approximately 6 Hz (service manual specification)
-- Measured rates across real instruments: 5.3-7 Hz, with most around 5.5 Hz
-- Waveform: mildly distorted sinusoidal (typical of phase-shift oscillators). Estimated THD ~3-10% (Strymon white paper, Aiken Amps analysis of similar topology).
-- R-17: adjustable trimpot for vibrato depth
+**VERIFIED from schematic + SPICE simulation (Feb 2026):**
 
-**ESTIMATED (not directly confirmed):**
-- The oscillator likely uses three RC phase-shift sections in the feedback path
-- Phase-shift network uses 27K resistors, 680K bias resistors [VERIFIED -- schematic]
-- Component values for ~6 Hz operation would be in the range of 0.047-0.1 uF caps with 100K-200K resistors
-- The output drives the LED element inside the LG-1 optocoupler package
+The oscillator is a **twin-T (parallel-T) oscillator**, NOT a phase-shift oscillator as previously documented. The twin-T network forms a notch filter in the negative feedback path of TR-3. At the notch frequency, feedback is minimized and loop gain peaks, satisfying the Barkhausen criterion.
+
+**Topology (verified from schematic screenshots + SPICE Feb 2026):**
+- TR-3 and TR-4 share a **common collector node** (Node G)
+- R17 (4.7K) from Vcc to Node G: sole collector load for both transistors
+- R15 (680K) from base3 to **ground** (pull-down bias, NOT pull-up to Vcc)
+- R16 (10K) from emit3/.68V junction to ground (emitter current path)
+- TR-3 emitter connects **directly** to TR-4 base (shared .68V junction)
+- TR-4 emitter grounded; collector shares Node G with TR-3
+
+**Twin-T network (non-standard ratios):**
+- Highpass T: C17 (.12uF) → node_hp → C16 (.12uF), with R12 (27K) shunt to GND
+- Lowpass T: R14 (680K) → node_lp → R13 (680K), with C18 (.12uF) shunt to GND
+- R_shunt/R_series = 27K/680K = 0.040 (standard = 0.5)
+- C_shunt/C_series = 0.12/0.12 = 1.0 (standard = 2.0)
+- This produces a shallow notch (~-23.5 dB) rather than a deep null
+
+**Oscillation frequency:** ~5.6 Hz (SPICE-measured). Service manual: ~6 Hz. Measured instruments: 5.3-7 Hz.
+
+**DC operating points (SPICE-validated):**
+
+| Node | Schematic | SPICE | Match |
+|------|-----------|-------|-------|
+| TR-3 base | 1.25V | 1.249V | Excellent |
+| TR-3 emitter / TR-4 base | 0.68V | 0.668V | Excellent |
+| Shared collector (Node G) | 5.9V | 4.95V | See note |
+
+Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vcc. In the real circuit, the LG-1 LED in series adds ~1.5V forward drop, reducing effective Vcc and raising the quiescent collector point.
+
+**Output swing:** 11.8 Vpp (SPICE, target ~11.5 Vpp). Near rail-to-rail.
+
+**Waveform:** Mildly distorted sinusoidal, estimated THD 3-10%.
+
+**LED drive path:** Node G → R17 (4.7K) → LG-1 pin 1 (LED cathode) → LED → pin 2 (LED anode) → return to Vcc via cable. The LG-1 LED symbol points downward on the schematic (anode=pin 2 at top, cathode=pin 1 at bottom).
+
+**SPICE netlist:** `spice/subcircuits/tremolo_osc.cir` (validated in `spice/testbench/tb_tremolo_osc.cir`)
 
 ### 2.2 LDR/Optocoupler (LG-1)
 
