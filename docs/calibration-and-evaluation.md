@@ -138,8 +138,8 @@ Source: Wikipedia (Wurlitzer electronic piano), Abbey Road Institute blog, multi
 
 **The "bark breakpoint":**
 The transition from clean to distorted is not gradual -- it has a knee around velocity 0.6 (MIDI ~76). Below this point, the sound warms up gently. Above it, harmonic distortion increases rapidly. This is because:
-1. The reed's displacement approaches the pickup gap at higher velocities, increasing nonlinearity
-2. The preamp enters deeper saturation nonlinearly (exponential transfer function)
+1. The reed's displacement approaches the pickup gap at higher velocities, increasing the 1/(1-y) nonlinearity (primary H2 source)
+2. At extreme dynamics, the preamp also enters saturation, adding further H2 from its asymmetric headroom
 
 The abruptness of this knee is what musicians call "bark." A model with a smooth, linear velocity-to-distortion curve will sound "flat" or "lifeless" even if the steady-state spectrum matches perfectly.
 
@@ -205,7 +205,7 @@ Based on Improv source (G3, MIDI 55) and extrapolated from physics:
 | f (vel 80-100) | +1 to +4 dB | +2 to +5 dB stronger | Pronounced bark |
 | ff (vel 100-127) | +4 to +8 dB | +5 to +8 dB stronger | Aggressive growl/bark |
 
-**Velocity-H2 coupling:** ~0.92 dB increase in H2/H1 per 1 dB increase in signal level. This is the preamp's exponential transfer function at work.
+**Velocity-H2 coupling:** ~0.92 dB increase in H2/H1 per 1 dB increase in signal level. This is the pickup's 1/(1-y) nonlinearity at work — larger displacement means more H2, and the preamp adds to it at higher levels.
 
 **Non-negotiable:** H2 must exceed H3 at ALL velocities. If ff produces H3>H2, the saturation model is wrong (likely using symmetric function like tanh instead of asymmetric exponential).
 
@@ -219,8 +219,8 @@ Level:     0 dB      -11 dB  -28 dB  -35 dB  -42 dB  -48 dB
            (ref)     (strong) (weak)  (very weak) ...decreasing...
 ```
 
-The spectrum is NOT a smooth rolloff. The H2 "bump" above the otherwise decreasing harmonic series is the signature of the asymmetric preamp nonlinearity. The spectral envelope should approximate:
-- H2/H1 ~ -11 dB (H2 from preamp asymmetry)
+The spectrum is NOT a smooth rolloff. The H2 "bump" above the otherwise decreasing harmonic series is the signature of the pickup's 1/(1-y) nonlinearity (with additional contribution from the preamp at high dynamics). The spectral envelope should approximate:
+- H2/H1 ~ -11 dB (H2 from pickup nonlinearity + preamp asymmetry)
 - H_n/H1 ~ -7*n dB for n>=3 (approximately exponential rolloff)
 
 At bass register, H2 is much closer to H1 (can even exceed it). At treble, H2 is 20-30 dB below H1. This register-dependent H2 slope is one of the hardest things to model accurately.

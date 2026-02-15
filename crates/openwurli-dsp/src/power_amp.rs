@@ -5,7 +5,7 @@
 /// transparent; the preamp dominates tonal character. At ff polyphonic or with
 /// aged bias, crossover distortion and rail clipping become audible.
 ///
-/// Model: quadratic dead zone (crossover) + hard clip (rails).
+/// Model: Hermite smoothstep dead zone (crossover, C1 continuous) + hard clip (rails).
 
 pub struct PowerAmp {
     /// Dead zone half-width (crossover distortion).
@@ -24,11 +24,12 @@ impl PowerAmp {
     }
 
     pub fn process(&mut self, input: f64) -> f64 {
-        // Crossover distortion: quadratic dead zone
+        // Crossover distortion: Hermite smoothstep dead zone (C1 continuous)
         let abs_in = input.abs();
         let out = if abs_in < self.crossover_width {
             let ratio = abs_in / self.crossover_width;
-            input.signum() * abs_in * ratio * ratio
+            let smooth = ratio * ratio * (3.0 - 2.0 * ratio);
+            input.signum() * abs_in * smooth
         } else {
             input
         };

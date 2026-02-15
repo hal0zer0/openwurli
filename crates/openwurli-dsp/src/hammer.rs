@@ -60,7 +60,8 @@ impl AttackNoise {
     ///
     /// - `velocity`: 0.0 to 1.0
     /// - `sample_rate`: audio sample rate
-    pub fn new(velocity: f64, sample_rate: f64) -> Self {
+    /// - `seed`: RNG seed (derive from note + counter to decorrelate simultaneous notes)
+    pub fn new(velocity: f64, sample_rate: f64, seed: u32) -> Self {
         let noise_amp = 0.15 * velocity * velocity;
         let tau = 0.003;
         let decay_per_sample = (-1.0 / (tau * sample_rate)).exp();
@@ -71,7 +72,7 @@ impl AttackNoise {
             decay_per_sample,
             remaining: duration_samples,
             bpf: Biquad::bandpass(1000.0, 1.0, sample_rate),
-            rng_state: 0x12345678,
+            rng_state: seed,
         }
     }
 
@@ -128,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_attack_noise_decays() {
-        let mut noise = AttackNoise::new(1.0, 44100.0);
+        let mut noise = AttackNoise::new(1.0, 44100.0, 0x12345678);
         let mut buf = vec![0.0f64; 700];
         noise.render(&mut buf);
 
@@ -139,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_attack_noise_is_done() {
-        let mut noise = AttackNoise::new(1.0, 44100.0);
+        let mut noise = AttackNoise::new(1.0, 44100.0, 0x12345678);
         let mut buf = vec![0.0f64; 1000];
         noise.render(&mut buf);
         assert!(noise.is_done());
