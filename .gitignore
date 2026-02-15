@@ -15,7 +15,8 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Build artifacts (future)
+# Rust/Cargo build artifacts
+target/
 build/
 cmake-build-*/
 *.o
@@ -35,7 +36,6 @@ netlistify/
 
 # Reed renderer output WAVs (regenerate with cargo run)
 tools/reed-renderer/output/
-tools/reed-renderer/target/
 
 # Market research (untracked, not part of the project deliverables)
 docs/market-research/

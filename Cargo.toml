@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    "crates/openwurli-dsp",
+    "crates/openwurli-plugin",
+    "tools/reed-renderer",
+    "tools/preamp-bench",
+    "xtask",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"

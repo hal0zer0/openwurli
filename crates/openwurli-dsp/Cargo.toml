@@ -1,0 +1,8 @@
+[package]
+name = "openwurli-dsp"
+version = "0.1.0"
+edition = "2024"
+description = "Wurlitzer 200A DSP library — modal synthesis, preamp circuit simulation, tremolo"
+
+[dependencies]
+# Pure DSP math — no audio framework dependencies

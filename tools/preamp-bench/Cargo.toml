@@ -1,0 +1,9 @@
+[package]
+name = "preamp-bench"
+version = "0.1.0"
+edition = "2024"
+description = "Preamp DSP validation CLI — compare against SPICE reference data"
+
+[dependencies]
+openwurli-dsp = { path = "../../crates/openwurli-dsp" }
+hound = "3.5"

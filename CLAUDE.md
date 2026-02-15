@@ -32,32 +32,76 @@ Key distinctions of the 200A vs the 200 (and other Wurlitzer models) that the ci
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| CMake | 3.28.3 | Build system |
-| g++ | 13.3.0 | C++ compiler |
-| Rust / Cargo | 1.92.0 | Available if Rust-based plugin framework is chosen |
-| Python | 3.12.3 | Supporting tools only (analysis, MIDI/audio test scripts) |
+| Rust / Cargo | 1.92.0 | Plugin and DSP (Rust 2024 edition) |
+| nih-plug | git HEAD | CLAP + VST3 plugin framework |
+| Python | 3.12.3 | Supporting tools only (analysis, schematic preprocessing) |
 | ALSA dev | 1.2.11 | Linux audio backend |
 | JACK (PipeWire) | available | Linux audio backend |
 
 ## Build Commands
 
-*To be filled in once the build system is established in Phase 1.*
-
 ```bash
+# Build everything
+cargo build --workspace
+
+# Run all tests (57 unit + integration)
+cargo test --workspace
+
+# Bundle CLAP + VST3 plugin (release build)
+cargo xtask bundle openwurli --release
+# Output: target/bundled/openwurli.clap, target/bundled/openwurli.vst3
+
+# Install to user plugin directories
+cp target/bundled/openwurli.clap ~/.clap/
+cp -r target/bundled/openwurli.vst3 ~/.vst3/
+
+# Preamp validation CLI
+cargo run -p preamp-bench -- gain --freq 1000
+cargo run -p preamp-bench -- sweep --start 20 --end 20000 --points 50
+cargo run -p preamp-bench -- harmonics --freq 440
+cargo run -p preamp-bench -- tremolo-sweep
+cargo run -p preamp-bench -- render --note 60 --velocity 100 --duration 2.0 --output /tmp/test.wav
+
+# Reed renderer (standalone WAV output)
+cargo run -p reed-renderer -- -n 60 -v 100 -d 1.0 -o /tmp/reed.wav
+
 # Python virtual environment (for analysis/test tools only)
 source .venv/bin/activate
-pip install <package>         # add supporting Python packages as needed
 ```
 
 ## Project Structure
 
 ```
-docs/           # Research materials: schematics, frequency response data, Wurlitzer 200A specs
-tools/          # Python CLI utilities for development support
-.venv/          # Python 3.12 virtual environment for supporting tools (audio/MIDI analysis)
+Cargo.toml                          # Workspace root
+crates/
+  openwurli-dsp/                    # Shared DSP library (pure math, no framework deps)
+    src/
+      lib.rs                        # Module exports
+      reed.rs                       # Modal oscillator (7 modes) with damper support
+      hammer.rs                     # Dwell filter + attack noise
+      pickup.rs                     # Electrostatic pickup model (HPF at 2312 Hz)
+      voice.rs                      # Voice assembly (reed + hammer + pickup + damper)
+      tables.rs                     # Per-note parameters (frequencies, decay rates, mode ratios)
+      variation.rs                  # Per-note detuning and amplitude variation
+      filters.rs                    # Filter primitives (OnePoleHpf/Lpf, DcBlocker, Biquad)
+      oversampler.rs                # 2x polyphase IIR half-band oversampler
+      bjt_stage.rs                  # Single BJT CE stage (NR solver + asymmetric soft-clip)
+      preamp.rs                     # PreampModel trait + EbersMollPreamp
+      tremolo.rs                    # LFO + CdS LDR model + feedback modulation
+      power_amp.rs                  # Class AB crossover distortion + rail clipping
+      speaker.rs                    # Variable HPF/LPF cabinet simulation
+  openwurli-plugin/                 # nih-plug CLAP+VST3 plugin (cdylib)
+    src/
+      lib.rs                        # Plugin entry, process callback, voice management
+      params.rs                     # Parameter definitions (Volume, Gain, Tremolo, Speaker)
+tools/
+  reed-renderer/                    # Standalone reed → WAV renderer
+  preamp-bench/                     # Preamp DSP validation CLI (gain, sweep, harmonics, render)
+xtask/                              # nih-plug bundler (cargo xtask bundle)
+docs/                               # Research: schematics, circuit analysis, DSP specs
+spice/                              # ngspice netlists and testbenches
+.venv/                              # Python virtual environment (analysis tools)
 ```
-
-*Source directories will be added as phases are implemented.*
 
 ## Authoritative Schematic
 

@@ -9,7 +9,6 @@ use crate::tables::NUM_MODES;
 
 /// Simple deterministic hash: takes MIDI note + seed, returns 0.0..1.0.
 fn hash_f64(midi: u8, seed: u32) -> f64 {
-    // FNV-1a inspired mixing
     let mut h: u32 = 2166136261;
     h ^= midi as u32;
     h = h.wrapping_mul(16777619);
@@ -17,19 +16,18 @@ fn hash_f64(midi: u8, seed: u32) -> f64 {
     h = h.wrapping_mul(16777619);
     h ^= h >> 16;
     h = h.wrapping_mul(2654435769);
-    // Map to 0.0..1.0
     (h & 0x00FF_FFFF) as f64 / 16777216.0
 }
 
 /// Frequency detuning factor for a note: multiplier in range [1-max, 1+max].
-/// max = 0.008 (±0.8%).
+/// max = 0.008 (+/-0.8%).
 pub fn freq_detune(midi: u8) -> f64 {
-    let r = hash_f64(midi, 0xDEAD) * 2.0 - 1.0; // -1..1
+    let r = hash_f64(midi, 0xDEAD) * 2.0 - 1.0;
     1.0 + r * 0.008
 }
 
 /// Per-mode amplitude variation factors: multipliers in range [1-max, 1+max].
-/// max = 0.08 (±8%).
+/// max = 0.08 (+/-8%).
 pub fn mode_amplitude_offsets(midi: u8) -> [f64; NUM_MODES] {
     let mut offsets = [0.0f64; NUM_MODES];
     for i in 0..NUM_MODES {
