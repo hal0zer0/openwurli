@@ -922,9 +922,9 @@ The distortion character changes through the tremolo cycle: at the gain peak (LD
 | Parameter | Value | Source |
 |-----------|-------|--------|
 | Transistors | TR-3, TR-4 (2N2924, part 142083-2) | VERIFIED — BustedGear |
-| Topology | Phase-shift oscillator (band-pass feedback) | VERIFIED — service manual |
+| Topology | Twin-T (parallel-T) oscillator (notch filter feedback) | VERIFIED — schematic + SPICE Feb 2026 |
 | Frequency | approximately 6 Hz (service manual); measured 5.3-7 Hz | VERIFIED |
-| Waveform | Approximately sinusoidal (mild distortion from phase-shift topology) | INFERRED |
+| Waveform | Approximately sinusoidal (mild distortion from twin-T topology, est. THD 3-10%) | SPICE-VALIDATED Feb 2026 |
 | Depth control | R-17 trimpot + front panel vibrato pot (100k) | VERIFIED — service manual, EP-Forum |
 
 ### 7.5 Implications for Modeling
