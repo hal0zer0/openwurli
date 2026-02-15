@@ -46,18 +46,18 @@ Keypress
   -> Reed vibrates (cantilevered spring steel with solder tuning mass at free end)
   -> Electrostatic pickup (reed + shared pickup plate = variable capacitor)
      - Polarizing voltage: ~147V DC via half-wave rectifier
-     - Bias network: R-2=2M (RESOLVED Feb 2026), R-3=470k -> R_total = R-2||R-3 = 380k
-     - C20 shunt cap: 220 pF (RESOLVED from schematic; see preamp-circuit.md Section 2)
+     - Bias network: R-2=2M, R-3=470k -> R_total = R-2||R-3 = 380k
+     - C20 shunt cap: 220 pF (see preamp-circuit.md Section 2)
      - ALL 64 reeds share ONE common pickup plate (reed bar assembly)
      - Total system capacitance: ~240 pF at preamp input
   -> Preamp (separate PCB mounted on reed bar in 200A)
      - Two direct-coupled NPN common-emitter stages (TR-1, TR-2)
      - Originally 2N2924, later replaced with 2N5089 (hFE >= 450)
      - +15V DC supply
-     - Collector-base feedback caps C-3 = C-4 = 100 pF (verified from schematic)
+     - Collector-base feedback caps C-3 = C-4 = 100 pF
      - C20 HPF at input (~1903 Hz)
-     - Total gain 6.0 dB (2.0x) no tremolo / 12.1 dB (4.0x) tremolo bright [SPICE-measured Feb 2026]
-     - Output: 2-7 mV AC at volume pot (Avenson measurement; his replacement design has ~15 dB gain)
+     - Total gain 6.0 dB (2.0x) no tremolo / 12.1 dB (4.0x) tremolo bright
+     - Output: 2-7 mV AC at volume pot
   -> Tremolo (LDR optocoupler modulates preamp emitter feedback)
      - LFO (~5.6 Hz twin-T oscillator, TR-3/TR-4) drives LED inside LG-1 optocoupler
      - R-10 (56K) feeds back from output to fb_junct; Ce1 (4.7 MFD) couples fb_junct to TR-1 emitter
@@ -66,7 +66,7 @@ Keypress
      - LED ON → LDR low → fb_junct shunted to ground → feedback can't reach emitter → higher gain
      - LED OFF → LDR high → full feedback reaches emitter via Ce1 → lower gain
      - This is gain modulation, producing timbral variation through the tremolo cycle
-     - Rate: ~5.5-6 Hz, depth: ~6 dB (SPICE-measured modulation range at max vibrato)
+     - Rate: ~5.5-6 Hz, depth: ~6 dB modulation range at max vibrato
   -> Volume potentiometer
      - Between preamp output and power amp input
      - Output at pot: 2-7 mV AC
@@ -75,7 +75,7 @@ Keypress
      - +/-24V rails
      - 0.47 ohm emitter degeneration resistors
      - ~10 mA quiescent bias
-  -> Speaker (two oval ceramic drivers in ABS plastic lid; 4"x6" per schematic, commonly cited as 4"x8" — see output-stage.md)
+  -> Speaker (two 4"x8" oval ceramic drivers in ABS plastic lid; see output-stage.md)
      - Sealed enclosure, resonance ~85 Hz
      - Cone breakup rolloff ~8 kHz
 ```
@@ -240,7 +240,7 @@ Base amplitudes by register (before dwell filter and velocity scaling):
 | Mid | 0.18, 0.079, 0.018, 0.010, 0.006, 0.004, 0.002 |
 | Treble | 0.12, 0.057, 0.014, 0.008, 0.004, 0.002, 0.002 |
 
-These approximate 1/omega scaling (physical modal participation from a velocity impulse at the free end). With the corrected Gaussian dwell filter (sigma=8.0), the fundamental receives negligible attenuation, so no mode 1 boost compensation is needed.
+These approximate 1/omega scaling (physical modal participation from a velocity impulse at the free end). With the Gaussian dwell filter (sigma=8.0), the fundamental receives negligible attenuation, so no mode 1 boost compensation is needed.
 
 ### Velocity Scaling
 
@@ -253,7 +253,7 @@ Timbral brightening at ff comes from two sources that do NOT require per-mode ve
 1. Shorter dwell time at ff -> dwell filter passes more upper partials
 2. Preamp nonlinearity -> louder signal generates more harmonics
 
-**Lesson from Vurli:** Per-mode velocity exponents (`pow(vel, 1 + (curve-1)*(m/6)^0.6)`) double-count with the dwell filter. Both brighten at ff. Remove the per-mode exponent entirely.
+Per-mode velocity exponents (`pow(vel, 1 + (curve-1)*(m/6)^0.6)`) double-count with the dwell filter -- both brighten at ff. Do not use per-mode exponents.
 
 ### Decay
 
@@ -267,9 +267,7 @@ decay_rate[m] = 1.0 / (decay_time * decay_scale[m])
 - Higher modes decay faster -> timbre darkens over time (bright attack, sine-like tail)
 - Register scaling `/12` gives approximate doubling every octave
 
-> **Correction (Feb 2026):** base_decay reduced from 1.6s to 1.1s. The previous value gave 3.6 dB/s at D4, nearly half the measured 6.2 dB/s. With 1.1s, the model gives 5.3 dB/s at D4, within the +/-30% calibration tolerance. Decay scales updated from [1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035] to physics-derived values based on constant-Q damping with a mounting-loss floor (reed-and-hammer-physics.md Section 5.8). The previous values had modes 2-4 decaying 3-6x too slowly, causing upper partials to persist unnaturally long.
-
-Calibration target from OldBassMan 200A recordings: `decay_rate_dB_per_sec = 0.26 * exp(0.049 * MIDI)` with +/-30% tolerance.
+Decay scales are physics-derived values based on constant-Q damping with a mounting-loss floor (see reed-and-hammer-physics.md Section 5.8). Calibration target from OldBassMan 200A recordings: `decay_rate_dB_per_sec = 0.26 * exp(0.049 * MIDI)` with +/-30% tolerance.
 
 ### Per-Sample Rendering
 
@@ -294,9 +292,7 @@ The dwell offset accounts for phase accumulated during hammer contact.
 
 ### Attack Overshoot: Let Physics Handle It
 
-The previous implementation used an artificial multiplicative envelope `(1 + X * exp(-alpha*t))` with no physical basis. This was the root cause of the R40 regression where 20x mode amplitude compensation destroyed the attack-to-sustain ratio.
-
-**Correct approach:** With physically accurate 1/omega mode amplitudes, all modes start in-phase at t=0 and upper modes decay faster. The sum of all modes at t=0 is larger than the sustained fundamental-only signal. This naturally produces 2-4 dB overshoot at mf and 4-8 dB at ff without any artificial envelope. The attack character emerges from modal superposition, which is exactly how it works in the real instrument.
+With physically accurate 1/omega mode amplitudes, all modes start in-phase at t=0 and upper modes decay faster. The sum of all modes at t=0 is larger than the sustained fundamental-only signal. This naturally produces 2-4 dB overshoot at mf and 4-8 dB at ff without any artificial envelope. The attack character emerges from modal superposition, which is exactly how it works in the real instrument.
 
 Do NOT add an artificial overshoot envelope. If natural overshoot is insufficient, the mode amplitude ratios or dwell filter parameters are wrong.
 
@@ -343,7 +339,7 @@ else:
 
 The Gaussian sigma parameter controls how aggressively upper modes are attenuated. Larger sigma = more upper modes pass through = brighter overall timbre.
 
-> **Correction (Feb 2026):** sigma increased from 2.5 to 8.0, per the analysis in reed-and-hammer-physics.md Sections 4.3.3-4.3.4. With sigma=2.5, mode 3 was attenuated by -33 dB and mode 4 by -127 dB at mf -- effectively zeroing all modes above mode 2. This is far too aggressive for a felt hammer, which has a broad spectral envelope. With sigma=8.0, attenuation at mf (C4, t_dwell=1.9ms) is: mode 2 = -0.8 dB, mode 3 = -6.4 dB, mode 4 = -25.6 dB. This preserves mode 3's "metallic clang" contribution to the attack transient while still rolling off the negligible higher modes. The half-sine model was also considered but rejected because its spectral nulls at f*T = 2.5, 3.5, etc. cause unpredictable attenuation swings with velocity -- the same problem that plagued the sinc dwell filter (see Vurli lessons, Section 24).
+With sigma=8.0, attenuation at mf (C4, t_dwell=1.9ms) is: mode 2 = -0.8 dB, mode 3 = -6.4 dB, mode 4 = -25.6 dB. This preserves mode 3's "metallic clang" contribution while rolling off negligible higher modes. See reed-and-hammer-physics.md Sections 4.3.3-4.3.4 for the full analysis.
 
 ### Why Normalization to Fundamental Matters
 
@@ -399,7 +395,7 @@ This is a nuanced point with significant implications:
 - **Per-reed capacitance:** ~5-20 pF (geometric estimate: plate ~3mm x 8mm, gap ~0.23mm)
 - **System capacitance:** ~240 pF at preamp input (all 64 reeds in parallel + wiring + parasitics)
 - **Per-reed RC corner:** f_c = 1/(2*PI*287k*10pF) >> 20 kHz -> constant-charge at all audio frequencies
-- **System RC corner:** f_c = 1/(2*PI*287k*240pF) = 2312 Hz -> bass fundamentals in constant-voltage regime (R_total = R_feed||(R-1+R_bias) = 1M||402K = 287K; R_feed = 1 MEG RESOLVED Feb 2026, Avenson's 499K is replacement design; see pickup-system.md Section 3.7)
+- **System RC corner:** f_c = 1/(2*PI*287k*240pF) = 2312 Hz -> bass fundamentals in constant-voltage regime (R_total = R_feed||(R-1+R_bias) = 1M||402K = 287K; see pickup-system.md Section 3.7)
 
 The per-reed constant-charge approximation is a defensible engineering tradeoff because the C20 input HPF at ~1903 Hz provides similar bass rolloff to the system-level RC dynamics. For the plugin, model the pickup as linear (constant-charge) and let the C20 HPF handle bass shaping.
 
@@ -480,7 +476,7 @@ preamp_input = voice_sum * kPreampInputDrive
 preamp_output = preamp.processSample(preamp_input) * preampGain
 ```
 
-**Critical gain staging issue from Vurli:** The `kPreampInputDrive` parameter is an artificial scaling factor that compensates for the mismatch between the plugin's internal signal levels and the real millivolt-scale signals in the physical circuit. In the real 200A, the pickup generates microvolt signals that the preamp amplifies by ~15 dB. In the plugin, the oscillator produces much larger signals (0.05-0.9 range), requiring a drive factor to place them in the correct regime of the Ebers-Moll curve.
+The `kPreampInputDrive` parameter is an artificial scaling factor that compensates for the mismatch between the plugin's internal signal levels and the real millivolt-scale signals in the physical circuit. In the real 200A, the pickup generates microvolt signals that the preamp amplifies by ~6 dB. In the plugin, the oscillator produces much larger signals (0.05-0.9 range), requiring a drive factor to place them in the correct regime of the Ebers-Moll curve.
 
 **The correct approach is to ensure that at mf single-note:**
 - `B * preamp_input` should be 1-3 (mild nonlinearity)
@@ -492,7 +488,7 @@ With B = 38.5 V^-1, this means the preamp input signal should be in the range 0.
 
 ### C20 Input Coupling HPF
 
-First-order HPF at ~1903 Hz. Models the C20 shunt capacitor at the preamp input (C20 = 220 pF, RESOLVED from schematic at 1500 DPI; R = 380K):
+First-order HPF at ~1903 Hz. Models the C20 shunt capacitor at the preamp input (C20 = 220 pF, R = 380K):
 
 ```
 RC = 1 / (2*PI*1903)   // f_c20 = 1903 Hz (C20 = 220 pF, R = 380K)
@@ -545,9 +541,7 @@ if raw < 0:  output = -cutoffLimit * (1 - exp(raw / cutoffLimit)) // toward Vce_
 
 ### Collector-Base Feedback Caps
 
-**IMPORTANT: The previous implementation had feedback cap polarity BACKWARDS.**
-
-In the real circuit, the collector-base capacitor creates Miller-effect negative feedback:
+The collector-base capacitor creates Miller-effect negative feedback:
 - At HIGH frequencies: cap impedance is low -> MORE current from collector to base -> MORE feedback -> LESS gain
 - At LOW frequencies: cap impedance is high -> LESS feedback -> FULL gain
 
@@ -569,18 +563,18 @@ fbCapState += fbCapCoeff * (output - fbCapState)  // LPF tracks output
 effectiveRe = re + feedbackBeta * (something proportional to HF content)
 ```
 
-Target corner frequencies based on physical Miller multiplication (C-3 = C-4 = 100 pF verified):
+Target corner frequencies based on physical Miller multiplication (C-3 = C-4 = 100 pF):
 - Stage 1: ~25 Hz open-loop dominant pole (C-3=100pF × (1+420) = 42,100 pF Miller-multiplied)
 - Stage 2: ~3.3 kHz (C-4=100pF × (1+2.2) = 320 pF, into 150K source impedance)
-- Closed-loop bandwidth: **~10 kHz** (no tremolo) / **~8.3 kHz** (tremolo bright) [SPICE-MEASURED Feb 2026]
+- Closed-loop bandwidth: **~10 kHz** (no tremolo) / **~8.3 kHz** (tremolo bright)
 
 ### Miller LPF (After Each Stage)
 
-First-order LPF modeling Miller-effect bandwidth limitation. With verified C-3 = C-4 = 100 pF:
+First-order LPF modeling Miller-effect bandwidth limitation. With C-3 = C-4 = 100 pF:
 - After Stage 1: dominant pole at ~25 Hz open-loop; closed-loop BW ~9.9 kHz (no trem) / ~8.3 kHz (trem bright)
 - After Stage 2: ~3.3 kHz (Stage 2 has low gain of ~2.2, so Miller multiplication is mild)
 
-> **Note (Feb 2026):** The corrected values show Stage 1's Miller pole is much lower than previously estimated (~25 Hz vs ~200-500 Hz). This is the dominant open-loop pole. With the global feedback loop (R-10 = 56K via Ce1 to emitter), the SPICE-measured closed-loop bandwidth is ~9.9 kHz (no tremolo) / ~8.3 kHz (tremolo bright). GBW/Acl = ~21 kHz / 2.0 = 10.5 kHz, consistent with SPICE. The plugin's per-stage Miller LPF implementation may need restructuring to properly model this feedback topology — see preamp-circuit.md Sections 5-6 for full analysis.
+Stage 1's Miller pole at ~25 Hz is the dominant open-loop pole. With the global feedback loop (R-10 = 56K via Ce1 to emitter), the closed-loop bandwidth is ~9.9 kHz (no tremolo) / ~8.3 kHz (tremolo bright). The plugin's per-stage Miller LPF implementation may need restructuring to properly model this feedback topology -- see preamp-circuit.md Sections 5-6 for full analysis.
 
 ### Stage 2 Parameters
 
@@ -610,13 +604,11 @@ First-order HPF at 20 Hz after Stage 2. Removes residual DC from asymmetric clip
 
 ## 11. Tremolo — Integrated in Preamp Emitter Feedback Loop
 
-**CORRECTION (Feb 2026):** Previous versions of this document described the tremolo as a post-preamp "shunt-to-ground" signal divider. This was WRONG. A subsequent correction placed R-10 at node_A (shunt-feedback to the input), which was ALSO WRONG (based on the wrong 200/203 schematic). The correct 200A topology: R-10 feeds back to TR-1's EMITTER via Ce1 (series-series emitter feedback). See preamp-circuit.md Section 7 for detailed analysis.
-
-The 200A tremolo modulates the preamp's closed-loop gain via an LDR (LG-1) that shunts the emitter feedback junction to ground. R-10 (56K) feeds back from the output to fb_junct; Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter. The LDR path (cable Pin 1 → 50K VIBRATO → 18K → LG-1 → GND) diverts feedback current away from the emitter. This is **gain modulation**, not simple amplitude modulation — the distortion character changes through the tremolo cycle.
+The 200A tremolo modulates the preamp's closed-loop gain via an LDR (LG-1) that shunts the emitter feedback junction to ground. See preamp-circuit.md Section 7 for detailed analysis. R-10 (56K) feeds back from the output to fb_junct; Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter. The LDR path (cable Pin 1 → 50K VIBRATO → 18K → LG-1 → GND) diverts feedback current away from the emitter. This is **gain modulation**, not simple amplitude modulation — the distortion character changes through the tremolo cycle.
 
 ### LFO (Twin-T Oscillator, TR-3/TR-4)
 
-The oscillator is a twin-T (parallel-T) notch filter oscillator, NOT a phase-shift oscillator as previously documented. SPICE-validated at 5.63 Hz with 11.8 Vpp output swing. See `spice/subcircuits/tremolo_osc.cir` and `docs/output-stage.md` Section 2.1 for full topology.
+The oscillator is a twin-T (parallel-T) notch filter oscillator. SPICE-validated at 5.63 Hz with 11.8 Vpp output swing. See `spice/subcircuits/tremolo_osc.cir` and `docs/output-stage.md` Section 2.1 for full topology.
 
 ```
 lfo = sin(2*PI * rate * t)
@@ -721,7 +713,7 @@ For a first release, a simple soft-clip at the output is sufficient. The crossov
 
 ## 14. Stage 12: Speaker Cabinet (Mono, Base Rate)
 
-The 200A uses two oval ceramic speakers in the ABS plastic lid (sealed enclosure). The schematic specifies 4"x6" oval, 16Ω each (part #202243), though many online sources cite 4"x8" — see output-stage.md for discussion.
+The 200A uses two 4"x8" oval ceramic speakers in the ABS plastic lid (sealed enclosure), 16 ohm each (part #202243). See output-stage.md for details.
 
 ### Model
 
@@ -800,14 +792,9 @@ This section traces signal levels through the entire chain, identifying where le
 
 The artificial `kPreampInputDrive` exists because the plugin's oscillator produces signals at arbitrary scale (0.05-0.9), not at the millivolt scale of the real circuit. This is NORMAL for virtual analog -- nobody models actual millivolt signals in floating point (unnecessary precision waste).
 
-The problem is when `kPreampInputDrive` is treated as a tuning knob. In Vurli's history:
-- R39: kPreampInputDrive = 16.0 (with B=2.5 -> too linear)
-- R40: kPreampInputDrive = 48.0 (with B=38.5 -> crushes dynamic range at mf)
-- Current: kPreampInputDrive = 28.0 (compromise)
+**Set kPreampInputDrive ONCE** based on the desired operating point (B * input ~ 1-3 at mf), then NEVER change it during tuning. All tonal adjustments should come from physically motivated parameters (gain, feedback cap values, soft-clip limits). If the sound is wrong, the preamp model is wrong -- do not compensate by changing the input drive.
 
-**The correct approach:** Set kPreampInputDrive ONCE based on the desired operating point (B * input ~ 1-3 at mf), then NEVER change it during tuning. All tonal adjustments should come from physically motivated parameters (gain, feedback cap values, soft-clip limits). If the sound is wrong, the preamp model is wrong -- do not compensate by changing the input drive.
-
-> **Note (Feb 2026):** The preamp gain structure has been corrected and SPICE-measured: Stage 1 max open-loop gain is ~420, Stage 2 is ~2.2. Combined max open-loop gain ~912. Feedback topology: R-10 via Ce1 to TR-1 emitter (series-series emitter feedback). **SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo, 12.1 dB (4.0x) at tremolo bright peak. BW: ~10 kHz (no trem) / ~8.3 kHz (trem bright).** The kPreampInputDrive value of 28.0 was calibrated against the old incorrect values and **will need recalibration** once the corrected parameters are implemented.
+SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo, 12.1 dB (4.0x) at tremolo bright peak. BW: ~10 kHz (no trem) / ~8.3 kHz (trem bright). The kPreampInputDrive value of 28.0 **will need recalibration** once these parameters are implemented.
 
 ### Recommendations
 
@@ -915,7 +902,7 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 | ID | Name | Module | Min | Max | Default | Purpose |
 |----|------|--------|-----|-----|---------|---------|
 | 0 | Master Volume | output | 0.0 | 1.0 | 0.05 | Post-everything output level |
-| 1 | Base Decay | reed | 0.2 | 10.0 | 1.1 | Fundamental decay time at A4 (seconds); corrected Feb 2026 from 1.6 per OldBassMan calibration |
+| 1 | Base Decay | reed | 0.2 | 10.0 | 1.1 | Fundamental decay time at A4 (seconds) |
 | 2 | Velocity Curve | reed | 1.5 | 8.0 | 3.0 | NOT USED if per-mode exponents removed. Reserve for future use. |
 | 3 | Pickup Gap | pickup | 0.3 | 6.0 | 0.50 | Base capacitive gap d0 |
 | 4 | Pickup Mix | pickup | 0.0 | 1.0 | 1.0 | Blend between raw signal and pickup output |
@@ -940,15 +927,15 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 | Stage 2 satLimit | 6.2 V | Vcc - Vc2 = 15 - 8.8 |
 | Stage 2 cutoffLimit | 5.3 V | Vc2 - Ve2 - Vce_sat = 8.8 - 3.4 - 0.1 |
 | Stage 2 re | 0.456 | Re2_unbypassed / Rc2 = 820Ω / 1.8K |
-| C20 HPF frequency | ~1903 Hz | C20 = 220 pF (RESOLVED), R = 380K |
+| C20 HPF frequency | ~1903 Hz | C20 = 220 pF, R = 380K |
 | Miller pole 1 (open-loop) | ~25 Hz | Stage 1 dominant pole (C-3=100pF, Miller-multiplied) |
 | Miller pole 2 | ~3300 Hz | Stage 2 (C-4=100pF, low Miller multiplication) |
-| Closed-loop bandwidth | ~9900 Hz (no trem) / ~8300 Hz (trem bright) | SPICE-measured, combined preamp with R-10 emitter feedback |
+| Closed-loop bandwidth | ~9900 Hz (no trem) / ~8300 Hz (trem bright) | Combined preamp with R-10 emitter feedback |
 | DC block frequency | 20 Hz | Output DC removal |
 | Speaker HPF | 85 Hz, Q=0.75 | Sealed box resonance |
 | Speaker LPF | 8000 Hz, Q=0.707 | Cone breakup |
 | Noise decay | 1/0.003 = 333 Hz | 3ms attack noise time constant |
-| Dwell sigma^2 | 64.0 | Gaussian dwell filter width (sigma=8.0; corrected Feb 2026 from 6.25/sigma=2.5) |
+| Dwell sigma^2 | 64.0 | Gaussian dwell filter width (sigma=8.0) |
 | kNumModes | 7 | Modal oscillator mode count |
 | kMaxVoices | 12 | Maximum simultaneous voices |
 
@@ -1081,14 +1068,14 @@ Get a playable instrument with correct pitch and basic dynamics:
 
 **Test:** Play notes, verify correct pitch across full range, velocity responds, notes decay. No preamp yet -- output is the raw oscillator.
 
-### Phase 2: SPICE Validation (COMPLETED Feb 2026)
+### Phase 2: SPICE Validation (Complete)
 
 All critical analog subcircuits validated in ngspice before DSP implementation:
 
-1. **Preamp** — `spice/subcircuits/preamp.cir`: Two-stage CE amp with emitter feedback via Ce1. DC operating points match schematic. Closed-loop gain 6.0 dB (no tremolo) to 12.1 dB (tremolo bright). THD < 0.04% at normal levels.
-2. **Tremolo oscillator** — `spice/subcircuits/tremolo_osc.cir`: Twin-T oscillator, TR-3/TR-4 shared collector. Freq=5.63 Hz, Vpp=11.82V, DC matches within 1%.
-3. **LDR behavioral model** — `spice/models/ldr_behavioral.lib`: VTL5C3-like power-law with asymmetric time constants (tau_on=2.5ms, tau_off=30ms).
-4. **LDR sweep** — `spice/testbench/topology_b_ldr_sweep.cir`: Verified gain modulation range of 6.1 dB across LDR sweep.
+1. **Preamp** -- `spice/subcircuits/preamp.cir`: Two-stage CE amp with emitter feedback via Ce1. Closed-loop gain 6.0 dB (no tremolo) to 12.1 dB (tremolo bright). THD < 0.04% at normal levels.
+2. **Tremolo oscillator** -- `spice/subcircuits/tremolo_osc.cir`: Twin-T oscillator, TR-3/TR-4 shared collector. Freq=5.63 Hz, Vpp=11.82V.
+3. **LDR behavioral model** -- `spice/models/ldr_behavioral.lib`: VTL5C3-like power-law with asymmetric time constants.
+4. **LDR sweep** -- `spice/testbench/topology_b_ldr_sweep.cir`: 6.1 dB gain modulation range across LDR sweep.
 
 ### Phase 3: Pickup and Summation (1 day)
 
@@ -1100,7 +1087,7 @@ All critical analog subcircuits validated in ngspice before DSP implementation:
 
 ### Phase 4: Oversampler and Preamp (3-5 days)
 
-This is the most complex and sonically important stage. All component values and topology are SPICE-validated (Phase 2).
+This is the most complex and sonically important stage. Component values and topology were validated in SPICE (Phase 2).
 
 1. Integrate HIIR library, build oversampler wrapper
 2. Implement BjtStage class (NR solver, asymmetric soft-clip)
@@ -1152,43 +1139,14 @@ This is the most complex and sonically important stage. All component values and
 
 ## 24. Lessons from Previous Implementation (Vurli)
 
-The previous project (Vurli, in `/home/homeuser/dev/mlwurli/`) went through 40+ rounds of tuning without fully converging. The following failure patterns must be avoided:
+Key failure patterns from the previous project (40+ tuning rounds without convergence):
 
-### Failure 1: Artificial Parameters That Don't Correspond to Physical Quantities
-
-**Problem:** Parameters like `kPreampInputDrive`, `overshootCap`, and mode amplitude arrays were hand-tuned to compensate for modeling errors elsewhere. When one was changed, others had to be re-tuned, creating a fragile interdependent system.
-
-**Solution:** Every parameter must trace to a physical quantity (voltage, capacitance, resistance, mass ratio). If a "fudge factor" is needed, it indicates a modeling error that should be found and fixed, not compensated.
-
-### Failure 2: Sinc Dwell Filter Cascading Into Mode Amplitude Compensation
-
-**Problem:** The rectangular-pulse sinc dwell filter had 40-60 dB deep nulls. To compensate, mode amplitudes were raised 20x. This destroyed the attack-to-sustain ratio because the artificial overshoot envelope multiplied already-elevated sustained amplitudes.
-
-**Solution:** Use the Gaussian dwell filter (no nulls, monotonic rolloff). Mode amplitudes stay near physical 1/omega scaling. Attack overshoot emerges naturally from modal superposition. No artificial overshoot envelope.
-
-### Failure 3: Feedback Cap Polarity Inverted
-
-**Problem:** The model applied MORE feedback at low frequencies (cap tracks LF output) when the real Miller-effect cap provides MORE feedback at HIGH frequencies (cap's low impedance shunts HF). This inverted register-dependent distortion: bass should get MORE distortion (less HF feedback reducing gain), treble LESS.
-
-**Solution:** Model the cap correctly: at HF, cap impedance is low, creating negative feedback that reduces gain. At LF, cap impedance is high, no feedback, full gain.
-
-### Failure 4: kPreampInputDrive as a Tuning Knob
-
-**Problem:** The input drive was changed from 16 to 48 to 28 across rounds, each time requiring re-tuning of preampGain, feedback cap corners, and mode amplitudes.
-
-**Solution:** Set kPreampInputDrive once to place mf at the correct operating point. Never change it during tonal tuning.
-
-### Failure 5: Per-Mode Velocity Exponents Double-Counting With Dwell
-
-**Problem:** Both the dwell filter (shorter at ff -> brighter) AND per-mode velocity exponents (higher at ff for upper modes) brightened the spectrum at ff. This double-counted the physical brightening mechanism, making ff sound harsh and over-bright.
-
-**Solution:** Remove per-mode velocity exponents. All modes scale uniformly with vel^2. Timbral brightening at ff comes from two physically correct sources: (1) shorter dwell time, (2) preamp nonlinearity on louder signal.
-
-### Failure 6: Reaper Plugin State Override
-
-**Problem:** When loading a Reaper project that saved old parameter values, `stateLoad()` overrode the new defaults from `params.cpp`, undoing tuning changes.
-
-**Solution:** After changing parameter defaults, users must remove and re-add the plugin in their DAW project. Document this clearly. Consider a version check in `stateLoad()`.
+1. **No fudge factors.** Every parameter must trace to a physical quantity. If a compensation knob is needed, find and fix the underlying modeling error.
+2. **Gaussian dwell filter only.** Sinc (rectangular pulse) and half-sine models have deep spectral nulls that forced 20x mode amplitude compensation, destroying the attack-to-sustain ratio.
+3. **Miller cap polarity matters.** The cap provides MORE feedback at HF (low impedance), LESS at LF. Inverting this breaks register-dependent distortion.
+4. **Set kPreampInputDrive once.** Calibrate it to place mf at B*x ~ 2, then never change it during tonal tuning. Tweaking it cascades into every other parameter.
+5. **No per-mode velocity exponents.** They double-count with the dwell filter's velocity-dependent brightening. Use uniform vel^2 scaling.
+6. **DAW state override.** Changing parameter defaults requires users to re-add the plugin. Consider a version check in `stateLoad()`.
 
 ---
 

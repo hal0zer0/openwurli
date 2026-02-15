@@ -48,7 +48,7 @@ CRITICAL CONTEXT: A previous iteration of this project achieved good FFT-derived
 | Treble register (MIDI 86+) | LOW | D6, F#6, Bb6, D7 show anomalous patterns: sub-octave spectral peaks, unusually high THD for high notes. Possible causes: sympathetic reed vibration, pickup crosstalk, aliased modes. DO NOT use these as sole treble targets. |
 | Absolute dBFS levels | LOW | Depends on recording gain, volume pot position, and preamp condition. Only relative levels (H2/H1, register-to-register ratios) are usable. |
 
-#### Pitch Label Corrections (VERIFIED)
+#### Pitch Label Corrections
 
 Note labels "A" and "F" in filenames are exactly 1 semitone sharp (mislabeled). D notes are correctly tuned. See `calibration-data.md` for full correction table.
 
@@ -56,21 +56,21 @@ Note labels "A" and "F" in filenames are exactly 1 semitone sharp (mislabeled). 
 
 After subtracting estimated recording chain contribution (+3 dB H2, +1 dB H3):
 
-| MIDI | Note | H2/H1 (dB) corrected | H3/H1 (dB) corrected | H2>H3 gap (dB) | Reliability |
-|------|------|----------------------|----------------------|-----------------|-------------|
-| 50 | D3 | -4.5 | -7.1 | +2.6 | HIGH |
-| 54 | F#3 | -14.8 | -13.1 | -1.7 (borderline) | MODERATE - near equal |
-| 58 | Bb3 | -11.6 | -24.4 | +12.8 | HIGH |
-| 62 | D4 | -13.9 | -29.4 | +15.5 | HIGH |
-| 66 | F#4 | -2.2 | -4.8 | +2.6 | HIGH |
-| 70 | Bb4 | -9.3 | -19.1 | +9.8 | HIGH |
-| 74 | D5 | -15.3 | -29.8 | +14.5 | HIGH |
-| 78 | F#5 | -22.0 | -27.6 | +5.6 | HIGH |
-| 82 | Bb5 | -29.2 | -41.4 | +12.2 | MODERATE |
-| 86 | D6 | -33.4 | -43.3 | +9.9 | LOW (treble anomalies) |
-| 90 | F#6 | -26.2 | -48.8 | +22.6 | LOW (treble anomalies) |
-| 94 | Bb6 | -24.4 | -26.9 | +2.5 | LOW (treble anomalies) |
-| 98 | D7 | -23.7 | -23.7 | +0.0 (borderline) | LOW (treble anomalies) |
+| MIDI | Note | H2/H1 (dB) corrected | H3/H1 (dB) corrected | H2>H3 gap (dB) |
+|------|------|----------------------|----------------------|-----------------|
+| 50 | D3 | -4.5 | -7.1 | +2.6 |
+| 54 | F#3 | -14.8 | -13.1 | -1.7 (borderline) |
+| 58 | Bb3 | -11.6 | -24.4 | +12.8 |
+| 62 | D4 | -13.9 | -29.4 | +15.5 |
+| 66 | F#4 | -2.2 | -4.8 | +2.6 |
+| 70 | Bb4 | -9.3 | -19.1 | +9.8 |
+| 74 | D5 | -15.3 | -29.8 | +14.5 |
+| 78 | F#5 | -22.0 | -27.6 | +5.6 |
+| 82 | Bb5 | -29.2 | -41.4 | +12.2 |
+| 86 | D6 | -33.4 | -43.3 | +9.9 |
+| 90 | F#6 | -26.2 | -48.8 | +22.6 |
+| 94 | Bb6 | -24.4 | -26.9 | +2.5 |
+| 98 | D7 | -23.7 | -23.7 | +0.0 (borderline) |
 
 **Key observation:** F#3 (MIDI 54) shows H2 and H3 nearly equal after correction. This may indicate the H2 advantage is smaller than raw data suggests at certain notes, or that the recording chain correction is imprecise. The correction should be treated as +/-2 dB uncertain.
 
@@ -184,12 +184,12 @@ These are equally important negative targets:
 
 These are corrected values from OBM data, cross-validated with Improv source where possible:
 
-| Register | MIDI Range | H2/H1 (dB) | H3/H1 (dB) | H2-H3 gap (dB) | THD (dB) | Confidence |
-|----------|-----------|-------------|-------------|-----------------|----------|------------|
-| Bass | 33-48 | -5 to +5 | -15 to -3 | +1 to +10 | -8 to +3 | MODERATE (limited data below MIDI 50) |
-| Mid | 49-72 | -14 to -1 | -30 to -4 | +1 to +18 | -12 to +3 | HIGH |
-| Treble | 73-84 | -22 to -16 | -28 to -20 | +2 to +12 | -22 to -14 | MODERATE |
-| Top | 85-96 | -30 to -20 | -45 to -25 | +2 to +25 | -30 to -17 | LOW (OBM treble unreliable) |
+| Register | MIDI Range | H2/H1 (dB) | H3/H1 (dB) | H2-H3 gap (dB) | THD (dB) |
+|----------|-----------|-------------|-------------|-----------------|----------|
+| Bass | 33-48 | -5 to +5 | -15 to -3 | +1 to +10 | -8 to +3 |
+| Mid | 49-72 | -14 to -1 | -30 to -4 | +1 to +18 | -12 to +3 |
+| Treble | 73-84 | -22 to -16 | -28 to -20 | +2 to +12 | -22 to -14 |
+| Top | 85-96 | -30 to -20 | -45 to -25 | +2 to +25 | -30 to -17 |
 
 **CRITICAL NOTE:** The wide ranges above are NOT measurement noise -- they represent real note-to-note variation within a single instrument. A physically accurate model SHOULD produce different H2/H1 at different notes within the same register, driven by differences in reed geometry, pickup gap, and preamp operating point.
 
@@ -270,14 +270,14 @@ The attack is the most perceptually important phase. It establishes the instrume
 
 **Exponential model:** `decay_dB_per_sec = 0.26 * exp(0.049 * MIDI)` with +/- 30% tolerance.
 
-| Register | MIDI Range | Decay Rate (dB/s) | Sustain Time (~-40 dB) | Confidence |
-|----------|-----------|-------------------|----------------------|------------|
-| Low bass | 33-42 | 0.5-2.0 | 20-80 s | LOW (extrapolated) |
-| Bass | 43-54 | 1.5-5.0 | 8-27 s | MODERATE |
-| Mid-low | 55-66 | 4-8 | 5-10 s | HIGH |
-| Mid | 67-74 | 6-13 | 3-7 s | HIGH |
-| Treble | 75-84 | 9-25 | 1.6-4.4 s | HIGH |
-| Top | 85-96 | 15-35 | 1.1-2.7 s | MODERATE |
+| Register | MIDI Range | Decay Rate (dB/s) | Sustain Time (~-40 dB) |
+|----------|-----------|-------------------|----------------------|
+| Low bass | 33-42 | 0.5-2.0 | 20-80 s |
+| Bass | 43-54 | 1.5-5.0 | 8-27 s |
+| Mid-low | 55-66 | 4-8 | 5-10 s |
+| Mid | 67-74 | 6-13 | 3-7 s |
+| Treble | 75-84 | 9-25 | 1.6-4.4 s |
+| Top | 85-96 | 15-35 | 1.1-2.7 s |
 
 **Doubling interval:** Decay rate roughly doubles every 14 semitones (~1.2 octaves).
 
@@ -293,12 +293,12 @@ This means mode 2 decays in 55% of the time it takes the fundamental, mode 3 in 
 
 The spectral centroid should decrease from attack to sustain as upper modes decay:
 
-| Register | Centroid at 10 ms (Hz) | Centroid at 300 ms (Hz) | Drift (Hz) | Confidence |
-|----------|----------------------|------------------------|-----------|------------|
-| Bass (33-48) | 600-1000 | 500-800 | -50 to -200 | HIGH |
-| Mid (49-72) | 600-1200 | 600-1000 | -30 to -240 | HIGH |
-| Treble (73-84) | 800-1600 | 800-1400 | -30 to -250 | MODERATE |
-| Top (85-96) | unmeasurable reliably | noise floor | N/A | LOW |
+| Register | Centroid at 10 ms (Hz) | Centroid at 300 ms (Hz) | Drift (Hz) |
+|----------|----------------------|------------------------|-----------|
+| Bass (33-48) | 600-1000 | 500-800 | -50 to -200 |
+| Mid (49-72) | 600-1200 | 600-1000 | -30 to -240 |
+| Treble (73-84) | 800-1600 | 800-1400 | -30 to -250 |
+| Top (85-96) | unmeasurable reliably | noise floor | N/A |
 
 **CRITICAL WARNING:** Previous target of "-200 to -1000 Hz" centroid drift was WRONG (4x too aggressive). The -1000 Hz figure was a noise-floor artifact from measuring late centroids where the signal had decayed below the noise floor. Real attack-to-sustain (not attack-to-noise) drift is -30 to -240 Hz maximum.
 
