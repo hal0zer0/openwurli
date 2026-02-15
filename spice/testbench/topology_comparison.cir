@@ -1,0 +1,176 @@
+.title Wurlitzer 200A Preamp - Topology A vs B Comparison
+*
+* PURPOSE: Run BOTH feedback topologies side-by-side to determine which
+* matches schematic DC voltages and expected gain behavior.
+*
+* TOPOLOGY A (node_A feedback / shunt-feedback):
+*   R10 from output -> node_A (before .022uF coupling cap)
+*   Ce1 from emit1 -> GND (simple bypass cap)
+*   AC feedback path: out -> R10 -> node_A -> Cin -> base1
+*   Expected gain: ~R10/R1 = 56K/22K = 2.55x (no tremolo)
+*
+* TOPOLOGY B (emitter feedback / series-series):
+*   R10 from output -> fb_junct
+*   Ce1 from emit1 -> fb_junct (AC couples emitter to feedback node)
+*   Rldr from fb_junct -> GND
+*   AC feedback path: out -> R10 -> fb_junct -> Ce1 -> emit1
+*   Expected gain: different formula
+*
+* Both topologies share identical DC bias (Ce1 is open at DC)
+
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100
++  IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+
+Vcc vcc 0 DC 15
+
+* ============================================================
+* TOPOLOGY A: R10 to node_A (shunt feedback via coupling cap)
+* ============================================================
+Vin_a in_sig_a 0 DC 0 SIN(0 0.002 440)
+R1_a in_sig_a nodeA_a 22K
+Cin_a nodeA_a base1_a 0.022U
+R2_a vcc base1_a 2MEG
+R3_a base1_a 0 470K
+C20_a base1_a 0 220P
+D1_a 0 base1_a D1N4148
+Q1_a coll1_a base1_a emit1_a Q2N5089
+Rc1_a vcc coll1_a 150K
+Cc3_a coll1_a base1_a 100P
+Re1_a emit1_a 0 33K
+Ce1_a emit1_a 0 4.7U
+Q2_a coll2_a coll1_a emit2a_a Q2N5089
+Rc2_a vcc coll2_a 1.8K
+Re2a_a emit2a_a emit2b_a 270
+Ce2_a emit2a_a emit2b_a 22U
+Re2b_a emit2b_a 0 820
+Cc4_a coll2_a coll1_a 100P
+R9_a coll2_a out_a 6.8K
+Rload_a out_a 0 100K
+* Feedback: R10 from output to node_A (before coupling cap)
+R10_a out_a nodeA_a 56K
+* LDR path (no tremolo = 1MEG to ground at nodeA)
+Rldr_a nodeA_a 0 1MEG
+
+* ============================================================
+* TOPOLOGY B: R10 to emitter feedback junction
+* ============================================================
+Vin_b in_sig_b 0 DC 0 SIN(0 0.002 440)
+R1_b in_sig_b nodeA_b 22K
+Cin_b nodeA_b base1_b 0.022U
+R2_b vcc base1_b 2MEG
+R3_b base1_b 0 470K
+C20_b base1_b 0 220P
+D1_b 0 base1_b D1N4148
+Q1_b coll1_b base1_b emit1_b Q2N5089
+Rc1_b vcc coll1_b 150K
+Cc3_b coll1_b base1_b 100P
+Re1_b emit1_b 0 33K
+Ce1_b emit1_b fb_junct_b 4.7U
+Q2_b coll2_b coll1_b emit2a_b Q2N5089
+Rc2_b vcc coll2_b 1.8K
+Re2a_b emit2a_b emit2b_b 270
+Ce2_b emit2a_b emit2b_b 22U
+Re2b_b emit2b_b 0 820
+Cc4_b coll2_b coll1_b 100P
+R9_b coll2_b out_b 6.8K
+Rload_b out_b 0 100K
+* Feedback: R10 from output to fb_junct
+R10_b out_b fb_junct_b 56K
+* LDR path from fb_junct to ground
+Rldr_b fb_junct_b 0 1MEG
+
+.control
+echo "============================================================"
+echo "TOPOLOGY COMPARISON: DC OPERATING POINTS"
+echo "============================================================"
+echo ""
+
+op
+
+echo "--- Topology A (R10 to node_A, Ce1 to GND) ---"
+echo "Schematic targets: Vb1=2.45V Ve1=1.95V Vc1=4.1V Ve2=3.4V Vc2=8.8V"
+print v(base1_a) v(emit1_a) v(coll1_a) v(emit2b_a) v(coll2_a) v(out_a) v(nodeA_a)
+
+echo ""
+echo "--- Topology B (R10 to fb_junct, Ce1 to fb_junct) ---"
+echo "Schematic targets: Vb1=2.45V Ve1=1.95V Vc1=4.1V Ve2=3.4V Vc2=8.8V"
+print v(base1_b) v(emit1_b) v(coll1_b) v(emit2b_b) v(coll2_b) v(out_b) v(fb_junct_b)
+
+echo ""
+echo "============================================================"
+echo "AC GAIN COMPARISON (no tremolo, Rldr=1MEG)"
+echo "============================================================"
+
+* Transient analysis - measure AC gain
+destroy all
+tran 0.5u 200m
+
+echo ""
+echo "--- Topology A gain (mf = 2mV peak, 440 Hz) ---"
+meas tran vouta_max max v(out_a) from=150m to=200m
+meas tran vouta_min min v(out_a) from=150m to=200m
+
+echo ""
+echo "--- Topology B gain (mf = 2mV peak, 440 Hz) ---"
+meas tran voutb_max max v(out_b) from=150m to=200m
+meas tran voutb_min min v(out_b) from=150m to=200m
+
+echo ""
+echo "--- Fourier: Topology A ---"
+fourier 440 v(out_a)
+
+echo ""
+echo "--- Fourier: Topology B ---"
+fourier 440 v(out_b)
+
+echo ""
+echo "============================================================"
+echo "TREMOLO COMPARISON (Rldr=500 ohm = bright peak)"
+echo "============================================================"
+
+* Reset for tremolo test
+destroy all
+
+* Change LDR to 500 ohm (tremolo bright)
+alter Rldr_a = 500
+alter Rldr_b = 500
+
+tran 0.5u 200m
+
+echo ""
+echo "--- Topology A gain (tremolo bright, Rldr=500) ---"
+meas tran vouta_trem_max max v(out_a) from=150m to=200m
+meas tran vouta_trem_min min v(out_a) from=150m to=200m
+
+echo ""
+echo "--- Topology B gain (tremolo bright, Rldr=500) ---"
+meas tran voutb_trem_max max v(out_b) from=150m to=200m
+meas tran voutb_trem_min min v(out_b) from=150m to=200m
+
+echo ""
+echo "--- Fourier: Topology A (tremolo bright) ---"
+fourier 440 v(out_a)
+
+echo ""
+echo "--- Fourier: Topology B (tremolo bright) ---"
+fourier 440 v(out_b)
+
+echo ""
+echo "============================================================"
+echo "COMPARISON COMPLETE"
+echo "============================================================"
+echo "Expected: R10/R1 shunt-feedback gain = 56K/22K = 2.55x (no trem)"
+echo "Expected: With LDR=500, gain should INCREASE (less feedback)"
+echo "In Topology A, gain increases because LDR diverts feedback at node_A"
+echo "In Topology B, gain increases because LDR provides lower-Z emitter path"
+
+.endc
+.end

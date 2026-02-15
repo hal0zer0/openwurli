@@ -1,0 +1,177 @@
+.title Wurlitzer 200A Preamp - Harmonic Analysis
+* Uses .four for THD measurement at different input levels
+* Rldr_path = 1MEG (no tremolo, LDR dark baseline)
+
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100
++  IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+
+Vcc vcc 0 DC 15
+
+Vin in_sig 0 DC 0 SIN(0 0.002 440)
+R1 in_sig node_A 22K
+Cin node_A base1 0.022U
+R2 vcc base1 2MEG
+R3 base1 0 470K
+C20 base1 0 220P
+D1 0 base1 D1N4148
+
+Q1 coll1 base1 emit1 Q2N5089
+Rc1 vcc coll1 150K
+Cc3 coll1 base1 100P
+Re1 emit1 0 33K
+Ce1 emit1 fb_junct 4.7U
+
+Rldr_path fb_junct 0 1MEG
+R10 out fb_junct 56K
+
+Q2 coll2 coll1 emit2a Q2N5089
+Rc2 vcc coll2 1.8K
+Re2a emit2a emit2b 270
+Ce2 emit2a emit2b 22U
+Re2b emit2b 0 820
+Cc4 coll2 coll1 100P
+
+R9 coll2 out 6.8K
+Rload out 0 100K
+
+.control
+
+echo "============================================"
+echo "=== Harmonic Analysis at 440 Hz         ==="
+echo "============================================"
+
+* --- pp (0.5mV peak) ---
+alter Vin DC=0 AC=0 SIN 0 0.0005 440
+tran 0.5u 200m
+echo ""
+echo "--- pp (0.5mV peak) at 440 Hz ---"
+meas tran vout_max max v(out) from=100m to=200m
+meas tran vout_min min v(out) from=100m to=200m
+let vpp = vout_max - vout_min
+echo "Output Vpp:"
+print vpp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = vpp / 0.001
+print gain
+fourier 440 v(out)
+wrdata /tmp/preamp_harm_pp.txt v(out) v(coll1) v(base1) v(emit1)
+destroy all
+
+* --- mf (2mV peak) ---
+alter Vin DC=0 AC=0 SIN 0 0.002 440
+tran 0.5u 200m
+echo ""
+echo "--- mf (2mV peak) at 440 Hz ---"
+meas tran vout_max max v(out) from=100m to=200m
+meas tran vout_min min v(out) from=100m to=200m
+let vpp = vout_max - vout_min
+echo "Output Vpp:"
+print vpp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = vpp / 0.004
+print gain
+fourier 440 v(out)
+wrdata /tmp/preamp_harm_mf.txt v(out) v(coll1) v(base1) v(emit1)
+destroy all
+
+* --- f (5mV peak) ---
+alter Vin DC=0 AC=0 SIN 0 0.005 440
+tran 0.5u 200m
+echo ""
+echo "--- f (5mV peak) at 440 Hz ---"
+meas tran vout_max max v(out) from=100m to=200m
+meas tran vout_min min v(out) from=100m to=200m
+let vpp = vout_max - vout_min
+echo "Output Vpp:"
+print vpp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = vpp / 0.010
+print gain
+fourier 440 v(out)
+wrdata /tmp/preamp_harm_f.txt v(out) v(coll1) v(base1) v(emit1)
+destroy all
+
+* --- ff (10mV peak) ---
+alter Vin DC=0 AC=0 SIN 0 0.010 440
+tran 0.5u 200m
+echo ""
+echo "--- ff (10mV peak) at 440 Hz ---"
+meas tran vout_max max v(out) from=100m to=200m
+meas tran vout_min min v(out) from=100m to=200m
+let vpp = vout_max - vout_min
+echo "Output Vpp:"
+print vpp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = vpp / 0.020
+print gain
+fourier 440 v(out)
+wrdata /tmp/preamp_harm_ff.txt v(out) v(coll1) v(base1) v(emit1)
+destroy all
+
+* --- fff (50mV peak) - clipping territory ---
+alter Vin DC=0 AC=0 SIN 0 0.050 440
+tran 0.5u 200m
+echo ""
+echo "--- fff (50mV peak) at 440 Hz ---"
+meas tran vout_max max v(out) from=100m to=200m
+meas tran vout_min min v(out) from=100m to=200m
+let vpp = vout_max - vout_min
+echo "Output Vpp:"
+print vpp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = vpp / 0.100
+print gain
+fourier 440 v(out)
+wrdata /tmp/preamp_harm_fff.txt v(out) v(coll1) v(base1) v(emit1)
+destroy all
+
+* --- extreme (200mV peak) - heavy clipping ---
+alter Vin DC=0 AC=0 SIN 0 0.200 440
+tran 0.5u 200m
+echo ""
+echo "--- extreme (200mV peak) at 440 Hz ---"
+meas tran vout_max max v(out) from=100m to=200m
+meas tran vout_min min v(out) from=100m to=200m
+let vpp = vout_max - vout_min
+echo "Output Vpp:"
+print vpp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = vpp / 0.400
+print gain
+fourier 440 v(out)
+destroy all
+
+echo ""
+echo "=== Stage 1 Clipping Analysis ==="
+echo "Checking coll1 swing at ff (10mV)"
+alter Vin DC=0 AC=0 SIN 0 0.010 440
+tran 0.5u 200m
+meas tran vc1_max max v(coll1) from=100m to=200m
+meas tran vc1_min min v(coll1) from=100m to=200m
+meas tran ve1_max max v(emit1) from=100m to=200m
+meas tran ve1_min min v(emit1) from=100m to=200m
+let vc1_swing = vc1_max - vc1_min
+let ve1_swing = ve1_max - ve1_min
+echo "Coll1 swing:"
+print vc1_swing
+echo "Emit1 swing:"
+print ve1_swing
+echo "Coll1 headroom to sat (Vce_sat~0.1V):"
+let sat_headroom = vc1_min - ve1_max - 0.1
+print sat_headroom
+echo "Coll1 headroom to Vcc:"
+let vcc_headroom = 15 - vc1_max
+print vcc_headroom
+
+echo ""
+echo "=== Analysis Complete ==="
+.endc
+.end

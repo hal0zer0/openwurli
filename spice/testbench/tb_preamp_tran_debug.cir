@@ -1,0 +1,22 @@
+.title Preamp Transient Debug - no LDR
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+Vcc  vcc 0  DC 15
+Xpre  in_sig out vcc 0 trem  wurli_preamp
+
+* Source: 440 Hz sine, 10mV peak through R-1
+Vin  src 0  DC 0 SIN(0 10M 440 0 0)
+R1   src in_sig  22K
+
+* NO LDR - trem pin floating
+* Load resistor
+Rload out 0  100K
+
+* Long sim, late start for settling
+.tran 1U 500M 400M 1U
+
+.print TRAN V(src) V(in_sig) V(out) V(Xpre.base1) V(Xpre.coll2)
+
+.end

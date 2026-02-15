@@ -38,7 +38,7 @@ for name, clip in [
 | Rc2 (TR-2 collector) | ~10K | **1.8K** |
 | Re1 (TR-1 emitter) | ~2.2-8.2K | **33K** (with 4.7 μF bypass) |
 | Re2 (TR-2 emitter) | ~4.7-5.1K | **270Ω (bypassed) + 820Ω (unbypassed)** |
-| Ce1 (bypass cap) | "possibly present" (UNVERIFIED) | **4.7 MFD — confirmed** |
+| Ce1 (feedback coupling cap) | "possibly present" (UNVERIFIED) | **4.7 MFD — confirmed** (couples emitter to R-10/LDR feedback junction, NOT a simple bypass) |
 | C-3 (TR-1 Ccb feedback) | "10-100 pF" (ESTIMATED) | **100 pF** |
 | C-4 (TR-2 Ccb feedback) | "10-100 pF" (ESTIMATED) | **100 pF** |
 | R-10 (feedback) | "likely 100k-470k" | **56K** |

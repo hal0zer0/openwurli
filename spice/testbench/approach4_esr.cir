@@ -1,0 +1,37 @@
+* APPROACH 4: Series resistance with Cin (10K ESR)
+.title Approach 4 - Cin with 10K series resistance
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+
+Vcc  vcc 0  DC 15
+Vin  src 0  DC 0 SIN(0 10M 440 0 0)
+R1   src in_sig  22K
+
+* Preamp inline with 10K in series with Cin
+Cin     in_sig    mid_cin  0.022U
+Rseries mid_cin   base1    10K
+R2    vcc   base1  2MEG
+R3    base1 gnd    470K
+C20   base1 gnd    220P
+D1    gnd   base1  D1N4148
+Q1    coll1 base1 emit1  Q2N5089
+Rc1   vcc   coll1  150K
+Re1   emit1 gnd    33K
+Ce1   emit1 gnd    4.7U
+Cc3   coll1 base1  100P
+Q2    coll2 coll1 emit2a  Q2N5089
+Rc2   vcc   coll2  1.8K
+Re2a  emit2a emit2b  270
+Ce2   emit2a emit2b  22U
+Re2b  emit2b gnd    820
+Cc4   coll2  coll1  100P
+R9    coll2 out    6.8K
+R10   out   in_sig     56K
+
+Rldr in_sig 0  12K
+Rload out 0  100K
+
+.tran 1U 200M 100M 1U
+.print TRAN V(src) V(in_sig) V(out) V(base1)
+.end

@@ -1,0 +1,38 @@
+* Wurlitzer 200A Preamp — Transient Response Testbench
+* =====================================================
+* Single tone (440 Hz, A4) at moderate level to observe
+* waveform shape, harmonic content, and settling behavior.
+*
+* Source: Vs → R-1 (22K) → preamp input, with LDR at 12K.
+* 10mV peak input (moderate reed signal level).
+
+.title Preamp Transient Response - 440 Hz
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* Supply
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp
+Xpre  in_sig out vcc 0 trem  wurli_preamp
+
+* Source: 440 Hz sine, 10mV peak through R-1
+Vin  src 0  DC 0 SIN(0 10M 440 0 0)
+R1   src in_sig  22K
+
+* LDR: nominal 12K
+Rldr trem 0  12K
+
+* Load resistor
+Rload out 0  100K
+
+* Transient: 200ms total, 1us step
+* Start saving at 100ms — coupling cap time constant is .022uF * 380K = 8.4ms,
+* need ~5 tau (42ms) minimum. 100ms gives 12 tau = 99.9994% settled.
+.tran 1U 200M 100M 1U
+
+.print TRAN V(src) V(in_sig) V(out)
+
+.end

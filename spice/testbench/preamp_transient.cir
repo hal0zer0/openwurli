@@ -1,0 +1,157 @@
+.title Wurlitzer 200A Preamp - Transient & Harmonic Analysis
+* Tests at multiple input levels and frequencies
+* Uses Rldr_path = 1MEG (no tremolo, LDR dark baseline)
+
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100
++  IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+
+Vcc vcc 0 DC 15
+
+* Input signal - parameterized amplitude and frequency
+* Realistic pickup levels: 0.5mV (pp), 2mV (mf), 10mV (ff), 50mV (fff/clipping)
+.param amp=0.002 freq=440
+
+Vin in_sig 0 DC 0 SIN(0 {amp} {freq})
+R1 in_sig node_A 22K
+Cin node_A base1 0.022U
+
+R2 vcc base1 2MEG
+R3 base1 0 470K
+C20 base1 0 220P
+D1 0 base1 D1N4148
+
+Q1 coll1 base1 emit1 Q2N5089
+Rc1 vcc coll1 150K
+Cc3 coll1 base1 100P
+Re1 emit1 0 33K
+Ce1 emit1 fb_junct 4.7U
+
+* No tremolo baseline: LDR dark = very high resistance
+Rldr_path fb_junct 0 1MEG
+
+R10 out fb_junct 56K
+
+Q2 coll2 coll1 emit2a Q2N5089
+Rc2 vcc coll2 1.8K
+Re2a emit2a emit2b 270
+Ce2 emit2a emit2b 22U
+Re2b emit2b 0 820
+Cc4 coll2 coll1 100P
+
+R9 coll2 out 6.8K
+Rload out 0 100K
+
+.control
+* Let circuit settle first (100ms), then measure over clean cycles
+set wr_vecnames
+
+echo "============================================"
+echo "=== Transient Analysis: Multiple Levels ==="
+echo "============================================"
+
+* --- Test 1: pp level (0.5mV) at 440 Hz ---
+alterparam amp = 0.0005
+alterparam freq = 440
+reset
+tran 1u 120m
+let out_ac = v(out) - mean(v(out))
+let settle_out = out_ac[100000:119999]
+echo ""
+echo "--- pp (0.5mV) at 440 Hz ---"
+echo "Output DC offset:"
+print mean(v(out))
+echo "Output AC peak-peak:"
+let pp = maximum(settle_out) - minimum(settle_out)
+print pp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = pp / 0.001
+print gain
+wrdata /tmp/preamp_tran_pp440.txt v(out) v(base1) v(emit1) v(coll1)
+
+* --- Test 2: mf level (2mV) at 440 Hz ---
+alterparam amp = 0.002
+alterparam freq = 440
+reset
+tran 1u 120m
+let out_ac = v(out) - mean(v(out))
+let settle_out = out_ac[100000:119999]
+echo ""
+echo "--- mf (2mV) at 440 Hz ---"
+echo "Output DC offset:"
+print mean(v(out))
+echo "Output AC peak-peak:"
+let pp = maximum(settle_out) - minimum(settle_out)
+print pp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = pp / 0.004
+print gain
+wrdata /tmp/preamp_tran_mf440.txt v(out) v(base1) v(emit1) v(coll1)
+
+* --- Test 3: ff level (10mV) at 440 Hz ---
+alterparam amp = 0.010
+alterparam freq = 440
+reset
+tran 1u 120m
+let out_ac = v(out) - mean(v(out))
+let settle_out = out_ac[100000:119999]
+echo ""
+echo "--- ff (10mV) at 440 Hz ---"
+echo "Output DC offset:"
+print mean(v(out))
+echo "Output AC peak-peak:"
+let pp = maximum(settle_out) - minimum(settle_out)
+print pp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = pp / 0.020
+print gain
+wrdata /tmp/preamp_tran_ff440.txt v(out) v(base1) v(emit1) v(coll1)
+
+* --- Test 4: fff level (50mV) at 440 Hz - should show clipping ---
+alterparam amp = 0.050
+alterparam freq = 440
+reset
+tran 1u 120m
+let out_ac = v(out) - mean(v(out))
+let settle_out = out_ac[100000:119999]
+echo ""
+echo "--- fff (50mV) at 440 Hz ---"
+echo "Output DC offset:"
+print mean(v(out))
+echo "Output AC peak-peak:"
+let pp = maximum(settle_out) - minimum(settle_out)
+print pp
+echo "Gain (Vout_pp / Vin_pp):"
+let gain = pp / 0.100
+print gain
+wrdata /tmp/preamp_tran_fff440.txt v(out) v(base1) v(emit1) v(coll1)
+
+* --- Test 5: mf level at different frequencies ---
+echo ""
+echo "=== Frequency Response at mf (2mV) ==="
+
+foreach f 100 220 440 880 1760 3520
+    alterparam amp = 0.002
+    alterparam freq = $f
+    reset
+    tran 1u 120m
+    let out_ac = v(out) - mean(v(out))
+    let settle_out = out_ac[100000:119999]
+    let pp = maximum(settle_out) - minimum(settle_out)
+    let gain = pp / 0.004
+    echo "freq=$f Hz: Vout_pp=$&pp gain=$&gain"
+    destroy all
+end
+
+echo ""
+echo "=== Transient Analysis Complete ==="
+
+.endc
+.end

@@ -1,0 +1,42 @@
+* Wurlitzer 200A Preamp — Harmonic Distortion vs Level Testbench
+* ==============================================================
+* Sweeps input level to measure THD, H2, H3 at each level.
+* Uses 440 Hz tone. Multiple runs at different amplitudes.
+*
+* Expected: H2 > H3 (asymmetric clipping), THD increases
+* with signal level, primarily from Stage 1 saturation.
+*
+* Source: Vs → R-1 (22K) → preamp input, with LDR at 12K.
+
+.title Preamp THD vs Input Level
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* Supply
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp
+Xpre  in_sig out vcc 0 trem  wurli_preamp
+
+* Source: parametric level through R-1
+.param amp = 1M
+Vin  src 0  DC 0 SIN(0 {amp} 440 0 0)
+R1   src in_sig  22K
+
+* LDR: nominal 12K
+Rldr trem 0  12K
+
+* Load resistor
+Rload out 0  100K
+
+* Transient: 100ms to capture ~44 cycles at 440 Hz
+* Start recording at 20ms for bias settling
+.tran 1U 100M 20M 1U
+
+.step param amp list 1M 2M 5M 10M 20M 50M 100M 200M
+
+.print TRAN V(out)
+
+.end

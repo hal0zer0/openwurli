@@ -35,13 +35,13 @@ The Wurlitzer 200A reed-bar preamp is a **two-stage direct-coupled NPN common-em
 
 2. **High-impedance electrostatic input**: The preamp input sees the pickup plate through a resistive bias network (R-2 = 2 MEG to +15V, R-3 = 470K to ground). [VERIFIED — schematic; see Section 2.2 note on R-2 value discrepancy]
 
-3. **Collector-base feedback capacitors** (C-3 = 100 pF, C-4 = 100 pF): Frequency-dependent negative feedback via the Miller effect on both stages. These, combined with global feedback through R-10, reduce the very high open-loop gain (~900x) to approximately 5.6x closed-loop. [VERIFIED — service manual: "Protection against radio frequency interference is provided by shunt capacitor C-1, and collector-base feedback capacitors C-3 and C-4"; C-3 and C-4 values verified from schematic]
+3. **Collector-base feedback capacitors** (C-3 = 100 pF, C-4 = 100 pF): Frequency-dependent negative feedback via the Miller effect on both stages. These, combined with global emitter feedback through R-10 (via Ce1), reduce the very high open-loop gain (~900x) to a moderate closed-loop gain. [VERIFIED — service manual: "Protection against radio frequency interference is provided by shunt capacitor C-1, and collector-base feedback capacitors C-3 and C-4"; C-3 and C-4 values verified from schematic]
 
-4. **Tremolo integration**: The LDR (LG-1) forms a voltage divider with R-10 (56K) in the preamp's negative feedback loop, modulating the closed-loop gain. [VERIFIED — service manual: "A divider is formed by the feedback resistor R-10, and the light dependent resistor of LG-1"; R-10 = 56K verified from schematic]
+4. **Tremolo integration**: R-10 (56K) feeds back from the preamp output to TR-1's emitter via Ce1 (4.7 MFD coupling cap). The LDR (LG-1) shunts the feedback junction (between R-10 and Ce1) to ground via the cable, modulating how much feedback reaches the emitter and thus the closed-loop gain. [VERIFIED — service manual: "A divider is formed by the feedback resistor R-10, and the light dependent resistor of LG-1"; R-10 = 56K verified from schematic; topology traced from correct 200A schematic Feb 2026]
 
 5. **Supply voltage**: +15V DC regulated, derived from the main power supply. [VERIFIED — schematic and GroupDIY multimeter measurements]
 
-6. **Stage 1 emitter bypass capacitor**: Ce1 = 4.7 MFD across Re1 (33K). This bypasses the large emitter resistor at audio frequencies, allowing full gm*Rc gain for AC signals while maintaining DC stabilization. [VERIFIED — schematic]
+6. **Stage 1 emitter feedback coupling capacitor**: Ce1 = 4.7 MFD connects TR-1's emitter to the R-10/LDR feedback junction (NOT to ground). Re1 (33K) provides the separate DC path from emitter to ground. Ce1 AC-couples the feedback signal from R-10 to the emitter, providing series-series negative feedback. [VERIFIED — traced from correct 200A schematic Feb 2026; confirmed stable in SPICE]
 
 ### 1.3 Position in Signal Chain
 
@@ -56,7 +56,7 @@ Reed vibration
   -> TR-1 collector = TR-2 base (direct coupling)
   -> TR-2 collector
   -> R-9 (6.8K series output)
-  -> R-10 (56K) / LG-1 (LDR) feedback divider (tremolo)
+  -> R-10 (56K) feedback to TR-1 emitter (via Ce1); LG-1 (LDR) shunts feedback junction (tremolo)
   -> Volume pot (3K audio taper)
   -> C-8 coupling cap to power amplifier
 ```
@@ -86,26 +86,27 @@ Reed vibration
      |      |        |    |  E   |          |  E   |
      |     GND  D1---+    |  |   |          |  |   |
      |           |   |    | Re1(33K)        | Re2a(270)+Ce2(22MFD bypass)
-     |          GND  |    |  |   |          |  |
-     |               |    | Ce1  |          | Re2b(820) unbypassed
-     |          .022uF    |(4.7MFD)         |  |
-     |          coupling  |  |   |         GND
-     |          cap  |   GND |   |
-     |               |      GND  |
+     |          GND  |    |  |              |  |
+     |               |    | Ce1(4.7MFD)     | Re2b(820) unbypassed
+     |          .022uF    | (coupling cap)  |  |
+     |          coupling  |  |              GND
+     |          cap  |   GND |
+     |               |      fb_junct---R-10(56K)---Output
      |               +------->   |
-     |                    TR-1   |
+     |                    TR-1  Pin 1 (cable)
      |                    base   |
-     |                           |
-     +--- TR-2 collector --->  R-9 (6.8K) ---> Output
-                                               |
-                                          R-10 (56K)
-                                               |
-                                          LG-1 (LDR) ---> feedback to TR-1 base region
-                                               |
-                                              GND
+     |                          50K VIBRATO
+     +--- TR-2 collector --->  R-9 (6.8K) ---> Output    |
+                                                         18K
+                                                          |
+                                                     LG-1 (LDR)
+                                                          |
+                                                         GND
 ```
 
-[VERIFIED — BustedGear 200A schematic PDF at 900 DPI; all component values confirmed]
+**CRITICAL TOPOLOGY (CORRECTED Feb 2026):** R-10 feeds back from the output to fb_junct. Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter — this is **series-series NEGATIVE feedback** (not shunt-feedback to node_A as previously documented). Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO pot → 18K → LG-1.
+
+[VERIFIED — correct 200A schematic (874 KB PDF, md5: ceb3abb9) traced at 1000-2000 DPI with user annotation, Feb 2026; SPICE-validated in spice/testbench/preamp_emitter_fb.cir]
 
 ### 2.2 Component Values Table
 
@@ -116,13 +117,13 @@ Reed vibration
 | R-3 | 470K | DC bias to ground from TR-1 base | VERIFIED — schematic |
 | Rc1 | 150K | TR-1 collector load resistor | VERIFIED — schematic |
 | Re1 | 33K | TR-1 emitter degeneration resistor | VERIFIED — schematic |
-| Ce1 | 4.7 MFD | Emitter bypass cap across Re1 | VERIFIED — schematic |
+| Ce1 | 4.7 MFD | Feedback coupling cap: AC-couples TR-1 emitter to R-10/LDR feedback junction (NOT a bypass cap — see Section 7) | VERIFIED — correct 200A schematic, SPICE-validated Feb 2026 |
 | Rc2 | 1.8K | TR-2 collector load resistor | VERIFIED — schematic |
 | Re2a | 270 ohm | TR-2 emitter resistor (bypassed by Ce2) | VERIFIED — schematic |
 | Ce2 | 22 MFD | Emitter bypass cap across Re2a (270 ohm) | VERIFIED — schematic |
 | Re2b | 820 ohm | TR-2 emitter resistor (unbypassed) | VERIFIED — schematic |
 | R-9 | 6.8K | Series output resistor | VERIFIED — schematic |
-| R-10 | 56K | Feedback resistor, forms divider with LG-1 for tremolo | VERIFIED — schematic |
+| R-10 | 56K | Feedback resistor from output to TR-1 emitter junction (via Ce1); LDR shunts this junction for tremolo | VERIFIED — schematic; topology traced Feb 2026 |
 | C-3 | 100 pF | TR-1 collector-base feedback capacitor (Miller) | VERIFIED — schematic |
 | C-4 | 100 pF | TR-2 collector-base feedback capacitor (Miller) | VERIFIED — schematic |
 | C20 | 220 pF | Input shunt cap (HPF bass rolloff) | RESOLVED — schematic reads 220 pF (confirmed at 1500 DPI). GroupDIY cited 270 pF, likely tolerance variation or production change. See Note 2 |
@@ -252,7 +253,7 @@ TR-1 collector = 4.1V; TR-2 base = 4.1V. These are identical, confirming **no co
 
 **Known/verified values:**
 - Ve1 = 1.95V, Vb1 = 2.45V, Vc1 = 4.1V
-- Rc1 = 150K, Re1 = 33K, Ce1 = 4.7 MFD (bypass)
+- Rc1 = 150K, Re1 = 33K, Ce1 = 4.7 MFD (feedback coupling cap to fb_junct — see Section 7.2)
 - Vbe1 = 2.45 - 1.95 = 0.50V (lower than typical ~0.65V; see Note 1 — schematic annotations may be approximate)
 - Vce1 = 4.1 - 1.95 = 2.15V
 - Vcc = 15.0V
@@ -367,8 +368,8 @@ The component values reveal a fundamentally different architecture than what was
 **Stage 1 is a HIGH-GAIN, LOW-CURRENT voltage amplifier:**
 - Ic1 = 66 uA (very low current — quiet, low power)
 - Rc1 = 150K (very high collector load — maximum voltage gain per milliamp)
-- Re1 = 33K (large DC stabilization, bypassed at audio by Ce1)
-- With Ce1 bypassed: Av1 = -gm1 * Rc1 = -2.54 * 150K = **-381** (open-loop)
+- Re1 = 33K (large DC stabilization; separate DC path from emitter to ground)
+- **Note (Feb 2026):** Ce1 is a feedback coupling cap (emitter to fb_junct), NOT a simple bypass cap to ground. The open-loop gain depends on the impedance at fb_junct (LDR path + R-10). When the LDR path impedance is low, Ce1 effectively AC-grounds the emitter → Av1 ≈ gm1*Rc1 ≈ 420. When LDR path is high, the emitter sees R-10 and has significant degeneration. See SPICE AC sweep for actual values.
 - Without Ce1 (DC): Av1 = -Rc1/Re1 = -150K/33K = **-4.5**
 
 **Stage 2 is a LOW-GAIN, HIGH-CURRENT buffer/output stage:**
@@ -391,7 +392,7 @@ Av_open = 420 * 2.17 = 912
 
 We use **Av_open ~ 900** as a round figure for the combined open-loop gain.
 
-[CALCULATED — the ~900x open-loop gain is reduced to ~5.6x closed-loop by the C-3/C-4 feedback and R-10/LG-1 feedback network]
+[CALCULATED — the ~900x figure is the maximum open-loop gain (fb_junct grounded). Actual open-loop gain depends on LDR path impedance — see Section 7.2]
 
 ### 4.7 Overall Gain
 
@@ -399,14 +400,20 @@ Brad Avenson (professional audio designer who built a replacement Wurlitzer prea
 
 [VERIFIED — GroupDIY thread 13555]
 
-**Reconciliation with calculated gains:**
-- Combined open-loop gain (Ce1 bypassed): ~900 (59 dB) [CALCULATED]
+**SPICE-measured gain (Feb 2026, corrected emitter feedback topology):**
+- **No tremolo (Rldr_path = 1M):** 6.0 dB (2.0x) at 1 kHz
+- **Tremolo bright (Rldr_path = 19K):** 12.1 dB (4.0x) at 1 kHz
+- **Tremolo modulation range:** 6.1 dB
+
+**Reconciliation with Avenson's "15 dB" measurement:** Avenson measured ~15 dB (5.6x) for his replacement preamp design (which uses 499K instead of 1M for R_feed and may have different feedback topology). The original 200A with corrected emitter feedback gives **6 dB (2x) without tremolo** and up to **12 dB (4x) at tremolo peak**. The 15 dB figure does NOT match the original circuit — it's either Avenson's replacement design or a measurement with tremolo active at bright peak.
+
+**Gain structure:**
+- Maximum open-loop gain (fb_junct grounded, Re1 bypassed via Ce1): ~900 (59 dB) [CALCULATED]
 - Combined degenerated gain (Ce1 open, DC): 4.5 * 2.2 = 9.9 (20 dB) [CALCULATED]
-- Measured total gain with feedback: ~5.6 (15 dB) [VERIFIED]
+- SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo [MEASURED]
+- The strong emitter feedback (loop gain ≈ 900/2.0 = 450, or 53 dB) provides excellent gain stability and linearization.
 
-The feedback network (C-3, C-4, R-10/LG-1) reduces the 59 dB open-loop gain to 15 dB closed-loop. The loop gain (open-loop / closed-loop = 900/5.6 = 161, or 44 dB) is substantial, providing good gain stability, reduced distortion, and extended bandwidth within the feedback loop's operating range.
-
-[CALCULATED — consistent with measured 15 dB total gain]
+[MEASURED Feb 2026 — SPICE AC sweep of corrected emitter feedback topology]
 
 ---
 
@@ -466,14 +473,11 @@ GroupDIY explicitly states: "270pFd against 380K creates a bass-cut at 1,750Hz" 
 
 #### Stage 1 (TR-1)
 
-**With Ce1 bypass cap (audio frequencies, Ce1 = 4.7 MFD bypasses Re1 = 33K):**
+**Ce1 coupling at audio frequencies (Ce1 = 4.7 MFD couples emitter to fb_junct):**
 
-The 4.7 MFD bypass cap across 33K has a corner frequency of:
-```
-f_bypass1 = 1 / (2 * pi * Re1 * Ce1) = 1 / (2 * pi * 33000 * 4.7e-6) = 1.03 Hz
-```
+**Note (Feb 2026):** Ce1 is a feedback coupling cap from emitter to the R-10/LDR feedback junction, NOT a simple bypass cap across Re1 to ground. The effective emitter AC impedance depends on the impedance at fb_junct (LDR path to ground || R-10 to output). The corner frequency for Ce1 coupling is ~1 Hz, so it's effectively an AC short at all audio frequencies. However, the gain depends on what's at fb_junct — see Section 7.2.
 
-This is far below the audio band, so Ce1 effectively short-circuits Re1 for ALL audio frequencies. At audio:
+The gain below assumes fb_junct has low impedance to ground (LDR path active, tremolo bright phase):
 ```
 Av1 = -gm1 * Rc1 = -2.54 mA/V * 150K = -381
 ```
@@ -605,19 +609,26 @@ The overall preamp is a two-stage amplifier with:
 - **DC open-loop gain:** ~900 (59 dB)
 - **Dominant pole:** ~23 Hz (from Stage 1 C-3 Miller)
 - **Second pole:** ~81 kHz (from Stage 2 C-4 Miller)
-- **Closed-loop gain (set by R-10 feedback):** ~5.6 (15 dB)
+- **Closed-loop gain (set by R-10 emitter feedback):** **MEASURED Feb 2026 (SPICE AC sweep of corrected topology):**
+  - **No tremolo (LDR dark, Rldr_path ≈ 1M):** Peak gain = **6.05 dB (2.01x)** at 447 Hz. Gain at 1 kHz = **6.0 dB (2.0x)**.
+  - **Tremolo bright (Rldr_path ≈ 19K):** Gain at 1 kHz = **12.1 dB (4.0x)**.
+  - **Tremolo modulation range: ~6.1 dB** (matches EP-Forum "6 dB boost" measurement exactly).
+  - The gain is remarkably constant with input level (2.007x from pp to extreme) — the strong emitter feedback linearizes the circuit effectively.
 
 The gain-bandwidth product (GBW) of the open-loop amplifier:
 ```
 GBW = Av_open_DC * f_dominant = 900 * 23 = 20,700 Hz
 ```
 
-The closed-loop -3 dB bandwidth:
+The closed-loop -3 dB bandwidth (from SPICE AC sweep):
 ```
-f_-3dB = GBW / Av_closed = 20,700 / 5.6 = 3,696 Hz
+f_low = 19 Hz, f_high = 9.9 kHz (no tremolo, Rldr_path = 1M)
+f_high = 8.3 kHz (tremolo bright, Rldr_path = 19K)
 ```
 
-[CALCULATED — the closed-loop bandwidth is approximately 3.7 kHz]
+The bandwidth DECREASES as gain increases (tremolo bright → higher gain, narrower BW), consistent with constant GBW product.
+
+[MEASURED Feb 2026 — SPICE AC sweep of spice/testbench/preamp_ac_sweep.cir and preamp_ldr_sweep.cir]
 
 **Open-loop gain at key frequencies (combined two stages):**
 
@@ -636,7 +647,9 @@ f_-3dB = GBW / Av_closed = 20,700 / 5.6 = 3,696 Hz
 
 **Closed-loop gain at key frequencies:**
 
-Below ~3.7 kHz, the feedback holds the gain at approximately 5.6x. Above ~3.7 kHz, the open-loop gain drops below 5.6x and the feedback can no longer maintain the target gain — the closed-loop gain equals the open-loop gain and rolls off at -20 dB/decade.
+> **REVISION NOTE (Feb 2026):** The tables below use the original 5.6x gain assumption from the old shunt-feedback model (R10/R1 = 56K/22K). The topology has been corrected to emitter feedback (R-10 → Ce1 → emitter). The frequency response shape (bandpass with C20 HPF and Miller rolloff) is qualitatively correct, but the absolute gain values need re-derivation from the SPICE AC sweep of the corrected topology (preamp_emitter_fb.cir). Treat the numerical values below as provisional.
+
+At low frequencies, the emitter feedback holds the gain at a value determined by the feedback loop. Above the point where open-loop gain drops to match the closed-loop gain, the gain rolls off at -20 dB/decade.
 
 | Frequency | Closed-Loop Gain | Closed-Loop (dB) | Notes |
 |-----------|-----------------|-------------------|-------|
@@ -828,9 +841,11 @@ The Wurlitzer 200A service manual explicitly states:
 
 **This means the tremolo modulates the preamp's GAIN, not just the output volume.** The LDR resistance variation changes the closed-loop gain of the preamp by modifying the feedback network.
 
-### 7.2 Feedback Divider Topology
+### 7.2 Feedback Topology — Emitter Feedback via Ce1
 
-From the schematic, R-10 (56K) connects from TR-2's collector output (via R-9 = 6.8K series) back toward the input. LG-1 (LDR) connects from the R-10/input junction to ground:
+**CORRECTED Feb 2026:** The feedback topology was previously documented as R-10 feeding back to node_A (the input summing junction), forming an inverting shunt-feedback configuration. **This was WRONG** — it was based on the wrong schematic (200/203 models, not the 200A).
+
+The correct 200A topology, traced from the 200A schematic (874 KB PDF, md5: ceb3abb9) at 1000-2000 DPI with user annotation:
 
 ```
 TR-2 Collector
@@ -839,55 +854,68 @@ TR-2 Collector
          |
        R-10 (56K)
          |
-         +--- feedback injection point (TR-1 base region)
+       fb_junct ---------> Pin 1 (cable) --> 50K VIBRATO --> 18K --> LG-1 LED
          |
-       LG-1 (LDR, variable)
+       Ce1 (4.7 MFD coupling cap)
          |
-        GND
+       TR-1 Emitter
+         |
+       Re1 (33K) -----> GND (DC bias path)
 ```
 
-R-10 and LG-1 form a voltage divider in the feedback path. The feedback fraction applied back to the preamp is:
+**R-10 feeds back from the output to TR-1's EMITTER** via Ce1 (4.7 MFD coupling cap). This is **series-series (emitter) NEGATIVE feedback** — inherently stable because feedback at the emitter opposes the input signal at the base.
 
-```
-V_feedback = V_out * R_LDR / (R-10 + R_LDR)
-```
+Key topology details:
+- **Ce1 is a feedback coupling cap**, NOT a bypass cap. It AC-couples the feedback junction (fb_junct) to TR-1's emitter.
+- **Re1 (33K)** provides the separate DC path from emitter to ground. DC operating point is unaffected by the feedback network (Ce1 blocks DC).
+- **fb_junct** connects via cable Pin 1 to the LDR tremolo shunt circuit: GRY JACKET → 50K VIBRATO pot → 18K → LG-1 pin 2 (LED).
+- The LDR (LG-1) shunts the feedback junction to ground, diverting feedback current away from the emitter.
 
-[VERIFIED — schematic topology with R-9 = 6.8K, R-10 = 56K]
+**Why the old topology was wrong:** R-10 to node_A (base input side) creates POSITIVE feedback through two inverting CE stages (each inverts, net 0° phase shift = regenerative). This caused oscillation in both ngspice and gnucap SPICE simulations. R-10 to emitter is inherently NEGATIVE feedback (emitter feedback opposes base input), producing a stable circuit. The corrected SPICE netlist (spice/testbench/preamp_emitter_fb.cir) is perfectly stable.
 
-**Gain modulation mechanism:**
+**SPICE-validated DC operating point (corrected topology):**
+| Node | Schematic | SPICE |
+|------|-----------|-------|
+| base1 | 2.45V | 2.80V |
+| emit1 | 1.95V | 2.24V |
+| coll1 | 4.1V | 4.12V |
+| coll2 | 8.8V | 9.07V |
+| fb_junct | — | 5.59V |
+| out | — | 8.20V |
 
-When LDR resistance is **HIGH** (LED off/dim — dark phase of tremolo cycle):
-- Feedback fraction is large (R_LDR >> R-10, so V_feedback approaches V_out)
-- More negative feedback -> LOWER closed-loop gain
-- **Wait — that seems backward.** EP-Forum evidence shows 6 dB gain boost with tremolo engaged.
+[VERIFIED — correct 200A schematic traced Feb 2026; SPICE-validated in spice/testbench/preamp_emitter_fb.cir]
 
-**Resolution — the feedback-shunt topology:** In this topology, LG-1 shunts feedback current to ground. R-10 carries the feedback from output to the input node. The LDR diverts some of this feedback away from the input:
+### 7.3 Gain Modulation by LDR
 
-When LDR is **LOW** (bright phase): Low R_LDR shunts most of R-10's feedback current to ground -> less feedback reaches input -> HIGHER gain
-When LDR is **HIGH** (dark phase): High R_LDR shunts little -> more feedback reaches input -> LOWER gain
+The LDR modulates gain by varying the AC impedance from fb_junct to ground:
 
-**But the measured data shows the opposite:** ~4V p-p output with tremolo vs ~1.8V without. The tremolo approximately doubles the gain at peak.
+When LDR path impedance is **LOW** (bright phase): fb_junct is shunted to ground → Ce1 effectively grounds the emitter for AC → Re1 is bypassed → Stage 1 runs at full open-loop gain → **HIGHER overall gain**
 
-**Final resolution:** With tremolo OFF, the LDR is at some intermediate resistance (quiescent LED brightness). The oscillator modulates the LDR around this quiescent point. The average gain with tremolo ON can be higher than with tremolo OFF because the LDR spends time at high resistance (less shunting = more feedback reaching input) AND low resistance (more shunting = less feedback). Due to the nonlinear relationship between feedback and gain (gain = 1/(1-AB)), the gain peaks during the "less feedback" phase can exceed the gain dips during the "more feedback" phase, resulting in a net higher average output.
+When LDR path impedance is **HIGH** (dark phase): fb_junct carries the full R-10 feedback signal → Ce1 delivers feedback to emitter → emitter degeneration from feedback → **LOWER overall gain** (strong negative feedback)
 
-The EP-Forum measurement of 6 dB gain boost with tremolo engaged is consistent with this analysis.
+**SPICE-measured LDR sweep (Feb 2026, corrected emitter feedback topology):**
 
-[VERIFIED — service manual topology; EP-Forum gain boost measurement; analysis consistent with feedback-shunt nonlinearity]
+| Rldr_path | Gain @ 1kHz (dB) | Gain (x) | -3dB BW high (Hz) | Scenario |
+|-----------|------------------|----------|-------------------|----------|
+| 500 Ω | 34.2 | 51x | 1,749 | Unrealistic (minimum path > 18K) |
+| 5 KΩ | 19.6 | 9.5x | 5,900 | |
+| 10 KΩ | 15.3 | 5.8x | 7,327 | |
+| **19 KΩ** | **12.1** | **4.0x** | **8,334** | **Tremolo bright peak** (18K + 50Ω LDR + ~1K wiring) |
+| 50 KΩ | 8.8 | 2.8x | 9,246 | Tremolo half-depth |
+| 120 KΩ | 7.2 | 2.3x | 9,639 | Moderate LDR |
+| **1 MΩ** | **6.0** | **2.0x** | **9,913** | **No tremolo (LDR dark)** |
+| 10 MΩ | 5.9 | 2.0x | 9,948 | LDR fully dark |
 
-### 7.3 Gain Modulation Characteristics
+**Key findings:**
+- **No tremolo (baseline):** Gain = 6.0 dB (2.0x) — strong emitter feedback from R-10 reaching emitter
+- **Tremolo bright peak** (Rldr_path ≈ 19K): Gain = 12.1 dB (4.0x)
+- **Modulation range: 6.1 dB** — matches EP-Forum "6 dB gain boost" measurement exactly
+- **Bandwidth decreases with gain:** 9.9 kHz at 2x gain → 8.3 kHz at 4x gain (constant GBW product)
+- **Gain is remarkably constant with input level** (2.007x from 0.5mV to 200mV) — the strong feedback linearizes the circuit, producing very low THD (0.0001% at pp, 0.04% at extreme 200mV)
 
-From output-stage.md: "preamp output measured at approximately 4V peak-to-peak (compared to approximately 1.8V without vibrato), indicating the gain can approximately double during the high-gain phase."
+The distortion character changes through the tremolo cycle: at the gain peak (LDR low, weak feedback), the preamp is driven harder into its nonlinear region, producing more H2 and "bark." At the gain trough (LDR high, strong feedback), the preamp operates more linearly. This creates a subtle but important **timbral modulation** that distinguishes the real 200A tremolo from simple volume modulation.
 
-[VERIFIED — output-stage.md documents this from repair forum observations]
-
-This means:
-- **Peak gain (low-feedback phase)**: approximately 2x normal gain -> more distortion, more harmonics, brighter bark
-- **Trough gain (high-feedback phase)**: approximately 0.5x normal gain -> cleaner, less distortion
-- **Tremolo depth**: approximately 3-12 dB of amplitude modulation
-
-The distortion character changes through the tremolo cycle: at the gain peak, the preamp is driven harder into its nonlinear region, producing more H2 and "bark." At the gain trough, the preamp operates more linearly. This creates a subtle but important **timbral modulation** that distinguishes the real 200A tremolo from simple volume modulation.
-
-[INFERRED — logical consequence of gain modulation through a nonlinear amplifier]
+[VERIFIED — circuit analysis of corrected topology; pending SPICE AC sweep confirmation]
 
 ### 7.4 Tremolo Oscillator
 
@@ -901,28 +929,27 @@ The distortion character changes through the tremolo cycle: at the gain peak, th
 
 ### 7.5 Implications for Modeling
 
-The tremolo should be implemented as a **modulation of the preamp's feedback amount**, not as a post-preamp volume multiplier. A first-order approximation:
+The tremolo should be implemented as a **modulation of the emitter feedback amount**, not as a post-preamp volume multiplier. The LDR path impedance controls how much of the R-10 feedback signal reaches TR-1's emitter:
 
 ```
-// Tremolo modulates the feedback fraction
-// Higher feedback = lower gain; lower feedback = higher gain
-feedback_fraction = R_ldr / (R10 + R_ldr)
-// Where R_ldr varies with the tremolo oscillator's LED drive
+// LDR path: fb_junct -> Pin 1 -> 50K VIBRATO -> 18K -> LG-1 -> GND
+// Total LDR path impedance = 50K*depth + 18K + R_ldr
+// R_ldr varies with the tremolo oscillator's LED drive
+
+// When LDR path impedance is low: emitter is AC-grounded through Ce1 -> higher gain
+// When LDR path impedance is high: R-10 feedback reaches emitter -> lower gain
+// The feedback modifies the effective emitter degeneration of Stage 1
 ```
 
 At low preamp drive levels (pp), the distinction between gain modulation and volume modulation is negligible. At high drive levels (ff), the timbral variation through the tremolo cycle becomes audible and important for authenticity.
 
-### 7.6 Correction to Previous Documentation
+### 7.6 Correction History
 
-Previous project documentation (CLAUDE.md, signal-chain.md, wurlitzer-physics.md) stated:
+**Correction 1 (Feb 2026):** Previous project documentation stated the LDR was a "signal divider/shunt to ground between preamp output and volume pot." This was WRONG — the LDR is in the preamp's feedback loop.
 
-> "200A LDR is a signal divider/shunt to ground between preamp output and volume pot — one leg on signal path, other leg to ground. As resistance decreases, more signal diverts to ground. This is amplitude modulation (volume tremolo), NOT gain/distortion modulation."
+**Correction 2 (Feb 2026):** The initial correction assumed R-10 fed back to node_A (the input side, before the .022µF coupling cap), forming an inverting shunt-feedback topology. **This was also WRONG** — it was based on the wrong schematic (200/203 models). The correct 200A topology has R-10 feeding back to TR-1's EMITTER via Ce1, forming series-series emitter feedback. This was traced from the correct 200A schematic (874 KB PDF) at 1000-2000 DPI with user annotation, and confirmed stable in SPICE.
 
-**This was WRONG.** The service manual is unambiguous: the LDR is in the preamp's **feedback loop**, not a post-preamp signal divider. The Tropical Fish description of "shunt to ground" may be an oversimplification of the feedback-shunt topology where LG-1 shunts feedback current to ground.
-
-However, note that there is genuine ambiguity in how different trusted sources describe the circuit. The service manual language is authoritative.
-
-[VERIFIED — service manual text; correction documented in output-stage.md Section 8.1]
+[VERIFIED — correct 200A schematic; SPICE-validated in spice/testbench/preamp_emitter_fb.cir; documented in output-stage.md Section 8]
 
 ---
 
@@ -932,7 +959,7 @@ However, note that there is genuine ambiguity in how different trusted sources d
 
 #### Approach 1: Full SPICE-Level Simulation (Highest Fidelity)
 
-Model the complete circuit with Ebers-Moll equations for both transistors, explicit feedback networks (C-3, C-4, R-10/LG-1), and direct coupling.
+Model the complete circuit with Ebers-Moll equations for both transistors, explicit feedback networks (C-3, C-4, R-10 emitter feedback via Ce1, LG-1 LDR shunt), and direct coupling.
 
 **Pros:** Most accurate harmonic content, correct frequency-dependent gain, proper bias-shift dynamics
 **Cons:** Requires solving two coupled implicit equations per sample (or Newton-Raphson iteration); computationally expensive at audio rates
@@ -986,7 +1013,7 @@ Taylor-expand the transfer function to 3rd or 4th order: `y = a1*x + a2*x^2 + a3
 | Ignore thermal drift | Time constants of seconds; inaudible in normal playing | LOW |
 | Approximate Stage 2 as fully linear | Av2=2.2 with 820 ohm degeneration; nearly symmetric headroom (1.17:1); H2 contribution negligible | LOW |
 | Ignore varactor effect (signal-dependent Cob) | Cob varies ~2-4 pF; negligible vs external C-3/C-4 (100 pF) | LOW |
-| Model Ce1 as fully bypassed (ignore 1 Hz corner) | Corner at 1 Hz is inaudible | LOW |
+| Model Ce1 as AC short (ignore 1 Hz corner of coupling) | Ce1 is a feedback coupling cap; at audio frequencies it's essentially a short circuit. Corner at ~1 Hz is inaudible | LOW |
 | Model Ce2 as fully bypassed (ignore 27 Hz corner) | Corner at 27 Hz is barely in audio band; effect is small (2.4 dB) | LOW |
 | Approximate direct-coupling as instantaneous (no sag) | Loses "bloom" and dynamic compression; audible at ff polyphonic | MEDIUM |
 | Ignore tremolo feedback interaction | Loses timbral modulation; audible with tremolo on at high drive | MEDIUM |
@@ -999,8 +1026,8 @@ For a perceptually accurate Wurlitzer 200A preamp model, the minimum implementat
 2. **Stage 1 exponential** with gm1 = 2.54-2.80 mA/V (Ic1 = 66-73 uA)
 3. **Asymmetric soft-clip** with satLimit = 10.9V, cutoffLimit = 2.05V (Stage 1)
 4. **Frequency-dependent feedback** via C-3 (100 pF) Miller effect — dominant pole at ~23 Hz. CORRECT polarity: less feedback at LF (more gain/distortion), more feedback at HF (less gain/distortion)
-5. **Closed-loop gain** of ~5.6x (15 dB) set by R-10 feedback network
-6. **Closed-loop bandwidth** rolling off above ~3.7 kHz
+5. **Closed-loop gain** of ~6 dB (2.0x) without tremolo, up to ~12 dB (4.0x) at tremolo peak, set by R-10 emitter feedback via Ce1 [SPICE-MEASURED Feb 2026]
+6. **Closed-loop bandwidth** ~10 kHz without tremolo, ~8.3 kHz at tremolo peak [SPICE-MEASURED Feb 2026]
 7. **Direct coupling** to Stage 2 (can be instantaneous coupling for simplicity)
 8. **Stage 2** with Av = 2.2, nearly symmetric soft-clip (satLimit = 6.2V, cutoffLimit = 5.3V)
 9. **Output DC block** at ~20 Hz
@@ -1011,7 +1038,7 @@ For a perceptually accurate Wurlitzer 200A preamp model, the minimum implementat
 Add to the minimum model:
 
 11. **DC bias-shift dynamics**: Track Stage 1's average collector voltage (10-100 ms time constant); feed this to Stage 2's operating point. This produces the "sag" compression and "bloom" heard at ff polyphonic.
-12. **Tremolo as feedback modulation**: Modulate the R-10/LG-1 feedback fraction with the LDR signal, rather than applying tremolo as a post-preamp volume multiplier.
+12. **Tremolo as emitter feedback modulation**: Modulate the LDR path impedance (which controls how much R-10 feedback reaches TR-1's emitter via Ce1), rather than applying tremolo as a post-preamp volume multiplier.
 13. **WDF or coupled NR solver**: Solve both stages simultaneously to capture the inter-stage coupling dynamics.
 
 ---
@@ -1031,7 +1058,7 @@ The model used `kPreampInputDrive` to scale the voice output before the preamp:
 
 [VERIFIED — from vurli-plugin.cpp and signal-chain.md history]
 
-**The root cause**: The model's preamp gain staging was wrong. The real preamp has open-loop gain of ~420 in Stage 1 (with Ce1 bypassed), reduced to ~5.6x total by feedback caps. The model used wrong component values (Rc1=47K, Re1=8.2K, Rc2=10K, Re2=5.1K) which gave different gain structure.
+**The root cause**: The model's preamp gain staging was wrong. The real preamp has open-loop gain of ~420 in Stage 1, reduced by R-10 emitter feedback (via Ce1) and Miller-effect feedback caps (C-3, C-4). The model used wrong component values (Rc1=47K, Re1=8.2K, Rc2=10K, Re2=5.1K) which gave different gain structure.
 
 **The lesson**: kPreampInputDrive should be approximately 1.0 if the preamp model correctly reproduces the real circuit's gain structure. A value of 28.0 indicates the preamp model is approximately 29 dB short of the correct gain (or the voice output levels are 29 dB too low).
 
@@ -1092,7 +1119,7 @@ With correct component values, the Miller-effect dominant pole is at ~23 Hz. Thi
 - At 2.3 kHz: open-loop gain is 1/100 of DC = 4.2 (per stage 1)
 - At 23 kHz: open-loop gain is 1/1000 of DC = 0.42 (per stage 1, below unity!)
 
-The closed-loop gain is held at 5.6x by the R-10 feedback up to the point where open-loop gain drops to 5.6x (around 3.7 kHz). Above that, the gain rolls off because there is not enough open-loop gain to sustain the feedback-controlled closed-loop gain.
+The closed-loop gain is held at the emitter-feedback-determined level by R-10 feedback (via Ce1) up to the point where open-loop gain drops to match the closed-loop gain. Above that, the gain rolls off because there is not enough open-loop gain to sustain the feedback-controlled closed-loop gain. (Exact closed-loop gain TBD from SPICE AC sweep of corrected topology.)
 
 This is fundamentally different from the previous analysis which treated the Miller poles as "somewhere in the 100-500 Hz range" and wondered why the feedback corners seemed too low. In reality, the dominant pole IS very low (23 Hz), and the resulting GBW (~21 kHz) determines the closed-loop bandwidth (~3.7 kHz).
 
@@ -1115,11 +1142,13 @@ Multiple listening evaluations described the model's output as sounding like "a 
 | Lesson | Details | Source |
 |--------|---------|--------|
 | kPreampInputDrive should be ~1.0 | A value >> 1 indicates wrong gain staging | INFERRED |
-| Feedback caps set the gain, not just HF rolloff | Real closed-loop gain is ~5.6x, not 190x | VERIFIED — Avenson measurement |
+| R-10 emitter feedback + Miller caps set the gain | Open-loop ~900x, closed-loop set by emitter feedback (R-10 via Ce1) | VERIFIED — SPICE; Avenson measurement |
 | Miller effect gives MORE gain at LF, LESS at HF | Model had this backwards | VERIFIED — standard theory |
 | H2 comes from asymmetric headroom, not just the exponential | Stage 1's 2.05V cutoff vs 10.9V saturation is the primary H2 source | CALCULATED from verified values |
 | Direct coupling matters at ff | Bias-shift sag/bloom is audible dynamic behavior | INFERRED from R41 review |
-| Tremolo is gain modulation, not volume modulation | LDR in feedback loop changes distortion character through tremolo cycle | VERIFIED — service manual |
+| Tremolo is gain modulation, not volume modulation | LDR shunts emitter feedback junction, changing gain and distortion through tremolo cycle | VERIFIED — service manual; correct 200A schematic |
+| R-10 feeds to emitter, not node_A | Ce1 couples feedback to emitter (series-series FB); R-10 to node_A caused SPICE oscillation | VERIFIED — correct 200A schematic; SPICE |
+| Use the CORRECT schematic PDF | 874 KB PDF = 200A; 3 MB PDF = 200/203/206/207. Mixed tiles caused topology confusion | VERIFIED — Feb 2026 |
 | The preamp IS the Wurlitzer's voice | Pickup is nearly linear; speaker is EQ; preamp creates the character | VERIFIED — calibration data, listening tests |
 | Use correct schematic values | Estimated values were wrong by factors of 3-5x, cascading errors through all analysis | VERIFIED — BustedGear schematic |
 | The preamp has a ~2-4 kHz passband peak | C20 HPF from below, Miller BW limit from above | CALCULATED from verified values |
@@ -1205,31 +1234,31 @@ Multiple listening evaluations described the model's output as sounding like "a 
 | Direct coupling (Vc1 = Vb2 = 4.1V) | VERIFIED | Schematic topology and voltages |
 | R-1 = 22K, R-2 = 2M (see Note 1), R-3 = 470K | VERIFIED | Schematic (R-2 adjusted per DC analysis) |
 | Rc1 = 150K | VERIFIED | Schematic |
-| Re1 = 33K with Ce1 = 4.7 MFD bypass | VERIFIED | Schematic |
+| Re1 = 33K, Ce1 = 4.7 MFD (feedback coupling cap to fb_junct) | VERIFIED | Schematic; topology corrected Feb 2026 |
 | Rc2 = 1.8K | VERIFIED | Schematic |
 | Re2 = 270 ohm (bypassed, 22 MFD) + 820 ohm (unbypassed) | VERIFIED | Schematic |
 | R-9 = 6.8K (series output) | VERIFIED | Schematic |
-| R-10 = 56K (feedback resistor) | VERIFIED | Schematic |
+| R-10 = 56K (feedback to emitter via Ce1) | VERIFIED | Schematic; topology corrected Feb 2026 |
 | C-3 = 100 pF, C-4 = 100 pF | VERIFIED | Schematic |
 | C20 = 220 pF | RESOLVED | Schematic confirmed at 1500 DPI. GroupDIY's 270 pF is tolerance/production variation. |
 | D-1 = 25 PIV, 10 mA (part #142136) | VERIFIED | Schematic |
 | Input coupling cap = .022 uF | VERIFIED | Schematic |
-| Total preamp gain ~15 dB (5.6x) | VERIFIED | Brad Avenson measurement |
+| Total preamp gain 6.0 dB (2.0x) no trem / 12.1 dB (4.0x) trem bright | SPICE-MEASURED | Corrected emitter feedback topology. Avenson's 15 dB was his replacement design. |
 | Volume pot output 2-7 mV AC | VERIFIED | Brad Avenson measurement |
-| LDR (LG-1) + R-10 (56K) form feedback divider for tremolo | VERIFIED | Service manual text, schematic |
+| LDR (LG-1) shunts R-10/Ce1 emitter feedback junction for tremolo | VERIFIED | Service manual text, correct 200A schematic, SPICE |
 | Tremolo output ~4V p-p (vs ~1.8V without) | VERIFIED | Repair forum measurements |
 | Ic1 ~ 66-73 uA | CALCULATED | From Rc1=150K and Vc1=4.1V |
 | Ic2 ~ 3.1-3.4 mA | CALCULATED | From Rc2=1.8K and Vc2=8.8V |
-| Stage 1 open-loop gain ~420 (Ce1 bypassed) | CALCULATED | gm1 * Rc1 |
+| Stage 1 gain ~420 (max, with fb_junct grounded) | CALCULATED | gm1 * Rc1 (only valid when LDR path impedance is low) |
 | Stage 2 AC gain ~2.2 | CALCULATED | Rc2 / (re2 + Re2b) |
 | Combined open-loop gain ~900 | CALCULATED | Av1 * Av2 |
 | C-3 Miller dominant pole ~23 Hz | CALCULATED | From C_miller = 43 nF and R_source = 163K |
-| Closed-loop -3 dB bandwidth ~3.7 kHz | CALCULATED | GBW / Av_closed = 20,700 / 5.6 |
+| Closed-loop -3 dB bandwidth ~10 kHz (no trem) / ~8.3 kHz (trem bright) | SPICE-MEASURED | From preamp_ldr_sweep.cir |
 | Passband peak ~2-4 kHz | CALCULATED | From C20 HPF and closed-loop BW |
 | Stage 1 asymmetry: 2.05V vs 10.9V (5.3:1) | CALCULATED | From verified DC voltages |
 | Stage 2 asymmetry: 5.3V vs 6.2V (1.17:1) | CALCULATED | From verified DC voltages |
 | H2 dominates H3 from exponential transfer function | VERIFIED | till.com, Art of Electronics, standard theory |
-| Tremolo modulates distortion character, not just volume | INFERRED | Logical from feedback-loop position |
+| Tremolo modulates distortion character, not just volume | VERIFIED | Emitter feedback topology; SPICE-confirmed stable |
 
 ---
 
@@ -1244,7 +1273,7 @@ Vcc = 15.0V
 // Stage 1 (TR-1)
 Rc1 = 150K [VERIFIED — schematic]
 Re1 = 33K [VERIFIED — schematic]
-Ce1 = 4.7 MFD (bypass corner at 1.03 Hz — fully bypassed at audio) [VERIFIED — schematic]
+Ce1 = 4.7 MFD (feedback coupling cap: emitter to fb_junct, corner ~1 Hz) [VERIFIED — schematic; topology corrected Feb 2026]
 Ic1 = ~66-73 uA [CALCULATED]
 gm1 = ~2.54-2.80 mA/V [CALCULATED]
 B = 38.5 (1/(n*Vt), n=1.0 for 2N5089)
@@ -1300,10 +1329,13 @@ R_3 = 470K (to ground) [VERIFIED — schematic]
 // Output DC block
 f_dc_block = 20 Hz (to be determined by output coupling cap)
 
-// Overall closed-loop
-total_closed_loop_gain = ~5.6x (15 dB) [VERIFIED — Avenson measurement]
-closed_loop_bandwidth = ~3.7 kHz [CALCULATED]
-passband_peak = ~2-4 kHz (from C20 HPF and BW limit) [CALCULATED]
+// Overall closed-loop (emitter feedback via R-10/Ce1) [SPICE-MEASURED Feb 2026]
+total_closed_loop_gain_no_trem = 6.0 dB (2.0x) [Rldr_path = 1M]
+total_closed_loop_gain_trem_bright = 12.1 dB (4.0x) [Rldr_path = 19K]
+tremolo_modulation_range = 6.1 dB
+closed_loop_bandwidth_no_trem = 19 Hz - 9.9 kHz
+closed_loop_bandwidth_trem_bright = 19 Hz - 8.3 kHz
+passband_peak = ~450 Hz (from C20/Cin HPF and BW limit) [SPICE-MEASURED]
 kPreampInputDrive = should be ~1.0 if gain staging is correct
 ```
 

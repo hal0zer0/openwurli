@@ -16,7 +16,7 @@ Key distinctions of the 200A vs the 200 (and other Wurlitzer models) that the ci
 - The 200A uses a solid-state amplifier circuit (not tube-based like earlier models)
 - Reed-based tone generation: steel reeds vibrate near an electrostatic pickup
 - The pickup is capacitive (not electromagnetic like Rhodes) — reed vibration modulates capacitance
-- **Tremolo is INSIDE the preamp feedback loop** — LDR (LG-1) + R-10 (56K) form a voltage divider in the preamp's negative feedback network, modulating closed-loop gain. This produces timbral modulation (not just volume). The "shunt-to-ground" description found in some sources is a simplification of this feedback-shunt topology.
+- **Tremolo is INSIDE the preamp feedback loop** — R-10 (56K) feeds back from the output to TR-1's emitter via Ce1 (4.7 MFD coupling cap), providing series-series negative feedback. LDR (LG-1) shunts the feedback junction to ground via the cable, modulating how much feedback reaches the emitter and thus the closed-loop gain. This produces timbral modulation (not just volume).
 - The preamp is a two-stage direct-coupled NPN CE amplifier (TR-1/TR-2, 2N5089). Asymmetric clipping headroom (Stage 1: 2.05V toward saturation vs 10.9V toward cutoff, ratio ~5.3:1) is the primary source of even-harmonic "bark"
 - The 200A's specific amplifier topology, EQ curve, and soft-clipping characteristics define its signature sound
 - Velocity response is mechanical (hammer force on reed), not electronic
@@ -53,10 +53,54 @@ pip install <package>         # add supporting Python packages as needed
 
 ```
 docs/           # Research materials: schematics, frequency response data, Wurlitzer 200A specs
+tools/          # Python CLI utilities for development support
 .venv/          # Python 3.12 virtual environment for supporting tools (audio/MIDI analysis)
 ```
 
 *Source directories will be added as phases are implemented.*
+
+## Authoritative Schematic
+
+The **only** schematic reference for this project is:
+
+```
+docs/verified_wurlitzer_200A_series_schematic.pdf
+```
+
+This is the verified Wurlitzer Model 200A Electronic Piano Schematic (#203720-S-3, starting serial 102905). **Do not download, source, or use any other schematic PDF.** Other Wurlitzer schematics (200/203/206/207 combined sheets) have different component numbering and topology that will cause errors.
+
+## Schematic Image Reading
+
+Claude's vision pipeline downsamples all images to **max 1568px on the long edge** (~1.15 MP). Pre-rendered tiles in `schematic_tiles/` are already processed for AI reading — use those first.
+
+**Pre-rendered tiles** (in `schematic_tiles/`, gitignored):
+- Named after their region and DPI, e.g. `preamp_600dpi.png`, `overview_150dpi.png`
+- Already preprocessed: grayscale, denoised, CLAHE contrast, sharpened, resized to fit Claude's limits
+- Read these directly with the Read tool — no rendering needed for standard analysis
+
+**To re-render or create new tiles**, use `tools/schematic_preprocess.py`:
+
+```bash
+source .venv/bin/activate
+
+# List available named regions
+python tools/schematic_preprocess.py regions
+
+# Render a named region
+python tools/schematic_preprocess.py render --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --region preamp
+
+# Render a custom area (normalized 0-1 coordinates)
+python tools/schematic_preprocess.py render --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --rect 0.1,0.3,0.3,0.5 --dpi 900
+
+# Enhance an existing PNG
+python tools/schematic_preprocess.py enhance some_image.png
+```
+
+Output goes to `schematic_tiles/` (gitignored). The pipeline: grayscale -> denoise -> CLAHE contrast -> unsharp mask -> border crop -> resize to fit Claude's limits.
+
+**Two-pass strategy for circuit analysis:**
+1. Overview crop at low DPI (150-300) to understand topology and signal flow
+2. Detail crops at higher DPI (600-900) to read specific component values
 
 ## Rules
 
