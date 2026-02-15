@@ -33,6 +33,13 @@ schematic_tiles/
 # External tools (cloned repos, not part of this project)
 netlistify/
 
+# Reed renderer output WAVs (regenerate with cargo run)
+tools/reed-renderer/output/
+tools/reed-renderer/target/
+
+# Market research (untracked, not part of the project deliverables)
+docs/market-research/
+
 # SPICE simulation output (regenerate by running testbenches)
 spice/output/
 *.dat

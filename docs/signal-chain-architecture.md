@@ -76,8 +76,8 @@ Keypress
      - 0.47 ohm emitter degeneration resistors
      - ~10 mA quiescent bias
   -> Speaker (two 4"x8" oval ceramic drivers in ABS plastic lid; see output-stage.md)
-     - Sealed enclosure, resonance ~85 Hz
-     - Cone breakup rolloff ~8 kHz
+     - Open-backed baffle (NOT sealed), bass rolloff ~85-100 Hz
+     - Cone breakup rolloff ~7-8 kHz
 ```
 
 ### Critical Topology Facts
@@ -122,9 +122,9 @@ MIDI note-on (key, velocity, channel, note_id)
               -> Miller pole ~3.3 kHz
         [H] DC Block HPF (20 Hz)
      -> 2x Downsample (HIIR polyphase IIR)
-     [I] Volume Control (user parameter)
-     [K] Power Amplifier (Class AB, optional -- priority MEDIUM)
-     [L] Speaker Cabinet (HPF 85 Hz Q=0.75 + LPF 8 kHz Butterworth)
+     [I] Volume Control (real attenuator, audio taper, between preamp and power amp)
+     [K] Power Amplifier (Class AB, crossover distortion at low signal levels)
+     [L] Speaker Cabinet (variable: bypass to authentic HPF 85-100 Hz + LPF 7-8 kHz)
      [M] Output Limiter (soft saturation)
      -> Mono to Stereo duplication
      -> float32 output buffers
@@ -457,6 +457,14 @@ At mf with a single voice, the summed output is approximately 0.05-0.15 (arbitra
 
 This is the most complex and sonically important processing stage. The preamp is the primary source of the Wurlitzer's characteristic even-harmonic "bark."
 
+### DECISION: Trait-Based A/B Architecture
+
+The preamp implements a `PreampModel` trait/interface with `process_sample()`, `set_ldr_resistance()`, `reset()`. Two implementations exist behind this interface:
+1. **Full SPICE-derived model** — coupled NR solver, ground truth reference
+2. **Simplified Ebers-Moll** — independent stages, shipping candidate
+
+The voice holds a swappable `PreampModel`. A/B test until the simplified version is perceptually indistinguishable from the reference. See `preamp-circuit.md` Section 8.1 for details.
+
 ### Oversampling Wrapper
 
 The preamp runs at 2x the base sample rate inside an HIIR polyphase IIR oversampler:
@@ -667,13 +675,21 @@ Because the tremolo modulates the preamp's emitter feedback (via the LDR shunt a
 
 ## 12. Stage 10: Volume Control (Mono, Base Rate)
 
-In the real 200A, the volume potentiometer sits between the preamp output and the power amplifier input. In the plugin:
+### DECISION: Model as Real Attenuator Between Preamp and Power Amp
+
+In the real 200A, the 3K audio-taper volume potentiometer sits between the preamp output and the power amplifier input. The plugin must place the volume control at this exact point in the signal chain — NOT as a final output gain.
+
+**Why placement matters:** At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the distortion character (more odd harmonics from the Class AB dead zone). This interaction between volume and power amp behavior is audible and contributes to the instrument's character at low volumes.
 
 ```
-output = input * masterVolume
+// Audio taper: approximate log curve
+pot_position = user_volume_param  // 0.0 to 1.0
+audio_taper = pot_position * pot_position  // quadratic approximation of audio taper
+output = input * audio_taper
+// -> feeds into power amplifier stage
 ```
 
-This is a simple linear gain. The `masterVolume` parameter default of 0.05 reflects the typical attenuation needed to bring the preamp's output level into a reasonable range for the DAW. In the real instrument, the volume pot output is measured at 2-7 mV AC.
+The `masterVolume` parameter default of 0.05 reflects the typical attenuation needed to bring the preamp's output level into a reasonable range. In the real instrument, the volume pot output is measured at 2-7 mV AC.
 
 ---
 
@@ -713,25 +729,31 @@ For a first release, a simple soft-clip at the output is sufficient. The crossov
 
 ## 14. Stage 12: Speaker Cabinet (Mono, Base Rate)
 
-The 200A uses two 4"x8" oval ceramic speakers in the ABS plastic lid (sealed enclosure), 16 ohm each (part #202243). See output-stage.md for details.
+The 200A uses two 4"x8" oval ceramic speakers in an open-backed ABS plastic lid (NOT sealed), 16 ohm each (part #202243). See output-stage.md for details.
 
-### Model
+### DECISION: Variable Speaker Emulation
 
-Two biquad filters (Direct Form II Transposed):
+The speaker HPF/LPF are physical limitations, not design choices. Expose a "Speaker Character" parameter that blends from **bypass** (full-range, flat) to **authentic** (full HPF + LPF). This lets players who want more bass or extended treble dial back the speaker emulation.
 
-1. **Sealed-box resonance:** 2nd-order HPF at 85 Hz, Q=0.75
-   - Slightly underdamped (Q=0.75 > 0.707) matches small sealed enclosure
+### Model (at "Authentic" Position)
+
+Two variable-cutoff biquad filters (Direct Form II Transposed) with smoothed coefficient updates:
+
+1. **Open-baffle bass rolloff:** 2nd-order HPF at 85-100 Hz, Q=0.75
+   - Combination of speaker resonance + open baffle cancellation (~12 dB/oct)
    - Attenuates C2 fundamental (65 Hz) by ~5.4 dB
    - Leaves H2 (130 Hz) nearly untouched
-   - This is a significant contributor to bass register H2/H1 balance
+   - Significant contributor to bass register H2/H1 balance
 
-2. **Cone breakup rolloff:** 2nd-order LPF at 8000 Hz, Q=0.707 (Butterworth)
+2. **Cone breakup rolloff:** 2nd-order LPF at 7-8 kHz, Q=0.707 (Butterworth)
    - Set above the preamp Miller LPFs to avoid stacking
    - Models speaker cone's own breakup, not preamp bandwidth
 
+At "Bypass" position: both filters disabled (flat passthrough). Intermediate positions interpolate cutoff frequencies toward their extremes (HPF → 20 Hz, LPF → 20 kHz).
+
 ### Coefficient Computation
 
-Use the Audio EQ Cookbook (Robert Bristow-Johnson) formulas. Recompute coefficients when sample rate changes (in `activate()`).
+Use the Audio EQ Cookbook (Robert Bristow-Johnson) formulas. Recompute coefficients when sample rate changes (in `activate()`) and when the Speaker Character parameter changes (with per-block smoothing).
 
 ---
 
@@ -912,7 +934,8 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 | 8 | Asymmetry | preamp | 0.0 | 2.0 | 1.0 | Reserved (asymmetry is physical) |
 | 9 | Tremolo Rate | tremolo | 0.1 | 15.0 | 5.5 | LFO frequency (Hz) |
 | 10 | Tremolo Depth | tremolo | 0.0 | 1.0 | 0.5 | Modulation amount |
-| 11 | Attack Overshoot | reed | 0.0 | 6.0 | 4.0 | DEPRECATED: should be removed; attack emerges from physics |
+| 11 | Speaker Character | speaker | 0.0 | 1.0 | 1.0 | 0.0=bypass (full range), 1.0=authentic (HPF+LPF) |
+| 12 | Attack Overshoot | reed | 0.0 | 6.0 | 4.0 | DEPRECATED: should be removed; attack emerges from physics |
 
 ### Internal Constants (Not Exposed)
 
@@ -932,8 +955,8 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 | Miller pole 2 | ~3300 Hz | Stage 2 (C-4=100pF, low Miller multiplication) |
 | Closed-loop bandwidth | ~9900 Hz (no trem) / ~8300 Hz (trem bright) | Combined preamp with R-10 emitter feedback |
 | DC block frequency | 20 Hz | Output DC removal |
-| Speaker HPF | 85 Hz, Q=0.75 | Sealed box resonance |
-| Speaker LPF | 8000 Hz, Q=0.707 | Cone breakup |
+| Speaker HPF (authentic) | 85-100 Hz, Q=0.75 | Open-baffle resonance + bass cancellation |
+| Speaker LPF (authentic) | 7000-8000 Hz, Q=0.707 | Cone breakup |
 | Noise decay | 1/0.003 = 333 Hz | 3ms attack noise time constant |
 | Dwell sigma^2 | 64.0 | Gaussian dwell filter width (sigma=8.0) |
 | kNumModes | 7 | Modal oscillator mode count |
@@ -943,7 +966,11 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 
 ## 21. Damper and Release Model
 
-At note-off, a felt damper progressively contacts the reed. This is NOT an amplitude gate -- it progressively increases decay rates, with higher modes dying first.
+### DECISION: Full Three-Phase Progressive Model
+
+Implement the complete three-phase damper with release velocity sensitivity. The damper is a critical part of the playing experience — half-damping techniques are used expressively on the real instrument.
+
+At note-off, a felt damper progressively contacts the reed. This is NOT an amplitude gate -- it progressively increases decay rates, with higher modes dying first. Frequency-dependent damping means upper modes damp first (felt absorbs high frequencies more efficiently), producing a brief "darkening" during release before silence.
 
 ### Damper Rate Computation
 

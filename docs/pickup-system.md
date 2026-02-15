@@ -712,9 +712,11 @@ This is consistent with Brad Avenson's measurement of **2-7 mV AC at the volume 
 ### Open Questions
 | Item | Status |
 |------|--------|
-| Vertical gap (reed face to slot bottom) | Not documented; needs direct measurement |
-| Miessner's asymmetric modulation in 200A | Unknown if preserved in production design; patent describes it but 200A may differ |
+| Vertical gap (reed face to slot bottom) | **DEFERRED** to OBM recording comparison phase. Not documented; affects absolute H2/H1 ratio. Will calibrate against OldBassMan recordings. |
+| Miessner's asymmetric modulation in 200A | **DEFERRED** to OBM recording comparison phase. Unknown if preserved in production design. Will calibrate against OldBassMan recordings. |
 | Exact signal level at pickup output | Sub-mV to low mV estimated; no direct measurement found |
+
+**Pickup nonlinearity DECISION:** Implement the full model: 1/d capacitance relationship (even harmonics from asymmetric modulation), minGap clamp (soft saturation as reed approaches plate), and register-dependent gap scaling (`gap_scale = 2^((60-key)/60)`). The two deferred items above affect calibration constants only, not the model topology.
 
 ---
 
