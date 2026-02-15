@@ -1,0 +1,43 @@
+* Wurlitzer 200A Preamp — DC Operating Point Testbench
+* =====================================================
+* Validates all DC bias voltages against schematic annotations.
+*
+* Targets (±10%):
+*   TR-1 Base (base1):    2.45V
+*   TR-1 Emitter (emit1): 1.95V
+*   TR-1 Collector (coll1): 4.1V  (= TR-2 Base)
+*   TR-2 Emitter a (emit2a): 3.4V (approx)
+*   TR-2 Emitter b (emit2b): ~3.1V
+*   TR-2 Collector (coll2): 8.8V
+*   Ic(TR-1): 66-73 uA
+*   Ic(TR-2): 3.3-3.5 mA
+
+.title Preamp DC Operating Point
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* Supply
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp — no signal input, trem pin floating (no LDR)
+Xpre  in_sig out vcc 0 trem  wurli_preamp
+
+* DC input = 0V (no signal, just bias)
+Vin  in_sig 0  DC 0
+
+* Load resistor (simulates volume pot / next stage input impedance)
+Rload out 0  100K
+
+.op
+
+* Print all internal node voltages
+* Note: .op outputs all node voltages and device info in the log.
+* These .print statements use OP (not DC) to avoid "no dc analysis" errors.
+.print OP V(Xpre.base1) V(Xpre.emit1) V(Xpre.coll1)
+.print OP V(Xpre.emit2a) V(Xpre.emit2b) V(Xpre.coll2)
+.print OP V(out)
+.print OP @Q.Xpre.Q1[ic] @Q.Xpre.Q2[ic]
+
+.end

@@ -1,0 +1,93 @@
+.title Wurlitzer 200A Preamp - LDR Sweep (Gain vs Rldr)
+* Sweeps the LDR path resistance to measure tremolo gain modulation
+* R-10 feeds back from output to TR-1 emitter via Ce1 (4.7uF coupling cap)
+
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100
++  IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+
+Vcc vcc 0 DC 15
+
+Vin in_sig 0 DC 0 AC 1
+R1 in_sig node_A 22K
+Cin node_A base1 0.022U
+R2 vcc base1 2MEG
+R3 base1 0 470K
+C20 base1 0 220P
+D1 0 base1 D1N4148
+
+Q1 coll1 base1 emit1 Q2N5089
+Rc1 vcc coll1 150K
+Cc3 coll1 base1 100P
+Re1 emit1 0 33K
+Ce1 emit1 fb_junct 4.7U
+
+* LDR path: variable resistance to ground
+* In real circuit: 50K vibrato pot (variable) + 18K + LDR (variable)
+* We sweep the total path resistance
+Rldr_path fb_junct 0 120K
+
+R10 out fb_junct 56K
+
+Q2 coll2 coll1 emit2a Q2N5089
+Rc2 vcc coll2 1.8K
+Re2a emit2a emit2b 270
+Ce2 emit2a emit2b 22U
+Re2b emit2b 0 820
+Cc4 coll2 coll1 100P
+
+R9 coll2 out 6.8K
+Rload out 0 100K
+
+.control
+* Test different LDR path resistances
+* Real circuit: LDR varies ~50 ohm (bright) to >1M (dark)
+* Plus 18K series + vibrato pot portion
+* We'll test: 500, 1K, 2K, 5K, 10K, 19K (18K+1K LDR), 50K, 120K, 500K, 1M, 10M
+
+echo "=== LDR Sweep: Gain at 1 kHz vs Rldr_path ==="
+echo "Rldr_path(ohm) | Gain_1k(dB) | Peak_Gain(dB) | Peak_Freq(Hz) | BW_low(Hz) | BW_high(Hz)"
+
+foreach rldr 500 1000 2000 5000 10000 19000 50000 120000 500000 1000000 10000000
+    alter Rldr_path = $rldr
+    op
+    ac dec 100 10 100K
+    meas ac g1k find vdb(out) at=1000
+    meas ac gpeak max vdb(out)
+    meas ac fpeak max_at vdb(out)
+    let tgt = gpeak - 3
+    meas ac bwl when vdb(out)=tgt rise=1
+    meas ac bwh when vdb(out)=tgt fall=last
+    echo "$rldr | $&g1k | $&gpeak | $&fpeak | $&bwl | $&bwh"
+    destroy all
+end
+
+* Also write full AC sweep at key LDR values for plotting
+echo ""
+echo "=== Writing full AC data for key LDR values ==="
+
+alter Rldr_path = 500
+ac dec 200 1 1MEG
+wrdata /tmp/preamp_ac_ldr500.txt vdb(out) vp(out)
+
+alter Rldr_path = 19000
+ac dec 200 1 1MEG
+wrdata /tmp/preamp_ac_ldr19k.txt vdb(out) vp(out)
+
+alter Rldr_path = 120000
+ac dec 200 1 1MEG
+wrdata /tmp/preamp_ac_ldr120k.txt vdb(out) vp(out)
+
+alter Rldr_path = 10000000
+ac dec 200 1 1MEG
+wrdata /tmp/preamp_ac_ldr10M.txt vdb(out) vp(out)
+
+.endc
+.end

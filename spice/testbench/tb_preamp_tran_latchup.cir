@@ -1,0 +1,33 @@
+* Preamp Transient Latch-Up Investigation
+* =========================================
+* Goal: capture the latch-up from t=0, all internal nodes visible.
+* No AC signal — just see what happens with DC startup.
+
+.title Preamp Transient Latch-Up Debug
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* Supply — instant 15V
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp
+Xpre  in_sig out vcc 0 trem  wurli_preamp
+
+* No signal source — just R-1 from ground to in_sig
+* (simulates pickup at rest with no HV supply)
+R1   0 in_sig  22K
+
+* LDR: nominal 12K
+Rldr trem 0  12K
+
+* Load resistor
+Rload out 0  100K
+
+* Transient: capture from t=0, 500ms total, 10us step
+.tran 10U 500M 0 10U
+
+.print TRAN V(in_sig) V(Xpre.base1) V(Xpre.emit1) V(Xpre.coll1) V(Xpre.coll2) V(out)
+
+.end

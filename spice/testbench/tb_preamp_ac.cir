@@ -1,0 +1,50 @@
+* Wurlitzer 200A Preamp — AC Frequency Response Testbench
+* ========================================================
+* Bode plot: gain and phase from 10 Hz to 100 kHz.
+*
+* Source network: Vs → R-1 (22K) → node_A (preamp 'in' pin).
+* R-1 provides the source impedance that allows R-10 feedback
+* to operate — without it, an ideal voltage source absorbs the
+* feedback current and the preamp runs open-loop.
+*
+* LDR (R_ldr) between trem pin and ground sets the feedback
+* divider with R-10. Nominal 12K gives ~5.6x (15 dB) closed-loop gain.
+*
+* Targets:
+*   Closed-loop gain at 1 kHz: ~5.6x (15 dB)  [with R_ldr = 12K]
+*   -3dB bandwidth: ~3.7 kHz
+*   C20 HPF corner: ~1903 Hz (interacts with feedback)
+
+.title Preamp AC Frequency Response
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* Supply
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp
+Xpre  in_sig out vcc 0 trem  wurli_preamp
+
+* Source network: AC source through R-1 (22K) to preamp input
+* R-1 is the series resistor between the pickup cable and node_A on the preamp PCB.
+Vin  src 0  DC 0 AC 1M
+R1   src in_sig  22K
+
+* LDR: nominal 12K (tremolo midpoint) between trem pin and ground.
+* R-10 (56K) + R_ldr (12K) form the feedback divider.
+* Gain ≈ 1 + R-10/R_ldr = 1 + 56K/12K ≈ 5.7x
+Rldr trem 0  12K
+
+* Load resistor (volume pot / next stage input impedance)
+Rload out 0  100K
+
+* AC analysis: 200 points per decade, 10 Hz to 100 kHz
+.ac dec 200  10  100K
+
+* Output gain in dB and phase.
+* Gain ref: VDB(out) is absolute; input is 1mV so gain_dB = VDB(out) + 60
+.print AC VDB(out) VP(out) VDB(in_sig)
+
+.end

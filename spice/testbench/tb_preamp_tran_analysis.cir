@@ -1,0 +1,28 @@
+* Preamp Transient — Detailed node monitoring for latch-up analysis
+* ==================================================================
+* Watch node_A (in_sig) and Cin voltage during startup
+
+.title Preamp Latch-Up Detailed Analysis
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+Vcc  vcc 0  DC 15
+Xpre  in_sig out vcc 0 trem  wurli_preamp
+
+* R-1 from ground (no HV supply)
+R1   0 in_sig  22K
+
+* LDR: nominal 12K
+Rldr trem 0  12K
+
+* Load resistor
+Rload out 0  100K
+
+* Short transient to catch early latch-up
+.tran 1U 10M 0 1U
+
+.print TRAN V(in_sig) V(Xpre.base1) V(Xpre.emit1) V(Xpre.coll1) V(Xpre.coll2) V(out)
+
+.end

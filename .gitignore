@@ -26,3 +26,6 @@ cmake-build-*/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Rendered schematic tiles (large PNGs, regenerate from PDF as needed)
+schematic_tiles/

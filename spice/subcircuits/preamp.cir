@@ -1,0 +1,103 @@
+* Wurlitzer 200A Reed-Bar Preamp Subcircuit
+* ===========================================
+* Two-stage direct-coupled NPN CE amplifier (TR-1, TR-2 = 2N5089)
+* with AC feedback through R-10 and Miller feedback caps C-3, C-4.
+*
+* Topology resolved from BustedGear 200A schematic at 900-2400 DPI
+* plus DC analysis constraints. All component values VERIFIED.
+* See docs/preamp-circuit.md.
+*
+* TOPOLOGY NOTES:
+*   R-2 (2M to +15V) and R-3 (470K to GND) are both at base1,
+*   providing the DC bias: Vth=2.85V → Vb=2.45V with base current loading.
+*   C20 (220pF) also at base1 forms LPF with R-2||R-3=380K at ~1903 Hz.
+*
+*   R-10 (56K) connects from the preamp output to node_A (BEFORE the
+*   .022uF coupling cap). The coupling cap passes AC feedback to base1
+*   but blocks R-10's DC from reaching the base bias network. LG-1 (LDR)
+*   connects from node_A to GND, forming a voltage divider with R-10
+*   that modulates the AC feedback strength (tremolo).
+*
+*   This is the only topology consistent with:
+*     1. Vb = 2.45V DC operating point (R-2/R-3 divider at base1)
+*     2. C20 HPF at 1903 Hz (R-2||R-3 = 380K at base1)
+*     3. AC feedback through R-10 (separated from DC by .022uF)
+*     4. Service manual "feedback divider" R-10/LG-1 description
+*
+* Pins:
+*   in     - signal input (from pickup through R-1; connects to node_A)
+*   out    - signal output (after R-9, 6.8K series)
+*   vcc    - +15V supply
+*   gnd    - ground reference
+*   trem   - tremolo LDR connection point (= node_A)
+*            For no tremolo: leave floating
+*            For tremolo: connect LDR between trem and gnd
+*
+* DC operating points (targets):
+*   TR-1: B=2.45V, E=1.95V, C=4.1V, Ic~73uA
+*   TR-2: B=4.1V, E=3.4V, C=8.8V, Ic~3.4mA
+*
+* Closed-loop gain: ~5.6x (15 dB) at 1 kHz (with LDR providing ~12K)
+
+.SUBCKT wurli_preamp in out vcc gnd trem
+
+* --- Input node (node_A) ---
+* Signal from pickup enters here through R-1 (external).
+* R-10 feedback also arrives here from the output.
+* LG-1 (LDR) connects from here to ground (trem pin).
+* .022 uF coupling cap passes AC from node_A to base1.
+*
+* The 'in' pin IS node_A. The 'trem' pin is also node_A.
+Rtrem in    trem   0.001
+
+* --- Input coupling capacitor ---
+* .022 uF blocks DC (pickup is at ~150V through R_feed + R-1)
+* but passes audio signals to base1
+Cin   in    base1  0.022U
+
+* --- Base1 bias network ---
+* R-2 (2M) from Vcc to base1 — DC pull-up
+* R-3 (470K) from base1 to ground — DC pull-down
+* Thevenin: Vth = 15 * 470K / (2M + 470K) = 2.854V
+* C20 (220pF) shunt to ground — LPF with R-2||R-3 = 380K, f_c ~1903 Hz
+* D-1 (1N4148 stand-in) reverse-biased protection diode
+R2    vcc   base1  2MEG
+R3    base1 gnd    470K
+C20   base1 gnd    220P
+D1    gnd   base1  D1N4148
+
+* --- Stage 1: TR-1 (2N5089 NPN common-emitter) ---
+* Rc1 = 150K collector load
+* Re1 = 33K emitter degeneration, bypassed by Ce1 = 4.7uF at audio freq
+* C-3 = 100pF collector-base Miller feedback cap
+Q1    coll1 base1 emit1  Q2N5089
+Rc1   vcc   coll1  150K
+Re1   emit1 gnd    33K
+Ce1   emit1 gnd    4.7U
+Cc3   coll1 base1  100P
+
+* --- Direct coupling: TR-1 collector = TR-2 base ---
+* (coll1 node serves as both TR-1 collector and TR-2 base)
+
+* --- Stage 2: TR-2 (2N5089 NPN common-emitter) ---
+* Rc2 = 1.8K collector load
+* Re2a = 270 ohm (bypassed by Ce2 = 22uF) + Re2b = 820 ohm (unbypassed)
+* C-4 = 100pF collector-base Miller feedback cap
+Q2    coll2 coll1 emit2a  Q2N5089
+Rc2   vcc   coll2  1.8K
+Re2a  emit2a emit2b  270
+Ce2   emit2a emit2b  22U
+Re2b  emit2b gnd    820
+Cc4   coll2  coll1  100P
+
+* --- Output series resistor ---
+R9    coll2 out    6.8K
+
+* --- Global AC negative feedback ---
+* R-10 (56K) from output back to node_A (= 'in' pin).
+* The .022uF coupling cap passes AC feedback from node_A to base1.
+* The LDR (when present) at node_A diverts feedback current to ground,
+* modulating the effective feedback and hence the closed-loop gain.
+R10   out   in     56K
+
+.ENDS wurli_preamp

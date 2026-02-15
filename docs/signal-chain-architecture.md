@@ -56,17 +56,17 @@ Keypress
      - +15V DC supply
      - Collector-base feedback caps C-3 = C-4 = 100 pF (verified from schematic)
      - C20 HPF at input (~1903 Hz)
-     - Total gain ~15 dB closed-loop (Brad Avenson measurement)
-     - Output: 2-7 mV AC at volume pot
-  -> Tremolo (LDR optocoupler in preamp feedback loop)
+     - Total gain 6.0 dB (2.0x) no tremolo / 12.1 dB (4.0x) tremolo bright [SPICE-measured Feb 2026]
+     - Output: 2-7 mV AC at volume pot (Avenson measurement; his replacement design has ~15 dB gain)
+  -> Tremolo (LDR optocoupler modulates preamp emitter feedback)
      - LFO (~6 Hz phase-shift oscillator) drives LED inside LG-1 optocoupler
-     - LDR (LG-1) + R-10 (56K feedback resistor) form a voltage divider in the
-       preamp's negative feedback network
-     - Modulates preamp GAIN (not post-preamp volume): feedback-shunt topology
-     - LED ON → LDR low → feedback shunted to ground → less feedback → higher gain
-     - LED OFF → LDR high → full feedback → lower gain
+     - R-10 (56K) feeds back from output to fb_junct; Ce1 (4.7 MFD) couples fb_junct to TR-1 emitter
+     - LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO → 18K → LG-1
+     - Modulates preamp GAIN (not post-preamp volume): series-series emitter feedback topology
+     - LED ON → LDR low → fb_junct shunted to ground → feedback can't reach emitter → higher gain
+     - LED OFF → LDR high → full feedback reaches emitter via Ce1 → lower gain
      - This is gain modulation, producing timbral variation through the tremolo cycle
-     - Rate: ~5.5-6 Hz, depth: 3-12 dB
+     - Rate: ~5.5-6 Hz, depth: ~6 dB (SPICE-measured modulation range at max vibrato)
   -> Volume potentiometer
      - Between preamp output and power amp input
      - Output at pot: 2-7 mV AC
@@ -93,7 +93,7 @@ Keypress
 
 **Direct coupling between stages is the defining preamp feature.** TR-1 collector connects directly to TR-2 base with no coupling capacitor. This means TR-1's DC operating point sets TR-2's bias. Signal-dependent bias modulation creates compression, transient sag, and velocity-dependent timbral change -- all absent from AC-coupled models.
 
-**The tremolo operates WITHIN the preamp stage.** The LDR (LG-1) and R-10 form a feedback divider in the preamp's negative feedback network, modulating closed-loop gain. The signal flow is: preamp (with integrated tremolo gain modulation) -> volume pot -> power amplifier -> speaker. The volume pot sits after the preamp output and before the power amp.
+**The tremolo operates WITHIN the preamp stage.** R-10 (56K) feeds back from the output to TR-1's emitter via Ce1 (4.7 MFD coupling cap). The LDR (LG-1) shunts this feedback junction to ground, modulating how much feedback reaches the emitter and thus the closed-loop gain. This is series-series emitter feedback. The signal flow is: preamp (with integrated tremolo gain modulation via emitter feedback) -> volume pot -> power amplifier -> speaker. The volume pot sits after the preamp output and before the power amp.
 
 ---
 
@@ -537,11 +537,11 @@ if raw < 0:  output = -cutoffLimit * (1 - exp(raw / cutoffLimit)) // toward Vce_
 
 | Parameter | Value | Physical Basis |
 |-----------|-------|---------------|
-| gain | 420 | gm1 × Rc1 = 2.80 mA/V × 150K (open-loop, Ce1 bypassed) |
+| gain | 420 (max) | gm1 × Rc1 = 2.80 mA/V × 150K (open-loop, fb_junct grounded — see note) |
 | B | 38.5 | 1/(n*Vt), n~1.0 for 2N5089 |
 | satLimit | 10.9 V | Vcc - Vc1 = 15 - 4.1 |
 | cutoffLimit | 2.05 V | Vc1 - Ve1 - Vce_sat = 4.1 - 1.95 - 0.1 |
-| re | 0.0 | Emitter bypass cap (Ce1 = 4.7 μF) at audio frequencies |
+| re | depends on fb_junct Z | Ce1 (4.7 μF) couples emitter to fb_junct (NOT a simple bypass to ground); effective re depends on LDR path impedance |
 
 ### Collector-Base Feedback Caps
 
@@ -572,7 +572,7 @@ effectiveRe = re + feedbackBeta * (something proportional to HF content)
 Target corner frequencies based on physical Miller multiplication (C-3 = C-4 = 100 pF verified):
 - Stage 1: ~25 Hz open-loop dominant pole (C-3=100pF × (1+420) = 42,100 pF Miller-multiplied)
 - Stage 2: ~3.3 kHz (C-4=100pF × (1+2.2) = 320 pF, into 150K source impedance)
-- Closed-loop bandwidth: ~3.7 kHz (from GBW ≈ 912 × 25 Hz ≈ 21 kHz, divided by closed-loop gain ~5.6)
+- Closed-loop bandwidth: **~10 kHz** (no tremolo) / **~8.3 kHz** (tremolo bright) [SPICE-MEASURED Feb 2026]
 
 ### Miller LPF (After Each Stage)
 
@@ -608,11 +608,11 @@ First-order HPF at 20 Hz after Stage 2. Removes residual DC from asymmetric clip
 
 ---
 
-## 11. Tremolo — Integrated in Preamp Feedback Loop
+## 11. Tremolo — Integrated in Preamp Emitter Feedback Loop
 
-**CORRECTION (Feb 2026):** Previous versions of this document described the tremolo as a post-preamp "shunt-to-ground" signal divider. This was WRONG. The Wurlitzer 200A service manual is unambiguous: the LDR is in the preamp's feedback loop. See output-stage.md Section 8.1 and preamp-circuit.md Section 7 for detailed analysis.
+**CORRECTION (Feb 2026):** Previous versions of this document described the tremolo as a post-preamp "shunt-to-ground" signal divider. This was WRONG. A subsequent correction placed R-10 at node_A (shunt-feedback to the input), which was ALSO WRONG (based on the wrong 200/203 schematic). The correct 200A topology: R-10 feeds back to TR-1's EMITTER via Ce1 (series-series emitter feedback). See preamp-circuit.md Section 7 for detailed analysis.
 
-The 200A tremolo modulates the preamp's closed-loop gain via an LDR (LG-1) in the negative feedback network. R-10 (56K feedback resistor) and LG-1 form a voltage divider that controls how much feedback reaches the preamp input. This is **gain modulation**, not simple amplitude modulation — the distortion character changes through the tremolo cycle.
+The 200A tremolo modulates the preamp's closed-loop gain via an LDR (LG-1) that shunts the emitter feedback junction to ground. R-10 (56K) feeds back from the output to fb_junct; Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter. The LDR path (cable Pin 1 → 50K VIBRATO → 18K → LG-1 → GND) diverts feedback current away from the emitter. This is **gain modulation**, not simple amplitude modulation — the distortion character changes through the tremolo cycle.
 
 ### LFO (Phase-Shift Oscillator, TR-3/TR-4)
 
@@ -633,18 +633,21 @@ alpha = dt / (tau + dt)
 ldr_state += alpha * (led_drive - ldr_state)
 ```
 
-### CdS Nonlinearity and Feedback Modulation
+### CdS Nonlinearity and Emitter Feedback Modulation
 
 ```
 // LDR resistance from CdS power-law response
 R_ldr = R_dark * pow(ldr_state + epsilon, -gamma)  // gamma ~ 0.7-0.9
 
-// Feedback divider: R-10 (56K fixed) + LDR (variable)
-// When LDR low (LED on): feedback shunted to ground -> less feedback -> higher gain
-// When LDR high (LED off): full feedback reaches input -> lower gain
-feedback_factor = R_ldr / (R_10 + R_ldr)
+// LDR path impedance: fb_junct -> Pin 1 -> 50K VIBRATO -> 18K -> LDR -> GND
+R_ldr_path = vibrato_pot * depth_setting + 18000 + R_ldr
 
-// Modulate preamp feedback_beta parameter with this factor
+// Emitter feedback: R-10 (56K) from output to fb_junct, Ce1 couples to emitter
+// LDR path shunts fb_junct to ground, diverting feedback away from emitter
+// When LDR path low (LED on): fb_junct grounded -> emitter AC-grounded via Ce1 -> higher gain
+// When LDR path high (LED off): full feedback reaches emitter -> lower gain
+
+// Modulate preamp emitter feedback with LDR path impedance
 // At low preamp drive: gain modulation ≈ amplitude modulation
 // At high preamp drive: gain modulation also changes distortion character
 ```
@@ -657,7 +660,7 @@ The asymmetric attack/release creates a "choppy" effect: fast dips (3ms), slow r
 
 ### Implementation Note
 
-Because the tremolo modulates the preamp's feedback, it must be implemented INSIDE the preamp processing block (within the 2x oversampled domain), not as a separate post-preamp stage. The LDR state updates at the base sample rate, but the feedback modulation applies per-sample at 2x rate.
+Because the tremolo modulates the preamp's emitter feedback (via the LDR shunt at fb_junct), it must be implemented INSIDE the preamp processing block (within the 2x oversampled domain), not as a separate post-preamp stage. The LDR state updates at the base sample rate, but the emitter feedback modulation applies per-sample at 2x rate.
 
 ### Parameters
 
@@ -802,7 +805,7 @@ The problem is when `kPreampInputDrive` is treated as a tuning knob. In Vurli's 
 
 **The correct approach:** Set kPreampInputDrive ONCE based on the desired operating point (B * input ~ 1-3 at mf), then NEVER change it during tuning. All tonal adjustments should come from physically motivated parameters (gain, feedback cap values, soft-clip limits). If the sound is wrong, the preamp model is wrong -- do not compensate by changing the input drive.
 
-> **Note (Feb 2026):** The preamp gain structure has been corrected: Stage 1 open-loop gain is ~420 (not 145), Stage 2 is ~2.2 (not ~10). Combined open-loop gain ~912, closed-loop ~5.6x (15 dB). The kPreampInputDrive value of 28.0 was calibrated against the old incorrect values and **will need recalibration** once the corrected Ebers-Moll parameters are implemented. See preamp-circuit.md for the full corrected gain analysis.
+> **Note (Feb 2026):** The preamp gain structure has been corrected and SPICE-measured: Stage 1 max open-loop gain is ~420, Stage 2 is ~2.2. Combined max open-loop gain ~912. Feedback topology: R-10 via Ce1 to TR-1 emitter (series-series emitter feedback). **SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo, 12.1 dB (4.0x) at tremolo bright peak. BW: ~10 kHz (no trem) / ~8.3 kHz (trem bright).** The kPreampInputDrive value of 28.0 was calibrated against the old incorrect values and **will need recalibration** once the corrected parameters are implemented.
 
 ### Recommendations
 
@@ -928,7 +931,7 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 |----------|-------|---------|
 | kPreampInputDrive | 28.0 | Scales voice sum into preamp operating range |
 | B (thermal voltage) | 38.5 | 1/(n*Vt) for BJT Ebers-Moll |
-| Stage 1 gain | 420 | gm1 × Rc1 = 2.80 mA/V × 150K (open-loop, Ce1 bypassed) |
+| Stage 1 gain | 420 (max) | gm1 × Rc1 = 2.80 mA/V × 150K (open-loop, fb_junct grounded) |
 | Stage 1 satLimit | 10.9 V | Vcc - Vc1 = 15 - 4.1 |
 | Stage 1 cutoffLimit | 2.05 V | Vc1 - Ve1 - Vce_sat = 4.1 - 1.95 - 0.1 |
 | Stage 2 gain | 238 | gm2 × Rc2 = 132 mA/V × 1.8K (open-loop) |

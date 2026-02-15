@@ -1,0 +1,23 @@
+* Wurlitzer 200A Diode Models
+* =============================
+* Usage: .include models/diodes.lib
+
+* --- 1N4148 (small-signal silicon switching diode) ---
+* Stand-in for D-1 (Wurlitzer part #142136, 25 PIV, 10 mA)
+* The original is a small-signal silicon diode; 1N4148 is the closest standard model.
+* Source: LTspice standard.dio / Vishay datasheet
+.MODEL D1N4148 D(
++  IS=2.52E-09    RS=0.568     N=1.752     BV=100
++  IBV=100E-06    CJO=4E-12    VJ=0.7      M=0.45
++  TT=6E-09       EG=1.11      XTI=3)
+
+* --- 1N4004 (silicon rectifier, 1A, 400V) ---
+* Used as D6 in HV supply (half-wave rectifier for 147V polarizing supply).
+* The original is unspecified but a standard 1A rectifier fits.
+* Source: ON Semi / Vishay datasheet
+.MODEL D1N4004 D(
++  IS=7.02E-09    RS=0.0341    N=1.8       BV=400
++  IBV=5E-06      CJO=25E-12   VJ=0.7      M=0.5
++  TT=5.7E-06     EG=1.11      XTI=3)
+
+* End of diode models

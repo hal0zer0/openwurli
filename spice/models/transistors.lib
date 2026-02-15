@@ -1,0 +1,116 @@
+* Wurlitzer 200A Transistor Models
+* ===================================
+* Gummel-Poon BJT models for ngspice simulation.
+* Sources: LTspice standard.bjt, ON Semiconductor datasheets, Fairchild datasheets.
+*
+* Usage: .include models/transistors.lib
+
+* --- 2N5089 (NPN, high-gain, low-noise) ---
+* Used in: TR-1, TR-2 (preamp), replacement for original 2N2924
+* Bf typical: 1000-1400 (very high beta)
+* Source: LTspice standard.bjt / ON Semi datasheet
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14    BF=1434      NF=1.005    VAF=98.5
++  IKF=0.01358    ISE=2.88E-15 NE=1.262    BR=4.62
++  NR=1           VAR=22       IKR=0.1     ISC=1.065E-11
++  NC=1.41        RB=57        IRB=0       RBM=57
++  RE=0.518       RC=2.58      CJE=3.22E-12 VJE=0.65
++  MJE=0.33       TF=5.4E-10   XTF=12      VTF=2
++  ITF=0.1        PTF=0        CJC=1.35E-12 VJC=0.4
++  MJC=0.33       XCJC=0.63    TR=5E-08    CJS=0
++  VJS=0.75       MJS=0.33     XTB=1.38    EG=1.11
++  XTI=3          KF=6.5E-15   AF=1        FC=0.5)
+
+* --- 2N2924 (NPN, general-purpose, original Wurlitzer) ---
+* Used in: TR-3, TR-4 (tremolo oscillator, original part 142083-2)
+* Bf typical: 150-300
+* Source: Motorola datasheet / general GP NPN
+.MODEL Q2N2924 NPN(
++  IS=1.4E-14     BF=200       NF=1        VAF=100
++  IKF=0.03       ISE=1.5E-13  NE=1.5      BR=4
++  NR=1           VAR=20       IKR=0.03    ISC=0
++  NC=2           RB=10        IRB=0       RBM=10
++  RE=0.5         RC=1         CJE=4.5E-12 VJE=0.7
++  MJE=0.33       TF=6E-10     XTF=4       VTF=4
++  ITF=0.04       PTF=0        CJC=3.5E-12 VJC=0.5
++  MJC=0.33       XCJC=0.5     TR=2E-07    CJS=0
++  VJS=0.75       MJS=0.33     XTB=1.5     EG=1.11
++  XTI=3          KF=0         AF=1        FC=0.5)
+
+* --- 2N5087 (PNP, high-gain, low-noise) ---
+* Used in: TR-7, TR-8 (power amp differential pair)
+* Bf typical: 250-700
+* Source: LTspice standard.bjt / ON Semi datasheet
+.MODEL Q2N5087 PNP(
++  IS=3.18E-14    BF=254.8     NF=1.003    VAF=115
++  IKF=0.01       ISE=5.32E-15 NE=1.34     BR=3.56
++  NR=1.005       VAR=26       IKR=0.01    ISC=1.7E-13
++  NC=1.214       RB=120       IRB=0       RBM=120
++  RE=0.5         RC=2         CJE=3.33E-12 VJE=0.65
++  MJE=0.33       TF=7.2E-10   XTF=8       VTF=2
++  ITF=0.08       PTF=0        CJC=1.66E-12 VJC=0.4
++  MJC=0.33       XCJC=0.5     TR=1E-07    CJS=0
++  VJS=0.75       MJS=0.33     XTB=1.4     EG=1.11
++  XTI=3          KF=5E-15     AF=1        FC=0.5)
+
+* --- MPSA06 (NPN, medium-power) ---
+* Used in: TR-9 (Vbe multiplier), TR-10 (NPN driver)
+* Source: ON Semi datasheet
+.MODEL QMPSA06 NPN(
++  IS=1.5E-14     BF=200       NF=1        VAF=100
++  IKF=0.2        ISE=5E-13    NE=1.5      BR=4
++  NR=1           VAR=20       IKR=0.1     ISC=0
++  NC=2           RB=10        IRB=0       RBM=10
++  RE=0.3         RC=0.5       CJE=10E-12  VJE=0.7
++  MJE=0.33       TF=3.5E-10   XTF=4       VTF=4
++  ITF=0.5        PTF=0        CJC=6E-12   VJC=0.5
++  MJC=0.33       XCJC=0.5     TR=1E-07    CJS=0
++  VJS=0.75       MJS=0.33     XTB=1.5     EG=1.11
++  XTI=3          KF=0         AF=1        FC=0.5)
+
+* --- MPSA56 (PNP, medium-power) ---
+* Used in: TR-12 (PNP driver)
+* Source: ON Semi datasheet
+.MODEL QMPSA56 PNP(
++  IS=1.5E-14     BF=200       NF=1        VAF=100
++  IKF=0.2        ISE=5E-13    NE=1.5      BR=4
++  NR=1           VAR=20       IKR=0.1     ISC=0
++  NC=2           RB=10        IRB=0       RBM=10
++  RE=0.3         RC=0.5       CJE=10E-12  VJE=0.7
++  MJE=0.33       TF=3.5E-10   XTF=4       VTF=4
++  ITF=0.5        PTF=0        CJC=6E-12   VJC=0.5
++  MJC=0.33       XCJC=0.5     TR=1E-07    CJS=0
++  VJS=0.75       MJS=0.33     XTB=1.5     EG=1.11
++  XTI=3          KF=0         AF=1        FC=0.5)
+
+* --- TIP35C (NPN, high-power output) ---
+* Used in: TR-13 (NPN output, TO-247, 100V/25A/125W)
+* Source: ON Semi / TI datasheet
+.MODEL QTIP35C NPN(
++  IS=5E-12       BF=60        NF=1        VAF=80
++  IKF=5          ISE=3E-10    NE=1.8      BR=5
++  NR=1           VAR=20       IKR=1       ISC=0
++  NC=2           RB=0.5       IRB=0       RBM=0.5
++  RE=0.02        RC=0.05      CJE=200E-12 VJE=0.7
++  MJE=0.33       TF=2E-08     XTF=10      VTF=5
++  ITF=10         PTF=0        CJC=150E-12 VJC=0.5
++  MJC=0.33       XCJC=0.3     TR=5E-07    CJS=0
++  VJS=0.75       MJS=0.33     XTB=1.5     EG=1.11
++  XTI=3          KF=0         AF=1        FC=0.5)
+
+* --- TIP36C (PNP, high-power output) ---
+* Used in: TR-11 (PNP output, TO-247, 100V/25A/125W)
+* Source: ON Semi / TI datasheet
+.MODEL QTIP36C PNP(
++  IS=5E-12       BF=40        NF=1        VAF=60
++  IKF=5          ISE=3E-10    NE=1.8      BR=4
++  NR=1           VAR=20       IKR=1       ISC=0
++  NC=2           RB=0.5       IRB=0       RBM=0.5
++  RE=0.02        RC=0.05      CJE=200E-12 VJE=0.7
++  MJE=0.33       TF=2.5E-08   XTF=10      VTF=5
++  ITF=10         PTF=0        CJC=180E-12 VJC=0.5
++  MJC=0.33       XCJC=0.3     TR=5E-07    CJS=0
++  VJS=0.75       MJS=0.33     XTB=1.5     EG=1.11
++  XTI=3          KF=0         AF=1        FC=0.5)
+
+* End of transistor models

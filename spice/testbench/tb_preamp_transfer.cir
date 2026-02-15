@@ -1,0 +1,40 @@
+* Wurlitzer 200A Preamp — Static Transfer Curve Testbench
+* ========================================================
+* Slow ramp input to map Vin→Vout transfer curve.
+* Reveals asymmetric clipping behavior (the "bark" source).
+*
+* Stage 1 clipping headroom: ~1.86V toward saturation vs ~10.9V toward cutoff
+* → Asymmetric soft-clip, H2 > H3
+*
+* Source: Vs → R-1 (22K) → preamp input, with LDR at 12K.
+* ±500 mV peak — well beyond normal signal range to map clipping.
+* 10 Hz is slow enough that capacitor effects are minimal.
+
+.title Preamp Static Transfer Curve
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* Supply
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp
+Xpre  in_sig out vcc 0 trem  wurli_preamp
+
+* Source: very slow sine ramp through R-1
+Vin  src 0  DC 0 SIN(0 500M 10 0 0)
+R1   src in_sig  22K
+
+* LDR: nominal 12K
+Rldr trem 0  12K
+
+* Load resistor
+Rload out 0  100K
+
+* Transient: capture 2 full cycles (200ms) with fine time step
+.tran 10U 200M 0 10U
+
+.print TRAN V(src) V(in_sig) V(out)
+
+.end

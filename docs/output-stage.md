@@ -38,7 +38,7 @@ Reed Pickup
   -> Headphone jack (switching, parallel with speaker, 8-ohm load resistor)
 ```
 
-### CRITICAL CORRECTION: Tremolo Position
+### CRITICAL CORRECTION: Tremolo Position and Feedback Topology
 
 **Previous project documentation stated the tremolo was a "shunt-to-ground" signal divider placed AFTER the preamp.** This is WRONG for the 200A.
 
@@ -46,16 +46,17 @@ The Wurlitzer 200A service manual explicitly states:
 
 > "The reed bar signal is modulated by inserting the vibrato voltage into the feedback loop of the high impedance preamp. A divider is formed by the feedback resistor R-10, and the light dependent resistor of LG-1. The L.D.R., in conjunction with the light emitting diode in the same package, creates a variable leg in the feedback divider and makes possible amplitude modulation of the reed bar voltage."
 
-The LDR is in the preamp's negative feedback network, forming a voltage divider with R-10 (feedback resistor). When the LDR resistance changes, it modulates the preamp's closed-loop gain. This is gain modulation of the preamp, not post-preamp amplitude modulation.
+**TOPOLOGY (CORRECTED Feb 2026):** R-10 (56K) feeds back from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD coupling cap) AC-couples fb_junct to TR-1's **emitter**. This is **series-series (emitter) NEGATIVE feedback**. Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO pot → 18K → LG-1 LED. When the LDR resistance changes, it diverts feedback current away from the emitter, modulating the preamp's closed-loop gain.
+
+**Note:** An earlier correction (also Feb 2026) placed R-10 at node_A (the input summing junction), forming shunt-feedback. **This was also wrong** — it was based on the incorrect schematic (200/203 models). The correct 200A topology was traced from the 200A schematic (874 KB PDF) at 1000-2000 DPI with user annotation and confirmed stable in SPICE (spice/testbench/preamp_emitter_fb.cir).
 
 **Implications for modeling:**
-- Tremolo modulates preamp GAIN, which means the distortion character changes with the tremolo cycle
-- At the low-gain phase of the tremolo (LDR resistance low, more feedback), the preamp operates more linearly
-- At the high-gain phase (LDR resistance high, less feedback), the preamp distorts more
+- Tremolo modulates preamp GAIN via emitter feedback, which means the distortion character changes with the tremolo cycle
+- At the low-gain phase of the tremolo (LDR resistance low, feedback junction shunted to ground, emitter AC-grounded via Ce1), the preamp runs at higher gain and distorts more
+- At the high-gain phase (LDR resistance high, full feedback reaches emitter), the preamp has lower gain and operates more linearly
 - This is more complex than simple amplitude modulation and produces subtle timbral variation during the tremolo cycle
-- The Tropical Fish description of "shunt to ground" appears to be a simplification; the service manual description of "feedback divider" is authoritative
 
-**Confidence level:** HIGH. The service manual text is unambiguous. Multiple search results consistently quote the same passage about the feedback divider. However, there is conflicting information from Tropical Fish Vintage (a respected source) describing it as a signal divider with one leg to ground. It is possible that the LDR is simultaneously part of the feedback path AND acts as a shunt element, depending on exactly how R-10 and LG-1 are wired relative to the signal path and ground. Without the actual schematic image, the exact topology cannot be fully disambiguated, but the service manual's "feedback loop" language takes precedence.
+**Confidence level:** HIGH. Topology traced directly from correct 200A schematic at high resolution. SPICE simulation confirms circuit is stable with emitter feedback and oscillates with the old node_A feedback topology.
 
 ---
 
@@ -102,18 +103,24 @@ The LDR is in the preamp's negative feedback network, forming a voltage divider 
 
 ### 2.3 Feedback Divider Operation
 
-**VERIFIED from service manual:**
-- R-10 (feedback resistor) and LG-1 (LDR) form a voltage divider in the preamp feedback path
-- When LDR resistance is HIGH (LED off/dim): less feedback, higher preamp gain
-- When LDR resistance is LOW (LED on/bright): more feedback, lower preamp gain
-- R-17 trimpot adjusts modulation depth
-- Front panel vibrato pot: 100K (between circuit and LDR, per forum sources)
+**CORRECTED Feb 2026 — Emitter Feedback Topology:**
 
-**Gain modulation depth:**
-- Without vibrato: preamp operates at normal gain set by R-10 alone
-- With vibrato at maximum depth: preamp output measured at ~4V peak-to-peak (compared to ~1.8V without vibrato), indicating the gain can approximately double during the high-gain phase
+R-10 (56K) feeds from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter — series-series negative feedback. The LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO pot → 18K → LG-1. The LDR path diverts feedback current away from the emitter.
+
+- When LDR resistance is LOW (LED on/bright): fb_junct is shunted to ground → feedback cannot reach emitter → emitter AC-grounded via Ce1 → **HIGHER** preamp gain
+- When LDR resistance is HIGH (LED off/dim): full feedback reaches emitter via Ce1 → strong emitter degeneration → **LOWER** preamp gain
+- R-17 trimpot adjusts modulation depth
+- Front panel vibrato pot: 50K (in the cable path between fb_junct and LG-1)
+
+This is consistent with the EP-Forum "6 dB gain boost" measurement — tremolo boosts average gain above the no-tremolo baseline because the LDR periodically weakens emitter feedback.
+
+**Gain modulation depth (SPICE-measured Feb 2026, corrected emitter feedback topology):**
+- Without vibrato (LDR dark, Rldr_path ≈ 1M): gain = **6.0 dB (2.0x)**
+- With vibrato at maximum depth, bright phase (Rldr_path ≈ 19K): gain = **12.1 dB (4.0x)**
+- **Modulation range: 6.1 dB** — matches EP-Forum "6 dB gain boost" measurement exactly
+- Bandwidth decreases with gain: 9.9 kHz (no trem) → 8.3 kHz (trem bright), consistent with constant GBW
 - Excessive depth causes rail clipping in the power amp (distortion at high vibrato settings is a known issue)
-- Typical depth in practice: 3-12 dB of amplitude modulation
+- Typical depth in practice: 3-6 dB of gain modulation
 
 ### 2.4 Tremolo Character: 200 vs 200A
 
@@ -454,9 +461,9 @@ LPF: 2nd-order lowpass at 8-10 kHz, Q = 0.707 (Butterworth)
 
 **Recommended corrections:**
 
-1. **Move tremolo INTO the preamp feedback path.** The current implementation applies tremolo as a post-preamp volume multiplier. The real circuit modulates the preamp's closed-loop gain by varying the feedback network impedance. This means:
-   - The tremolo should vary the preamp's feedback amount (and thus its gain and distortion character)
-   - A first approximation: multiply the preamp's feedback coefficient by a tremolo-modulated factor
+1. **Move tremolo INTO the preamp emitter feedback path.** The current implementation applies tremolo as a post-preamp volume multiplier. The real circuit modulates the preamp's closed-loop gain by varying the LDR path impedance from the emitter feedback junction to ground. This means:
+   - The tremolo should vary the effective emitter feedback (and thus gain and distortion character)
+   - The LDR path impedance controls how much of R-10's feedback signal reaches TR-1's emitter via Ce1
    - The timbral variation through the tremolo cycle is subtle but contributes to the characteristic "living" quality
 
 2. **LDR parameters to use:**
@@ -473,11 +480,12 @@ release_tau = 25-50 ms    (slow off)
 resistance = R_dark * (illumination)^(-gamma)
 gamma = 0.7-0.9
 
-// Feedback divider gain modulation
-// R-10 forms fixed leg, LDR forms variable leg
-// When LDR high (dark): gain = high (less feedback)
-// When LDR low (lit): gain = low (more feedback)
-feedback_factor = R_ldr / (R_10 + R_ldr)
+// Emitter feedback modulation
+// LDR path: fb_junct -> Pin 1 -> 50K VIBRATO -> 18K -> LG-1 -> GND
+// R_ldr_path = 50K*depth + 18K + R_ldr
+// When R_ldr_path HIGH (dark): full feedback reaches emitter -> lower gain
+// When R_ldr_path LOW (lit): feedback shunted to ground -> higher gain
+// The LDR path acts as a shunt across the emitter feedback junction
 ```
 
 3. **Depth control:** The vibrato depth pot and trimpot (R-17) control how much of the oscillator signal reaches the LED. At full depth, the preamp gain can approximately double, which at high signal levels causes clipping.
@@ -527,8 +535,8 @@ Possible refinements:
 ```
 Per-voice processing (oscillator, pickup)
   -> Sum to mono
-  -> [Tremolo modulates feedback network]
-  -> Preamp (with tremolo-modulated gain)
+  -> [Tremolo modulates emitter feedback via LDR shunt at fb_junct]
+  -> Preamp (with tremolo-modulated gain via R-10/Ce1 emitter feedback)
   -> Volume control (3K pot)
   -> Power amplifier (quasi-complementary, symmetric clip at +-19V)
   -> Speaker model (HPF + LPF)
@@ -541,15 +549,19 @@ Per-voice processing (oscillator, pickup)
 
 ### 8.1 WRONG: "Tremolo is a shunt-to-ground signal divider"
 
-**CORRECTED:** The Wurlitzer 200A service manual explicitly describes the tremolo as being in the "feedback loop of the high impedance preamp." The LDR (LG-1) and feedback resistor (R-10) form a "feedback divider." This is gain modulation, not simple amplitude modulation. The Tropical Fish description of a shunt-to-ground topology may be an oversimplification. The CLAUDE.md file and signal-chain.md should be updated.
+**CORRECTED:** The Wurlitzer 200A service manual explicitly describes the tremolo as being in the "feedback loop of the high impedance preamp." The LDR (LG-1) shunts the feedback junction between R-10 and Ce1 to ground, modulating how much emitter feedback reaches TR-1. This is gain modulation, not simple amplitude modulation.
 
 ### 8.2 WRONG: "Tremolo is placed after the preamp, before the speaker"
 
-**CORRECTED:** The tremolo operates WITHIN the preamp stage by modulating its feedback network. It is not a separate post-preamp stage. The volume control and power amplifier follow the preamp (with integrated tremolo).
+**CORRECTED:** The tremolo operates WITHIN the preamp stage by modulating its emitter feedback network. It is not a separate post-preamp stage. The volume control and power amplifier follow the preamp (with integrated tremolo).
 
 ### 8.3 PARTIALLY WRONG: "The 200A LDR tremolo is fundamentally amplitude modulation"
 
-**CORRECTED:** While the net effect IS amplitude modulation (the signal gets louder and softer), the mechanism is gain modulation of the preamp. This means the distortion characteristics change subtly through the tremolo cycle, producing a more complex modulation than pure AM. However, at low preamp drive levels (where the preamp is approximately linear), the distinction is negligible. At higher drive levels (ff playing), the timbral modulation becomes audible.
+**CORRECTED:** While the net effect IS amplitude modulation (the signal gets louder and softer), the mechanism is gain modulation of the preamp via emitter feedback. This means the distortion characteristics change subtly through the tremolo cycle, producing a more complex modulation than pure AM. However, at low preamp drive levels (where the preamp is approximately linear), the distinction is negligible. At higher drive levels (ff playing), the timbral modulation becomes audible.
+
+### 8.5 WRONG: "R-10 feeds back to node_A (shunt-feedback)"
+
+**CORRECTED (Feb 2026):** An earlier correction in this project placed R-10 at node_A (the input summing junction before the .022µF coupling cap), forming an inverting shunt-feedback topology with gain = R10/R1 = 56K/22K. This was based on the wrong schematic (200/203 models, not 200A). The correct 200A topology has R-10 feeding back to TR-1's EMITTER via Ce1 (4.7 MFD coupling cap), forming series-series negative feedback. SPICE confirms: R-10 to node_A causes oscillation; R-10 to emitter is stable. See preamp-circuit.md Section 7.2.
 
 ### 8.4 CONFIRMED: "No output transformer (200A is solid-state direct-coupled)"
 

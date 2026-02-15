@@ -1,0 +1,533 @@
+.title Wurlitzer 200A Preamp - Comprehensive DC Bias Verification
+*
+* Purpose: Verify DC operating point against schematic annotations
+* Schematic DC voltages:
+*   TR-1: Vb=2.45V, Ve=1.95V, Vc=4.1V (Vbe=0.50V, Vce=2.15V)
+*   TR-2: Vb=4.1V, Ve=3.4V, Vc=8.8V (Vbe=0.70V, Vce=5.4V)
+*
+* Previous SPICE run showed Vb1=2.80V vs schematic 2.45V (350mV gap)
+* This netlist tests THREE R2 configurations to investigate.
+*
+* ============================================================
+* TRANSISTOR MODEL
+* ============================================================
+
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+* Also define a model with lower hFE to simulate 2N2924-like behavior
+.MODEL Q2N5089_LOW NPN(
++  IS=3.03E-14 BF=200 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100
++  IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+
+* ============================================================
+* TEST 1: R2=2MEG, R3=470K (our resolved values, BF=1434)
+* ============================================================
+
+.subckt PREAMP_STAGE base1 emit1 coll1 emit2b coll2 out fb_junct node_A vcc
++ R2VAL=2MEG R3VAL=470K MODELNAME=Q2N5089
+
+* Input (no signal for DC OP)
+Vin in_sig 0 DC 0
+R1 in_sig node_A 22K
+
+* Input coupling cap (DC block - open at DC)
+Cin node_A base1 0.022U
+
+* Base1 bias network
+R2 vcc base1 {R2VAL}
+R3 base1 0 {R3VAL}
+C20 base1 0 220P
+D1 0 base1 D1N4148
+
+* Stage 1: TR-1
+Q1 coll1 base1 emit1 Q2N5089
+Rc1 vcc coll1 150K
+Cc3 coll1 base1 100P
+
+* TR-1 emitter network
+Re1 emit1 0 33K
+Ce1 emit1 fb_junct 4.7U
+
+* Feedback junction: R-10 from output, LDR path to ground
+* LDR dark (no tremolo) = high resistance ~120K
+Rldr_path fb_junct 0 120K
+R10 out fb_junct 56K
+
+* Stage 2: TR-2 (direct-coupled from coll1)
+Q2 coll2 coll1 emit2a Q2N5089
+Rc2 vcc coll2 1.8K
+Re2a emit2a emit2b 270
+Ce2 emit2a emit2b 22U
+Re2b emit2b 0 820
+Cc4 coll2 coll1 100P
+
+* Output
+R9 coll2 out 6.8K
+Rload out 0 100K
+
+.ends
+
+* ============================================================
+* INSTANTIATE THREE CONFIGURATIONS
+* ============================================================
+
+* Power supply
+Vcc1 vcc1 0 DC 15
+Vcc2 vcc2 0 DC 15
+Vcc3 vcc3 0 DC 15
+Vcc4 vcc4 0 DC 15
+
+* --- Config A: R2=2MEG, R3=470K, 2N5089 (BF=1434) ---
+* (our resolved design-center values)
+
+R1a in_a node_Aa 22K
+Vin_a in_a 0 DC 0
+Cin_a node_Aa base1a 0.022U
+R2a vcc1 base1a 2MEG
+R3a base1a 0 470K
+C20a base1a 0 220P
+D1a 0 base1a D1N4148
+Q1a coll1a base1a emit1a Q2N5089
+Rc1a vcc1 coll1a 150K
+Cc3a coll1a base1a 100P
+Re1a emit1a 0 33K
+Ce1a emit1a fb_ja 4.7U
+Rldr_a fb_ja 0 120K
+R10a outa fb_ja 56K
+Q2a coll2a coll1a emit2aa Q2N5089
+Rc2a vcc1 coll2a 1.8K
+Re2aa emit2aa emit2ba 270
+Ce2a emit2aa emit2ba 22U
+Re2ba emit2ba 0 820
+Cc4a coll2a coll1a 100P
+R9a coll2a outa 6.8K
+Rloada outa 0 100K
+
+* --- Config B: R2=1MEG, R3=470K, 2N5089 (BF=1434) ---
+* (schematic literal reading)
+
+R1b in_b node_Ab 22K
+Vin_b in_b 0 DC 0
+Cin_b node_Ab base1b 0.022U
+R2b vcc2 base1b 1MEG
+R3b base1b 0 470K
+C20b base1b 0 220P
+D1b 0 base1b D1N4148
+Q1b coll1b base1b emit1b Q2N5089
+Rc1b vcc2 coll1b 150K
+Cc3b coll1b base1b 100P
+Re1b emit1b 0 33K
+Ce1b emit1b fb_jb 4.7U
+Rldr_b fb_jb 0 120K
+R10b outb fb_jb 56K
+Q2b coll2b coll1b emit2ab Q2N5089
+Rc2b vcc2 coll2b 1.8K
+Re2ab emit2ab emit2bb 270
+Ce2b emit2ab emit2bb 22U
+Re2bb emit2bb 0 820
+Cc4b coll2b coll1b 100P
+R9b coll2b outb 6.8K
+Rloadb outb 0 100K
+
+* --- Config C: R2=2MEG, R3=470K, 2N2924-like (BF=200) ---
+* (original transistor, lower hFE)
+
+R1c in_c node_Ac 22K
+Vin_c in_c 0 DC 0
+Cin_c node_Ac base1c 0.022U
+R2c vcc3 base1c 2MEG
+R3c base1c 0 470K
+C20c base1c 0 220P
+D1c 0 base1c D1N4148
+Q1c coll1c base1c emit1c Q2N5089_LOW
+Rc1c vcc3 coll1c 150K
+Cc3c coll1c base1c 100P
+Re1c emit1c 0 33K
+Ce1c emit1c fb_jc 4.7U
+Rldr_c fb_jc 0 120K
+R10c outc fb_jc 56K
+Q2c coll2c coll1c emit2ac Q2N5089_LOW
+Rc2c vcc3 coll2c 1.8K
+Re2ac emit2ac emit2bc 270
+Ce2c emit2ac emit2bc 22U
+Re2bc emit2bc 0 820
+Cc4c coll2c coll1c 100P
+R9c coll2c outc 6.8K
+Rloadc outc 0 100K
+
+* --- Config D: R2=2MEG, R3=470K, 2N5089, NO LDR (open fb junction) ---
+* (check what happens with truly open feedback junction at DC)
+
+R1d in_d node_Ad 22K
+Vin_d in_d 0 DC 0
+Cin_d node_Ad base1d 0.022U
+R2d vcc4 base1d 2MEG
+R3d base1d 0 470K
+C20d base1d 0 220P
+D1d 0 base1d D1N4148
+Q1d coll1d base1d emit1d Q2N5089
+Rc1d vcc4 coll1d 150K
+Cc3d coll1d base1d 100P
+Re1d emit1d 0 33K
+* NO Ce1 coupling to fb junction -- emitter has ONLY Re1 to ground
+* (Ce1 is open at DC anyway, so this tests the pure DC case)
+R10d outd fb_jd 56K
+Rldr_d fb_jd 0 120K
+Q2d coll2d coll1d emit2ad Q2N5089
+Rc2d vcc4 coll2d 1.8K
+Re2ad emit2ad emit2bd 270
+Ce2d emit2ad emit2bd 22U
+Re2bd emit2bd 0 820
+Cc4d coll2d coll1d 100P
+R9d coll2d outd 6.8K
+Rloadd outd 0 100K
+
+* ============================================================
+* ANALYSIS
+* ============================================================
+
+.control
+
+op
+
+echo "================================================================"
+echo "  WURLITZER 200A PREAMP - DC BIAS VERIFICATION"
+echo "  Schematic reference: Vb1=2.45, Ve1=1.95, Vc1=4.1"
+echo "                       Vb2=4.1,  Ve2=3.4,  Vc2=8.8"
+echo "================================================================"
+echo ""
+
+echo "================================================================"
+echo " CONFIG A: R2=2MEG, R3=470K, 2N5089 (BF=1434)"
+echo "   Expected Vth = 15*470K/(2M+470K) = 2.854V"
+echo "================================================================"
+echo ""
+echo "--- Node Voltages ---"
+print v(base1a) v(emit1a) v(coll1a)
+print v(coll1a) v(emit2ba) v(coll2a)
+print v(fb_ja) v(outa) v(node_Aa)
+
+echo ""
+echo "--- Derived: Vbe, Vce ---"
+let vbe1a = v(base1a) - v(emit1a)
+let vce1a = v(coll1a) - v(emit1a)
+let vbe2a = v(coll1a) - v(emit2aa)
+let vce2a = v(coll2a) - v(emit2ba)
+print vbe1a vce1a vbe2a vce2a
+
+echo ""
+echo "--- Branch Currents ---"
+let ic1a = (15 - v(coll1a)) / 150e3
+let ie1a = v(emit1a) / 33e3
+let ib1a_approx = ic1a - ie1a
+let ic2a = (15 - v(coll2a)) / 1.8e3
+let ie2a = v(emit2ba) / 820
+let ib2a_approx = ic2a - ie2a
+print ic1a ie1a ib1a_approx
+print ic2a ie2a ib2a_approx
+
+echo ""
+echo "--- SPICE Transistor Currents (direct from model) ---"
+print @q1a[ic] @q1a[ib] @q1a[ie]
+print @q2a[ic] @q2a[ib] @q2a[ie]
+let hfe1a = @q1a[ic] / @q1a[ib]
+let hfe2a = @q2a[ic] / @q2a[ib]
+print hfe1a hfe2a
+
+echo ""
+echo "--- Diode D1 current ---"
+print @d1a[id]
+
+echo ""
+echo "--- Bias Divider Analysis ---"
+let vth_a = 15 * 470e3 / (2e6 + 470e3)
+let rth_a = 2e6 * 470e3 / (2e6 + 470e3)
+let vb_drop_a = @q1a[ib] * rth_a
+let vb_predicted_a = vth_a - vb_drop_a
+print vth_a rth_a vb_drop_a vb_predicted_a
+
+echo ""
+echo "================================================================"
+echo " CONFIG B: R2=1MEG, R3=470K, 2N5089 (BF=1434)"
+echo "   Expected Vth = 15*470K/(1M+470K) = 4.796V"
+echo "================================================================"
+echo ""
+echo "--- Node Voltages ---"
+print v(base1b) v(emit1b) v(coll1b)
+print v(coll1b) v(emit2bb) v(coll2b)
+print v(fb_jb) v(outb) v(node_Ab)
+
+echo ""
+echo "--- Derived: Vbe, Vce ---"
+let vbe1b = v(base1b) - v(emit1b)
+let vce1b = v(coll1b) - v(emit1b)
+let vbe2b = v(coll1b) - v(emit2ab)
+let vce2b = v(coll2b) - v(emit2bb)
+print vbe1b vce1b vbe2b vce2b
+
+echo ""
+echo "--- Branch Currents ---"
+let ic1b = (15 - v(coll1b)) / 150e3
+let ie1b = v(emit1b) / 33e3
+let ib1b_approx = ic1b - ie1b
+let ic2b = (15 - v(coll2b)) / 1.8e3
+let ie2b = v(emit2bb) / 820
+let ib2b_approx = ic2b - ie2b
+print ic1b ie1b ib1b_approx
+print ic2b ie2b ib2b_approx
+
+echo ""
+echo "--- SPICE Transistor Currents ---"
+print @q1b[ic] @q1b[ib] @q1b[ie]
+print @q2b[ic] @q2b[ib] @q2b[ie]
+let hfe1b = @q1b[ic] / @q1b[ib]
+let hfe2b = @q2b[ic] / @q2b[ib]
+print hfe1b hfe2b
+
+echo ""
+echo "--- Diode D1 current ---"
+print @d1b[id]
+
+echo ""
+echo "--- Bias Divider Analysis ---"
+let vth_b = 15 * 470e3 / (1e6 + 470e3)
+let rth_b = 1e6 * 470e3 / (1e6 + 470e3)
+let vb_drop_b = @q1b[ib] * rth_b
+let vb_predicted_b = vth_b - vb_drop_b
+print vth_b rth_b vb_drop_b vb_predicted_b
+
+echo ""
+echo "================================================================"
+echo " CONFIG C: R2=2MEG, R3=470K, 2N2924-like (BF=200)"
+echo "   Same bias network as A but lower hFE transistor"
+echo "================================================================"
+echo ""
+echo "--- Node Voltages ---"
+print v(base1c) v(emit1c) v(coll1c)
+print v(coll1c) v(emit2bc) v(coll2c)
+print v(fb_jc) v(outc) v(node_Ac)
+
+echo ""
+echo "--- Derived: Vbe, Vce ---"
+let vbe1c = v(base1c) - v(emit1c)
+let vce1c = v(coll1c) - v(emit1c)
+let vbe2c = v(coll1c) - v(emit2ac)
+let vce2c = v(coll2c) - v(emit2bc)
+print vbe1c vce1c vbe2c vce2c
+
+echo ""
+echo "--- Branch Currents ---"
+let ic1c = (15 - v(coll1c)) / 150e3
+let ie1c = v(emit1c) / 33e3
+let ib1c_approx = ic1c - ie1c
+let ic2c = (15 - v(coll2c)) / 1.8e3
+let ie2c = v(emit2bc) / 820
+let ib2c_approx = ic2c - ie2c
+print ic1c ie1c ib1c_approx
+print ic2c ie2c ib2c_approx
+
+echo ""
+echo "--- SPICE Transistor Currents ---"
+print @q1c[ic] @q1c[ib] @q1c[ie]
+print @q2c[ic] @q2c[ib] @q2c[ie]
+let hfe1c = @q1c[ic] / @q1c[ib]
+let hfe2c = @q2c[ic] / @q2c[ib]
+print hfe1c hfe2c
+
+echo ""
+echo "--- Diode D1 current ---"
+print @d1c[id]
+
+echo ""
+echo "--- Bias Divider Analysis ---"
+let vth_c = 15 * 470e3 / (2e6 + 470e3)
+let rth_c = 2e6 * 470e3 / (2e6 + 470e3)
+let vb_drop_c = @q1c[ib] * rth_c
+let vb_predicted_c = vth_c - vb_drop_c
+print vth_c rth_c vb_drop_c vb_predicted_c
+
+echo ""
+echo "================================================================"
+echo " CONFIG D: R2=2MEG, R3=470K, 2N5089, NO Ce1 (DC-only check)"
+echo "   fb_junct disconnected from emitter at DC"
+echo "================================================================"
+echo ""
+echo "--- Node Voltages ---"
+print v(base1d) v(emit1d) v(coll1d)
+print v(coll1d) v(emit2bd) v(coll2d)
+print v(fb_jd) v(outd) v(node_Ad)
+
+echo ""
+echo "--- Derived: Vbe, Vce ---"
+let vbe1d = v(base1d) - v(emit1d)
+let vce1d = v(coll1d) - v(emit1d)
+let vbe2d = v(coll1d) - v(emit2ad)
+let vce2d = v(coll2d) - v(emit2bd)
+print vbe1d vce1d vbe2d vce2d
+
+echo ""
+echo "--- SPICE Transistor Currents ---"
+print @q1d[ic] @q1d[ib] @q1d[ie]
+print @q2d[ic] @q2d[ib] @q2d[ie]
+let hfe1d = @q1d[ic] / @q1d[ib]
+let hfe2d = @q2d[ic] / @q2d[ib]
+print hfe1d hfe2d
+
+echo ""
+echo "================================================================"
+echo " COMPARISON TABLE vs SCHEMATIC"
+echo "================================================================"
+echo ""
+
+echo "                   SCHEM   CFG-A(2M/5089)  CFG-B(1M/5089)  CFG-C(2M/2924)  CFG-D(2M/noCe1)"
+
+* Print a summary using let + print
+let target_vb1 = 2.45
+let target_ve1 = 1.95
+let target_vc1 = 4.10
+let target_vb2 = 4.10
+let target_ve2 = 3.40
+let target_vc2 = 8.80
+
+echo ""
+echo "--- Vb1 (Target: 2.45V) ---"
+let err_a = v(base1a) - target_vb1
+let err_b = v(base1b) - target_vb1
+let err_c = v(base1c) - target_vb1
+let err_d = v(base1d) - target_vb1
+print v(base1a) v(base1b) v(base1c) v(base1d)
+print err_a err_b err_c err_d
+
+echo ""
+echo "--- Ve1 (Target: 1.95V) ---"
+let erre_a = v(emit1a) - target_ve1
+let erre_b = v(emit1b) - target_ve1
+let erre_c = v(emit1c) - target_ve1
+let erre_d = v(emit1d) - target_ve1
+print v(emit1a) v(emit1b) v(emit1c) v(emit1d)
+print erre_a erre_b erre_c erre_d
+
+echo ""
+echo "--- Vc1 (Target: 4.10V) ---"
+let errc_a = v(coll1a) - target_vc1
+let errc_b = v(coll1b) - target_vc1
+let errc_c = v(coll1c) - target_vc1
+let errc_d = v(coll1d) - target_vc1
+print v(coll1a) v(coll1b) v(coll1c) v(coll1d)
+print errc_a errc_b errc_c errc_d
+
+echo ""
+echo "--- Vc2 (Target: 8.80V) ---"
+let errc2_a = v(coll2a) - target_vc2
+let errc2_b = v(coll2b) - target_vc2
+let errc2_c = v(coll2c) - target_vc2
+let errc2_d = v(coll2d) - target_vc2
+print v(coll2a) v(coll2b) v(coll2c) v(coll2d)
+print errc2_a errc2_b errc2_c errc2_d
+
+echo ""
+echo "--- Ve2 (Target: 3.40V) ---"
+let erre2_a = v(emit2ba) - target_ve2
+let erre2_b = v(emit2bb) - target_ve2
+let erre2_c = v(emit2bc) - target_ve2
+let erre2_d = v(emit2bd) - target_ve2
+print v(emit2ba) v(emit2bb) v(emit2ba) v(emit2bd)
+print erre2_a erre2_b erre2_c erre2_d
+
+echo ""
+echo "================================================================"
+echo " Vb1 DISCREPANCY INVESTIGATION"
+echo "================================================================"
+echo ""
+echo "Question: Why does SPICE give Vb1 ~ 2.80V but schematic says 2.45V?"
+echo ""
+echo "Hypothesis 1: D1 reverse leakage sinks current from base node"
+echo "  D1 is reverse biased (anode=GND, cathode=base1 at ~2.8V)"
+echo "  Reverse leakage at 2.8V is negligible for 1N4148 (~nA)"
+print @d1a[id]
+echo ""
+echo "Hypothesis 2: hFE effect (Ib draws from bias divider)"
+echo "  With BF=1434: Ib1 is very small, ~negligible base loading"
+echo "  With BF=200: Ib1 is larger, pulls Vb down more"
+echo "  Config A Ib1 (BF=1434):"
+print @q1a[ib]
+echo "  Config C Ib1 (BF=200):"
+print @q1c[ib]
+echo ""
+echo "Hypothesis 3: Carbon comp resistor tolerances"
+echo "  20% R2 high (2.4M) + 20% R3 low (376K):"
+let vth_tol1 = 15 * 376e3 / (2.4e6 + 376e3)
+print vth_tol1
+echo "  (Still ~2.03V Vth... too low)"
+echo ""
+echo "  What R2 value gives Vb=2.45V with our SPICE Vbe?"
+echo "  Vb=2.45, Ve=Vb-Vbe (from SPICE), Ie=Ve/33K, Ic~Ie"
+echo "  Ib=Ic/hFE... Vb = Vth - Ib*Rth"
+echo "  For Vb=2.45 with R3=470K: need Vth ~ 2.45 + Ib*Rth"
+let vbe_spice_a = v(base1a) - v(emit1a)
+print vbe_spice_a
+echo "  SPICE Vbe1 from Config A (this is what the transistor model gives)"
+echo ""
+echo "Hypothesis 4: Schematic annotation is approximate"
+echo "  Many schematics round voltages. 2.45V may be a rounded value"
+echo "  from a production unit with different hFE / resistor values"
+echo "  GroupDIY measured: B=2.447V on a real unit"
+echo "  Our SPICE: Vb1 from each config:"
+print v(base1a) v(base1b) v(base1c) v(base1d)
+echo ""
+
+echo "================================================================"
+echo " CONCLUSION SUMMARY"
+echo "================================================================"
+echo ""
+echo "Cross-check: Ic via Ohm's law vs SPICE model"
+echo ""
+echo "Config A: Ic1(Ohm) vs Ic1(SPICE):"
+let ic1a_ohm = (15 - v(coll1a)) / 150e3
+print ic1a_ohm @q1a[ic]
+echo "Config A: Ic2(Ohm) vs Ic2(SPICE):"
+let ic2a_ohm = (15 - v(coll2a)) / 1.8e3
+print ic2a_ohm @q2a[ic]
+echo ""
+echo "Config B: Ic1(Ohm) vs Ic1(SPICE):"
+let ic1b_ohm = (15 - v(coll1b)) / 150e3
+print ic1b_ohm @q1b[ic]
+echo "Config B: Ic2(Ohm) vs Ic2(SPICE):"
+let ic2b_ohm = (15 - v(coll2b)) / 1.8e3
+print ic2b_ohm @q2b[ic]
+echo ""
+echo "Config C: Ic1(Ohm) vs Ic1(SPICE):"
+let ic1c_ohm = (15 - v(coll1c)) / 150e3
+print ic1c_ohm @q1c[ic]
+echo "Config C: Ic2(Ohm) vs Ic2(SPICE):"
+let ic2c_ohm = (15 - v(coll2c)) / 1.8e3
+print ic2c_ohm @q2c[ic]
+
+echo ""
+echo "================================================================"
+echo " POWER DISSIPATION CHECK"
+echo "================================================================"
+let pd1a = @q1a[ic] * (v(coll1a) - v(emit1a))
+let pd2a = @q2a[ic] * (v(coll2a) - v(emit2ba))
+print pd1a pd2a
+echo " (2N5089 max = 625mW)"
+
+echo ""
+echo "Done."
+
+.endc
+
+.end

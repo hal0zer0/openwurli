@@ -1,0 +1,38 @@
+* Wurlitzer 200A Preamp — AC Response vs LDR Resistance
+* ======================================================
+* Sweeps LDR resistance to see how gain varies with tremolo position.
+* Tests from dark resistance (1M, tremolo off) to bright (1K, max tremolo).
+*
+* Source: Vs → R-1 (22K) → preamp input
+
+.title Preamp AC vs LDR Resistance
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* Supply
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp
+Xpre  in_sig out vcc 0 trem  wurli_preamp
+
+* Source: 1mV AC through R-1
+Vin  src 0  DC 0 AC 1M
+R1   src in_sig  22K
+
+* Parametric LDR resistance
+.param rldr_val = 12K
+Rldr trem 0  {rldr_val}
+
+* Load resistor
+Rload out 0  100K
+
+* AC analysis at 1 kHz only (narrow band for quick sweep)
+.ac dec 1  1K  1K
+
+.step param rldr_val list 1K 2K 5K 10K 12K 20K 50K 100K 500K 1MEG
+
+.print AC VDB(out) VP(out)
+
+.end
