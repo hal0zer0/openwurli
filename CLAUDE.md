@@ -17,7 +17,7 @@ Key distinctions of the 200A vs the 200 (and other Wurlitzer models) that the ci
 - Reed-based tone generation: steel reeds vibrate near an electrostatic pickup
 - The pickup is capacitive (not electromagnetic like Rhodes) — reed vibration modulates capacitance
 - **Tremolo is INSIDE the preamp feedback loop** — R-10 (56K) feeds back from the output to TR-1's emitter via Ce1 (4.7 MFD coupling cap), providing series-series negative feedback. LDR (LG-1) shunts the feedback junction to ground via the cable, modulating how much feedback reaches the emitter and thus the closed-loop gain. This produces timbral modulation (not just volume).
-- The preamp is a two-stage direct-coupled NPN CE amplifier (TR-1/TR-2, 2N5089). Asymmetric clipping headroom (Stage 1: 2.05V toward saturation vs 10.9V toward cutoff, ratio ~5.3:1) is the primary source of even-harmonic "bark"
+- The preamp is a two-stage direct-coupled NPN CE amplifier (TR-1/TR-2, 2N5089) with asymmetric clipping headroom (Stage 1: 2.05V toward saturation vs 10.9V toward cutoff, ratio ~5.3:1). The pickup's 1/(1-y) nonlinearity is the primary source of even-harmonic "bark" at normal dynamics; the preamp adds further H2 at extreme ff where its asymmetric headroom is engaged
 - The 200A's specific amplifier topology, EQ curve, and soft-clipping characteristics define its signature sound
 - Velocity response is mechanical (hammer force on reed), not electronic
 

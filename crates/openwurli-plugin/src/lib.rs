@@ -6,6 +6,7 @@ use openwurli_dsp::power_amp::PowerAmp;
 use openwurli_dsp::preamp::{EbersMollPreamp, PreampModel};
 use openwurli_dsp::speaker::Speaker;
 use openwurli_dsp::tremolo::Tremolo;
+use openwurli_dsp::tables;
 use openwurli_dsp::voice::Voice;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -36,6 +37,10 @@ struct VoiceSlot {
     state: VoiceState,
     midi_note: u8,
     age: u64,
+    // Voice being faded out from stealing (5ms linear crossfade)
+    steal_voice: Option<Voice>,
+    steal_fade: u32,
+    steal_fade_len: u32,
 }
 
 impl Default for VoiceSlot {
@@ -45,6 +50,9 @@ impl Default for VoiceSlot {
             state: VoiceState::Free,
             midi_note: 0,
             age: 0,
+            steal_voice: None,
+            steal_fade: 0,
+            steal_fade_len: 0,
         }
     }
 }
@@ -101,11 +109,28 @@ impl Default for OpenWurli {
 
 impl OpenWurli {
     fn note_on(&mut self, note: u8, velocity: f32) {
+        let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
         let slot_idx = self.allocate_voice();
         let slot = &mut self.voices[slot_idx];
 
+        // If stealing an active voice, crossfade it out over 5ms
+        if slot.state != VoiceState::Free {
+            let fade_samples = (self.sample_rate * 0.005) as u32;
+            slot.steal_voice = slot.voice.take();
+            slot.steal_fade = fade_samples;
+            slot.steal_fade_len = fade_samples;
+        }
+
         self.age_counter += 1;
-        slot.voice = Some(Voice::note_on(note, velocity as f64, self.sample_rate));
+        let noise_seed = (note as u32)
+            .wrapping_mul(2654435761)
+            .wrapping_add(self.age_counter as u32);
+        slot.voice = Some(Voice::note_on(
+            note,
+            velocity as f64,
+            self.sample_rate,
+            noise_seed,
+        ));
         slot.state = VoiceState::Held;
         slot.midi_note = note;
         slot.age = self.age_counter;
@@ -168,13 +193,31 @@ impl OpenWurli {
         // Sum all active voices
         self.sum_buf[..len].fill(0.0);
         for slot in &mut self.voices {
-            if slot.state == VoiceState::Free {
+            if slot.state == VoiceState::Free && slot.steal_voice.is_none() {
                 continue;
             }
-            let voice = slot.voice.as_mut().unwrap();
-            voice.render(&mut self.voice_buf[..len]);
-            for i in 0..len {
-                self.sum_buf[i] += self.voice_buf[i];
+
+            // Render the main voice
+            if let Some(ref mut voice) = slot.voice {
+                voice.render(&mut self.voice_buf[..len]);
+                for i in 0..len {
+                    self.sum_buf[i] += self.voice_buf[i];
+                }
+            }
+
+            // Render the stealing voice with linear fade-out
+            if let Some(ref mut steal) = slot.steal_voice {
+                steal.render(&mut self.voice_buf[..len]);
+                let fade_len = slot.steal_fade_len as f64;
+                for i in 0..len {
+                    let remaining = slot.steal_fade.saturating_sub(i as u32);
+                    let gain = remaining as f64 / fade_len;
+                    self.sum_buf[i] += self.voice_buf[i] * gain;
+                }
+                slot.steal_fade = slot.steal_fade.saturating_sub(len as u32);
+                if slot.steal_fade == 0 {
+                    slot.steal_voice = None;
+                }
             }
         }
 
@@ -183,6 +226,7 @@ impl OpenWurli {
             .upsample_2x(&self.sum_buf[..len], &mut self.up_buf[..len * 2]);
 
         // Process through preamp at oversampled rate (tremolo modulates LDR)
+        // PERF: LDR resistance recomputed every oversampled sample; could be every 16
         for s in &mut self.up_buf[..len * 2] {
             let r_ldr = self.tremolo.process();
             self.preamp.set_ldr_resistance(r_ldr);
@@ -269,6 +313,8 @@ impl Plugin for OpenWurli {
         for slot in &mut self.voices {
             slot.state = VoiceState::Free;
             slot.voice = None;
+            slot.steal_voice = None;
+            slot.steal_fade = 0;
         }
         self.preamp.reset();
         self.tremolo.reset();
@@ -341,12 +387,14 @@ impl Plugin for OpenWurli {
         }
 
         // Signal chain: preamp -> gain -> volume -> power amp -> speaker -> output
-        let preamp_gain = self.params.preamp_gain.smoothed.next() as f64;
-        let volume = self.params.volume.smoothed.next() as f64;
+        // Speaker character: per-buffer is fine (50ms smoother, slow-changing knob)
         let speaker_char = self.params.speaker_character.smoothed.next() as f64;
         self.speaker.set_character(speaker_char);
 
         for (i, mut channel_samples) in buffer.iter_samples().enumerate() {
+            // Per-sample smoothing prevents zipper noise on gain/volume changes
+            let preamp_gain = self.params.preamp_gain.smoothed.next() as f64;
+            let volume = self.params.volume.smoothed.next() as f64;
             // Volume attenuates BEFORE power amp (real circuit topology)
             let attenuated = self.out_buf[i] * preamp_gain * volume;
             let amplified = self.power_amp.process(attenuated);

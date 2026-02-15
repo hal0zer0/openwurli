@@ -115,7 +115,6 @@ impl Oversampler {
             let b = self.up_branch_b.process(x);
 
             // Branch A produces even samples, Branch B produces odd samples.
-            // Scale by 2 to compensate for zero-insertion energy loss.
             output[i * 2] = a;
             output[i * 2 + 1] = b;
         }

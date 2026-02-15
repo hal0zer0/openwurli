@@ -135,19 +135,28 @@ pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES]
 /// keyboard. High notes naturally produce more signal (smaller gap, stiffer
 /// reed) and need to be attenuated. This function simulates that voicing.
 ///
-/// Measured from V2 renders: treble (A6) is ~12 dB louder than bass (A2)
-/// at the same velocity. Real 200As are typically voiced to ~6 dB spread.
-/// We apply a gentle rolloff above C4 (MIDI 60) to compensate.
+/// The pickup HPF at 2312 Hz creates a ~22 dB natural advantage for treble
+/// fundamentals vs bass. Technician voicing compensates by adjusting gaps:
+/// tighter bass gaps (more signal) and wider treble gaps (less signal),
+/// centering the loudest register around C4-C5.
+///
+/// We model this as a gentle boost below C4 (tighter bass gaps) and a
+/// rolloff above C4 (wider treble gaps).
 pub fn output_scale(midi: u8) -> f64 {
     let m = midi as f64;
-    if m <= 60.0 {
-        // Bass to mid: unity (no attenuation)
+    if m <= 48.0 {
+        // Below C3: tighter bass gaps for more output.
+        // +3 dB at A1 (MIDI 33), tapering to unity at C3.
+        let semitones_below_c3 = 48.0 - m;
+        f64::powf(10.0, 0.20 * semitones_below_c3 / 20.0)
+    } else if m <= 60.0 {
+        // C3 to C4: unity (the reference loudness region)
         1.0
     } else {
-        // Above C4: gentle rolloff, ~6 dB down at A6 (MIDI 93)
-        // -0.18 dB/semitone above C4 → -6 dB at +33 semitones (A6)
+        // Above C4: wider treble gaps for less output.
+        // -0.25 dB/semitone → -8.25 dB at A6 (MIDI 93)
         let semitones_above_c4 = m - 60.0;
-        f64::powf(10.0, -0.18 * semitones_above_c4 / 20.0)
+        f64::powf(10.0, -0.25 * semitones_above_c4 / 20.0)
     }
 }
 
@@ -162,15 +171,16 @@ pub fn output_scale(midi: u8) -> f64 {
 ///   exponent = 1.0: linear
 ///   exponent > 1.0: expanded dynamics (mid-register)
 ///
-/// This gives ~22-24 dB dynamic range in the mid-register and ~15-17 dB
-/// at the extremes.
+/// sigma=15: the compression onset is gradual across the keyboard —
+/// the hammer-reed stiffness ratio changes smoothly, not abruptly.
+/// Gives ~20+ dB mid-register range, ~12-15 dB at extremes.
 pub fn velocity_exponent(midi: u8) -> f64 {
     let m = midi as f64;
     // Bell curve centered at MIDI 62 (D4, mid-register sweet spot)
     // Peak exponent 1.4 (expanded dynamics)
     // Edges (A1, C7) at 0.75 (compressed dynamics)
     let center = 62.0;
-    let sigma = 11.0; // Narrow bell: bass/treble compress, mid-register expressive
+    let sigma = 15.0; // Gradual compression onset across keyboard
     let min_exp = 0.75;
     let max_exp = 1.4;
     let t = f64::exp(-0.5 * ((m - center) / sigma).powi(2));

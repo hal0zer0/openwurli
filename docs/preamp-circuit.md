@@ -691,7 +691,7 @@ The preamp input sees millivolt signals. The signal at TR-1's base (after the bi
 | ff (vel 0.95) | ~2-8 mV | Moderate saturation | H2 at -8 to -15 dB, H3 at -20 to -30 dB, "bark" |
 | ff chord | ~5-20 mV | Heavy saturation | H2, H3, intermodulation products, "growl" |
 
-With Stage 1's open-loop gain of ~420, an input of 5 mV would produce a collector swing of 2.1V — very close to the saturation headroom limit of 2.05V. This means **forte playing drives Stage 1 right to its clipping boundary**, which is exactly where the Wurlitzer's characteristic bark emerges.
+With Stage 1's open-loop gain of ~420, an input of 5 mV would produce a collector swing of 2.1V — very close to the saturation headroom limit of 2.05V. At forte dynamics, the pickup's 1/(1-y) nonlinearity has already generated significant H2, and Stage 1 approaches its clipping boundary, adding further asymmetric distortion. Both sources contribute to the Wurlitzer's characteristic bark at high dynamics.
 
 ### 6.4 Why Single-Ended CE Produces H2 — The Physical Story
 
@@ -699,7 +699,7 @@ A differential pair (like the power amplifier's input stage) produces a **tanh**
 
 A **single-ended** common-emitter stage has the **exponential** transfer function, which is NOT symmetric. exp(-x) is not equal to -exp(x). The lack of symmetry means even harmonics (H2, H4, H6...) are present. For the pure exponential, H2 dominates overwhelmingly.
 
-This is the fundamental reason the Wurlitzer 200A preamp produces the characteristic "bark" with strong second harmonic: two cascaded single-ended CE stages, each contributing even harmonics from their exponential transfer functions and asymmetric headroom.
+This asymmetric transfer function is why the preamp adds even harmonics when driven hard. At normal dynamics, the pickup's 1/(1-y) nonlinearity is the dominant H2 source; at ff and beyond, the preamp's two cascaded single-ended CE stages contribute additional even harmonics from their exponential transfer functions and asymmetric headroom.
 
 ### 6.5 The Role of Saturation vs Cutoff Limits
 
@@ -815,7 +815,7 @@ When LDR path impedance is **HIGH** (dark phase): fb_junct carries the full R-10
 - **Bandwidth decreases with gain:** 9.9 kHz at 2x gain → 8.3 kHz at 4x gain (constant GBW product)
 - **Gain is remarkably constant with input level** (2.007x from 0.5mV to 200mV) — the strong feedback linearizes the circuit, producing very low THD (0.0004% at mf, 0.04% at extreme 200mV)
 
-The distortion character changes through the tremolo cycle: at the gain peak (LDR low, weak feedback), the preamp is driven harder into its nonlinear region, producing more H2 and "bark." At the gain trough (LDR high, strong feedback), the preamp operates more linearly. This creates a subtle but important **timbral modulation** that distinguishes the real 200A tremolo from simple volume modulation.
+The distortion character changes through the tremolo cycle: at the gain peak (LDR low, weak feedback), the preamp's higher gain amplifies the pickup-generated harmonics more and pushes the preamp closer to its own saturation, producing more apparent H2 and "bark." At the gain trough (LDR high, strong feedback), the preamp operates more linearly. This creates a subtle but important **timbral modulation** that distinguishes the real 200A tremolo from simple volume modulation.
 
 ### 7.4 Tremolo Oscillator
 
@@ -891,7 +891,7 @@ Taylor-expand the transfer function to 3rd or 4th order: `y = a1*x + a2*x^2 + a3
 
 | Nonlinearity | Perceptual Impact | Priority |
 |-------------|-------------------|----------|
-| Asymmetric soft-clip (Stage 1 Vce headroom 2.05V vs 10.9V) | Primary source of H2 "bark" | CRITICAL |
+| Asymmetric soft-clip (Stage 1 Vce headroom 2.05V vs 10.9V) | Adds H2 at ff dynamics (pickup dominates at mf) | CRITICAL |
 | Exponential transfer function (exp(Vbe/nVt)) | H2 >> H3 harmonic ratio | HIGH |
 | Frequency-dependent feedback (C-3 100pF Miller, dominant pole ~23 Hz) | Register-dependent gain and distortion | HIGH |
 | Closed-loop bandwidth limit (~9.9 kHz no trem / ~8.3 kHz trem bright) | HF rolloff above ~10 kHz | HIGH |
@@ -949,7 +949,7 @@ Key lessons from previous modeling attempts:
 
 2. **Miller feedback polarity: MORE feedback at HF, LESS at LF.** The capacitor passes high frequencies and blocks low frequencies. An LPF-based feedback implementation inverts this behavior.
 
-3. **H2 comes from asymmetric headroom, not just the exponential.** Stage 1's 2.05V toward saturation vs 10.9V toward cutoff (5.3:1 ratio) is the primary H2 source. The exponential transfer function contributes, but asymmetric clipping dominates.
+3. **Preamp H2 comes from asymmetric headroom, not just the exponential.** Stage 1's 2.05V toward saturation vs 10.9V toward cutoff (5.3:1 ratio) is the preamp's primary H2 mechanism. However, the pickup's 1/(1-y) nonlinearity dominates H2 at normal dynamics; the preamp's asymmetric clipping adds to it at extreme ff.
 
 4. **Direct coupling matters at ff.** Stage 1's DC collector voltage directly sets Stage 2's bias. Large-signal bias shifts produce audible "sag" and "bloom" compression.
 

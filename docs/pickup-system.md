@@ -429,7 +429,7 @@ With the Wurlitzer's values:
 H2/H1 = 0.10 * 237 / (2 * 240) = 0.049 = -26 dB
 ```
 
-This is **well below the preamp's H2 contribution** (typically -10 to -20 dB). The pickup's nonlinear distortion is negligible compared to the preamp.
+**Note:** This -26 dB estimate uses the small-signal arXiv formula with parasitic capacitance dilution. SPICE simulation of the full 1/(1-y) model at y=0.10 yields H2/H1 ~ -21 dB (THD ~ 8.7%), which is significantly higher because the full nonlinearity includes terms beyond the first-order Taylor expansion. At millivolt input levels, the preamp itself produces THD < 0.01%, making the pickup the dominant H2 source at normal dynamics. The preamp's asymmetric headroom (5.3:1) contributes additional H2 only at extreme ff where it enters saturation.
 
 ### 4.5 When Does the Linear Approximation Break Down?
 
@@ -541,9 +541,9 @@ The pickup has no inherent upper frequency limit in the audio band. The capaciti
 | Signal level | Very low (millivolts) | Low-moderate (tens of millivolts) |
 | Impedance | Very high (~380 kOhm resistive at TR-1 base) | High (inductive, ~5-10 kOhm at resonance) |
 | Noise susceptibility | EMI sensitive (high-Z capacitive) | EMI sensitive (inductive) |
-| Distortion character | Even harmonics from preamp, not pickup | Even + odd from magnetic nonlinearity |
+| Distortion character | Even harmonics from pickup 1/(1-y) + preamp at ff | Even + odd from magnetic nonlinearity |
 
-**Key sonic consequence:** The Wurlitzer's "bark" comes from the **preamp**, not the pickup. The Rhodes' growl comes from **both** the pickup (magnetic nonlinearity) and the preamp. This means Wurlitzer preamp design is disproportionately important to the instrument's character.
+**Key sonic consequence:** The Wurlitzer's "bark" comes primarily from the **pickup's 1/(1-y) nonlinearity** at normal dynamics, with the preamp contributing additional H2 at extreme ff. The Rhodes' growl comes from **both** the pickup (magnetic nonlinearity) and the preamp. Both instruments derive their character from the combined pickup + preamp chain, but the dominant nonlinearity source differs.
 
 ---
 
@@ -616,10 +616,7 @@ Keep the current linear model but add register-dependent gain:
 V_ac = (V_bias / d0_scaled) * displacement
 ```
 
-where `d0_scaled` varies with register per the EP-Forum measurements. The C20 HPF provides the bass rolloff. This is adequate because:
-- The preamp dominates the tonal character
-- The pickup's RC HPF is partially redundant with C20's HPF
-- Pickup nonlinearity is -26 dB or below at mf
+where `d0_scaled` varies with register per the EP-Forum measurements. The C20 HPF provides the bass rolloff. Note: the implemented model uses the full 1/(1-y) nonlinearity (not linear), since SPICE confirmed the pickup is the dominant H2 source at normal dynamics.
 
 **Option B: RC Circuit Model (More Physical)**
 
@@ -952,7 +949,7 @@ Slot widths vary from 0.172" (bass) to 0.114" (treble), a ratio of **1.51:1**. S
 
 ### Q5: Is the signal truly proportional to displacement?
 
-**Yes, in the constant-charge regime.** V_ac = V_bias * x/d_0. For small displacements (x/d_0 < 0.1), this is linear to better than 1%. At larger displacements (ff dynamics), the 1/(1+y) series expansion introduces ~5% H2 from the pickup geometry, but this is still small compared to preamp distortion.
+**Approximately, for small displacements.** V_ac = V_bias * x/d_0 is the first-order approximation. For small displacements (x/d_0 < 0.05), this is linear to better than 1%. At mf (x/d_0 ~ 0.10), the full 1/(1-y) nonlinearity produces H2/H1 ~ -21 dB (SPICE), making the pickup the dominant H2 source at normal dynamics.
 
 ### Q6: What is the C20 shunt capacitor value and HPF frequency?
 
@@ -960,4 +957,4 @@ C20 = 220 pF (GroupDIY's 270 pF likely reflects tolerance variation). C20 is at 
 
 ### Q7: Does the pickup introduce harmonic distortion?
 
-**Minimally.** At mf (y_m ~ 0.10), H2 from the pickup's 1/(1+y) nonlinearity is ~-26 dB, further reduced by the parasitic capacitance ratio. The preamp produces H2 at -10 to -20 dB — roughly 10-15 dB stronger. The pickup's distortion contribution is negligible at pp and mf, becoming possibly audible only at extreme ff where y_m > 0.3.
+**Yes, significantly.** SPICE simulation of the full 1/(1-y) model at mf (y_m ~ 0.10) yields H2/H1 ~ -21 dB (THD ~ 8.7%). The earlier -26 dB estimate used a first-order arXiv formula that underestimates the full nonlinearity. At millivolt input levels, the preamp produces THD < 0.01%, making the pickup the dominant H2 source at normal dynamics. At extreme ff (y_m > 0.3), both the pickup and the preamp's asymmetric headroom contribute significantly.

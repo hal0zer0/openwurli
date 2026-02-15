@@ -332,7 +332,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 | Aged bias (crossover) | Significant | Odd-harmonic "grittiness" at all levels |
 | Full volume + ff chords | Significant | Hard clipping, dense saturation |
 
-**For modeling purposes:** The power amplifier can be approximated as a clean gain stage with symmetric hard-clip limits at +/-19V (or +/-21V with measured rails). Adding optional crossover distortion modeling would capture the aged-instrument character. The power amp is NOT a major tonal contributor in the way the preamp is -- the preamp's asymmetric soft-clipping and harmonic generation dominate the Wurlitzer's characteristic bark.
+**For modeling purposes:** The power amplifier can be approximated as a clean gain stage with symmetric hard-clip limits at +/-19V (or +/-21V with measured rails). Adding optional crossover distortion modeling would capture the aged-instrument character. The power amp is NOT a major tonal contributor — the Wurlitzer's characteristic bark comes primarily from the pickup's 1/(1-y) nonlinearity, with the preamp's asymmetric soft-clipping adding further coloring at high dynamics.
 
 ---
 

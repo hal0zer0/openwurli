@@ -89,7 +89,7 @@ Keypress
 - The preamp sees the combined signal from all reeds simultaneously
 - Polyphonic interaction happens at the electrical level, not the acoustic level
 
-**The preamp is the primary source of even harmonics (H2).** The electrostatic pickup in constant-charge regime is approximately linear (V proportional to gap displacement). The asymmetric clipping of the two-stage direct-coupled BJT preamp -- with different headroom to Vcc vs. Vce_sat -- produces the characteristic even-harmonic "bark." From condenser microphone literature, pickup-generated H2 is approximately -26 dB at mf, well below preamp contribution.
+**The pickup's 1/(1-y) nonlinearity is the primary source of even harmonics (H2) at normal dynamics.** SPICE simulation confirms H2/H1 ~ -21 dB (THD ~ 8.7%) from the pickup at mf (y=0.10), while the preamp at millivolt input levels produces THD < 0.01%. The preamp's asymmetric clipping headroom (2.05V vs 10.9V, ratio 5.3:1) contributes additional H2 at extreme ff dynamics where it enters saturation. Both the pickup and preamp contribute to the characteristic "bark," but the pickup dominates at normal playing levels.
 
 **Direct coupling between stages is the defining preamp feature.** TR-1 collector connects directly to TR-2 base with no coupling capacitor. This means TR-1's DC operating point sets TR-2's bias. Signal-dependent bias modulation creates compression, transient sag, and velocity-dependent timbral change -- all absent from AC-coupled models.
 
@@ -137,7 +137,7 @@ MIDI note-on (key, velocity, channel, note_id)
 | Modal Oscillator | Yes (sinusoidal sum) | No (bandlimited by construction) | Base |
 | Dwell Filter | Yes (amplitude scaling at note-on) | No (runs once) | N/A |
 | Noise Burst | Yes (filtered noise, envelope) | No (broadband, no harmonics generated) | Base |
-| Pickup | Nearly linear (minGap clamp is only nonlinearity) | No (mild, rarely triggered) | Base |
+| Pickup | NO (1/(1-y) nonlinearity, primary H2 source) | YES (dominant at normal dynamics) | Base |
 | Voice Sum | Yes (addition) | No | Base |
 | C20 HPF | Yes (1st order filter) | No | 2x |
 | Preamp Stage 1 | NO (exponential + asymmetric soft-clip) | YES | 2x |
@@ -397,7 +397,7 @@ This is a nuanced point with significant implications:
 - **Per-reed RC corner:** f_c = 1/(2*PI*287k*10pF) >> 20 kHz -> constant-charge at all audio frequencies
 - **System RC corner:** f_c = 1/(2*PI*287k*240pF) = 2312 Hz -> bass fundamentals in constant-voltage regime (R_total = R_feed||(R-1+R_bias) = 1M||402K = 287K; see pickup-system.md Section 3.7)
 
-The per-reed constant-charge approximation is a defensible engineering tradeoff because the C20 input HPF at ~1903 Hz provides similar bass rolloff to the system-level RC dynamics. For the plugin, model the pickup as linear (constant-charge) and let the C20 HPF handle bass shaping.
+The per-reed constant-charge approximation is a defensible engineering tradeoff because the C20 input HPF at ~1903 Hz provides similar bass rolloff to the system-level RC dynamics. The pickup model includes the full 1/(1-y) nonlinearity, which is the primary source of even-harmonic "bark" at normal dynamics (H2/H1 ~ -21 dB at mf from SPICE).
 
 ### Constant-Charge Pickup Model
 
@@ -455,7 +455,7 @@ At mf with a single voice, the summed output is approximately 0.05-0.15 (arbitra
 
 ## 10. Stage 8: Oversampling and Preamp (Mono, 2x Rate)
 
-This is the most complex and sonically important processing stage. The preamp is the primary source of the Wurlitzer's characteristic even-harmonic "bark."
+This is the most complex processing stage. The preamp adds harmonic coloring at high dynamics and provides the tremolo-modulated gain that defines the instrument's character. (The pickup's 1/(1-y) nonlinearity is the primary bark source at normal dynamics; the preamp contributes at extreme ff.)
 
 ### DECISION: Trait-Based A/B Architecture
 
@@ -504,7 +504,7 @@ alpha = RC / (RC + dt)  // where dt = 1/(2*sampleRate) at 2x rate
 y[n] = alpha * (y[n-1] + x[n] - x[n-1])
 ```
 
-This is the primary bass rolloff mechanism. At C2 (65 Hz), attenuation is approximately -27 dB. At C4 (262 Hz), approximately -15 dB. The C20 HPF profoundly shapes the Wurlitzer's tonal balance: bass fundamentals are heavily attenuated, leaving the preamp-generated H2 (130 Hz for C2) as the dominant component in the bass register.
+This is the primary bass rolloff mechanism. At C2 (65 Hz), attenuation is approximately -27 dB. At C4 (262 Hz), approximately -15 dB. The C20 HPF profoundly shapes the Wurlitzer's tonal balance: bass fundamentals are heavily attenuated, leaving the pickup-generated H2 (130 Hz for C2) as the dominant component in the bass register.
 
 ### BJT Stage Model
 
@@ -658,7 +658,7 @@ R_ldr_path = vibrato_pot * depth_setting + 18000 + R_ldr
 
 The asymmetric attack/release creates a "choppy" effect: fast dips (3ms), slow recovery (50ms). This is distinctly different from a smooth sine tremolo and is immediately recognizable as Wurlitzer.
 
-**Timbral modulation:** At the high-gain phase (LDR dark), the preamp is driven harder, producing more harmonic distortion ("bark"). At the low-gain phase (LDR lit), the preamp operates more linearly. This subtle but important timbral variation distinguishes the real 200A tremolo from a simple volume multiplier.
+**Timbral modulation:** At the high-gain phase (LDR dark), the preamp's gain is higher, amplifying the pickup-generated harmonics more and pushing the preamp closer to its own saturation threshold. At the low-gain phase (LDR lit), the preamp operates more linearly with less harmonic amplification. This subtle but important timbral variation distinguishes the real 200A tremolo from a simple volume multiplier.
 
 ### Implementation Note
 
@@ -833,7 +833,7 @@ SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo, 12.1 dB (4.0x) a
 
 Only the preamp requires oversampling. It is the only significantly nonlinear stage that generates harmonics above the input signal's bandwidth.
 
-The pickup is nearly linear (minGap clamp rarely triggered). The output limiter operates on an already band-limited signal at low levels. The power amp crossover distortion, if modeled, generates only low-order odd harmonics at small signal levels.
+The pickup's 1/(1-y) nonlinearity generates harmonics but does so at the base sample rate; its output bandwidth stays within the audio band. The output limiter operates on an already band-limited signal at low levels. The power amp crossover distortion generates only low-order odd harmonics at small signal levels.
 
 ### Why 2x Is Sufficient
 
@@ -871,7 +871,7 @@ The oscillator is alias-free by construction: each mode is a pure sinusoid at a 
 
 ### Pickup Nonlinearity
 
-The minGap clamp is a mild nonlinearity that generates low-level harmonics only when the reed approaches the plate (rare, only at extreme ff in bass register). The aliasing from this is negligible.
+The 1/(1-y) pickup model generates significant even harmonics (H2/H1 ~ -21 dB at mf) but these are low-order harmonics within the audio band. Since the pickup operates at the base sample rate and its harmonic content is bounded by the reed's modal frequencies, aliasing is not a concern.
 
 ### Preamp
 

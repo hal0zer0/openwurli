@@ -72,7 +72,7 @@ impl ModalReed {
             return;
         }
 
-        let base_rate = 55.0 * 2.0_f64.powf((midi_note as f64 - 60.0) / 24.0).max(0.5);
+        let base_rate = (55.0 * 2.0_f64.powf((midi_note as f64 - 60.0) / 24.0)).max(0.5);
         for m in 0..NUM_MODES {
             let factor = (base_rate * 3.0_f64.powi(m as i32)).min(2000.0);
             // Convert nepers/sec to nepers/sample
@@ -95,6 +95,7 @@ impl ModalReed {
     }
 
     /// Render samples into the output buffer (additive, does NOT clear buffer).
+    // PERF: modes 5-7 are inaudible above ~MIDI 80; could skip them for high notes
     pub fn render(&mut self, output: &mut [f64]) {
         for sample in output.iter_mut() {
             let mut sum = 0.0f64;
@@ -121,7 +122,7 @@ impl ModalReed {
                 self.phases[i] += self.phase_incs[i];
             }
 
-            if self.sample & 0xFFFF == 0 {
+            if self.sample & 0x3FF == 0 {
                 let two_pi = 2.0 * std::f64::consts::PI;
                 for p in &mut self.phases {
                     *p %= two_pi;

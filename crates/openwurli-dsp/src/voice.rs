@@ -23,7 +23,8 @@ impl Voice {
     /// - `midi_note`: MIDI note number (33-96)
     /// - `velocity`: 0.0 (pp) to 1.0 (ff)
     /// - `sample_rate`: audio sample rate
-    pub fn note_on(midi_note: u8, velocity: f64, sample_rate: f64) -> Self {
+    /// - `noise_seed`: RNG seed for attack noise (decorrelates simultaneous notes)
+    pub fn note_on(midi_note: u8, velocity: f64, sample_rate: f64, noise_seed: u32) -> Self {
         let params = tables::note_params(midi_note);
 
         let detuned_fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
@@ -53,7 +54,7 @@ impl Voice {
         );
 
         let pickup = Pickup::new(sample_rate);
-        let noise = AttackNoise::new(velocity, sample_rate);
+        let noise = AttackNoise::new(velocity, sample_rate, noise_seed);
 
         Self {
             reed,
@@ -97,7 +98,8 @@ impl Voice {
 
     /// Render a complete note of given duration to a Vec.
     pub fn render_note(midi_note: u8, velocity: f64, duration_secs: f64, sample_rate: f64) -> Vec<f64> {
-        let mut voice = Voice::note_on(midi_note, velocity, sample_rate);
+        let noise_seed = (midi_note as u32).wrapping_mul(2654435761);
+        let mut voice = Voice::note_on(midi_note, velocity, sample_rate, noise_seed);
         let num_samples = (duration_secs * sample_rate) as usize;
         let mut output = vec![0.0f64; num_samples];
 
