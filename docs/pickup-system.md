@@ -2,7 +2,7 @@
 
 ## Document Purpose and Audience
 
-This document is for **AI agent consumption**. It provides the complete physics, circuit analysis, and modeling decisions for the Wurlitzer 200A electrostatic (capacitive) pickup system. Every claim is tagged as VERIFIED (sourced), INFERRED (derived from verified facts), ESTIMATED (reasonable approximation), or UNVERIFIED (plausible but unsourced).
+This document provides the complete physics, circuit analysis, and modeling decisions for the Wurlitzer 200A electrostatic (capacitive) pickup system.
 
 ---
 
@@ -12,46 +12,36 @@ This document is for **AI agent consumption**. It provides the complete physics,
 
 The Wurlitzer 200/200A uses an **electrostatic (capacitive) pickup** to convert reed vibration into an electrical signal. This is fundamentally different from the Rhodes piano's electromagnetic pickup: the Wurlitzer senses **displacement** (gap change) via a varying capacitor, while the Rhodes senses **velocity** (rate of flux change) via electromagnetic induction.
 
-[VERIFIED — Tropical Fish, Wikipedia "Electrostatic pickup", Pfeifle DAFx 2017]
-
 ### 1.2 Pickup Plate (Comb Electrode)
 
 The pickup electrode is a single continuous metal plate with **comb-like teeth** (slots) cut into it, forming a U-channel groove for each reed. All 64 reeds share this single common pickup plate — the signals from all reeds are inherently summed at the electrical node of the pickup plate before reaching the preamp.
 
-[VERIFIED — Tropical Fish: "the reeds lie within the grooves of a single large pickup plate"; Vintage Vibe parts diagrams; Miessner patent US3038363 describing "tooth-like projections" and U-channel configurations]
-
 The U-channel geometry means each reed is surrounded by the pickup electrode on **three faces** (bottom and two sides), not just one face as in a simple parallel-plate capacitor. This increases the effective capacitance per reed and makes the capacitance depend on both vertical displacement and lateral centering of the reed.
-
-[INFERRED from Miessner patent US3038363 Figures 35-39 showing U-channel designs, and EP-Forum measurements showing side clearances]
 
 ### 1.3 Reed-to-Plate Gap Dimensions
 
 Measured physical pickup slot widths from EP-Forum thread (140B/200 series, similar geometry):
 
-| Reed Range | Reed Width | Slot Width | Side Clearance (each) | Notes |
-|-----------|-----------|-----------|----------------------|-------|
-| Reeds 1-14 (bass) | 0.151" (3.84 mm) | 0.172" (4.37 mm) | 0.0115" (0.29 mm) | [VERIFIED — EP-Forum] |
-| Reeds 15-20 | 0.127" (3.23 mm) | 0.145" (3.68 mm) | 0.009" (0.23 mm) | [VERIFIED — EP-Forum] |
-| Reeds 21-42 (mid) | 0.121" (3.07 mm) | 0.139" (3.53 mm) | 0.0075" (0.19 mm) | [VERIFIED — EP-Forum] |
-| Reeds 43-50 | 0.110" (2.79 mm) | 0.114" (2.90 mm) | ~0.002" (0.05 mm) | [VERIFIED — EP-Forum] |
-| Reeds 51-64 (treble) | 0.097" (2.46 mm) | 0.114" (2.90 mm) | 0.0085" (0.22 mm) | [VERIFIED — EP-Forum] |
+| Reed Range | Reed Width | Slot Width | Side Clearance (each) |
+|-----------|-----------|-----------|----------------------|
+| Reeds 1-14 (bass) | 0.151" (3.84 mm) | 0.172" (4.37 mm) | 0.0115" (0.29 mm) |
+| Reeds 15-20 | 0.127" (3.23 mm) | 0.145" (3.68 mm) | 0.009" (0.23 mm) |
+| Reeds 21-42 (mid) | 0.121" (3.07 mm) | 0.139" (3.53 mm) | 0.0075" (0.19 mm) |
+| Reeds 43-50 | 0.110" (2.79 mm) | 0.114" (2.90 mm) | ~0.002" (0.05 mm) |
+| Reeds 51-64 (treble) | 0.097" (2.46 mm) | 0.114" (2.90 mm) | 0.0085" (0.22 mm) |
 
 **Critical note:** These are the **slot widths** (lateral clearance), not the vertical gap between the reed face and the bottom of the slot. The vertical gap is harder to measure and is not directly documented in community sources. Service manual procedures describe adjusting reed height relative to the pickup, but specific gap dimensions in thousandths of an inch are not published.
 
-[VERIFIED — EP-Forum thread "Wurlitzer 200 Reed Dimensions", topic=8418]
-
 ### 1.4 Slot Width Ratios
 
-- Bass (reed 1) to treble (reed 64) slot width ratio: 0.172 / 0.114 = **1.51:1** [VERIFIED]
-- Bass to treble side clearance ratio: 0.0115 / 0.0085 = **1.35:1** [VERIFIED]
+- Bass (reed 1) to treble (reed 64) slot width ratio: 0.172 / 0.114 = **1.51:1**
+- Bass to treble side clearance ratio: 0.0115 / 0.0085 = **1.35:1**
 
 These ratios constrain any register-dependent gap scaling model. The current Vurli model uses `2^((60-key)/60)` which gives a ratio of ~1.74:1 across the keyboard — moderately steeper than the measured 1.51:1 slot width ratio.
 
 ### 1.5 Pickup Plate Dimensions (per reed)
 
-[ESTIMATED — derived from slot widths and typical 200-series photos]
-
-The effective electrode area per reed depends on the U-channel geometry:
+The effective electrode area per reed depends on the U-channel geometry (estimated from slot widths and typical 200-series photos):
 
 - **Bottom face:** approximately slot_width x active_length. Active length (portion of reed over the pickup) varies by register but is roughly 3-8 mm.
 - **Side faces (two):** approximately gap_depth x active_length per side. The depth of the U-channel is approximately 2-4 mm based on photos.
@@ -63,12 +53,10 @@ These are rough estimates. Precise dimensions require direct measurement of a di
 
 The Wurlitzer 200A includes two shielding elements to reduce hum pickup:
 
-- **Hum shield:** A separate conductive shield placed close to the pickup plate. [VERIFIED — Vintage Vibe, Tropical Fish]
-- **Reed bar shield:** Added in later production runs and as an aftermarket upgrade. Reduces electromagnetic interference from power transformer and mains wiring. [VERIFIED — Vintage Vibe, RetroLinear]
+- **Hum shield:** A separate conductive shield placed close to the pickup plate.
+- **Reed bar shield:** Added in later production runs and as an aftermarket upgrade. Reduces electromagnetic interference from power transformer and mains wiring.
 
 "Most hum from Wurlitzer electric pianos derives from the reed bar" because the high-impedance electrostatic pickup acts as an antenna for electromagnetic interference.
-
-[VERIFIED — Vintage Vibe product descriptions; Tropical Fish "On Wurlitzer Shielding"]
 
 ---
 
@@ -78,17 +66,17 @@ The Wurlitzer 200A includes two shielding elements to reduce hum pickup:
 
 The reed bar requires a DC polarizing voltage to function. This voltage establishes the electric field between the reed and pickup plate.
 
-| Parameter | Value | Source |
-|-----------|-------|--------|
-| Nominal polarizing voltage | **147 V DC** | [VERIFIED — Wurlitzer service manual, GroupDIY] |
-| Voltage source | Half-wave rectifier from dedicated transformer winding | [VERIFIED — Service manual] |
-| Filter capacitors | Three 0.33 uF capacitors in RC filter chain | [VERIFIED — EP-Forum, Tropical Fish] |
-| Feed resistor to reed bar | **1 MEG** | [RESOLVED Feb 2026 — component 56 in HV supply filter chain. Avenson's "499K" refers to their replacement preamp design, not the original 200A.] |
+| Parameter | Value |
+|-----------|-------|
+| Nominal polarizing voltage | **147 V DC** |
+| Voltage source | Half-wave rectifier from dedicated transformer winding |
+| Filter capacitors | Three 0.33 uF capacitors in RC filter chain |
+| Feed resistor to reed bar | **1 MEG** (component 56 in HV supply filter chain) |
 
 **Voltage variation:** Different sources cite slightly different voltages:
-- Service manual: 147 V [VERIFIED]
-- Tropical Fish: "approximately 150V DC" [VERIFIED]
-- Some repair sources: 170 V, 180 V [VERIFIED — these likely represent different models or measurement conditions]
+- Service manual: 147 V
+- Tropical Fish: "approximately 150V DC"
+- Some repair sources: 170 V, 180 V (likely different models or measurement conditions)
 
 The 200A service manual specifies 147V from the half-wave rectifier. Higher values (170-180V) may reflect the model 200 (non-A) or measurements before load.
 
@@ -98,16 +86,14 @@ The 200A service manual specifies 147V from the half-wave rectifier. Higher valu
 AC Mains → Power Transformer (dedicated winding)
          → Half-wave rectifier diode
          → RC filter (3 × 0.33 µF capacitors with series resistors)
-         → R_feed (1 MΩ — RESOLVED)
+         → R_feed (1 MΩ)
          → Reed bar pickup plate (all reeds in parallel)
          → Through per-reed capacitance to grounded reeds
 ```
 
-> **Naming note (Feb 2026):** The 147V feed resistor is called "R_feed" in this document to avoid confusion with R-1 (22K series input resistor on preamp board) and R-2 (2M bias resistor to +15V). Some older sources use "R1" for both the feed resistor and the bias resistor — these are distinct components at different circuit nodes.
+> **Naming note:** The 147V feed resistor is called "R_feed" in this document to avoid confusion with R-1 (22K series input resistor on preamp board) and R-2 (2M bias resistor to +15V). Some older sources use "R1" for both the feed resistor and the bias resistor -- these are distinct components at different circuit nodes.
 
 The reeds themselves are grounded through the reed bar mounting, which is electrically connected to chassis ground. The polarizing voltage appears across the air gap between the pickup plate and each reed.
-
-[VERIFIED — GroupDIY "Wurlitzer 200A preamp" thread; Avenson preamp discussion; service manual]
 
 ### 2.3 Signal Path (AC Path)
 
@@ -124,42 +110,36 @@ Reed vibration → Varying capacitance per-reed
                → TR-1 base (preamp stage 1)
 ```
 
-**Critical topology note (Feb 2026):** The .022 uF coupling capacitor separates two distinct circuit nodes:
+**Critical topology note:** The .022 uF coupling capacitor separates two distinct circuit nodes:
 1. **Pickup plate node**: connected to 147V through the feed resistor (R_feed = 1M). The 240 pF reed bar capacitance charges/discharges through this resistor.
 2. **TR-1 base node**: R-2 (2M) to +15V and R-3 (470K) to GND set the DC bias (~2.85V Thevenin, actual ~2.45V). C20 and D1 are also at this node.
 
 At audio frequencies (>>19 Hz), the .022 uF coupling cap is essentially a short circuit, so both nodes see each other's impedances for AC signals. But for DC analysis, they are isolated.
 
-[VERIFIED — preamp-circuit.md Section 2 schematic and component table; GroupDIY; service manual]
-
 ### 2.4 Input Impedance Network
 
 **At the pickup plate node:**
 
-| Component | Value | Function | Source |
-|-----------|-------|----------|--------|
-| R_feed | 1 MΩ (RESOLVED) | DC path from pickup plate to 147V polarizing supply | [RESOLVED Feb 2026 — component 56 in HV supply filter chain; Avenson's "499K" is their replacement design value] |
-| .022 uF | coupling cap | AC coupling to TR-1 base; blocks 147V DC | [VERIFIED — schematic] |
+| Component | Value | Function |
+|-----------|-------|----------|
+| R_feed | 1 MΩ | DC path from pickup plate to 147V polarizing supply |
+| .022 uF | coupling cap | AC coupling to TR-1 base; blocks 147V DC |
 
 **At the TR-1 base node (after coupling cap):**
 
-| Component | Value | Function | Source |
-|-----------|-------|----------|--------|
-| R-2 | 2 MΩ | DC bias from +15V to TR-1 base | [RESOLVED Feb 2026 — schematic reads "1 MEG" but DC analysis + GroupDIY "380K" confirm 2M; see preamp-circuit.md Note 1] |
-| R-3 | 470 kΩ | DC bias from TR-1 base to ground | [VERIFIED — schematic, GroupDIY] |
-| R-2 ‖ R-3 | 380 kΩ | Effective bias impedance at TR-1 base | [INFERRED — 2M‖470K = 2M×470K/(2M+470K) = 380.2K] |
-| C20 | 220 pF | Shunt to ground: RF protection + bass rolloff HPF | [RESOLVED Feb 2026 — confirmed from schematic at 1500 DPI. GroupDIY's 270 pF likely reflects tolerance variation.] |
-| D1 | Small signal diode, 25 PIV, 10 mA (Wurlitzer part #142136) | Reverse-polarity transient protection at TR-1 base | [VERIFIED — schematic] |
+| Component | Value | Function |
+|-----------|-------|----------|
+| R-2 | 2 MΩ | DC bias from +15V to TR-1 base |
+| R-3 | 470 kΩ | DC bias from TR-1 base to ground |
+| R-2 ‖ R-3 | 380 kΩ | Effective bias impedance at TR-1 base (2M‖470K) |
+| C20 | 220 pF | Shunt to ground: RF protection + bass rolloff HPF |
+| D1 | Small signal diode, 25 PIV, 10 mA (Wurlitzer part #142136) | Reverse-polarity transient protection at TR-1 base |
 
-> **C20 = 220 pF (RESOLVED Feb 2026):** Confirmed from schematic at 1500 DPI. GroupDIY thread 44606 cites "270pFd against 380K creates a bass-cut at 1,750Hz" — the 270 pF likely reflects tolerance variation in ceramic capacitors. With R_bias = R-2‖R-3 = 2M‖470K = 380K and C20 = 220 pF: f_c = 1/(2π × 380K × 220pF) = 1903 Hz.
-
-> **Previous naming collision (RESOLVED Feb 2026):** Earlier versions of this document used "R1" for the 147V feed resistor and "R3" for R-3 (470K bias to ground), then computed "R1‖R3 = 1M‖470K = 320K" as the impedance at the pickup plate. This was doubly wrong: (a) R-3 is at TR-1 base, not the pickup plate (they are separated by the .022 uF coupling cap), and (b) the "R1 = 1M" was confused with R-2 (2M to +15V). The corrected topology places R_feed (1M) at the pickup plate and R-2‖R-3 = 380K at TR-1 base. See Section 3.7 for the corrected pickup RC calculation and Section 5.3 for the corrected C20 HPF.
+With R_bias = R-2‖R-3 = 380K and C20 = 220 pF: f_c = 1/(2pi x 380K x 220pF) = 1903 Hz. GroupDIY thread 44606 cites "270pFd against 380K creates a bass-cut at 1,750Hz" -- the 270 pF likely reflects tolerance variation in ceramic capacitors.
 
 **Why BJT, not FET?** GroupDIY discussion explains two reasons:
 1. **Microphonics:** Higher input impedance increases sensitivity to mechanical vibration of the reed bar, which couples acoustically as unwanted signal. The relatively low 380 kΩ impedance at TR-1 base reduces this.
 2. **Overvoltage protection:** During tuning, reeds can short to the pickup plate, producing 150V transient peaks. The BJT base-emitter junction and D1 clamp these naturally. A FET gate would be damaged.
-
-[VERIFIED — GroupDIY "Wurlitzer 200A preamp" thread]
 
 ---
 
@@ -179,8 +159,6 @@ where:
 - `d` = gap distance (m)
 
 For the Wurlitzer's U-channel geometry, the effective capacitance is larger than a simple parallel plate due to three faces, but the 1/d dependence on gap distance still dominates for the bottom face (where the reed's vibration axis is perpendicular to the plate).
-
-[VERIFIED — standard electrostatics; confirmed by condenser microphone literature]
 
 ### 3.2 Constant-Charge Regime (High Frequency)
 
@@ -212,8 +190,6 @@ V_ac(t) = V_bias * x(t) / d_0
 
 This is the **open-circuit electrical sensitivity formula**: `Se = V_bias / d_0`.
 
-[VERIFIED — condenser microphone literature (ScienceDirect "Condenser Microphone"); Honzik & Novak arXiv 2407.17250; standard electrostatics derivation]
-
 **For small displacements (x << d_0), this is LINEAR in displacement.** The signal voltage is directly proportional to reed displacement with gain `V_bias / d_0`.
 
 ### 3.3 Constant-Voltage Regime (Low Frequency)
@@ -240,9 +216,7 @@ i(t) = -V_bias * epsilon_0 * A / d(t)^2 * dx/dt
 
 In this regime, the output is proportional to **velocity** (dx/dt), not displacement. The signal is much weaker at low frequencies and naturally rolls off the bass.
 
-[VERIFIED — Physics LibreTexts "Changing the Distance Between Capacitor Plates"; condenser microphone theory]
-
-### 3.4 Transition Frequency (f_c) — [RESOLVED Feb 2026]
+### 3.4 Transition Frequency (f_c)
 
 The transition between constant-voltage (f << f_c) and constant-charge (f >> f_c) regimes occurs at:
 
@@ -254,7 +228,7 @@ where:
 - `R_total` = effective resistance seen by the pickup capacitance (C_total) at the pickup plate node
 - `C_total` = total system capacitance at the pickup node (240 pF measured)
 
-**Corrected analysis (Feb 2026):** The pickup plate connects to two resistive paths:
+The pickup plate connects to two resistive paths:
 1. **R_feed (1M)** to the 147V polarizing supply (DC path through the power supply filter chain — component 56 in HV filter)
 2. **R-2‖R-3 = 380K** at TR-1 base, seen through the .022 uF coupling cap
 
@@ -268,27 +242,23 @@ See Section 3.7 for the resulting f_c value.
 
 ### 3.5 Per-Reed Capacitance Estimate
 
-[ESTIMATED — geometric calculation]
-
-For a single bass reed (the largest):
+For a single bass reed (the largest), estimated from geometry:
 - Bottom face: ~4 mm x 7 mm = 28 mm^2 = 2.8 x 10^-5 m^2
 - Gap (side clearance as proxy): ~0.29 mm = 2.9 x 10^-4 m
 - Bottom face capacitance: epsilon_0 * A / d = 8.854e-12 * 2.8e-5 / 2.9e-4 = **0.85 pF**
 
 With U-channel (three faces, ~2.5x correction for sides + fringe fields):
-- Per-reed capacitance (bass): **~2-4 pF** [ESTIMATED]
+- Per-reed capacitance (bass): **~2-4 pF**
 
 For a treble reed (smaller area, narrower gap):
 - Bottom face: ~2.5 mm x 4 mm = 10 mm^2
 - Gap: ~0.22 mm
 - Bottom face capacitance: ~0.4 pF
-- With U-channel correction: **~1-3 pF** [ESTIMATED]
+- With U-channel correction: **~1-3 pF**
 
 ### 3.6 Total System Capacitance
 
-GroupDIY reports a measured pickup capacitance of **~240 pF**.
-
-[VERIFIED — GroupDIY "Wurlitzer 200A preamp" thread: "reed pickup capacitance was measured at 240pF"]
+GroupDIY reports a measured pickup capacitance of **~240 pF** ("reed pickup capacitance was measured at 240pF").
 
 This cannot be per-reed capacitance (64 reeds at 240 pF each = 15.4 nF, impossibly large). It is the **total system capacitance** at the preamp input node, comprising:
 - 64 reed-to-plate capacitors in parallel: 64 x 2-4 pF = ~130-250 pF
@@ -297,9 +267,7 @@ This cannot be per-reed capacitance (64 reeds at 240 pF each = 15.4 nF, impossib
 
 The geometric estimate (130-250 pF for 64 reeds) is consistent with the measured 240 pF.
 
-[INFERRED — the per-reed geometric estimate of 2-4 pF multiplied by 64 reeds brackets the measured 240 pF total]
-
-### 3.7 RC Time Constant and Cutoff Frequency — [CORRECTED Feb 2026]
+### 3.7 RC Time Constant and Cutoff Frequency
 
 The pickup plate sees two resistive paths to voltage sources (see Section 3.4):
 
@@ -307,7 +275,6 @@ The pickup plate sees two resistive paths to voltage sources (see Section 3.4):
 R_total = R_feed || (R-1 + R-2 || R-3) = 1M || (22K + 380K) = 1M || 402K = 287 kΩ
 ```
 
-**With R_feed = 1M (RESOLVED Feb 2026):**
 ```
 R_total = 1M || 402K = 287 kΩ
 C_total = 240 pF (measured)
@@ -315,11 +282,9 @@ tau = 287e3 * 240e-12 = 68.9 µs
 f_c = 1 / (2 * pi * tau) = 2312 Hz
 ```
 
-> **R_feed = 1 MEG (RESOLVED Feb 2026):** The feed resistor from the 147V supply to the pickup plate is component 56 in the HV supply filter chain. It is 1 MEG (not 499K). Avenson's "499K" refers to their replacement preamp design, not the original 200A value.
+Both paths are in parallel at audio frequencies because the .022 uF coupling cap is effectively a short above ~19 Hz.
 
-[INFERRED — computed from corrected circuit topology. R-2=2M, R-3=470K at TR-1 base (VERIFIED); R_feed=1M (RESOLVED Feb 2026). Both paths are in parallel at audio frequencies because the .022 uF coupling cap is effectively a short above ~19 Hz.]
-
-**Summary:** f_c = **2312 Hz**. This is higher than the previous estimate of 2073 Hz (which used the incorrect R_total = 1M‖470K = 320K), indicating significant bass attenuation from the pickup RC.
+**Summary:** f_c = **2312 Hz**, indicating significant bass attenuation from the pickup RC.
 
 **This means:**
 
@@ -329,7 +294,7 @@ f_c = 1 / (2 * pi * tau) = 2312 Hz
 | ~230-2300 Hz | Transition zone | Mixed displacement/velocity response |
 | > ~2300 Hz | Strongly constant-charge | Proportional to displacement (linear) |
 
-**Key implication for bass notes** (using f_c = 2312 Hz):
+**Key implication for bass notes:**
 - A1 (55 Hz): Well below f_c. Only ~55/2312 = 2.4% of the constant-charge voltage appears (-32 dB).
 - C4 (262 Hz): Still below f_c. ~262/2312 = 11.3% (-19 dB).
 - C5 (523 Hz): Below f_c. ~22% (-13 dB).
@@ -357,8 +322,6 @@ This means each reed's signal is attenuated by the factor `C_reed / C_total`. Fo
 ```
 C_reed / C_total = 3/240 = 0.0125 = 1.25%
 ```
-
-[INFERRED — standard capacitive divider analysis]
 
 The remaining 237 pF of static capacitance from the other 63 reeds (and wiring) acts as a **parasitic capacitance** that attenuates the signal and reduces nonlinear distortion (see Section 4).
 
@@ -388,9 +351,7 @@ where:
 - `K_0 = V_bias * C_0 / (C_p + C_0)` (effective sensitivity including parasitic cap)
 - `C_p` = parasitic capacitance (other reeds + wiring)
 
-[VERIFIED — arXiv 2407.17250, Equation 3]
-
-**Wait — this contradicts the "exactly linear" claim above.** The resolution: the Taylor expansion comes from `V = Q/(C_0 - delta_C)` where `delta_C = C_0 * x/d_0`, which gives `V = V_bias / (1 - x/d_0)`. This is NOT the same as `V = V_bias * (1 + x/d_0)`.
+**Wait -- this contradicts the "exactly linear" claim above.** The resolution: the Taylor expansion comes from `V = Q/(C_0 - delta_C)` where `delta_C = C_0 * x/d_0`, which gives `V = V_bias / (1 - x/d_0)`. This is NOT the same as `V = V_bias * (1 + x/d_0)`.
 
 Let me derive this carefully:
 
@@ -435,8 +396,6 @@ V_signal = V_bias * (C_0 / (C_0 + C_p)) * [y - y^2 + y^3 - ...]
 
 where `y = x/d_0` and `C_p` is the parasitic (stray + other reeds) capacitance.
 
-[VERIFIED — arXiv 2407.17250, derived from the capacitive voltage divider with varying C]
-
 The nonlinear terms come from the fact that when the vibrating capacitance changes, the voltage division ratio also changes:
 
 ```
@@ -462,17 +421,15 @@ H2/H1 = y_m * C_p / (2 * (C_0 + C_p))
 ```
 
 With the Wurlitzer's values:
-- `y_m` at mf: reed displacement / gap ≈ 0.05-0.15 [ESTIMATED]
-- `C_0` (per-reed): ~3 pF [ESTIMATED]
-- `C_p` (system - this reed): ~237 pF [ESTIMATED]
+- `y_m` at mf: reed displacement / gap ~ 0.05-0.15 (estimated)
+- `C_0` (per-reed): ~3 pF (estimated)
+- `C_p` (system - this reed): ~237 pF (estimated)
 
 ```
 H2/H1 = 0.10 * 237 / (2 * 240) = 0.049 = -26 dB
 ```
 
 This is **well below the preamp's H2 contribution** (typically -10 to -20 dB). The pickup's nonlinear distortion is negligible compared to the preamp.
-
-[INFERRED — computed from verified arXiv formula with estimated Wurlitzer values]
 
 ### 4.5 When Does the Linear Approximation Break Down?
 
@@ -482,10 +439,10 @@ The linear approximation `V_ac = V_bias * x/d_0` is valid when:
 3. Parasitic capacitance is accounted for in the sensitivity factor
 
 For the Wurlitzer:
-- At **pp**: x/d_0 ~ 0.02-0.05 → linear to within 0.1%. [ESTIMATED]
-- At **mf**: x/d_0 ~ 0.05-0.15 → linear to within 1-2%. [ESTIMATED]
-- At **ff**: x/d_0 ~ 0.15-0.40 → nonlinear terms become significant (H2 ~ -14 to -20 dB from pickup alone). [ESTIMATED]
-- At **extreme ff**: reed approaches plate (x → d_0) → severe nonlinearity, physical clamp. [VERIFIED — service manual warns against reed-plate contact]
+- At **pp**: x/d_0 ~ 0.02-0.05 -- linear to within 0.1%.
+- At **mf**: x/d_0 ~ 0.05-0.15 -- linear to within 1-2%.
+- At **ff**: x/d_0 ~ 0.15-0.40 -- nonlinear terms become significant (H2 ~ -14 to -20 dB from pickup alone).
+- At **extreme ff**: reed approaches plate (x -> d_0) -- severe nonlinearity, physical clamp. Service manual warns against reed-plate contact.
 
 The **minGap clamp** (reed cannot physically contact the plate) is the most severe nonlinearity at extreme dynamics. When the reed gets very close to the plate, the 1/(d_0 - x) behavior produces extreme voltage spikes that are then clamped by the preamp's input protection (D1 diode).
 
@@ -504,8 +461,6 @@ H(f) = j*f/f_c / (1 + j*f/f_c)
 
 where `f_c ≈ 2312 Hz` (see Section 3.7).
 
-[INFERRED — corrected Feb 2026; see Section 3.7 for derivation]
-
 This means the pickup's transfer function from displacement to voltage is:
 
 ```
@@ -516,7 +471,7 @@ where X(f) is the reed displacement spectrum.
 
 ### 5.2 Frequency Response by Register
 
-Using f_c = 2312 Hz (see Section 3.7):
+Using f_c = 2312 Hz:
 
 | Note | MIDI | Freq (Hz) | |H(f)| | Attenuation (dB) | Regime |
 |------|------|-----------|-------|------------------|--------|
@@ -528,11 +483,9 @@ Using f_c = 2312 Hz (see Section 3.7):
 | C6 | 84 | 1047 | 0.413 | -7.7 | Transition |
 | C7 | 96 | 2093 | 0.671 | -3.5 | Near constant-charge |
 
-[INFERRED — computed from f_c = 2312 Hz; corrected Feb 2026]
-
 **Critical insight:** The pickup's natural HPF is the **primary mechanism for register balancing** in the Wurlitzer. Bass notes are attenuated 25-34 dB more than treble notes. This is not a design flaw — it is how the instrument achieves tonal balance despite bass reeds deflecting much more than treble reeds.
 
-### 5.3 C20 HPF at TR-1 Base — [CORRECTED Feb 2026]
+### 5.3 C20 HPF at TR-1 Base
 
 C20 (220 pF) is a shunt capacitor to ground at the **TR-1 base node** (after the .022 uF coupling cap). It forms a high-pass filter with the bias network resistance R-2‖R-3:
 
@@ -541,11 +494,7 @@ f_c20 = 1 / (2 * pi * (R-2 || R-3) * C20)
      = 1 / (2 * pi * 380e3 * 220e-12) = 1903 Hz
 ```
 
-> **C20 = 220 pF (RESOLVED Feb 2026):** Confirmed from schematic at 1500 DPI. GroupDIY's 270 pF likely reflects tolerance variation in ceramic capacitors.
-
-GroupDIY's PRR states "270pFd against 380K is a bass-cut at 1,750Hz." The "380K" confirms R-2‖R-3 = 2M‖470K = 380K. GroupDIY's 270 pF value and their cited 1750 Hz are consistent with component tolerance (220 pF nominal + ~23% tolerance = ~270 pF; the actual HPF frequency varies with the specific capacitor installed).
-
-[VERIFIED — GroupDIY thread 44606 independently confirms R_bias = 380K; C20 = 220 pF (RESOLVED Feb 2026)]
+GroupDIY's PRR states "270pFd against 380K is a bass-cut at 1,750Hz." The "380K" confirms R-2||R-3 = 2M||470K = 380K. GroupDIY's 270 pF value and their cited 1750 Hz are consistent with component tolerance (220 pF nominal + ~23% tolerance = ~270 pF; the actual HPF frequency varies with the specific capacitor installed).
 
 **Does TR-1's r_pi affect the C20 HPF?** At Ic ~ 66 uA with hFE = 800:
 - r_pi = hFE * Vt / Ic = 800 * 26e-3 / 66e-6 = 315 kOhm
@@ -568,14 +517,14 @@ Both are first-order HPFs, so the combined response is second-order (12 dB/octav
 
 Yes. The pickup RC HPF is determined by the 240 pF reed bar capacitance at the pickup plate node. The C20 HPF is determined by C20 (220 pF) at the TR-1 base node. These are at different circuit nodes (separated by the .022 uF coupling cap) and involve different capacitors.
 
-**[RESOLVED Feb 2026]** — The 240 pF measured at GroupDIY is the reed bar capacitance alone (reed-to-plate + wiring + strays). C20 (220 pF) is a separate discrete component at TR-1 base. This is confirmed by the fact that they are at different nodes (pickup plate vs. TR-1 base), and also by the fact that 240 pF - 220 pF = only 20 pF for 64 reeds + wiring, which would be implausibly small. The two HPFs are independent.
+The 240 pF measured at GroupDIY is the reed bar capacitance alone (reed-to-plate + wiring + strays). C20 (220 pF) is a separate discrete component at TR-1 base. They are at different nodes (pickup plate vs. TR-1 base), and 240 - 220 = only 20 pF for 64 reeds + wiring would be implausibly small. The two HPFs are independent.
 
 ### 5.5 Upper Frequency Response
 
 The pickup has no inherent upper frequency limit in the audio band. The capacitive reactance decreases with frequency, making the pickup more efficient at higher frequencies. The upper frequency response is limited by:
 
-1. **Preamp closed-loop bandwidth** (~3.7 kHz, from Miller-effect dominant pole and R-10 feedback) [VERIFIED — preamp-circuit.md Section 5]
-2. **Speaker rolloff** (~8 kHz) [VERIFIED — speaker model]
+1. **Preamp closed-loop bandwidth** (~3.7 kHz, from Miller-effect dominant pole and R-10 feedback)
+2. **Speaker rolloff** (~8 kHz)
 3. **Reed vibration modes** (higher modes decay faster, limiting HF content)
 
 ---
@@ -594,8 +543,6 @@ The pickup has no inherent upper frequency limit in the audio band. The capaciti
 | Noise susceptibility | EMI sensitive (high-Z capacitive) | EMI sensitive (inductive) |
 | Distortion character | Even harmonics from preamp, not pickup | Even + odd from magnetic nonlinearity |
 
-[VERIFIED — Pfeifle DAFx 2017; Wikipedia "Electrostatic pickup"; various Rhodes/Wurlitzer comparison sources]
-
 **Key sonic consequence:** The Wurlitzer's "bark" comes from the **preamp**, not the pickup. The Rhodes' growl comes from **both** the pickup (magnetic nonlinearity) and the preamp. This means Wurlitzer preamp design is disproportionately important to the instrument's character.
 
 ---
@@ -608,15 +555,15 @@ Benjamin Franklin Miessner's patent describes the fundamental design used in Wur
 
 Key innovations documented in the patent:
 
-1. **Asymmetric capacity modulation:** "vibrations of the reed produce asymmetrical modulations of the capacity between the reed and pick-up" — the reed-plate geometry is intentionally designed so that the capacitance change is not symmetric with reed displacement. [VERIFIED — US3038363]
+1. **Asymmetric capacity modulation:** "vibrations of the reed produce asymmetrical modulations of the capacity between the reed and pick-up" -- the reed-plate geometry is intentionally designed so that the capacitance change is not symmetric with reed displacement.
 
-2. **Multiple pickup positions:** Each reed can have "from one to three separate electrodes" at different positions (center, tip, edge), each producing a different tonal character. [VERIFIED — US3038363]
+2. **Multiple pickup positions:** Each reed can have "from one to three separate electrodes" at different positions (center, tip, edge), each producing a different tonal character.
 
-3. **Adjustability:** "tone quality, tone volume and tone damping are obtained by axial and lateral adjustments of a vibratory reed relative to a suitable pick-up." [VERIFIED — US3038363]
+3. **Adjustability:** "tone quality, tone volume and tone damping are obtained by axial and lateral adjustments of a vibratory reed relative to a suitable pick-up."
 
-4. **Grounded shield:** Adding a grounded shield "increase[s] the abruptness of the capacity changes between the reed and pick-up" — it focuses the electric field. [VERIFIED — US3038363]
+4. **Grounded shield:** Adding a grounded shield "increase[s] the abruptness of the capacity changes between the reed and pick-up" -- it focuses the electric field.
 
-5. **Signal characteristics:** The pickup produces "strongly-peaked electrical vibrations" containing "both odd and even numbered components." [VERIFIED — US3038363]
+5. **Signal characteristics:** The pickup produces "strongly-peaked electrical vibrations" containing "both odd and even numbered components."
 
 ### 7.2 Implication of Asymmetric Modulation
 
@@ -624,7 +571,7 @@ Miessner explicitly designed for **asymmetric** capacitance change. This means t
 
 However, in the production Wurlitzer 200/200A, the reed vibrates **vertically** (toward/away from the bottom of the U-channel), not laterally. The side walls contribute a symmetric capacitance that partially cancels any asymmetry. The degree of pickup-generated harmonics depends on the exact geometry and reed alignment.
 
-[INFERRED — the patent describes the general principle; the specific 200A implementation may have less asymmetry than Miessner's original designs]
+The patent describes the general principle; the specific 200A implementation may have less asymmetry than Miessner's original designs.
 
 ---
 
@@ -679,7 +626,7 @@ where `d0_scaled` varies with register per the EP-Forum measurements. The C20 HP
 Model the pickup as an explicit RC circuit per-voice:
 
 ```
-tau = R_total * C_total = 287k * 240p = 68.9 us   // R_feed=1M; see Section 3.7
+tau = R_total * C_total = 287k * 240p = 68.9 us   // see Section 3.7
 f_c = 2312 Hz
 
 // Per-sample:
@@ -708,7 +655,7 @@ V_ac_peak = V_bias * x_peak / d0 * C_reed / (C_reed + C_parasitic) * |H(f)|
 
 For C4 at mf (using f_c = 2312 Hz for pickup RC):
 - V_bias = 147V
-- x_peak / d0 ~ 0.10 [ESTIMATED]
+- x_peak / d0 ~ 0.10 (estimated)
 - C_reed / C_total = 3/240 = 0.0125
 - |H_pickup(262 Hz)| = 262/sqrt(262^2 + 2312^2) = 0.113
 
@@ -722,30 +669,28 @@ After the C20 HPF (1903 Hz) attenuates C4's 262 Hz by another factor of ~0.14:
 V_preamp_input = 21 mV * 0.14 = ~2.9 mV
 ```
 
-This is consistent with Brad Avenson's measurement of **2-7 mV AC at the volume pot output** (which is AFTER ~6 dB of preamp gain in the original 200A circuit — SPICE-measured closed-loop gain is 2.0x/6.0 dB at 1 kHz; Avenson's "15 dB" figure was from his replacement preamp design, not the stock 200A), implying the preamp input signal is sub-millivolt to low millivolts.
-
-[INFERRED — computed from verified/estimated values; consistent with Avenson's measurements]
+This is consistent with Brad Avenson's measurement of **2-7 mV AC at the volume pot output** (which is AFTER ~6 dB of preamp gain in the original 200A circuit -- SPICE-measured closed-loop gain is 2.0x/6.0 dB at 1 kHz; Avenson's "15 dB" figure was from his replacement preamp design, not the stock 200A), implying the preamp input signal is sub-millivolt to low millivolts.
 
 ---
 
 ## 9. Summary of Key Facts
 
 ### Verified Facts
-| Item | Value | Source |
-|------|-------|--------|
-| Pickup type | Electrostatic (capacitive) | Multiple sources |
-| Polarizing voltage | 147V DC (half-wave rectified) | Service manual |
-| R_feed (147V to pickup plate) | 1 MΩ (RESOLVED) | RESOLVED Feb 2026 — component 56 in HV filter chain. Avenson's "499K" is their replacement design. |
-| R-2 (TR-1 base bias to +15V) | 2 MΩ | RESOLVED (Feb 2026) — schematic reads "1 MEG" but GroupDIY "380K" impedance (=2M‖470K) and DC analysis confirm 2M. See preamp-circuit.md Note 1. |
-| R-3 (TR-1 base bias to GND) | 470 kΩ | Schematic |
-| R-2 ‖ R-3 (TR-1 base impedance) | 380 kΩ | Parallel combination of 2M and 470K |
-| .022 uF coupling cap | AC couples pickup plate to TR-1 base | Schematic |
-| C20 (shunt cap at TR-1 base) | 220 pF (RESOLVED) | RESOLVED Feb 2026 — confirmed from schematic at 1500 DPI. GroupDIY's 270 pF likely tolerance variation. |
-| Total system capacitance | ~240 pF (measured at pickup plate) | GroupDIY |
-| Pickup construction | Single comb plate, U-channel slots | Multiple sources |
-| Reed slot widths | 0.114" (treble) to 0.172" (bass) | EP-Forum |
-| Signal summing | All reeds sum at pickup plate (mono) | Circuit topology |
-| 200A preamp transistors | 2N5089 (originally 2N2924) | Service manual |
+| Item | Value |
+|------|-------|
+| Pickup type | Electrostatic (capacitive) |
+| Polarizing voltage | 147V DC (half-wave rectified) |
+| R_feed (147V to pickup plate) | 1 MΩ (component 56 in HV filter chain) |
+| R-2 (TR-1 base bias to +15V) | 2 MΩ (schematic reads "1 MEG"; GroupDIY "380K" impedance = 2M||470K and DC analysis confirm 2M) |
+| R-3 (TR-1 base bias to GND) | 470 kΩ |
+| R-2 || R-3 (TR-1 base impedance) | 380 kΩ |
+| .022 uF coupling cap | AC couples pickup plate to TR-1 base |
+| C20 (shunt cap at TR-1 base) | 220 pF (GroupDIY's 270 pF likely tolerance variation) |
+| Total system capacitance | ~240 pF (measured at pickup plate) |
+| Pickup construction | Single comb plate, U-channel slots |
+| Reed slot widths | 0.114" (treble) to 0.172" (bass) |
+| Signal summing | All reeds sum at pickup plate (mono) |
+| 200A preamp transistors | 2N5089 (originally 2N2924) |
 
 ### Inferred Values
 | Item | Value | Derivation |
@@ -764,13 +709,12 @@ This is consistent with Brad Avenson's measurement of **2-7 mV AC at the volume 
 | Pickup plate active length | ~3-8 mm | Photos, proportional reasoning |
 | U-channel depth | ~2-4 mm | Photos |
 
-### Unverified Claims
-| Item | Claim | Status |
-|------|-------|--------|
-| Vertical gap (reed face to slot bottom) | Not documented | Need direct measurement |
-| Whether 240 pF includes C20 | **No — definitively separate** | 240 pF is at the pickup plate node; C20 (220 pF) is at the TR-1 base node (separated by .022 uF coupling cap). Also 240 - 220 = only 20 pF for 64 reeds + wiring, which is implausibly small. [RESOLVED Feb 2026] |
-| Miessner's asymmetric modulation in 200A | Unknown if preserved in production design | Patent describes it; 200A may differ |
-| Exact signal level at pickup output | Sub-mV to low mV estimated | No direct measurement found |
+### Open Questions
+| Item | Status |
+|------|--------|
+| Vertical gap (reed face to slot bottom) | Not documented; needs direct measurement |
+| Miessner's asymmetric modulation in 200A | Unknown if preserved in production design; patent describes it but 200A may differ |
+| Exact signal level at pickup output | Sub-mV to low mV estimated; no direct measurement found |
 
 ---
 
@@ -936,7 +880,7 @@ For the Wurlitzer: `C_p / (C_0 + C_p) = 237/240 = 0.988`, so the sensitivity red
 
 ---
 
-## Appendix B: Equivalent Circuit — [CORRECTED Feb 2026]
+## Appendix B: Equivalent Circuit
 
 ```
                   R_feed (1M)
@@ -981,10 +925,8 @@ The signal path is:
 6. Signal reaches TR-1 base-emitter junction
 
 **Two distinct circuit nodes:**
-- **Pickup plate** (~147V DC): R_feed (1M) provides DC charging path for the reed bar capacitance. The pickup RC HPF (~2312 Hz) is determined by the 240 pF total system capacitance against R_feed ‖ (R-1 + R-2‖R-3) = 1M ‖ 402K = 287K seen through the coupling cap.
+- **Pickup plate** (~147V DC): R_feed (1M) provides DC charging path for the reed bar capacitance. The pickup RC HPF (~2312 Hz) is determined by the 240 pF total system capacitance against R_feed || (R-1 + R-2||R-3) = 1M || 402K = 287K seen through the coupling cap.
 - **TR-1 base** (~2.45V DC): R-2/R-3 voltage divider sets the bias from +15V. C20 HPF (~1903 Hz) provides bass rolloff. The .022 uF coupling cap isolates the 147V DC on the pickup plate from the 2.45V DC at TR-1 base.
-
-[INFERRED — corrected circuit topology from preamp-circuit.md schematic and component table]
 
 ---
 
@@ -992,7 +934,7 @@ The signal path is:
 
 ### Q1: Is the pickup truly in constant-charge regime at all audio frequencies?
 
-**No.** With f_c = 2312 Hz (see Section 3.7), bass fundamentals (55-260 Hz) are in the constant-voltage regime where signals are heavily attenuated. Mid-register notes (260-1000 Hz) are in the transition zone. Only treble notes above ~2-3 kHz approach constant-charge behavior. Additionally, C20 (220 pF) at TR-1 base provides an independent HPF at ~1903 Hz that creates similar bass rolloff, partially masking the pickup's own RC dynamics.
+**No.** With f_c = 2312 Hz, bass fundamentals (55-260 Hz) are in the constant-voltage regime where signals are heavily attenuated. Mid-register notes (260-1000 Hz) are in the transition zone. Only treble notes above ~2-3 kHz approach constant-charge behavior. C20 (220 pF) at TR-1 base provides an independent HPF at ~1903 Hz that creates similar bass rolloff, partially masking the pickup's own RC dynamics.
 
 ### Q2: What is the actual per-reed capacitance?
 
@@ -1000,7 +942,7 @@ The signal path is:
 
 ### Q3: What is the bias voltage and how is it generated?
 
-**147V DC** from a half-wave rectifier on a dedicated transformer winding, filtered by three 0.33 uF capacitors in an RC chain. Fed to the reed bar pickup plate through a feed resistor (R_feed = 1 MOhm — RESOLVED Feb 2026; Avenson's "499K" refers to their replacement preamp design, not the original 200A value).
+**147V DC** from a half-wave rectifier on a dedicated transformer winding, filtered by three 0.33 uF capacitors in an RC chain. Fed to the reed bar pickup plate through R_feed (1 MOhm). Avenson's "499K" refers to their replacement preamp design, not the original 200A value.
 
 ### Q4: How does the gap vary by register?
 
@@ -1012,7 +954,7 @@ Slot widths vary from 0.172" (bass) to 0.114" (treble), a ratio of **1.51:1**. S
 
 ### Q6: What is the C20 shunt capacitor value and HPF frequency?
 
-C20 = 220 pF (RESOLVED Feb 2026 — confirmed from schematic at 1500 DPI; GroupDIY's 270 pF likely reflects tolerance variation). C20 is at TR-1 base, forming an HPF with R-2‖R-3 = 380 kΩ. f_c = 1/(2π × 380K × 220pF) = 1903 Hz.
+C20 = 220 pF (GroupDIY's 270 pF likely reflects tolerance variation). C20 is at TR-1 base, forming an HPF with R-2||R-3 = 380 kOhm. f_c = 1/(2pi x 380K x 220pF) = 1903 Hz.
 
 ### Q7: Does the pickup introduce harmonic distortion?
 

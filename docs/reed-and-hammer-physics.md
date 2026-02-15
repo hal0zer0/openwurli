@@ -1,11 +1,6 @@
 # Reed and Hammer Physics: Wurlitzer 200/200A
 
-Comprehensive physical reference for AI agent consumption. Every claim is tagged:
-- **[VERIFIED]** = confirmed by multiple independent sources or direct measurement
-- **[SINGLE-SOURCE]** = from one credible source only
-- **[CALCULATED]** = derived from verified data using established physics
-- **[ESTIMATED]** = reasonable inference, not directly measured
-- **[UNVERIFIED]** = plausible but lacks confirmation
+Comprehensive physical reference for AI agent consumption.
 
 ---
 
@@ -13,9 +8,9 @@ Comprehensive physical reference for AI agent consumption. Every claim is tagged
 
 ### 1.1 Material
 
-**[SINGLE-SOURCE]** The reeds are made of spring steel. The exact alloy is not documented in any available Wurlitzer service manual or patent. Replacement reed suppliers (Retro Linear, Vintage Vibe) use blue-tempered spring steel strip, consistent with AISI 1095 or similar high-carbon steel (0.90-1.05% C).
+The reeds are made of spring steel. The exact alloy is not documented in any available Wurlitzer service manual or patent. Replacement reed suppliers (Retro Linear, Vintage Vibe) use blue-tempered spring steel strip, consistent with AISI 1095 or similar high-carbon steel (0.90-1.05% C).
 
-**Material properties for AISI 1095 blue-tempered spring steel [VERIFIED from materials databases]:**
+**Material properties for AISI 1095 blue-tempered spring steel:**
 
 | Property | Value | Unit |
 |----------|-------|------|
@@ -30,7 +25,7 @@ Source: [Euphonics, Section 2.2.7](https://euphonics.org/2-2-7-vibration-damping
 
 ### 1.2 Reed Blank Sizes
 
-**[VERIFIED]** Wurlitzer used 5 reed blanks for the 200/200A series (64 notes, A1-C7, MIDI 33-96). Each blank has a different width, and the upper blanks are ground to taper thickness.
+Wurlitzer used 5 reed blanks for the 200/200A series (64 notes, A1-C7, MIDI 33-96). Each blank has a different width, and the upper blanks are ground to taper thickness.
 
 Sources: [Vintage Vibe Case Study](https://www.vintagevibe.com/blogs/news/wurlitzer-electric-piano-reeds-case-study), [EP-Forum Reed Dimensions](https://ep-forum.com/smf/index.php?topic=8418.0), [DocWurly Reed Compatibility History](https://docwurly.com/wurlitzer-ep-history/wurlitzer-ep-reed-compatibility-history/)
 
@@ -46,7 +41,7 @@ Sources: [Vintage Vibe Case Study](https://www.vintagevibe.com/blogs/news/wurlit
 
 #### 200A Series Modifications (post-1975)
 
-**[VERIFIED]** The 200A increased the thickness of middle and treble reeds:
+The 200A increased the thickness of middle and treble reeds:
 - Middle/Upper-Mid/Treble blanks: 0.026-0.034 inch (vs 0.020-0.031 in 200)
 - Widths remain identical to 200 series
 - Both the head (screw mounting area) and tongue were thicker
@@ -56,7 +51,7 @@ Source: [Vintage Vibe Case Study](https://www.vintagevibe.com/blogs/news/wurlitz
 
 #### Pickup Slot Dimensions (140B, similar geometry to 200)
 
-**[SINGLE-SOURCE]** Measured from a 140B instrument (EP-Forum):
+Measured from a 140B instrument (EP-Forum):
 
 | Reed Range | Slot Width (inch) | Reed Width (inch) | Side Clearance per side (inch) |
 |------------|-------------------|-------------------|-------------------------------|
@@ -69,7 +64,7 @@ Source: [EP-Forum Thread](https://ep-forum.com/smf/index.php?topic=8418.0)
 
 ### 1.3 Reed Lengths (Vibrating Length)
 
-**[SINGLE-SOURCE]** From EP-Forum thread "The formula for lengths of Wurly reeds":
+From EP-Forum thread "The formula for lengths of Wurly reeds":
 
 The vibrating length follows a **two-segment linear scaling** (NOT logarithmic):
 
@@ -100,7 +95,7 @@ Reed 64: 1.000"
 
 Source: [EP-Forum](https://ep-forum.com/smf/index.php?topic=9643.0)
 
-**[CALCULATED] Verification check:** For a uniform cantilever beam, f = (k_n^2 / 2pi) * sqrt(EI / rho*A*L^4). With k_1 = 1.875 for the fundamental, a bare steel reed of L = 75 mm, t = 0.020 inch = 0.508 mm, w = 0.151 inch = 3.84 mm:
+**Verification check:** For a uniform cantilever beam, f = (k_n^2 / 2pi) * sqrt(EI / rho*A*L^4). With k_1 = 1.875 for the fundamental, a bare steel reed of L = 75 mm, t = 0.020 inch = 0.508 mm, w = 0.151 inch = 3.84 mm:
 ```
 I = w*t^3/12 = 3.84e-3 * (0.508e-3)^3 / 12 = 4.19e-14 m^4
 A = w*t = 3.84e-3 * 0.508e-3 = 1.95e-6 m^2
@@ -113,11 +108,11 @@ Bare reed frequency ~75 Hz vs target A1 = 55 Hz. The solder tip mass lowers it b
 
 ### 1.4 Tuning Weights (Solder)
 
-**[VERIFIED]** Fine pitch tuning is accomplished by a "predetermined pyramid of solder" applied to the tip of each reed using a reed mold, then filed smooth.
+Fine pitch tuning is accomplished by a "predetermined pyramid of solder" applied to the tip of each reed using a reed mold, then filed smooth.
 
 Source: [Tropical Fish - How to Tune](https://www.tropicalfishvintage.com/blog/2020/5/7/how-to-tune-a-wurlitzer-electronic-piano-reed), [Sweetwater - Tuning](https://www.sweetwater.com/insync/tuning-wurlitzer-electric-pianos/)
 
-**[ESTIMATED]** No published mass measurements of solder exist. Estimation from geometry:
+No published mass measurements of solder exist. Estimation from geometry:
 
 Solder blob dimensions (typical): ~2-4 mm long, ~reed width, ~1-2 mm tall.
 Solder density (60/40 Sn-Pb): ~8500 kg/m^3.
@@ -137,25 +132,25 @@ Bass reed mass (reed 1, L=75mm, w=3.84mm, t=0.508mm):
 
 ### 1.5 Tuner-Damper System (Miessner Patent)
 
-**[VERIFIED]** US Patent 3,215,765 (Miessner, 1965) describes a critical feature NOT present in the 200/200A but relevant to understanding the design lineage:
+US Patent 3,215,765 (Miessner, 1965) describes a critical feature NOT present in the 200/200A but relevant to understanding the design lineage:
 
 The patent describes a **neoprene/butyl rubber toroidal tuner-damper** clamped around the reed near its fixed end. Key specifications:
 - Mass: approximately 1/3 of the reed mass (including internal metal ring)
 - Position: approximately 1/8 of the reed length from the fixed end
 
-> **IMPORTANT (Feb 2026):** The toroidal tuner-damper described in Miessner patents (US 3,215,765) was NOT implemented in production 200/200A instruments. The 200A uses solder tip mass only for tuning. This damper should NOT be modeled.
+> **IMPORTANT:** The toroidal tuner-damper described in Miessner patents (US 3,215,765) was NOT implemented in production 200/200A instruments. The 200A uses solder tip mass only for tuning. This damper should NOT be modeled.
 
 - Purpose: "integralize" the second-to-first partial ratio to exactly 6:1
 
-**[VERIFIED]** For the 200/200A production instruments, this rubber tuner-damper was NOT used. Instead, tuning is accomplished purely through solder mass at the tip, and the reed is tapered (ground) in upper registers. The 200/200A reeds do NOT have integralized (harmonic) partials -- their overtones follow the natural inharmonic cantilever beam ratios modified by tip mass.
+For the 200/200A production instruments, this rubber tuner-damper was NOT used. Instead, tuning is accomplished purely through solder mass at the tip, and the reed is tapered (ground) in upper registers. The 200/200A reeds do NOT have integralized (harmonic) partials -- their overtones follow the natural inharmonic cantilever beam ratios modified by tip mass.
 
 Source: [US Patent 3,038,363](https://patents.google.com/patent/US3038363), [US Patent 3,215,765](https://patents.google.com/patent/US3215765)
 
-**[VERIFIED]** For the production instruments, Miessner patent 3,038,363 describes the actual system used: reeds with a "visco-elastic tuning-damper" that "harmonically relates vibration partials without significantly increasing damping." However, by the 200-series era, this was simplified to plain solder tuning masses.
+For the production instruments, Miessner patent 3,038,363 describes the actual system used: reeds with a "visco-elastic tuning-damper" that "harmonically relates vibration partials without significantly increasing damping." However, by the 200-series era, this was simplified to plain solder tuning masses.
 
 ### 1.6 Reed Mounting
 
-**[VERIFIED]** Each reed is secured by a single screw through a mounting hole in the reed base. The hole has deliberate play (tolerance) allowing the reed to be shifted forward/backward to fine-tune the vibrating length:
+Each reed is secured by a single screw through a mounting hole in the reed base. The hole has deliberate play (tolerance) allowing the reed to be shifted forward/backward to fine-tune the vibrating length:
 - Forward (away from screw) = longer vibrating length = lower pitch
 - Backward (toward screw) = shorter vibrating length = higher pitch
 
@@ -172,7 +167,7 @@ Source: [Tropical Fish - How to Tune](https://www.tropicalfishvintage.com/blog/2
 
 ### 2.1 Governing Equation
 
-**[VERIFIED]** The transverse vibration of a uniform cantilever beam is governed by:
+The transverse vibration of a uniform cantilever beam is governed by:
 
 ```
 EI * d^4w/dx^4 + rho*A * d^2w/dt^2 = 0
@@ -189,7 +184,7 @@ Source: [Wikipedia: Euler-Bernoulli beam theory](https://en.wikipedia.org/wiki/E
 
 ### 2.2 Boundary Conditions (Clamped-Free)
 
-**[VERIFIED]** For a cantilever (clamped at x=0, free at x=L):
+For a cantilever (clamped at x=0, free at x=L):
 
 At x=0 (clamped):
 ```
@@ -205,7 +200,7 @@ d^3w/dx^3(L,t) = 0  (zero shear force)
 
 ### 2.3 Characteristic Equation (No Tip Mass)
 
-**[VERIFIED]** Separation of variables gives spatial mode shapes:
+Separation of variables gives spatial mode shapes:
 
 ```
 Y_n(x) = C * [cosh(beta_n*x) - cos(beta_n*x)
@@ -244,7 +239,7 @@ f_n / f_1 = (beta_n*L / beta_1*L)^2
 
 ### 2.4 Characteristic Equation WITH Tip Mass
 
-**[VERIFIED]** Adding a point mass M_tip at the free end x=L modifies the free-end boundary conditions. The shear force at x=L must accelerate the tip mass:
+Adding a point mass M_tip at the free end x=L modifies the free-end boundary conditions. The shear force at x=L must accelerate the tip mass:
 
 ```
 At x=L: EI * d^3w/dx^3(L,t) = M_tip * d^2w/dt^2(L,t)
@@ -264,7 +259,7 @@ Source: [Wiley Appendix C: Modal Analysis with Tip Mass](https://onlinelibrary.w
 
 ### 2.5 Eigenvalue Table for Cantilever with Tip Mass
 
-**[CALCULATED]** Numerical solutions of the characteristic equation. Values verified against [Extrica article 16636](https://www.extrica.com/article/16636) and standard references.
+Numerical solutions of the characteristic equation. Values verified against [Extrica article 16636](https://www.extrica.com/article/16636) and standard references.
 
 | mu | lambda_1 | lambda_2 | lambda_3 | lambda_4 | f2/f1 | f3/f1 | f4/f1 |
 |----|----------|----------|----------|----------|-------|-------|-------|
@@ -286,7 +281,7 @@ Source: Numerical solution verified against [Extrica](https://www.extrica.com/ar
 
 ### 2.6 Estimated Tip Mass Ratios for Wurlitzer 200A Reeds
 
-**[CALCULATED]** Using the reed length formula (Section 1.3) and the beam frequency equation, we can estimate the tip mass ratio needed to lower each reed's natural frequency from its bare-beam value to the target pitch.
+Using the reed length formula (Section 1.3) and the beam frequency equation, we can estimate the tip mass ratio needed to lower each reed's natural frequency from its bare-beam value to the target pitch.
 
 Bare beam fundamental: f_bare = (1.8751^2 / (2*pi*L^2)) * sqrt(EI / (rho*A))
 
@@ -308,7 +303,7 @@ Ratio: f_target / f_bare determines the required eigenvalue lambda_1, from which
 
 **The bass reeds need the most solder** (highest mu), and the relationship between mu and register is NOT monotonic -- it depends on the interplay of reed length, thickness, and target pitch. This is a critical distinction from the existing model which assumes a smooth bass-to-treble mu gradient.
 
-**[ESTIMATED] Recommended mode ratios for the model:**
+**Recommended mode ratios for the model:**
 
 Given the estimated mu values:
 
@@ -326,7 +321,7 @@ These are HIGHER than the current model values (6.3/6.8/6.3 for f2/f1). The curr
 
 ### 3.1 Mode Shape Values at Free End (Tip)
 
-**[CALCULATED]** For a uniform cantilever (no tip mass), the mode shapes normalized to unit maximum displacement have these values at the tip (x=L):
+For a uniform cantilever (no tip mass), the mode shapes normalized to unit maximum displacement have these values at the tip (x=L):
 
 | Mode n | phi_n(L) (tip) | Node locations (fraction of L) |
 |--------|---------------|-------------------------------|
@@ -342,7 +337,7 @@ Source: Standard Euler-Bernoulli beam theory; see [Vibrations of Cantilever Beam
 
 ### 3.2 Initial Modal Amplitudes from Velocity Impulse at Tip
 
-**[CALCULATED]** When a hammer imparts a velocity impulse to the reed at the free end (x=L), the initial modal amplitudes are determined by the modal expansion of the initial conditions.
+When a hammer imparts a velocity impulse to the reed at the free end (x=L), the initial modal amplitudes are determined by the modal expansion of the initial conditions.
 
 For an impulse force F(t) = J*delta(t) applied at x=L (where J = impulse = integral of force over time, in N*s):
 
@@ -379,13 +374,13 @@ A_n / A_1 = omega_1 / omega_n = f_1 / f_n = 1 / (f_n/f_1)
 
 **This is the 1/omega_n scaling** referenced in the existing documentation. For the fundamental mode, the amplitude is 6x larger than mode 2, 18x larger than mode 3, etc. This produces a signal strongly dominated by the fundamental with small but audible upper mode content.
 
-**[VERIFIED]** This scaling is consistent with the observation from multiple sources that "only the first few modes of vibration have significantly large values, and the higher order vibration modes can be ignored" for struck cantilever beams.
+This scaling is consistent with the observation from multiple sources that "only the first few modes of vibration have significantly large values, and the higher order vibration modes can be ignored" for struck cantilever beams.
 
 Source: [MEMS 431 Lab](https://classes.engineering.wustl.edu/mems431_lab/lab6.html), modal analysis theory
 
 ### 3.3 Effect of Tip Mass on Modal Participation
 
-**[CALCULATED]** When a tip mass is present (as with the solder weight), the mode shapes are modified. The tip mass:
+When a tip mass is present (as with the solder weight), the mode shapes are modified. The tip mass:
 1. Concentrates more of the effective mass at the tip
 2. Reduces the tip displacement for higher modes relative to mode 1
 3. Results in even FASTER rolloff of initial amplitudes for higher modes
@@ -414,7 +409,7 @@ The current model (which already uses approximate 1/omega scaling after the R41 
 
 ### 4.1 Hammer Construction
 
-**[VERIFIED]** Wurlitzer 200/200A uses a simplified piano-style action:
+Wurlitzer 200/200A uses a simplified piano-style action:
 - Wooden hammer body
 - Felt tip (covering the striking surface)
 - Conventional key mechanism adapted for reed striking (not string striking)
@@ -422,11 +417,11 @@ The current model (which already uses approximate 1/omega scaling after the R41 
 
 Source: [Tropical Fish - How Does a Wurlitzer Work](https://www.tropicalfishvintage.com/blog/2019/5/27/how-does-a-wurlitzer-electronic-piano-work), [US Patent 3,038,363](https://patents.google.com/patent/US3038363)
 
-**[VERIFIED]** From Miessner patent 3,038,363: The hammer head "strikes the tuning damper with impact energy that sets reeds into free vibration following removal of the damper constraint." The hammer contact is brief -- "for a brief instant only."
+From Miessner patent 3,038,363: The hammer head "strikes the tuning damper with impact energy that sets reeds into free vibration following removal of the damper constraint." The hammer contact is brief -- "for a brief instant only."
 
 ### 4.2 Contact Duration (Dwell Time)
 
-**[VERIFIED from piano literature, ESTIMATED for Wurlitzer]** No direct measurements of Wurlitzer hammer-reed contact duration exist in the literature. However, piano hammer-string contact durations provide a well-studied analog:
+No direct measurements of Wurlitzer hammer-reed contact duration exist in the literature. However, piano hammer-string contact durations provide a well-studied analog:
 
 **Piano hammer contact durations (Askenfelt & Jansson):**
 
@@ -442,7 +437,7 @@ Source: [Askenfelt & Jansson](https://www.speech.kth.se/music/5_lectures/askenfl
 
 Source: [Askenfelt & Jansson](https://www.speech.kth.se/music/5_lectures/askenflt/stricont.html)
 
-**[ESTIMATED] Wurlitzer adaptation:**
+**Wurlitzer adaptation:**
 
 The Wurlitzer hammer strikes a steel cantilever reed, not a tensioned string. The reed's impedance is much higher than a string's (stiff beam vs flexible string). This likely results in:
 - **Shorter contact times** than piano (stiffer target = faster rebound)
@@ -467,7 +462,7 @@ This is reasonable but may overestimate the pp contact time for a stiff reed tar
 
 #### 4.3.1 What the Research Shows
 
-**[VERIFIED]** Piano hammer felt is a **nonlinear hardening spring**. The force-compression relationship follows:
+Piano hammer felt is a **nonlinear hardening spring**. The force-compression relationship follows:
 
 ```
 F = K * x^p
@@ -478,14 +473,14 @@ where:
 - x = felt compression
 - p = nonlinearity exponent
 
-**Measured p values [VERIFIED]:**
+**Measured p values:**
 - Hammers from pianos: p = 2.2 to 3.5
 - Unused hammers: p = 1.5 to 2.8
 - Musical sweet spot: p = 2 to 3
 
 Source: [D. Russell - Piano Hammer as Nonlinear Spring](https://www.acs.psu.edu/drussell/piano/nonlinearhammer.html), Hall & Askenfelt measurements
 
-**[VERIFIED]** The measured force-time pulse is NOT a half-sine. It is **asymmetric** -- the compression phase is faster than the release phase due to hysteresis (felt does not rebound as quickly as it compresses). The actual shape lies between:
+The measured force-time pulse is NOT a half-sine. It is **asymmetric** -- the compression phase is faster than the release phase due to hysteresis (felt does not rebound as quickly as it compresses). The actual shape lies between:
 
 1. Half-sine: F(t) = F_max * sin(pi*t/T), symmetric
 2. Skewed pulse: steeper rise, slower decay
@@ -493,7 +488,7 @@ Source: [D. Russell - Piano Hammer as Nonlinear Spring](https://www.acs.psu.edu/
 
 Source: [D. Russell](https://www.acs.psu.edu/drussell/piano/nonlinearhammer.html)
 
-**[VERIFIED]** Researchers (Hall, Askenfelt) attempted to fit the force pulse to:
+Researchers (Hall, Askenfelt) attempted to fit the force pulse to:
 - (a) half-cycle sine
 - (b) sine-squared
 - (c) product of sine-squared and exponential
@@ -502,7 +497,7 @@ None of these perfectly match the measured data, though a skewed sine or asymmet
 
 #### 4.3.2 Spectral Envelope of Different Force Profiles
 
-**[CALCULATED]** The spectral characteristics of different pulse shapes:
+The spectral characteristics of different pulse shapes:
 
 **Rectangular pulse (current sinc model -- WRONG for felt hammer):**
 ```
@@ -545,7 +540,7 @@ For sigma_normalized = 2.5 (current model, kDwellSigmaSq = 2.5^2):
 
 #### 4.3.3 Comparison at Typical Dwell Time
 
-**[CALCULATED]** For T_dwell = 1.5 ms (mf) and fundamental = 262 Hz (C4):
+For T_dwell = 1.5 ms (mf) and fundamental = 262 Hz (C4):
 
 | Mode | f (Hz) | f*T | Sinc atten. (dB) | Half-sine atten. (dB) | Gaussian(sigma=2.5) atten. (dB) | Gaussian(sigma=5.0) atten. (dB) |
 |------|--------|-----|------------------|-----------------------|--------------------------------|-------------------------------|
@@ -556,13 +551,11 @@ For sigma_normalized = 2.5 (current model, kDwellSigmaSq = 2.5^2):
 
 *Note: All values are relative to mode 1 (after normalization to fundamental).*
 
-> **Correction (Feb 2026):** Gaussian(sigma=2.5) column recalculated. Previous values (-7.0, -53.6, -200+) used incorrect sigma. Correct values from exp(-x²/(2×2.5²)) are shown in bold. The sigma=2.5 filter is still extremely aggressive: mode 3 at -33 dB and mode 4 effectively zero.
+> **Note:** Gaussian(sigma=2.5) values from exp(-x²/(2×2.5²)). The sigma=2.5 filter is extremely aggressive: mode 3 at -33 dB and mode 4 effectively zero.
 
 **FINDING:** The current Gaussian model (sigma=2.5) is FAR too aggressive for modes 3+. A half-sine model or a wider Gaussian (sigma=5.0 or higher) would better match the physics of felt hammer contact.
 
 #### 4.3.4 Recommendation for Hammer Force Model
-
-**[ESTIMATED, based on synthesis of all research]**
 
 The best model for a felt-tipped wooden hammer striking a steel reed is a **half-sine pulse** or a **wide Gaussian** (sigma >= 5.0 in f*T units).
 
@@ -593,13 +586,13 @@ Source: [Euphonics 12.2](https://euphonics.org/11-2-hitting-strings-the-piano-an
 
 ### 4.4 Striking Position
 
-**[ESTIMATED]** The hammer strikes the reed near but not at the very tip. The exact striking position affects which modes are excited:
+The hammer strikes the reed near but not at the very tip. The exact striking position affects which modes are excited:
 
 - Striking at a mode's antinode maximally excites that mode
 - Striking at a mode's node produces zero excitation of that mode
 - For a cantilever, ALL modes have their maximum at the tip
 
-**[ESTIMATED]** The hammer likely strikes at approximately 80-95% of the reed's vibrating length from the clamped end (i.e., near the tip). This would slightly reduce higher mode excitation compared to a tip impulse, because higher modes have their LAST antinode slightly inward from the tip.
+The hammer likely strikes at approximately 80-95% of the reed's vibrating length from the clamped end (i.e., near the tip). This would slightly reduce higher mode excitation compared to a tip impulse, because higher modes have their LAST antinode slightly inward from the tip.
 
 The effect of striking position x_h on initial amplitude of mode n:
 ```
@@ -620,7 +613,7 @@ For x_h = 0.9*L (90% position):
 
 ### 5.1 Overview of Damping Sources
 
-**[VERIFIED]** Three primary loss mechanisms in vibrating steel bars/reeds:
+Three primary loss mechanisms in vibrating steel bars/reeds:
 
 1. **Internal (material) damping** -- energy dissipated within the steel crystal structure
 2. **Air damping (radiation losses)** -- energy radiated as sound + viscous air resistance
@@ -630,12 +623,12 @@ Source: [Euphonics 2.2.7](https://euphonics.org/2-2-7-vibration-damping/), [COMS
 
 ### 5.2 Internal (Material) Damping
 
-**[VERIFIED]** For hardened carbon steel at audio frequencies:
+For hardened carbon steel at audio frequencies:
 - Damping ratio: zeta ~ 1e-4 to 5e-4
 - Quality factor: Q = 1/(2*zeta) ~ 1000 to 5000
 - Loss factor: eta = 2*zeta ~ 2e-4 to 1e-3
 
-**[VERIFIED]** Steel's internal loss factor is approximately CONSTANT over frequency in the audio range. This means Q is roughly constant across modes.
+Steel's internal loss factor is approximately CONSTANT over frequency in the audio range. This means Q is roughly constant across modes.
 
 Source: [Euphonics 2.2.7](https://euphonics.org/2-2-7-vibration-damping/), [COMSOL](https://www.comsol.com/blogs/damping-in-structural-dynamics-theory-and-sources)
 
@@ -667,21 +660,21 @@ However, pure 1/ratio scaling may be too aggressive -- mounting losses can parti
 
 ### 5.3 Air Damping (Radiation Losses)
 
-**[VERIFIED]** For thin vibrating bars, air resistance acts as a combination of:
+For thin vibrating bars, air resistance acts as a combination of:
 - **Viscous drag**: proportional to velocity (contributes to damping)
 - **Acoustic radiation**: proportional to velocity times radiation impedance
 
 For a narrow reed (width << wavelength at all audio frequencies), radiation efficiency is very low. The reed is a poor radiator -- you can barely hear a Wurlitzer reed unplugged. Air damping is dominated by viscous drag, not acoustic radiation.
 
-**[ESTIMATED]** Air damping contributes a loss factor of approximately eta_air ~ 1e-4 to 5e-4, comparable to internal damping for the fundamental but less significant for higher modes (which have smaller displacement amplitudes).
+Air damping contributes a loss factor of approximately eta_air ~ 1e-4 to 5e-4, comparable to internal damping for the fundamental but less significant for higher modes (which have smaller displacement amplitudes).
 
 ### 5.4 Mounting (Support) Losses
 
-**[VERIFIED]** Energy is lost at the clamped end through elastic waves propagating into the mounting structure. This is the dominant loss mechanism for many clamped-free structures.
+Energy is lost at the clamped end through elastic waves propagating into the mounting structure. This is the dominant loss mechanism for many clamped-free structures.
 
-**[VERIFIED]** In bar percussion instruments (vibraphone, glockenspiel), the bars are supported at the nodal points of mode 1, which minimizes fundamental losses but increases higher-mode losses. For a CLAMPED bar (as in the Wurlitzer), the clamp is at a point of maximum curvature for ALL modes, so mounting losses affect all modes.
+In bar percussion instruments (vibraphone, glockenspiel), the bars are supported at the nodal points of mode 1, which minimizes fundamental losses but increases higher-mode losses. For a CLAMPED bar (as in the Wurlitzer), the clamp is at a point of maximum curvature for ALL modes, so mounting losses affect all modes.
 
-**[ESTIMATED]** Mounting losses for a screw-clamped reed:
+Mounting losses for a screw-clamped reed:
 - Strongly dependent on clamping torque and contact area
 - Typically add zeta_mount ~ 1e-4 to 1e-3 to the overall damping ratio
 - Roughly frequency-independent (affects all modes similarly as an additive loss)
@@ -690,7 +683,7 @@ Source: [CCRMA Percussion](https://ccrma.stanford.edu/CCRMA/Courses/152/percussi
 
 ### 5.5 Thermoelastic Damping
 
-**[VERIFIED]** When a beam vibrates in bending, the compressed side heats up and the stretched side cools down. Heat flows irreversibly between them, dissipating energy. This is thermoelastic damping (Zener damping).
+When a beam vibrates in bending, the compressed side heats up and the stretched side cools down. Heat flows irreversibly between them, dissipating energy. This is thermoelastic damping (Zener damping).
 
 For a beam of thickness t, the thermoelastic relaxation frequency is:
 ```
@@ -716,18 +709,18 @@ Q_TE^{-1} ~ (210e9 * (12e-6)^2 * 300) / (7850 * 480) * 1000/75400
 Q_TE ~ 8300
 ```
 
-**[CALCULATED]** Thermoelastic Q ~ 8000-10000 for Wurlitzer reeds at audio frequencies. This is the same order as internal friction Q, confirming that thermoelastic damping is a SIGNIFICANT contributor to the total loss.
+Thermoelastic Q ~ 8000-10000 for Wurlitzer reeds at audio frequencies. This is the same order as internal friction Q, confirming that thermoelastic damping is a SIGNIFICANT contributor to the total loss.
 
 For higher modes (higher frequency), thermoelastic Q actually IMPROVES (because f << f_Zener, the loss scales as f/f_Zener). This partially compensates the 1/Q decay rate increase and could explain why higher modes don't decay as fast as pure constant-Q would predict.
 
 ### 5.6 Combined Damping Model
 
-**[CALCULATED]** Total damping for mode n:
+Total damping for mode n:
 ```
 1/Q_total = 1/Q_internal + 1/Q_thermoelastic + 1/Q_air + 1/Q_mounting
 ```
 
-**[ESTIMATED]** Practical values for Wurlitzer reeds:
+Practical values for Wurlitzer reeds:
 
 | Component | Q (fundamental) | Frequency dependence |
 |-----------|----------------|---------------------|
@@ -753,7 +746,7 @@ T_60 = 2.2 * 2000 / 262 = 16.8 seconds  →  decay rate = 60/16.8 = 3.6 dB/s
 
 ### 5.7 Calibration Data: Measured Decay Rates
 
-**[VERIFIED]** From OldBassMan 200A recordings:
+From OldBassMan 200A recordings:
 
 | MIDI | Note | f_1 (Hz) | Decay (dB/s) | Implied Q | Implied T_60 (s) |
 |------|------|----------|-------------|-----------|-------------------|
@@ -770,18 +763,18 @@ T_60 = 2.2 * 2000 / 262 = 16.8 seconds  →  decay rate = 60/16.8 = 3.6 dB/s
 | 94 | Bb6 | 1865 | 34.0 | 1497 | 1.8 |
 | 98 | D7 | 2349 | 22.3 | 2874 | 2.7 |
 
-> **Correction (Feb 2026):** Q values recalculated using Q = pi * f * 8.686 / decay_dB. Previous values were systematically 1.245x too low due to a unit conversion error.
+> **Note:** Q = pi * f * 8.686 / decay_dB.
 
 Source: [Calibration Data](../reference/calibration-data.md)
 
 **Observations:**
-1. Q ranges from ~1025 to ~2874 across the keyboard. [VERIFIED — OldBassMan 200A recordings, Q values corrected Feb 2026]
+1. Q ranges from ~1025 to ~2874 across the keyboard.
 2. There is no clean frequency dependence -- Q fluctuates note-to-note
 3. The scatter suggests per-note variation (solder mass, mounting tightness, reed condition)
 4. An exponential fit to decay rate: `decay = 0.26 * exp(0.049 * MIDI)` captures the trend
-5. Geometric mean Q ~ 1636. [CORRECTED Feb 2026 — previous value of ~1100 had unit conversion error]
+5. Geometric mean Q ~ 1636.
 
-**[CALCULATED]** If we model Q as constant at ~1636 (geometric mean from OldBassMan measurements):
+If we model Q as constant at ~1636 (geometric mean from OldBassMan measurements):
 ```
 decay_rate_nepers = pi * f / Q
 decay_rate_dB = 8.686 * pi * f / Q
@@ -797,14 +790,14 @@ The constant-Q model (Q~1636) matches measured data within about +/-40%. This is
 
 ### 5.8 Mode-Dependent Decay
 
-**[CALCULATED]** For higher modes with constant Q:
+For higher modes with constant Q:
 ```
 decay_rate_mode_n = pi * f_n / Q = (f_n/f_1) * pi * f_1 / Q
 ```
 
 Mode 2 (f2/f1 ~ 6.3) decays 6.3x faster than mode 1.
 
-**[CALCULATED]** Recommended decay scale (fraction of fundamental decay time, i.e., T_mode_n / T_mode_1):
+Recommended decay scale (fraction of fundamental decay time, i.e., T_mode_n / T_mode_1):
 
 For constant Q: `decay_scale[n] = f_1 / f_n = 1 / mode_ratio[n]`
 
@@ -822,7 +815,7 @@ The "recommended" column adds a floor from mounting losses (modes can't decay in
 
 **Comparison with current model [1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]:** Current model is 2-4x too slow for modes 2-4. The recommended values would produce significantly faster upper mode decay, which should help with the "decay too slow" issue.
 
-> **Modeling concern (Feb 2026):** The current model's decay_scale values may be 3-6x too slow for upper modes. For constant Q, decay rate scales linearly with frequency: T_mode_n / T_mode_1 = f_1 / f_n. Current values (mode 2: 0.55, mode 3: 0.30, mode 4: 0.18) are significantly slower than the physically correct values (mode 2: ~0.20, mode 3: ~0.08, mode 4: ~0.05). Faster upper-mode decay produces the characteristic "bright attack darkening to sine-like tail" timbre. Evaluate during implementation.
+> **Modeling concern:** The current model's decay_scale values may be 3-6x too slow for upper modes. For constant Q, decay rate scales linearly with frequency: T_mode_n / T_mode_1 = f_1 / f_n. Current values (mode 2: 0.55, mode 3: 0.30, mode 4: 0.18) are significantly slower than the physically correct values (mode 2: ~0.20, mode 3: ~0.08, mode 4: ~0.05). Faster upper-mode decay produces the characteristic "bright attack darkening to sine-like tail" timbre. Evaluate during implementation.
 
 ---
 
@@ -830,18 +823,18 @@ The "recommended" column adds a floor from mounting losses (modes can't decay in
 
 ### 6.1 Plane of Vibration
 
-**[ESTIMATED]** The reed vibrates primarily in a SINGLE plane (perpendicular to the reed's flat surface), for the following reasons:
+The reed vibrates primarily in a SINGLE plane (perpendicular to the reed's flat surface), for the following reasons:
 - Rectangular cross-section: second moment of area is much larger for in-plane bending (I_y = t*w^3/12) than for out-of-plane bending (I_z = w*t^3/12). Since w >> t for all reeds, the out-of-plane bending frequency is much lower.
 - The hammer strikes from one direction (below), exciting primarily the out-of-plane bending modes.
 - The pickup measures displacement in one direction (perpendicular to the reed bar face).
 
-**[ESTIMATED]** Lateral (in-plane) vibrations may exist at much higher frequencies (f_lateral ~ (w/t)^2 * f_fundamental for mode 1), but these are not coupled to the pickup and are acoustically irrelevant.
+Lateral (in-plane) vibrations may exist at much higher frequencies (f_lateral ~ (w/t)^2 * f_fundamental for mode 1), but these are not coupled to the pickup and are acoustically irrelevant.
 
 For bass reeds: w/t ~ 3.84/0.508 ~ 7.6, so f_lateral_1 ~ 57 * f_fundamental. This is well above audio range for bass notes but could be audible for treble notes.
 
 ### 6.2 Observability of Inharmonic Modes
 
-**[VERIFIED]** The existing documentation correctly notes that reed mode frequencies are NOT directly observable as spectral peaks in the Wurlitzer output. All prominent spectral peaks fall on exact harmonics of the fundamental (integer multiples of f_0).
+The existing documentation correctly notes that reed mode frequencies are NOT directly observable as spectral peaks in the Wurlitzer output. All prominent spectral peaks fall on exact harmonics of the fundamental (integer multiples of f_0).
 
 **Why:** The pickup responds to total reed displacement, which is dominated by the fundamental. The preamp's nonlinearity (exponential, generating harmonics) operates on this fundamental-dominated signal, producing even harmonics (2*f_0, 4*f_0...) from the asymmetric distortion. The inharmonic reed modes (at 6.3*f_0, 17.5*f_0, etc.) are:
 1. Much weaker than the fundamental (1/omega scaling: -16 dB for mode 2)
@@ -852,13 +845,13 @@ The inharmonic modes are primarily audible during the first 5-20 ms of the attac
 
 ### 6.3 Nonlinear Effects
 
-**[ESTIMATED]** At ff dynamics, the reed displacement approaches the pickup gap distance. For very large amplitudes (reed approaching the pickup plate), geometric nonlinearity in the cantilever equation becomes significant:
+At ff dynamics, the reed displacement approaches the pickup gap distance. For very large amplitudes (reed approaching the pickup plate), geometric nonlinearity in the cantilever equation becomes significant:
 - The beam equation assumes small deflections (dw/dx << 1)
 - For bass reeds with large excursion, dw/dx at the tip can reach 0.1-0.3 radians
 - This introduces a hardening effect (frequency increases slightly with amplitude)
 - The frequency shift is small (<1% for typical amplitudes) and perceptually negligible
 
-**[VERIFIED]** The dominant nonlinearity in the Wurlitzer is the preamp, not the reed vibration itself. The reed behaves as a linear oscillator to excellent approximation.
+The dominant nonlinearity in the Wurlitzer is the preamp, not the reed vibration itself. The reed behaves as a linear oscillator to excellent approximation.
 
 ---
 
@@ -904,7 +897,7 @@ The current 1/omega-like scaling (bass modes: 0.35, 0.10, 0.030...) is within 2x
 
 **STATUS: Correctly disabled artificial overshoot (R41). Natural overshoot from modal superposition is the right approach.**
 
-**[CALCULATED]** Expected natural overshoot from modal superposition:
+Expected natural overshoot from modal superposition:
 
 At t=0, all modes are in-phase (or near-phase). The initial peak amplitude is:
 ```

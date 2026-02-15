@@ -1,7 +1,5 @@
 # Wurlitzer 200A Output Stage: Power Amplifier, Tremolo, and Speaker/Cabinet
 
-Comprehensive technical reference for implementing a digital model of the Wurlitzer 200A output stages. Covers the signal path from preamp output through to the speaker, with verified component values, circuit analysis, and modeling recommendations.
-
 ---
 
 ## Table of Contents
@@ -13,14 +11,13 @@ Comprehensive technical reference for implementing a digital model of the Wurlit
 5. [Speaker and Cabinet](#5-speaker-and-cabinet)
 6. [Auxiliary and Headphone Outputs](#6-auxiliary-and-headphone-outputs)
 7. [Modeling Recommendations](#7-modeling-recommendations)
-8. [Key Corrections to Previous Documentation](#8-key-corrections-to-previous-documentation)
-9. [Sources](#9-sources)
+8. [Sources](#8-sources)
 
 ---
 
 ## 1. Signal Flow Overview
 
-### VERIFIED Signal Path (from service manual)
+### Signal Path
 
 ```
 Reed Pickup
@@ -34,21 +31,17 @@ Reed Pickup
      -> Bias control (TR-9, Vbe multiplier)
      -> Complementary drivers (TR-10 NPN, TR-12 PNP)
      -> Quasi-complementary output (TR-13 NPN / TIP35C, TR-11 PNP / TIP36C)
-  -> Speaker (two 16-ohm 4"x8" oval drivers in parallel = 8 ohm load; RESOLVED Feb 2026 — see Section 5.1)
+  -> Speaker (two 16-ohm 4"x8" oval drivers in parallel = 8 ohm load)
   -> Headphone jack (switching, parallel with speaker, 8-ohm load resistor)
 ```
 
-### CRITICAL CORRECTION: Tremolo Position and Feedback Topology
-
-**Previous project documentation stated the tremolo was a "shunt-to-ground" signal divider placed AFTER the preamp.** This is WRONG for the 200A.
+### Tremolo Position and Feedback Topology
 
 The Wurlitzer 200A service manual explicitly states:
 
 > "The reed bar signal is modulated by inserting the vibrato voltage into the feedback loop of the high impedance preamp. A divider is formed by the feedback resistor R-10, and the light dependent resistor of LG-1. The L.D.R., in conjunction with the light emitting diode in the same package, creates a variable leg in the feedback divider and makes possible amplitude modulation of the reed bar voltage."
 
-**TOPOLOGY (CORRECTED Feb 2026):** R-10 (56K) feeds back from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD coupling cap) AC-couples fb_junct to TR-1's **emitter**. This is **series-series (emitter) NEGATIVE feedback**. Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO pot → 18K → LG-1 LED. When the LDR resistance changes, it diverts feedback current away from the emitter, modulating the preamp's closed-loop gain.
-
-**Note:** An earlier correction (also Feb 2026) placed R-10 at node_A (the input summing junction), forming shunt-feedback. **This was also wrong** — it was based on the incorrect schematic (200/203 models). The correct 200A topology was traced from the 200A schematic (874 KB PDF) at 1000-2000 DPI with user annotation and confirmed stable in SPICE (spice/testbench/preamp_emitter_fb.cir).
+R-10 (56K) feeds back from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD coupling cap) AC-couples fb_junct to TR-1's **emitter**. This is **series-series (emitter) NEGATIVE feedback**. Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO pot → 18K → LG-1 LED. When the LDR resistance changes, it diverts feedback current away from the emitter, modulating the preamp's closed-loop gain.
 
 **Implications for modeling:**
 - Tremolo modulates preamp GAIN via emitter feedback, which means the distortion character changes with the tremolo cycle
@@ -56,19 +49,15 @@ The Wurlitzer 200A service manual explicitly states:
 - At the low-gain phase (LDR resistance high / LED off, full feedback reaches emitter via Ce1), the preamp has lower gain and operates more linearly
 - This is more complex than simple amplitude modulation and produces subtle timbral variation during the tremolo cycle
 
-**Confidence level:** HIGH. Topology traced directly from correct 200A schematic at high resolution. SPICE simulation confirms circuit is stable with emitter feedback and oscillates with the old node_A feedback topology.
-
 ---
 
 ## 2. Tremolo (Vibrato) Circuit
 
 ### 2.1 Oscillator
 
-**VERIFIED from schematic + SPICE simulation (Feb 2026):**
+The oscillator is a **twin-T (parallel-T) oscillator**. The twin-T network forms a notch filter in the negative feedback path of TR-3. At the notch frequency, feedback is minimized and loop gain peaks, satisfying the Barkhausen criterion.
 
-The oscillator is a **twin-T (parallel-T) oscillator**, NOT a phase-shift oscillator as previously documented. The twin-T network forms a notch filter in the negative feedback path of TR-3. At the notch frequency, feedback is minimized and loop gain peaks, satisfying the Barkhausen criterion.
-
-**Topology (verified from schematic screenshots + SPICE Feb 2026):**
+**Topology:**
 - TR-3 and TR-4 share a **common collector node** (Node G)
 - R17 (4.7K) from Vcc to Node G: sole collector load for both transistors
 - R15 (680K) from base3 to **ground** (pull-down bias, NOT pull-up to Vcc)
@@ -83,9 +72,9 @@ The oscillator is a **twin-T (parallel-T) oscillator**, NOT a phase-shift oscill
 - C_shunt/C_series = 0.12/0.12 = 1.0 (standard = 2.0)
 - This produces a shallow notch (~-23.5 dB) rather than a deep null
 
-**Oscillation frequency:** ~5.6 Hz (SPICE-measured). Service manual: ~6 Hz. Measured instruments: 5.3-7 Hz.
+**Oscillation frequency:** ~5.6 Hz (SPICE). Service manual: ~6 Hz. Measured instruments: 5.3-7 Hz.
 
-**DC operating points (SPICE-validated):**
+**DC operating points:**
 
 | Node | Schematic | SPICE | Match |
 |------|-----------|-------|-------|
@@ -95,7 +84,7 @@ The oscillator is a **twin-T (parallel-T) oscillator**, NOT a phase-shift oscill
 
 Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vcc. In the real circuit, the LG-1 LED in series adds ~1.5V forward drop, reducing effective Vcc and raising the quiescent collector point.
 
-**Output swing:** 11.8 Vpp (SPICE, target ~11.5 Vpp). Near rail-to-rail.
+**Output swing:** 11.8 Vpp (target ~11.5 Vpp). Near rail-to-rail.
 
 **Waveform:** Mildly distorted sinusoidal, estimated THD 3-10%.
 
@@ -105,8 +94,7 @@ Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vc
 
 ### 2.2 LDR/Optocoupler (LG-1)
 
-**VERIFIED:**
-- Component designation: LG-1, Wurlitzer part #142312 (LED/LDR opto-isolator) [VERIFIED -- schematic]. Modern replacement: VTL5C3.
+- Component designation: LG-1, Wurlitzer part #142312 (LED/LDR opto-isolator). Modern replacement: VTL5C3.
 - Package: LED + CdS LDR in lightproof enclosure ("lightproof black box")
 - Original part: manufacturer-specific, now commonly replaced with VTL5C3
 - Replacement with VTL5C3 confirmed to work well by repair community
@@ -121,15 +109,13 @@ Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vc
 | Typical R_on | ~50 ohm | ~50 ohm | ~40 ohm |
 | R_off (dark) | 1.3M-10M | 1.3M-10M | Several megohms |
 
-**VERIFIED behavior:** CdS devices exhibit strongly asymmetric time constants (fast on, slow off). This produces the characteristic "choppy" tremolo quality of the 200A.
+CdS devices exhibit strongly asymmetric time constants (fast on, slow off). This produces the characteristic "choppy" tremolo quality of the 200A.
 
 **CdS nonlinearity:** Resistance follows power law R ~ L^(-gamma), where gamma is approximately 0.7-0.9. This means the relationship between LED drive current and resulting signal attenuation is nonlinear.
 
 ### 2.3 Feedback Divider Operation
 
-**CORRECTED Feb 2026 — Emitter Feedback Topology:**
-
-R-10 (56K) feeds from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter — series-series negative feedback. The LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO pot → 18K → LG-1. The LDR path diverts feedback current away from the emitter.
+R-10 (56K) feeds from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter -- series-series negative feedback. The LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO pot → 18K → LG-1. The LDR path diverts feedback current away from the emitter.
 
 - When LDR resistance is LOW (LED on/bright): fb_junct is shunted to ground → feedback cannot reach emitter → emitter AC-grounded via Ce1 → **HIGHER** preamp gain
 - When LDR resistance is HIGH (LED off/dim): full feedback reaches emitter via Ce1 → strong emitter degeneration → **LOWER** preamp gain
@@ -138,7 +124,7 @@ R-10 (56K) feeds from the preamp output to a feedback junction (fb_junct). Ce1 (
 
 This is consistent with the EP-Forum "6 dB gain boost" measurement — tremolo boosts average gain above the no-tremolo baseline because the LDR periodically weakens emitter feedback.
 
-**Gain modulation depth (SPICE-measured Feb 2026, corrected emitter feedback topology):**
+**Gain modulation depth:**
 - Without vibrato (LDR dark, Rldr_path ≈ 1M): gain = **6.0 dB (2.0x)**
 - With vibrato at maximum depth, bright phase (Rldr_path ≈ 19K): gain = **12.1 dB (4.0x)**
 - **Modulation range: 6.1 dB** — matches EP-Forum "6 dB gain boost" measurement exactly
@@ -165,14 +151,12 @@ This is consistent with the EP-Forum "6 dB gain boost" measurement — tremolo b
 
 ## 3. Volume Control
 
-### VERIFIED
-
-| Parameter | Value | Source |
-|-----------|-------|--------|
-| Potentiometer value | 3K ohm | Multiple vendor sources (RetroLinear, Vintage Vibe) |
-| Taper | Audio (logarithmic) | Vendor specification |
-| Position in signal chain | After preamp output, before power amp input | Service manual signal flow |
-| Preamp output level | 2-7 mV AC (Brad Avenson measurement) | GroupDIY |
+| Parameter | Value |
+|-----------|-------|
+| Potentiometer value | 3K ohm |
+| Taper | Audio (logarithmic) |
+| Position in signal chain | After preamp output, before power amp input |
+| Preamp output level | 2-7 mV AC (Brad Avenson measurement) |
 
 The 3K audio pot is unusually low impedance for a volume control. This has implications:
 - Very low output impedance to the power amp input
@@ -187,8 +171,6 @@ The 3K audio pot is unusually low impedance for a volume control. This has impli
 
 ### 4.1 Topology Overview
 
-**VERIFIED from service manual:**
-
 The 200A power amplifier is a **quasi-complementary Class AB push-pull** design. The service manual states:
 
 > "The audio output amplifier is of a quasi complementary design. The driver transistors provide the necessary phase inversion for the output transistors. The collector current of the driver transistor becomes the base current of the output transistor. The output transistors which are operated as emitter followers, provide additional current gain."
@@ -199,7 +181,6 @@ The 200A power amplifier is a **quasi-complementary Class AB push-pull** design.
 
 #### Input Stage: Differential Amplifier (TR-7, TR-8)
 
-**VERIFIED:**
 - TR-7 and TR-8 form a long-tailed pair (differential amplifier)
 - Both: 2N5087 (PNP), or 2N3702 in earlier production (Wurlitzer part 142128-1)
 - Must be matched for proper operation
@@ -216,14 +197,12 @@ The negative feedback through R-31 serves three purposes (from service manual):
 
 #### Pre-Driver / VAS Stage (TR-11)
 
-**VERIFIED:**
 - TR-11 receives the differential signal from TR-7's collector
 - Acts as voltage amplifier stage (VAS)
 - Provides the voltage swing needed to drive the output stage
 
 #### Bias Control: Vbe Multiplier (TR-9)
 
-**VERIFIED:**
 - TR-9: MPSA06 (NPN), or MPSA14 in later production (serial #102905+)
 - Functions as a constant-current source / variable voltage reference
 - Generates approximately 1.3V across its terminals (two diode drops)
@@ -237,14 +216,11 @@ From service manual:
 
 #### Driver Stage (TR-10, TR-12)
 
-**VERIFIED:**
 - TR-10: MPSA06 (NPN driver) -- drives NPN output transistor
 - TR-12: MPSA56 (PNP driver) -- drives PNP output transistor
 - The driver transistors provide phase inversion for the quasi-complementary output
 
 #### Output Stage (TR-11/TIP36C, TR-13/TIP35C)
-
-**VERIFIED from service manual and transistor spec sheets:**
 
 | Transistor | Type | Function | Package | Ratings |
 |-----------|------|----------|---------|---------|
@@ -253,7 +229,7 @@ From service manual:
 
 **NOTE on transistor designation:** TR-11 serves double duty in different sources. In some schematic descriptions, TR-11 refers to the pre-driver/VAS stage, and TIP36C is the PNP output. The numbering may vary between schematic revisions. The key fact is: TIP36C (PNP) and TIP35C (NPN) form the complementary output pair.
 
-**Emitter degeneration resistors (VERIFIED):**
+**Emitter degeneration resistors:**
 - R-37: 0.47 ohm (NPN side)
 - R-38: 0.47 ohm (PNP side)
 - Purpose: Current sensing for bias stability; prevent thermal runaway
@@ -261,17 +237,15 @@ From service manual:
 
 ### 4.3 Supply Voltages
 
-| Rail | Service Manual Spec | Measured (typical) | Source |
-|------|--------------------|--------------------|--------|
-| V+ | +22V (nominal) | +24 to +24.5V | GroupDIY measurement |
-| V- | -22V (nominal) | -24 to -24.5V | GroupDIY measurement |
-| Preamp supply | +15V (regulated) | +15V | GroupDIY measurement |
+| Rail | Service Manual Spec | Measured (typical) |
+|------|--------------------|--------------------|
+| V+ | +22V (nominal) | +24 to +24.5V |
+| V- | -22V (nominal) | -24 to -24.5V |
+| Preamp supply | +15V (regulated) | +15V |
 
 **NOTE:** The actual rail voltages are typically 10% higher than the nominal specification (24.5V vs 22V). This is normal for unregulated supplies at light load.
 
 ### 4.4 Bootstrap Capacitor (C-12)
-
-**VERIFIED from service manual:**
 
 > "Capacitor C-12 performs two functions: 1) it acts as a bypass to decouple any power supply ripple from the driver stages, and 2) it is connected as a 'bootstrap' capacitor to provide the drive necessary to pull TR-10 and TR-11 into saturation. The stored voltage of the capacitor (with reference to the output) provides a higher voltage than the normal collector-supply voltage to drive TR-10 and TR-11."
 
@@ -279,7 +253,7 @@ The bootstrap capacitor is standard practice in quasi-complementary designs. It 
 
 ### 4.5 Complete Power Amp Component Summary
 
-#### Transistors (VERIFIED)
+#### Transistors
 
 | Ref | Type | Function |
 |-----|------|----------|
@@ -293,35 +267,35 @@ The bootstrap capacitor is standard practice in quasi-complementary designs. It 
 
 *TR-11 designation may vary by schematic revision; see note in section 4.2.
 
-TR-7 = TR-8 = Wurlitzer part #142128 [VERIFIED -- schematic]
+TR-7 = TR-8 = Wurlitzer part #142128
 
 #### Key Resistors
 
-| Ref | Value | Function | Confidence |
-|-----|-------|----------|------------|
-| R-31 | 15K | Output-to-input negative feedback | VERIFIED (schematic) |
-| R-32 | 1.8K | Differential pair collector load (TR-7) | VERIFIED (schematic) |
-| R-33 | 1.8K | Differential pair collector load (TR-8) | VERIFIED (schematic) |
-| R-34 | 160 ohm | Bias network | VERIFIED (schematic, confirmed by GroupDIY measurement of 150-160 ohm) |
-| R-35 | 220 ohm | Bias network | VERIFIED (GroupDIY) |
-| R-36 | 270 ohm | Base-emitter TR-11 | VERIFIED (GroupDIY) |
-| R-37 | 0.47 ohm | NPN output emitter degeneration | VERIFIED |
-| R-38 | 0.47 ohm | PNP output emitter degeneration | VERIFIED |
-| R-58 | Optional 1K (across R-34) | Bias reduction modification | VERIFIED (GroupDIY) |
+| Ref | Value | Function |
+|-----|-------|----------|
+| R-31 | 15K | Output-to-input negative feedback |
+| R-32 | 1.8K | Differential pair collector load (TR-7) |
+| R-33 | 1.8K | Differential pair collector load (TR-8) |
+| R-34 | 160 ohm | Bias network (confirmed by GroupDIY measurement of 150-160 ohm) |
+| R-35 | 220 ohm | Bias network |
+| R-36 | 270 ohm | Base-emitter TR-11 |
+| R-37 | 0.47 ohm | NPN output emitter degeneration |
+| R-38 | 0.47 ohm | PNP output emitter degeneration |
+| R-58 | Optional 1K (across R-34) | Bias reduction modification |
 
 #### Key Capacitors
 
-| Ref | Value | Function | Confidence |
-|-----|-------|----------|------------|
-| C-8 | 4.7 MFD | Input coupling to TR-7 | VERIFIED (schematic) |
-| C-11 | 100 PF | Pre-driver feedback cap | VERIFIED (schematic) |
-| C-12 | 100 MFD | Bootstrap / ripple bypass | VERIFIED (schematic) |
+| Ref | Value | Function |
+|-----|-------|----------|
+| C-8 | 4.7 MFD | Input coupling to TR-7 |
+| C-11 | 100 PF | Pre-driver feedback cap |
+| C-12 | 100 MFD | Bootstrap / ripple bypass |
 
 ### 4.6 Power Output and Clipping Analysis
 
 **Rated output:** 20 watts into 8 ohms (service manual)
 
-**Theoretical maximum (DERIVED):**
+**Theoretical maximum:**
 With +/-22V rails (nominal), accounting for transistor saturation voltage drops of approximately 2-3V per side:
 - Effective peak swing: approximately +/-19V to +/-20V
 - P_max = V_peak^2 / (2 * R_load) = (19)^2 / (2 * 8) = 361/16 = ~22.5W RMS
@@ -337,7 +311,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 - Clipping is symmetric (equal positive and negative excursion to rails)
 - Produces primarily odd harmonics when clipping occurs
 
-**Crossover distortion (VERIFIED as a common aging issue):**
+**Crossover distortion (common aging issue):**
 - The Class AB bias (10 mA) is set by the Vbe multiplier (TR-9)
 - With component aging, bias drifts toward zero, increasing the dead zone
 - Crossover distortion produces odd harmonics, especially audible at low signal levels
@@ -364,21 +338,17 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 
 ### 5.1 Speaker Specifications
 
-**VERIFIED:**
-
-| Parameter | Value | Source |
-|-----------|-------|--------|
-| Driver count | 2 (stereo placement, mono signal) | Multiple sources |
-| Driver size | 4" x 8" oval | RESOLVED (Feb 2026) — Every vendor (Vintage Vibe, Custom Vintage Keyboards, Tropical Fish), EP-Forum, and repair source confirms 4x8. Schematic's "4x6" likely reflects pre-production spec or early design revision. |
-
-> **Speaker size — RESOLVED (Feb 2026):** The BustedGear schematic shows 4"x6", but ALL production evidence confirms **4"x8" oval**: Vintage Vibe, Custom Vintage Keyboards, Tropical Fish, EP-Forum speaker replacement threads, and eBay listings all specify 4x8/8x4 for both the 200 and 200A. The schematic likely reflects a pre-production spec that doesn't match production units. The early 206 briefly used 4x6 speakers before switching to 8" round drivers — possible source of confusion.
-| Individual impedance | 16 ohm each | EP-Forum confirmation |
-| Wiring | Parallel | EP-Forum confirmation |
-| Combined impedance | 8 ohm (16 || 16) | Derived |
-| Magnet type (200) | Alnico | Tropical Fish, Chicago EP |
-| Magnet type (200A) | Ceramic (most units) | Tropical Fish, Chicago EP |
-| Mounting (200) | Welded to amplifier rail | Tropical Fish |
-| Mounting (200A) | Screwed to ABS plastic lid | Tropical Fish |
+| Parameter | Value |
+|-----------|-------|
+| Driver count | 2 (stereo placement, mono signal) |
+| Driver size | 4" x 8" oval (schematic shows 4x6, but all vendors and repair sources confirm 4x8 in production units) |
+| Individual impedance | 16 ohm each |
+| Wiring | Parallel |
+| Combined impedance | 8 ohm (16 || 16) |
+| Magnet type (200) | Alnico |
+| Magnet type (200A) | Ceramic (most units) |
+| Mounting (200) | Welded to amplifier rail |
+| Mounting (200A) | Screwed to ABS plastic lid |
 
 **200A speaker evolution:**
 1. Very early 200A production: alnico speakers (brief transition period)
@@ -391,14 +361,13 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 
 ### 5.2 Cabinet/Enclosure
 
-**VERIFIED:**
 - The 200A's speakers are mounted to the ABS plastic lid (the flip-up top)
 - The lid serves as the speaker baffle
 - Speakers face the player (forward-facing) when lid is in playing position
 - The lid is NOT a sealed enclosure -- it is essentially an open-backed baffle
 - The plastic material resonates and colors the sound (thin ABS plastic)
 
-**Acoustic characteristics (ESTIMATED from physical analysis):**
+**Acoustic characteristics:**
 
 The 200A "cabinet" is more accurately described as an **open baffle** formed by the plastic lid. This means:
 - No bass reinforcement from cabinet resonance (unlike sealed or ported designs)
@@ -409,7 +378,7 @@ The 200A "cabinet" is more accurately described as an **open baffle** formed by 
 
 ### 5.3 Frequency Response Analysis
 
-**No direct measurements of the 200A speaker+cabinet system were found in any source.** The following is DERIVED from physical analysis:
+No direct measurements of the 200A speaker+cabinet system are publicly available. The following is derived from physical analysis:
 
 #### Low Frequency Rolloff
 
@@ -453,7 +422,6 @@ LPF: 2nd-order lowpass at 8-10 kHz, Q = 0.707 (Butterworth)
 
 ### 6.1 Auxiliary Output
 
-**VERIFIED:**
 - The 200A has a dedicated auxiliary amplifier circuit (TR-15 and TR-16)
 - Two direct-coupled transistors with feedback
 - Taps the signal BEFORE the power amplifier (from the preamp output)
@@ -467,7 +435,6 @@ LPF: 2nd-order lowpass at 8-10 kHz, Q = 0.707 (Butterworth)
 
 ### 6.2 Headphone Output
 
-**VERIFIED:**
 - Switching mono jack -- physically disconnects speakers when headphones are inserted
 - Signal tapped from the power amp output (parallel with speaker connection)
 - Contains an 8-ohm load resistor that substitutes for the speaker impedance when speakers are disconnected
@@ -494,7 +461,7 @@ LPF: 2nd-order lowpass at 8-10 kHz, Q = 0.707 (Butterworth)
 
 ```
 // Oscillator
-rate = 5.6 Hz (twin-T oscillator, approximately sinusoidal — SPICE-validated Feb 2026)
+rate = 5.6 Hz (twin-T oscillator, approximately sinusoidal)
 
 // LDR time constants (VTL5C3-like)
 attack_tau = 2.5-3.0 ms  (fast on)
@@ -554,7 +521,7 @@ Possible refinements:
 
 ### 7.4 Signal Chain Order
 
-**Corrected signal chain:**
+**Signal chain:**
 
 ```
 Per-voice processing (oscillator, pickup)
@@ -569,47 +536,7 @@ Per-voice processing (oscillator, pickup)
 
 ---
 
-## 8. Key Corrections to Previous Documentation
-
-### 8.1 WRONG: "Tremolo is a shunt-to-ground signal divider"
-
-**CORRECTED:** The Wurlitzer 200A service manual explicitly describes the tremolo as being in the "feedback loop of the high impedance preamp." The LDR (LG-1) shunts the feedback junction between R-10 and Ce1 to ground, modulating how much emitter feedback reaches TR-1. This is gain modulation, not simple amplitude modulation.
-
-### 8.2 WRONG: "Tremolo is placed after the preamp, before the speaker"
-
-**CORRECTED:** The tremolo operates WITHIN the preamp stage by modulating its emitter feedback network. It is not a separate post-preamp stage. The volume control and power amplifier follow the preamp (with integrated tremolo).
-
-### 8.3 PARTIALLY WRONG: "The 200A LDR tremolo is fundamentally amplitude modulation"
-
-**CORRECTED:** While the net effect IS amplitude modulation (the signal gets louder and softer), the mechanism is gain modulation of the preamp via emitter feedback. This means the distortion characteristics change subtly through the tremolo cycle, producing a more complex modulation than pure AM. However, at low preamp drive levels (where the preamp is approximately linear), the distinction is negligible. At higher drive levels (ff playing), the timbral modulation becomes audible.
-
-### 8.5 WRONG: "R-10 feeds back to node_A (shunt-feedback)"
-
-**CORRECTED (Feb 2026):** An earlier correction in this project placed R-10 at node_A (the input summing junction before the .022µF coupling cap), forming an inverting shunt-feedback topology with gain = R10/R1 = 56K/22K. This was based on the wrong schematic (200/203 models, not 200A). The correct 200A topology has R-10 feeding back to TR-1's EMITTER via Ce1 (4.7 MFD coupling cap), forming series-series negative feedback. SPICE confirms: R-10 to node_A causes oscillation; R-10 to emitter is stable. See preamp-circuit.md Section 7.2.
-
-### 8.4 CONFIRMED: "No output transformer (200A is solid-state direct-coupled)"
-
-**VERIFIED CORRECT.** The 200A is entirely solid-state with direct-coupled output to the speaker. There is no output transformer. The amplifier drives the 8-ohm speaker load directly through the emitter-follower output transistors. This is confirmed by the quasi-complementary push-pull topology which inherently provides a low-impedance output capable of driving speakers directly.
-
-### 8.5 CONFIRMED: "TIP35C/TIP36C, +/-24V rails, 0.47 ohm emitter resistors, 10 mA bias"
-
-**VERIFIED CORRECT.** The nominal rails are +/-22V per spec, measuring +/-24 to +/-24.5V in practice. The TIP35C/TIP36C output transistors, 0.47-ohm emitter resistors (R-37, R-38), and 10 mA quiescent bias current are all confirmed from the service manual and repair community.
-
-### 8.6 REFINEMENT: Speaker impedance
-
-**Previously undocumented:** Each speaker is 16 ohms; two speakers wired in parallel give 8 ohms total load impedance. This is confirmed from EP-Forum community discussion.
-
-### 8.7 REFINEMENT: Volume pot value
-
-**Previously undocumented:** The volume potentiometer is 3K audio taper, not a more typical 10K or 100K. This unusually low value is confirmed from multiple vendor sources (RetroLinear, Vintage Vibe).
-
-### 8.8 REFINEMENT: Power amp rated at 20W, not "18-20W"
-
-**VERIFIED:** The service manual specifies 20 watts. Wikipedia lists 30W for the model 200 (which may be peak or a different revision). The 200A service manual consistently states 20W.
-
----
-
-## 9. Sources
+## 8. Sources
 
 ### Primary Sources (Service Manual)
 
@@ -665,33 +592,3 @@ Per-voice processing (oscillator, pickup)
 - Quasi-Complementary Push-Pull Amplifier theory: https://www.eeeguide.com/quasi-complementary-push-pull-amplifier/
 - Class AB Amplifier Biasing: https://www.electronics-tutorials.ws/amplifier/class-ab-amplifier.html
 
----
-
-## Appendix A: Confidence Levels Summary
-
-| Claim | Confidence | Basis |
-|-------|-----------|-------|
-| Tremolo in preamp feedback loop (not shunt-to-ground) | HIGH | Service manual text, multiple corroborating sources |
-| Quasi-complementary Class AB topology | HIGH | Service manual description |
-| TIP35C/TIP36C output transistors | HIGH | Service manual, transistor spec sheet |
-| +/-22V nominal rails (+/-24V measured) | HIGH | Service manual + GroupDIY measurements |
-| 10 mA quiescent bias | HIGH | Service manual, confirmed by R37/R38 measurements |
-| R-37, R-38 = 0.47 ohm | HIGH | Multiple repair sources, service manual |
-| 20W rated power output | HIGH | Service manual |
-| Speakers: two 16-ohm 4"x8" oval in parallel = 8 ohm | HIGH | RESOLVED Feb 2026 — all vendors/forums confirm 4x8; schematic's "4x6" is pre-production spec |
-| Volume pot: 3K audio taper | HIGH | Multiple vendor sources |
-| Oscillator frequency ~6 Hz | HIGH | Service manual |
-| TR-7/TR-8: 2N5087 differential pair | HIGH | Transistor spec sheet, service manual |
-| TR-9: MPSA06 Vbe multiplier | HIGH | Service manual, repair guides |
-| Speaker HPF ~85-100 Hz | MEDIUM | Physical analysis (no measurements available) |
-| Speaker LPF ~8 kHz | MEDIUM | Physical analysis, generic 4x8" driver specs |
-| Open baffle (not sealed/ported) | MEDIUM | Physical inspection descriptions (plastic lid mount) |
-| Ceramic vs alnico tonal difference | MEDIUM | Community observations, general speaker engineering |
-| Tremolo gain modulation produces timbral variation | MEDIUM | Logical inference from feedback-loop position |
-| R-34 = 160 ohm | HIGH | Schematic verified, confirmed by GroupDIY measurement of 150-160 ohm |
-| R-35 = 220 ohm | HIGH | Schematic verified, confirmed by GroupDIY measurement |
-| R-31 = 15K (negative feedback) | HIGH | Schematic verified |
-| C-8 = 4.7 MFD, C-12 = 100 MFD | HIGH | Schematic verified |
-| LG-1 = Wurlitzer part #142312 | HIGH | Schematic verified |
-| Power amp contributes minimal tone at mf | MEDIUM | General engineering analysis; preamp gain is only 6.0 dB (SPICE-measured), so power amp operates well within linear range at mf |
-| Speaker frequency response measurements | LOW | No direct measurements found anywhere |
