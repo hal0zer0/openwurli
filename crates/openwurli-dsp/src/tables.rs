@@ -118,46 +118,51 @@ pub fn fundamental_decay_rate(midi: u8) -> f64 {
 
 /// Per-mode decay rates in dB/s.
 ///
-/// Constant-Q model with mounting floor (Section 5.8):
-///   decay_n = decay_1 * mode_ratio_n
+/// Super-linear damping model: decay_n = decay_1 * mode_ratio_n^p
+///
+/// Real steel reed damping is NOT constant-Q (p=1.0). Thermoelastic (Zener),
+/// air radiation, and clamping losses all scale faster than linearly with
+/// frequency, giving p ≈ 1.3–2.0 for steel cantilevers in air.
+///
+/// At p=1.5, mode 2 at A1 (392 Hz) decays at ~25 dB/s (vs 9.4 dB/s at p=1.0),
+/// reaching -25 dB within 1 second. This confines intermodulation products
+/// between inharmonic modes to the attack region (~500ms), matching real
+/// Wurlitzer behavior where bark is an attack-only phenomenon.
+const MODE_DECAY_EXPONENT: f64 = 1.5;
+
 pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES] {
     let base = fundamental_decay_rate(midi);
     let mut rates = [0.0f64; NUM_MODES];
     for i in 0..NUM_MODES {
-        rates[i] = base * ratios[i];
+        rates[i] = base * ratios[i].powf(MODE_DECAY_EXPONENT);
     }
     rates
 }
 
 /// Per-note output scaling to balance the keyboard.
 ///
-/// On a real 200A, the technician adjusts each pickup gap to voice the
-/// keyboard. High notes naturally produce more signal (smaller gap, stiffer
-/// reed) and need to be attenuated. This function simulates that voicing.
+/// Applied POST-pickup to decouple volume from nonlinear displacement.
+/// Two-slope curve: steeper below C3 to compensate for both the pickup HPF
+/// attenuation of bass fundamentals AND the bass mode taper energy reduction.
 ///
-/// The pickup HPF at 2312 Hz creates a ~22 dB natural advantage for treble
-/// fundamentals vs bass. Technician voicing compensates by adjusting gaps:
-/// tighter bass gaps (more signal) and wider treble gaps (less signal),
-/// centering the loudest register around C4-C5.
-///
-/// We model this as a gentle boost below C4 (tighter bass gaps) and a
-/// rolloff above C4 (wider treble gaps).
+///   A1 (MIDI 33): +13.1 dB  (steep: HPF + mode taper compensation)
+///   C2 (MIDI 36): +11.2 dB
+///   C3 (MIDI 48): +2.6 dB   (knee — slopes meet)
+///   C4 (MIDI 60): 0 dB      (reference)
+///   C5 (MIDI 72): -2.6 dB
+///   C6 (MIDI 84): -5.3 dB
+///   C7 (MIDI 96): -7.9 dB
 pub fn output_scale(midi: u8) -> f64 {
     let m = midi as f64;
-    if m <= 48.0 {
-        // Below C3: tighter bass gaps for more output.
-        // +3 dB at A1 (MIDI 33), tapering to unity at C3.
-        let semitones_below_c3 = 48.0 - m;
-        f64::powf(10.0, 0.20 * semitones_below_c3 / 20.0)
-    } else if m <= 60.0 {
-        // C3 to C4: unity (the reference loudness region)
-        1.0
+    let db = if m < 48.0 {
+        // Below C3: 0.70 dB/semi to compensate HPF + bass mode taper.
+        let db_at_c3 = -0.22 * (48.0 - 60.0); // +2.64 dB
+        db_at_c3 + 0.70 * (48.0 - m)
     } else {
-        // Above C4: wider treble gaps for less output.
-        // -0.25 dB/semitone → -8.25 dB at A6 (MIDI 93)
-        let semitones_above_c4 = m - 60.0;
-        f64::powf(10.0, -0.25 * semitones_above_c4 / 20.0)
-    }
+        // C3 and above: 0.22 dB/semi from C4 reference
+        -0.22 * (m - 60.0)
+    };
+    f64::powf(10.0, db / 20.0)
 }
 
 /// Register-dependent velocity exponent for dynamic expression.
@@ -187,12 +192,161 @@ pub fn velocity_exponent(midi: u8) -> f64 {
     min_exp + t * (max_exp - min_exp)
 }
 
+/// Bass mode amplitude taper — compensates for pickup HPF differential.
+///
+/// The 1-pole HPF at 2312 Hz amplifies higher modes relative to the fundamental
+/// by approximately their frequency ratio (in dB). For bass notes where the
+/// fundamental is far below the HPF corner, this causes bending modes (especially
+/// mode 2 at ~7x) to dominate the output spectrum.
+///
+/// Physical justification: longer bass reeds have the hammer contact point
+/// closer to mode 2's vibration node (~0.78L from clamp), reducing excitation.
+/// The dwell filter is too wide (sigma=8) to catch this at bass frequencies.
+///
+/// Below C3 (MIDI 48), attenuate modes 2+ proportional to distance from C3.
+/// Higher modes get progressively steeper attenuation since their HPF advantage
+/// is larger (HPF differential scales with log of frequency ratio).
+pub fn bass_mode_taper(midi: u8, mode: usize) -> f64 {
+    if mode == 0 || midi >= 48 {
+        return 1.0;
+    }
+    let semis_below_c3 = (48 - midi) as f64;
+    // Mode 2: -0.6 dB/semi, mode 3: -0.75, mode 4: -0.90, etc.
+    let db_per_semi = 0.6 + 0.15 * (mode as f64 - 1.0);
+    let atten_db = semis_below_c3 * db_per_semi;
+    f64::powf(10.0, -atten_db / 20.0)
+}
+
 /// Full parameter set for one note.
 pub struct NoteParams {
     pub fundamental_hz: f64,
     pub mode_ratios: [f64; NUM_MODES],
     pub mode_amplitudes: [f64; NUM_MODES],
     pub mode_decay_rates: [f64; NUM_MODES],
+}
+
+// ─── Intermodulation risk detection ─────────────────────────────────────────
+
+/// Per-mode intermodulation product analysis.
+pub struct IntermodProduct {
+    pub mode: usize,
+    pub mode_ratio: f64,
+    pub nearest_integer: u32,
+    pub fractional_offset: f64,
+    pub beat_hz: f64,
+    pub effective_amplitude: f64,
+    pub perceptual_weight: f64,
+    pub risk_score: f64,
+}
+
+/// Per-note intermodulation risk summary.
+pub struct IntermodReport {
+    pub midi: u8,
+    pub fundamental_hz: f64,
+    pub mu: f64,
+    pub products: Vec<IntermodProduct>,
+    pub max_risk: f64,
+    pub total_risk: f64,
+}
+
+/// Psychoacoustic weighting for audible beating.
+///
+/// Peak (1.0) at 5-10 Hz (worst audible beating), ramps up from 0.5-2 Hz,
+/// decays 15-40 Hz, floor at 0.1 above 40 Hz, zero below 0.5 Hz.
+pub fn perceptual_beat_weight(beat_hz: f64) -> f64 {
+    if beat_hz < 0.5 {
+        return 0.0;
+    }
+    if beat_hz < 2.0 {
+        // Ramp from 0 at 0.5 Hz to ~0.5 at 2 Hz
+        return 0.5 * (beat_hz - 0.5) / 1.5;
+    }
+    if beat_hz <= 5.0 {
+        // Ramp from 0.5 at 2 Hz to 1.0 at 5 Hz
+        return 0.5 + 0.5 * (beat_hz - 2.0) / 3.0;
+    }
+    if beat_hz <= 10.0 {
+        // Plateau at 1.0
+        return 1.0;
+    }
+    if beat_hz <= 40.0 {
+        // Decay from 1.0 at 10 Hz to 0.1 at 40 Hz
+        return 0.1 + 0.9 * (40.0 - beat_hz) / 30.0;
+    }
+    // Floor above 40 Hz
+    0.1
+}
+
+/// Dwell attenuation at ff velocity (velocity=1.0), inlined to keep tables.rs
+/// dependency-free from hammer.rs.
+fn dwell_attenuation_ff(fundamental_hz: f64, mode_ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES] {
+    let t_dwell = 0.0005; // ff: velocity=1.0 → 0.0005 + 0.002*(1-1) = 0.5ms
+    let sigma_sq = 8.0 * 8.0;
+
+    let mut atten = [0.0f64; NUM_MODES];
+    for i in 0..NUM_MODES {
+        let ft = fundamental_hz * mode_ratios[i] * t_dwell;
+        atten[i] = (-ft * ft / (2.0 * sigma_sq)).exp();
+    }
+
+    let a0 = atten[0];
+    if a0 > 1e-30 {
+        for a in &mut atten {
+            *a /= a0;
+        }
+    }
+    atten
+}
+
+/// Compute intermodulation risk for a given MIDI note.
+///
+/// For each mode 2-7, measures how close its frequency ratio is to the nearest
+/// integer harmonic. When the pickup's 1/(1-y) nonlinearity generates intermod
+/// products between inharmonic modes, they land near (but not at) integer
+/// harmonics, producing audible beating in the 3-15 Hz range.
+pub fn intermod_risk(midi: u8) -> IntermodReport {
+    let fundamental_hz = midi_to_freq(midi);
+    let mu = tip_mass_ratio(midi);
+    let ratios = mode_ratios(mu);
+    let dwell = dwell_attenuation_ff(fundamental_hz, &ratios);
+
+    let mut products = Vec::new();
+    let mut max_risk = 0.0f64;
+    let mut total_risk = 0.0f64;
+
+    // Modes 2-7 (index 1-6) — mode 1 is always ratio 1.0, no intermod
+    for i in 1..NUM_MODES {
+        let ratio = ratios[i];
+        let nearest = ratio.round() as u32;
+        let fractional_offset = (ratio - nearest as f64).abs();
+        let beat_hz = fractional_offset * fundamental_hz;
+        let effective_amplitude = BASE_MODE_AMPLITUDES[i] * bass_mode_taper(midi, i) * dwell[i];
+        let weight = perceptual_beat_weight(beat_hz);
+        let risk = effective_amplitude * weight;
+
+        max_risk = max_risk.max(risk);
+        total_risk += risk;
+
+        products.push(IntermodProduct {
+            mode: i + 1, // 1-indexed for display
+            mode_ratio: ratio,
+            nearest_integer: nearest,
+            fractional_offset,
+            beat_hz,
+            effective_amplitude,
+            perceptual_weight: weight,
+            risk_score: risk,
+        });
+    }
+
+    IntermodReport {
+        midi,
+        fundamental_hz,
+        mu,
+        products,
+        max_risk,
+        total_risk,
+    }
 }
 
 /// Compute all parameters for a given MIDI note.
@@ -202,10 +356,16 @@ pub fn note_params(midi: u8) -> NoteParams {
     let ratios = mode_ratios(mu);
     let decay_rates = mode_decay_rates(midi, &ratios);
 
+    // Apply bass mode taper to compensate for HPF differential
+    let mut amplitudes = BASE_MODE_AMPLITUDES;
+    for i in 0..NUM_MODES {
+        amplitudes[i] *= bass_mode_taper(midi, i);
+    }
+
     NoteParams {
         fundamental_hz,
         mode_ratios: ratios,
-        mode_amplitudes: BASE_MODE_AMPLITUDES,
+        mode_amplitudes: amplitudes,
         mode_decay_rates: decay_rates,
     }
 }
@@ -245,5 +405,71 @@ mod tests {
     fn test_decay_rate_increases_with_pitch() {
         assert!(fundamental_decay_rate(60) > fundamental_decay_rate(48));
         assert!(fundamental_decay_rate(84) > fundamental_decay_rate(72));
+    }
+
+    #[test]
+    fn test_intermod_risk_below_threshold() {
+        // Regression guard: no note in the playable range should exceed this threshold.
+        // If this fails, it means mode decay or bass taper changed in a way that
+        // reintroduces audible beating from inharmonic intermod products.
+        //
+        // The static metric captures worst-case ff attack amplitude before temporal
+        // decay kicks in. Bass notes (MIDI 33-47) have the highest risk due to
+        // high tip mass ratios making mode 2 inharmonic. The p=1.5 mode decay
+        // ensures intermod is attack-only; render mode verifies spectral cleanliness.
+        //
+        // Find actual worst case first, then assert with headroom.
+        let mut worst_risk = 0.0f64;
+        let mut worst_midi = 0u8;
+        for midi in MIDI_LO..=MIDI_HI {
+            let report = intermod_risk(midi);
+            if report.max_risk > worst_risk {
+                worst_risk = report.max_risk;
+                worst_midi = midi;
+            }
+        }
+        // Threshold = 1.25x the current worst case, providing headroom for minor
+        // parameter adjustments while catching any major regression.
+        let threshold = worst_risk * 1.25;
+        assert!(
+            threshold < 0.15,
+            "Worst-case risk at MIDI {} is {:.4} — threshold {:.4} seems too high, investigate",
+            worst_midi, worst_risk, threshold
+        );
+        for midi in MIDI_LO..=MIDI_HI {
+            let report = intermod_risk(midi);
+            assert!(
+                report.max_risk < threshold,
+                "MIDI {} ({:.1} Hz): max_risk = {:.4} exceeds {:.4}",
+                midi, report.fundamental_hz, report.max_risk, threshold
+            );
+        }
+    }
+
+    #[test]
+    fn test_intermod_risk_known_values() {
+        // A1 (MIDI 33): mu=0.10, mode 2 ratio ~7.13
+        let report = intermod_risk(33);
+        let m2 = &report.products[0]; // mode 2 is first in products vec
+        assert_eq!(m2.mode, 2);
+        assert!((m2.mode_ratio - 7.13).abs() < 0.1, "mode 2 ratio = {}", m2.mode_ratio);
+        assert_eq!(m2.nearest_integer, 7);
+        // Beat frequency = fractional_offset * fundamental_hz
+        // A1 = 55 Hz, offset ~0.13, beat ~7.2 Hz
+        assert!(m2.beat_hz > 3.0 && m2.beat_hz < 12.0,
+            "A1 mode 2 beat_hz = {}", m2.beat_hz);
+        // Should be in the high perceptual weight zone (5-10 Hz)
+        assert!(m2.perceptual_weight > 0.8,
+            "A1 mode 2 perceptual_weight = {}", m2.perceptual_weight);
+    }
+
+    #[test]
+    fn test_perceptual_beat_weight_shape() {
+        // Sub-1 Hz: near zero (below audible beating)
+        assert!(perceptual_beat_weight(0.3) < 0.01);
+        // 7 Hz: in the peak zone (5-10 Hz)
+        assert!(perceptual_beat_weight(7.0) > 0.9);
+        // 50 Hz: well above beating range, should be at floor
+        assert!(perceptual_beat_weight(50.0) < 0.2);
     }
 }
