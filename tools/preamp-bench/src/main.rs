@@ -11,6 +11,7 @@
 
 use std::f64::consts::PI;
 
+use openwurli_dsp::dk_preamp::DkPreamp;
 use openwurli_dsp::filters::OnePoleHpf;
 use openwurli_dsp::oversampler::Oversampler;
 use openwurli_dsp::power_amp::PowerAmp;
@@ -19,6 +20,7 @@ use openwurli_dsp::reed::ModalReed;
 use openwurli_dsp::hammer::dwell_attenuation;
 use openwurli_dsp::speaker::Speaker;
 use openwurli_dsp::tables::{self, NUM_MODES};
+use openwurli_dsp::tremolo::Tremolo;
 use openwurli_dsp::variation;
 use openwurli_dsp::voice::Voice;
 
@@ -39,6 +41,7 @@ fn main() {
         "tremolo-sweep" => cmd_tremolo_sweep(&args[2..]),
         "render" => cmd_render(&args[2..]),
         "bark-audit" => cmd_bark_audit(&args[2..]),
+        "intermod-audit" => cmd_intermod_audit(&args[2..]),
         _ => {
             eprintln!("Unknown subcommand: {}", args[1]);
             print_usage();
@@ -56,6 +59,10 @@ fn print_usage() {
     eprintln!("  tremolo-sweep   Gain vs LDR resistance sweep");
     eprintln!("  render          Reed -> preamp -> WAV output");
     eprintln!("  bark-audit      Measure H2/H1 at each signal chain stage");
+    eprintln!("  intermod-audit  Detect inharmonic intermodulation beating risk");
+    eprintln!();
+    eprintln!("Global options:");
+    eprintln!("  --model MODEL   Preamp model: dk (default), ebers-moll");
     eprintln!();
     eprintln!("Use --help after any subcommand for options.");
 }
@@ -78,10 +85,24 @@ fn parse_flag_str<'a>(args: &'a [String], flag: &str, default: &'a str) -> &'a s
     default
 }
 
+// ─── Model selection ────────────────────────────────────────────────────────
+
+fn create_preamp(args: &[String]) -> Box<dyn PreampModel> {
+    let model = parse_flag_str(args, "--model", "dk");
+    match model {
+        "dk" => Box::new(DkPreamp::new(OVERSAMPLED_SR)),
+        "ebers-moll" => Box::new(EbersMollPreamp::new(OVERSAMPLED_SR)),
+        other => {
+            eprintln!("Unknown model '{other}'. Use 'ebers-moll' or 'dk'.");
+            std::process::exit(1);
+        }
+    }
+}
+
 // ─── Gain measurement ───────────────────────────────────────────────────────
 
 /// Measure preamp gain by running a sine wave through the 2x-oversampled preamp.
-fn measure_gain_at(preamp: &mut EbersMollPreamp, freq: f64, amplitude: f64) -> f64 {
+fn measure_gain_at(preamp: &mut dyn PreampModel, freq: f64, amplitude: f64) -> f64 {
     preamp.reset();
     let mut os = Oversampler::new();
 
@@ -121,10 +142,10 @@ fn cmd_gain(args: &[String]) {
     let amplitude = parse_flag(args, "--amplitude", 0.001);
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
 
-    let mut preamp = EbersMollPreamp::new(OVERSAMPLED_SR);
+    let mut preamp = create_preamp(args);
     preamp.set_ldr_resistance(r_ldr);
 
-    let gain = measure_gain_at(&mut preamp, freq, amplitude);
+    let gain = measure_gain_at(preamp.as_mut(), freq, amplitude);
     let gain_db = 20.0 * gain.log10();
 
     let target_db = if r_ldr > 500_000.0 { 6.0 } else { 12.1 };
@@ -149,7 +170,7 @@ fn cmd_sweep(args: &[String]) {
     let amplitude = parse_flag(args, "--amplitude", 0.001);
     let csv_path = parse_flag_str(args, "--csv", "");
 
-    let mut preamp = EbersMollPreamp::new(OVERSAMPLED_SR);
+    let mut preamp = create_preamp(args);
     preamp.set_ldr_resistance(r_ldr);
 
     let log_start = start.ln();
@@ -166,7 +187,7 @@ fn cmd_sweep(args: &[String]) {
         let frac = i as f64 / (points - 1).max(1) as f64;
         let freq = (log_start + frac * (log_end - log_start)).exp();
 
-        let gain = measure_gain_at(&mut preamp, freq, amplitude);
+        let gain = measure_gain_at(preamp.as_mut(), freq, amplitude);
         let gain_db = 20.0 * gain.log10();
 
         println!("{freq:>10.1}  {gain_db:>10.2}");
@@ -187,7 +208,7 @@ fn cmd_harmonics(args: &[String]) {
     let amplitude = parse_flag(args, "--amplitude", 0.005);
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
 
-    let mut preamp = EbersMollPreamp::new(OVERSAMPLED_SR);
+    let mut preamp = create_preamp(args);
     preamp.set_ldr_resistance(r_ldr);
     let mut os = Oversampler::new();
 
@@ -247,7 +268,7 @@ fn cmd_tremolo_sweep(args: &[String]) {
     let amplitude = parse_flag(args, "--amplitude", 0.001);
     let csv_path = parse_flag_str(args, "--csv", "");
 
-    let mut preamp = EbersMollPreamp::new(OVERSAMPLED_SR);
+    let mut preamp = create_preamp(args);
 
     let log_min = ldr_min.ln();
     let log_max = ldr_max.ln();
@@ -264,7 +285,7 @@ fn cmd_tremolo_sweep(args: &[String]) {
         let r_ldr = (log_min + frac * (log_max - log_min)).exp();
 
         preamp.set_ldr_resistance(r_ldr);
-        let gain = measure_gain_at(&mut preamp, freq, amplitude);
+        let gain = measure_gain_at(preamp.as_mut(), freq, amplitude);
         let gain_db = 20.0 * gain.log10();
 
         println!("{r_ldr:>12.0}  {gain_db:>10.2}");
@@ -295,26 +316,66 @@ fn cmd_render(args: &[String]) {
     let preamp_gain = parse_flag(args, "--gain", 40.0);
     let volume = parse_flag(args, "--volume", 0.05);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
+    let tremolo_rate = parse_flag(args, "--tremolo-rate", 5.5);
+    let tremolo_depth = parse_flag(args, "--tremolo-depth", 0.0);
+    let no_poweramp = args.contains(&"--no-poweramp".to_string());
+    let no_preamp = args.contains(&"--no-preamp".to_string());
+    let normalize = args.contains(&"--normalize".to_string());
+    let disp_scale: Option<f64> = if args.contains(&"--displacement-scale".to_string()) {
+        Some(parse_flag(args, "--displacement-scale", 0.30))
+    } else {
+        None
+    };
     let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render.wav");
 
     // Render reed voice (reed → pickup with nonlinearity + HPF)
-    let reed_output = Voice::render_note(note, velocity as f64 / 127.0, duration, BASE_SR);
+    let reed_output = Voice::render_note_with_scale(
+        note, velocity as f64 / 127.0, duration, BASE_SR, disp_scale,
+    );
 
-    // Process through oversampled preamp
-    let mut preamp = EbersMollPreamp::new(OVERSAMPLED_SR);
-    preamp.set_ldr_resistance(r_ldr);
-    let mut os = Oversampler::new();
-
+    // Process through oversampled preamp (or bypass)
     let n_samples = reed_output.len();
-    let mut preamp_output = vec![0.0f64; n_samples];
-    for i in 0..n_samples {
-        let mut up = [0.0f64; 2];
-        os.upsample_2x(&[reed_output[i]], &mut up);
-        let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
-        let mut down = [0.0f64; 1];
-        os.downsample_2x(&processed, &mut down);
-        preamp_output[i] = down[0];
-    }
+    let preamp_output = if no_preamp {
+        reed_output.clone()
+    } else {
+        let mut preamp = create_preamp(args);
+
+        // Tremolo: when depth > 0, instantiate LFO at oversampled rate.
+        // Otherwise use static LDR resistance (--ldr flag).
+        let mut tremolo = if tremolo_depth > 0.0 {
+            let mut t = Tremolo::new(tremolo_rate, tremolo_depth, OVERSAMPLED_SR);
+            t.set_depth(tremolo_depth);
+            Some(t)
+        } else {
+            preamp.set_ldr_resistance(r_ldr);
+            None
+        };
+
+        let mut os = Oversampler::new();
+        let mut out = vec![0.0f64; n_samples];
+        for i in 0..n_samples {
+            let mut up = [0.0f64; 2];
+            os.upsample_2x(&[reed_output[i]], &mut up);
+            let processed = [
+                {
+                    if let Some(ref mut trem) = tremolo {
+                        preamp.set_ldr_resistance(trem.process());
+                    }
+                    preamp.process_sample(up[0])
+                },
+                {
+                    if let Some(ref mut trem) = tremolo {
+                        preamp.set_ldr_resistance(trem.process());
+                    }
+                    preamp.process_sample(up[1])
+                },
+            ];
+            let mut down = [0.0f64; 1];
+            os.downsample_2x(&processed, &mut down);
+            out[i] = down[0];
+        }
+        out
+    };
 
     // Output stage: gain → volume → power amp → speaker
     // Matches the plugin signal chain in lib.rs
@@ -325,16 +386,24 @@ fn cmd_render(args: &[String]) {
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
         let attenuated = preamp_output[i] * preamp_gain * volume;
-        let amplified = power_amp.process(attenuated);
+        let amplified = if no_poweramp { attenuated } else { power_amp.process(attenuated) };
         final_output[i] = speaker.process(amplified);
     }
 
-    // Normalize and write WAV
+    // Peak measurement
     let peak = final_output.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
     let peak_dbfs = if peak > 0.0 { 20.0 * peak.log10() } else { -120.0 };
 
-    // Normalize to -3 dBFS if needed
-    let scale = if peak > 0.7 { 0.7 / peak } else { 1.0 };
+    // Normalization: opt-in only. Default writes raw samples.
+    let scale = if normalize {
+        if peak > 0.7 { 0.7 / peak } else { 1.0 }
+    } else {
+        1.0
+    };
+
+    if !normalize && peak > 1.0 {
+        eprintln!("WARNING: Peak exceeds 0 dBFS ({peak_dbfs:.1} dBFS) — consider reducing --gain or --volume");
+    }
 
     let spec = hound::WavSpec {
         channels: 1,
@@ -356,9 +425,17 @@ fn cmd_render(args: &[String]) {
     println!("  Note:      MIDI {note}");
     println!("  Velocity:  {velocity}");
     println!("  Duration:  {duration:.1}s");
-    println!("  LDR:       {r_ldr:.0} Ω");
+    if tremolo_depth > 0.0 {
+        println!("  Tremolo:   rate={tremolo_rate:.1} Hz, depth={tremolo_depth:.2}");
+    } else {
+        println!("  LDR:       {r_ldr:.0} Ω (static)");
+    }
     println!("  Gain:      {preamp_gain:.1}x, Volume: {volume:.3}");
     println!("  Speaker:   {speaker_char:.1}");
+    if let Some(ds) = disp_scale { println!("  Disp scale: {ds:.3}"); }
+    if no_preamp { println!("  Preamp:    BYPASSED"); }
+    if no_poweramp { println!("  Power amp: BYPASSED"); }
+    if normalize { println!("  Normalize: ON (-3 dBFS ceiling)"); }
     println!("  Peak:      {peak_dbfs:.1} dBFS (raw)");
     println!("  Output:    {output_path}");
 }
@@ -375,7 +452,7 @@ fn cmd_render(args: &[String]) {
 fn cmd_bark_audit(args: &[String]) {
     // Pickup constants (duplicated here since they're private in pickup.rs)
     const SENSITIVITY: f64 = 1.8375;
-    const DISPLACEMENT_SCALE: f64 = 0.30;
+    const DISPLACEMENT_SCALE: f64 = 0.35;
     const MAX_Y: f64 = 0.90;
     const PICKUP_HPF_HZ: f64 = 2312.0;
 
@@ -419,17 +496,18 @@ fn cmd_bark_audit(args: &[String]) {
             let amp_offsets = variation::mode_amplitude_offsets(note);
             let vel_exp = tables::velocity_exponent(note);
             let vel_scale = velocity.powf(vel_exp);
-            let out_scale = tables::output_scale(note);
+            let _out_scale = tables::output_scale(note); // post-pickup only
 
             let mut amplitudes = [0.0f64; NUM_MODES];
             for i in 0..NUM_MODES {
+                // output_scale is now post-pickup (decoupled from nonlinearity)
                 amplitudes[i] = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i]
-                    * vel_scale * out_scale;
+                    * vel_scale;
             }
 
             let mut reed = ModalReed::new(
                 detuned, &params.mode_ratios, &amplitudes,
-                &params.mode_decay_rates, BASE_SR,
+                &params.mode_decay_rates, 0.0, BASE_SR,
             );
 
             let n_samples = (duration * BASE_SR) as usize;
@@ -468,7 +546,7 @@ fn cmd_bark_audit(args: &[String]) {
             let hpf_h2_h1 = if hpf_h1 > 1e-15 { hpf_h2 / hpf_h1 } else { 0.0 };
 
             // ── Stage 4: After preamp (oversampled) ──
-            let mut preamp = EbersMollPreamp::new(OVERSAMPLED_SR);
+            let mut preamp = create_preamp(args);
             preamp.set_ldr_resistance(1_000_000.0);
             let mut os = Oversampler::new();
 
@@ -521,6 +599,175 @@ fn midi_note_name(note: u8) -> String {
     let name = NAMES[(note % 12) as usize];
     let octave = (note as i32 / 12) - 1;
     format!("{name}{octave}")
+}
+
+// ─── Intermod audit ─────────────────────────────────────────────────────────
+
+/// Spectral grass metric: ratio of harmonic energy to midpoint (inter-harmonic) energy.
+///
+/// Sums DFT magnitude² at integer harmonics 1..N and at midpoints (n+0.5)×f₁.
+/// Returns (harmonic_energy_db, midpoint_energy_db, ratio_db).
+/// Higher ratio = cleaner. >40 dB = clean, <20 dB = dirty.
+fn spectral_grass(signal: &[f64], fundamental_hz: f64, sr: f64, max_harmonic: usize) -> (f64, f64, f64) {
+    let mut harmonic_energy = 0.0f64;
+    let mut midpoint_energy = 0.0f64;
+
+    for n in 1..=max_harmonic {
+        let freq = n as f64 * fundamental_hz;
+        if freq >= sr / 2.0 { break; }
+        let mag = dft_magnitude(signal, freq, sr);
+        harmonic_energy += mag * mag;
+    }
+
+    for n in 1..max_harmonic {
+        let freq = (n as f64 + 0.5) * fundamental_hz;
+        if freq >= sr / 2.0 { break; }
+        let mag = dft_magnitude(signal, freq, sr);
+        midpoint_energy += mag * mag;
+    }
+
+    let h_db = if harmonic_energy > 0.0 { 10.0 * harmonic_energy.log10() } else { -120.0 };
+    let m_db = if midpoint_energy > 0.0 { 10.0 * midpoint_energy.log10() } else { -120.0 };
+    (h_db, m_db, h_db - m_db)
+}
+
+fn cmd_intermod_audit(args: &[String]) {
+    let threshold = parse_flag(args, "--threshold", 0.07);
+    let do_render = args.contains(&"--render".to_string());
+    let duration = parse_flag(args, "--duration", 3.0);
+
+    let notes: Vec<u8> = if args.iter().any(|a| a == "--notes") {
+        let s = parse_flag_str(args, "--notes", "");
+        s.split(',').filter_map(|n| n.trim().parse().ok()).collect()
+    } else {
+        (tables::MIDI_LO..=tables::MIDI_HI).collect()
+    };
+
+    // ── Static analysis ──
+    println!("=== INTERMOD RISK AUDIT ===");
+    println!("Threshold: {threshold:.4}");
+    println!();
+    println!("{:>6} {:>4} {:>6}  {:>5} {:>6} {:>8} {:>8} {:>7} {:>7} {:>8}",
+        "Note", "MIDI", "mu",
+        "Mode", "Ratio", "Offset", "Beat Hz", "Eff Amp", "Weight", "Risk");
+    println!("{}", "-".repeat(82));
+
+    let mut flagged_notes = Vec::new();
+
+    for &midi in &notes {
+        let report = tables::intermod_risk(midi);
+        let note_name = midi_note_name(midi);
+        let flagged = report.max_risk >= threshold;
+
+        if flagged {
+            flagged_notes.push(midi);
+        }
+
+        // Print the highest-risk product for each note (compact view)
+        if let Some(worst) = report.products.iter().max_by(|a, b| a.risk_score.partial_cmp(&b.risk_score).unwrap()) {
+            let flag = if flagged { " ***" } else { "" };
+            println!(
+                "{:>6} {:>4} {:>6.4}  {:>5} {:>6.3} {:>8.5} {:>8.2} {:>7.4} {:>7.3} {:>8.5}{}",
+                note_name, midi, report.mu,
+                worst.mode, worst.mode_ratio, worst.fractional_offset,
+                worst.beat_hz, worst.effective_amplitude, worst.perceptual_weight,
+                worst.risk_score, flag
+            );
+        }
+    }
+
+    println!();
+    println!("Flagged notes (risk >= {threshold:.4}): {}", flagged_notes.len());
+    if !flagged_notes.is_empty() {
+        let names: Vec<String> = flagged_notes.iter()
+            .map(|&m| format!("{} ({})", midi_note_name(m), m))
+            .collect();
+        println!("  {}", names.join(", "));
+    }
+
+    // ── Render analysis (optional) ──
+    if !do_render {
+        if !flagged_notes.is_empty() {
+            println!();
+            println!("Run with --render to analyze flagged notes spectrally.");
+        }
+        return;
+    }
+
+    let render_notes = if args.iter().any(|a| a == "--notes") {
+        notes.clone()
+    } else {
+        flagged_notes.clone()
+    };
+
+    if render_notes.is_empty() {
+        println!();
+        println!("No notes to render-analyze. All clear!");
+        return;
+    }
+
+    println!();
+    println!("=== RENDER ANALYSIS (sustain spectral grass) ===");
+    println!("Duration: {duration:.1}s, analysis window: 0.5-2.0s");
+    println!();
+    println!("{:>6} {:>4}  {:>10} {:>10} {:>10}  {:>8}",
+        "Note", "MIDI", "Harm (dB)", "Mid (dB)", "Ratio (dB)", "Verdict");
+    println!("{}", "-".repeat(64));
+
+    for &midi in &render_notes {
+        let fundamental_hz = tables::midi_to_freq(midi);
+
+        // Render: reed + pickup, no preamp (pickup nonlinearity is the intermod source)
+        let signal = Voice::render_note(midi, 1.0, duration, BASE_SR);
+
+        // Extract sustain window
+        let start = (0.5 * BASE_SR) as usize;
+        let end = (2.0 * BASE_SR).min(signal.len() as f64) as usize;
+        if end <= start {
+            println!("{:>6} {:>4}  (signal too short)", midi_note_name(midi), midi);
+            continue;
+        }
+        let sustain = &signal[start..end];
+
+        let max_harmonic = (BASE_SR / 2.0 / fundamental_hz).floor() as usize;
+        let (h_db, m_db, ratio_db) = spectral_grass(sustain, fundamental_hz, BASE_SR, max_harmonic.min(32));
+
+        let verdict = if ratio_db > 40.0 {
+            "CLEAN"
+        } else if ratio_db > 30.0 {
+            "OK"
+        } else if ratio_db > 20.0 {
+            "MARGINAL"
+        } else {
+            "DIRTY"
+        };
+
+        println!("{:>6} {:>4}  {:>10.1} {:>10.1} {:>10.1}  {:>8}",
+            midi_note_name(midi), midi, h_db, m_db, ratio_db, verdict);
+
+        // For marginal/dirty: print per-product detail
+        if ratio_db <= 30.0 {
+            let report = tables::intermod_risk(midi);
+            println!("  Per-product detail:");
+            for p in &report.products {
+                if p.risk_score < 0.001 { continue; }
+                let intermod_freq = p.mode_ratio * fundamental_hz;
+                let nearest_freq = p.nearest_integer as f64 * fundamental_hz;
+                let intermod_mag = dft_magnitude(sustain, intermod_freq, BASE_SR);
+                let nearest_mag = dft_magnitude(sustain, nearest_freq, BASE_SR);
+                let ratio = if nearest_mag > 1e-15 {
+                    20.0 * (intermod_mag / nearest_mag).log10()
+                } else {
+                    0.0
+                };
+                println!(
+                    "    Mode {}: {:.1} Hz (near H{} @ {:.1} Hz) intermod/harmonic = {:.1} dB, risk={:.5}",
+                    p.mode, intermod_freq, p.nearest_integer, nearest_freq,
+                    ratio, p.risk_score
+                );
+            }
+        }
+    }
 }
 
 // ─── DFT helper ─────────────────────────────────────────────────────────────
