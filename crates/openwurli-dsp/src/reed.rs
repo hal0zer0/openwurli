@@ -25,13 +25,11 @@ pub struct ModalReed {
     amplitudes: [f64; NUM_MODES],
     decay_per_sample: [f64; NUM_MODES],
     sample: u64,
-    // Per-mode onset ramp: raised cosine during hammer contact period.
+    // Onset ramp: raised cosine during hammer contact period.
     // Models the finite hammer dwell — reed displacement builds up smoothly
-    // rather than jumping to full amplitude. Higher modes have longer ramps
-    // because soft felt couples less efficiently to high-frequency modes.
-    // Mode phases advance during the ramp → dwell-dependent phase scatter.
-    onset_ramp_samples: [u64; NUM_MODES],
-    onset_ramp_inc: [f64; NUM_MODES],
+    // rather than jumping to full amplitude. All modes ramp together.
+    onset_ramp_samples: u64,
+    onset_ramp_inc: f64,
     // Damper state
     damper_active: bool,
     damper_rates: [f64; NUM_MODES],
@@ -43,11 +41,6 @@ pub struct ModalReed {
     jitter_drift: [f64; NUM_MODES],
     jitter_revert: f64,   // exp(-dt/tau): mean-reversion per sample
     jitter_diffusion: f64, // noise scaling per sample
-    // Hammer impact overshoot: reed tip displacement peaks above steady-state
-    // during the first few cycles after hammer contact, then settles.
-    // The 1/(1-y) pickup nonlinearity amplifies this → bark peaks at attack.
-    impact_overshoot: f64,  // current overshoot level (decays per sample)
-    impact_decay: f64,      // per-sample decay factor: exp(-1/(tau*fs))
 }
 
 impl ModalReed {
@@ -89,30 +82,20 @@ impl ModalReed {
         let jitter_revert = (-dt / JITTER_TAU).exp();
         let jitter_diffusion = JITTER_SIGMA * (1.0 - jitter_revert * jitter_revert).sqrt();
 
-        // Per-mode onset ramp: raised cosine over a mode-dependent period.
-        // e_n(t) = 0.5 * (1 - cos(pi * t / T_n)) for t < T_n, then 1.0.
+        // Onset ramp: raised cosine over the hammer dwell period.
+        // e(t) = 0.5 * (1 - cos(pi * t / T_dwell)) for t < T_dwell, then 1.0.
         //
-        // Two mechanisms set each mode's ramp time:
-        //   1. Dwell-based: T_dwell * ratio_n^0.25 — soft felt couples less to higher modes
-        //   2. Mechanical ring-up: dwell_time_s itself (passed from voice.rs as
-        //      max(hammer_dwell, N_cycles/f0)) — minimum time for ALL modes
-        //
-        // For bass notes, the mechanical ring-up dominates and all modes get similar
-        // ramp times (no vibraphone effect). For treble, the dwell-based spread
-        // may give higher modes slightly longer ramps.
-        let mut onset_ramp_samples = [0u64; NUM_MODES];
-        let mut onset_ramp_inc = [0.0f64; NUM_MODES];
-        for i in 0..NUM_MODES {
-            let dwell_based = dwell_time_s * mode_ratios[i].powf(0.25);
-            let mode_ramp = dwell_based.max(dwell_time_s);
-            let samps = (mode_ramp * sample_rate).round() as u64;
-            onset_ramp_samples[i] = samps;
-            onset_ramp_inc[i] = if samps > 0 {
-                std::f64::consts::PI / samps as f64
-            } else {
-                0.0
-            };
-        }
+        // All modes ramp up together over the same dwell time. The hammer applies
+        // force to ALL modes simultaneously — the dwell filter (Gaussian in
+        // frequency domain) controls how much energy each mode receives, NOT when
+        // it arrives. Mode-dependent ramp times would create a vibraphone-like
+        // staggered onset where the fundamental appears before higher modes.
+        let ramp_samps = (dwell_time_s * sample_rate).round() as u64;
+        let ramp_inc = if ramp_samps > 0 {
+            std::f64::consts::PI / ramp_samps as f64
+        } else {
+            0.0
+        };
 
         // Initialize jitter_drift from the OU stationary distribution N(0, JITTER_SIGMA).
         // This eliminates the ~60ms warm-up period (3*tau) — phase decorrelation is
@@ -136,8 +119,8 @@ impl ModalReed {
             amplitudes: *amplitudes,
             decay_per_sample,
             sample: 0,
-            onset_ramp_samples,
-            onset_ramp_inc,
+            onset_ramp_samples: ramp_samps,
+            onset_ramp_inc: ramp_inc,
             damper_active: false,
             damper_rates: [0.0; NUM_MODES],
             damper_ramp_samples: 0.0,
@@ -147,24 +130,7 @@ impl ModalReed {
             jitter_drift,
             jitter_revert,
             jitter_diffusion,
-            impact_overshoot: 0.0,
-            impact_decay: 1.0,
         }
-    }
-
-    /// Set hammer impact overshoot envelope.
-    ///
-    /// Models the transient peak displacement when the hammer rebounds from the
-    /// reed. The reed tip deflects past its steady-state vibration amplitude
-    /// during the first few cycles, then settles. Because 1/(1-y) is nonlinear,
-    /// this overshoot produces disproportionately more H2 during attack.
-    ///
-    /// - `amount`: overshoot ratio (0.0 = none, 0.8 = 1.8× peak displacement)
-    /// - `tau_s`: decay time constant in seconds (~8ms = a few fundamental cycles)
-    /// - `sample_rate`: audio sample rate
-    pub fn set_impact_overshoot(&mut self, amount: f64, tau_s: f64, sample_rate: f64) {
-        self.impact_overshoot = amount;
-        self.impact_decay = (-1.0 / (tau_s * sample_rate)).exp();
     }
 
     /// Start the damper (called on note_off).
@@ -227,18 +193,18 @@ impl ModalReed {
                 }
             }
 
+            // Onset ramp: all modes ramp together during hammer contact.
+            let onset = if self.sample < self.onset_ramp_samples {
+                0.5 * (1.0 - (n * self.onset_ramp_inc).cos())
+            } else {
+                1.0
+            };
+
             for i in 0..NUM_MODES {
                 // Ornstein-Uhlenbeck jitter: mean-reverting random walk on frequency
                 // drift[i] is the fractional frequency deviation (e.g. 0.0004 = 0.04%)
                 let noise = self.lcg_normal();
                 self.jitter_drift[i] = revert * self.jitter_drift[i] + diffusion * noise;
-
-                // Per-mode onset ramp: fundamental arrives first, higher modes follow.
-                let onset = if self.sample < self.onset_ramp_samples[i] {
-                    0.5 * (1.0 - (n * self.onset_ramp_inc[i]).cos())
-                } else {
-                    1.0
-                };
 
                 let total_decay = -self.decay_per_sample[i] * n - self.damper_integral[i];
                 sum += self.amplitudes[i] * self.phases[i].sin() * onset * total_decay.exp();
@@ -252,12 +218,7 @@ impl ModalReed {
                 }
             }
 
-            // Apply hammer impact overshoot: reed displacement peaks above
-            // steady-state during first few ms, boosting attack bark.
-            let overshoot_env = 1.0 + self.impact_overshoot;
-            self.impact_overshoot *= self.impact_decay;
-
-            *sample += sum * overshoot_env;
+            *sample += sum;
             self.sample += 1;
         }
     }
@@ -387,19 +348,16 @@ mod tests {
 
     #[test]
     fn test_onset_ramp_ff_vs_pp() {
-        // ff (short ramp) should reach full amplitude faster than pp (long ramp)
+        // ff (short dwell) should reach full amplitude faster than pp (long dwell).
+        // All modes ramp together over the dwell time.
         let sr = 44100.0;
         let mut amps = [0.0f64; NUM_MODES];
         amps[0] = 1.0;
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        // At 440 Hz, ring-up = 3/440 = 6.8ms. ff dwell = 0.5ms, pp dwell = 2.5ms.
-        // voice.rs passes max(dwell, ring_up), so both get 6.8ms here.
-        // To test ff vs pp, use high frequency where ring_up < dwell.
-        let hi_freq = 5000.0; // ring_up = 3/5000 = 0.6ms
-        let mut reed_ff = ModalReed::new(hi_freq, &ratios, &amps, &decays, 0.001, sr, 42);
-        let mut reed_pp = ModalReed::new(hi_freq, &ratios, &amps, &decays, 0.005, sr, 42);
+        let mut reed_ff = ModalReed::new(440.0, &ratios, &amps, &decays, 0.001, sr, 42);
+        let mut reed_pp = ModalReed::new(440.0, &ratios, &amps, &decays, 0.005, sr, 42);
 
         let n = (sr * 0.010) as usize; // 10ms window
         let mut buf_ff = vec![0.0f64; n];
@@ -407,7 +365,7 @@ mod tests {
         reed_ff.render(&mut buf_ff);
         reed_pp.render(&mut buf_pp);
 
-        // At 2ms, ff should be louder than pp
+        // At 2ms, ff (1ms dwell, already past ramp) should be louder than pp (5ms dwell, still ramping)
         let t2ms = (sr * 0.002) as usize;
         let ff_energy: f64 = buf_ff[..t2ms].iter().map(|x| x * x).sum();
         let pp_energy: f64 = buf_pp[..t2ms].iter().map(|x| x * x).sum();
@@ -428,8 +386,7 @@ mod tests {
         let mut buf = vec![0.0f64; 100];
         reed.render(&mut buf);
 
-        // With dwell=0, the only ramp is from mode_ratio^0.25 which for mode 0
-        // (ratio=1.0) gives ramp=0 → immediate amplitude
+        // With dwell=0, all modes start at full amplitude immediately
         let early_peak = buf[..10].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
         assert!(early_peak > 0.05,
             "Zero dwell should give immediate amplitude, got {early_peak:.6}");

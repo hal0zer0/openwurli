@@ -25,11 +25,11 @@ impl Default for OpenWurliParams {
         Self {
             volume: FloatParam::new(
                 "Volume",
-                0.60,
+                0.40,
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 1.0,
-                    factor: FloatRange::skew_factor(-2.0),
+                    factor: FloatRange::skew_factor(2.0),
                 },
             )
             .with_smoother(SmoothingStyle::Logarithmic(5.0))

@@ -7,15 +7,24 @@ pub const NUM_MODES: usize = 7;
 pub const MIDI_LO: u8 = 33;
 pub const MIDI_HI: u8 = 96;
 
-/// Base mode amplitudes from 1/omega_n scaling (Section 3.2).
-/// These are relative to the fundamental and represent a pure tip impulse.
+/// Base mode amplitudes calibrated against OBM Wurlitzer 200A recordings.
 ///
-/// Ideal bare-beam values: A_n ∝ φ_n(tip) / ω_n ∝ (β₁/β_n)².
-/// Felt hammer softening (contact duration) is handled separately by the
-/// dwell filter in hammer.rs — NOT baked in here. The hammer contacts within
-/// 1-2mm of the free tip, well away from mode 2's vibration node at 0.22L,
-/// so spatial averaging of the hammer felt is negligible.
-pub const BASE_MODE_AMPLITUDES: [f64; NUM_MODES] = [1.0, 0.160, 0.057, 0.029, 0.018, 0.012, 0.008];
+/// Original 1/ω_n scaling (Section 3.2) predicted [1.0, 0.160, 0.057, ...]
+/// from ideal bare-beam impulse response. However, OBM onset-phase spectral
+/// analysis reveals physical mode 2 is 20-37 dB weaker than predicted across
+/// the full register. Real Wurlitzer reeds have solder tip mass, non-uniform
+/// geometry, and hammer coupling that suppress upper modes far below the
+/// Euler-Bernoulli ideal.
+///
+/// Calibration method: back-calculate mechanical mode 2/fundamental ratio
+/// from OBM recordings by correcting for the pickup HPF at 2312 Hz. OBM
+/// mid-range (D4) implies mechanical mode 2 at -43 dB vs model's -16 dB.
+/// Upper modes scaled proportionally (1/ω_n ratios preserved).
+///
+/// The real 200A's "bark" comes primarily from the pickup's 1/(1-y)
+/// nonlinearity generating H2 at 2×fundamental, NOT from physical mode 2
+/// oscillation at ~6.3×fundamental.
+pub const BASE_MODE_AMPLITUDES: [f64; NUM_MODES] = [1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005];
 
 /// MIDI note number to fundamental frequency (Hz), A440 tuning.
 pub fn midi_to_freq(midi: u8) -> f64 {
