@@ -3,11 +3,16 @@
 /// Signal flow: modal_oscillator -> pickup_hpf -> output
 /// Attack noise mixed in during first ~15 ms.
 
-use crate::hammer::{dwell_attenuation, dwell_time, AttackNoise};
+use crate::hammer::{dwell_attenuation, onset_ramp_time, AttackNoise};
 use crate::pickup::Pickup;
 use crate::reed::ModalReed;
 use crate::tables::{self, NUM_MODES};
 use crate::variation;
+
+/// TEMPORARY: bypass all attack shaping for A/B comparison.
+/// When true: instant organ-style onset, no dwell filter, no attack noise.
+/// Flip to `false` to restore the full attack model.
+const BYPASS_ATTACK: bool = false;
 
 pub struct Voice {
     reed: ModalReed,
@@ -31,6 +36,7 @@ impl Voice {
         let detuned_fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
 
         let dwell = dwell_attenuation(velocity, detuned_fundamental, &params.mode_ratios);
+        let t_dwell = if BYPASS_ATTACK { 0.0 } else { onset_ramp_time(velocity, detuned_fundamental) };
         let amp_offsets = variation::mode_amplitude_offsets(midi_note);
 
         let mut amplitudes = [0.0f64; NUM_MODES];
@@ -46,9 +52,7 @@ impl Voice {
             *a *= vel_scale;
         }
 
-        let t_dwell = dwell_time(velocity);
-
-        let mut reed = ModalReed::new(
+        let reed = ModalReed::new(
             detuned_fundamental,
             &params.mode_ratios,
             &amplitudes,
@@ -58,19 +62,14 @@ impl Voice {
             noise_seed,
         );
 
-        // Hammer impact overshoot: the reed tip rebounds past its steady-state
-        // vibration amplitude during the first few cycles after hammer contact.
-        // Harder hits → more felt compression → more elastic rebound energy.
-        // Tau: 3 fundamental cycles with 12ms floor — even short treble reeds
-        // need several ms to settle after hammer rebound. At 100ms+ (sustain
-        // window), overshoot has decayed to <0.02% regardless of tau.
-        let overshoot_amount = 1.0 * velocity;
-        let overshoot_tau = (3.0 / detuned_fundamental).max(0.012);
-        reed.set_impact_overshoot(overshoot_amount, overshoot_tau, sample_rate);
-
         let mut pickup = Pickup::new(sample_rate);
         pickup.set_displacement_scale(tables::pickup_displacement_scale(midi_note));
-        let noise = AttackNoise::new(velocity, sample_rate, noise_seed);
+        let noise = AttackNoise::new(
+            if BYPASS_ATTACK { 0.0 } else { velocity },
+            detuned_fundamental,
+            sample_rate,
+            noise_seed,
+        );
 
         // Post-pickup gain: technician voicing (gap adjustment) affects volume
         // without changing the nonlinear displacement fraction y.

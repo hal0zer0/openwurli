@@ -98,13 +98,21 @@ impl Speaker {
         let x3 = x2 * input;
         let shaped = input + self.a2 * x2 + self.a3 * x3;
 
-        // 2. Thermal voice coil compression (slow envelope follower)
+        // 2. Cone excursion limit (Xmax soft stop)
+        //    Real speaker cones have physical excursion limits where the spider
+        //    and surround stiffen rapidly. The polynomial is unbounded (1.0 input
+        //    → 1.8 output at full character); tanh models the soft mechanical stop.
+        //    At normal levels (|shaped| < 0.5): <8% compression (inaudible).
+        //    At ff chords (|shaped| > 1.0): graceful saturation to ±1.0.
+        let limited = shaped.tanh();
+
+        // 3. Thermal voice coil compression (slow envelope follower)
         let power = x2;
         self.thermal_state += (power - self.thermal_state) * self.thermal_alpha;
         let thermal_gain = 1.0 / (1.0 + self.thermal_coeff * self.thermal_state.sqrt());
 
-        // 3. Linear filters (HPF + LPF)
-        let filtered = self.hpf.process(shaped * thermal_gain);
+        // 4. Linear filters (HPF + LPF)
+        let filtered = self.hpf.process(limited * thermal_gain);
         self.lpf.process(filtered)
     }
 
@@ -213,8 +221,8 @@ mod tests {
         let thd_loud = measure_thd(200.0, 0.8, sr);
         let thd_quiet = measure_thd(200.0, 0.2, sr);
 
-        assert!(thd_loud > thd_quiet * 2.0,
-            "Loud THD ({thd_loud:.4}) should be much larger than quiet THD ({thd_quiet:.4})");
+        assert!(thd_loud > thd_quiet * 1.2,
+            "Loud THD ({thd_loud:.4}) should exceed quiet THD ({thd_quiet:.4}) (tanh Xmax limits growth)");
     }
 
     #[test]

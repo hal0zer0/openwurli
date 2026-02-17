@@ -10,13 +10,33 @@
 use crate::filters::Biquad;
 use crate::tables::NUM_MODES;
 
-/// Hammer dwell time (contact duration) in seconds.
+/// Hammer dwell time (contact duration) in seconds — for spectral filtering only.
 ///
 /// Velocity-dependent: ff (vel=1.0) = 0.5ms, pp (vel=0.0) = 2.5ms.
-/// This is both the spectral filter width (via `dwell_attenuation`) and the
-/// onset ramp duration (via `ModalReed`'s raised-cosine ramp).
+/// This controls the Gaussian spectral filter (how hammer contact duration
+/// shapes mode excitation). With sigma=8, this is nearly transparent at all
+/// velocities — the OBM-calibrated BASE_MODE_AMPLITUDES already capture the
+/// per-mode energy distribution.
+///
+/// For the time-domain onset ramp, see `onset_ramp_time`.
 pub fn dwell_time(velocity: f64) -> f64 {
     0.0005 + 0.002 * (1.0 - velocity)
+}
+
+/// Register-dependent onset ramp time — models reed mechanical inertia.
+///
+/// Heavier bass reeds take longer to reach full vibration amplitude after
+/// the hammer strike. OBM cycle-by-cycle analysis shows the real 200A
+/// reaches 90% amplitude by cycle 2 across all registers:
+///   - D3 (147 Hz): 50% at cycle 1, 90% at cycle 2
+///   - D4 (294 Hz): 50% at cycle 1, 90% at cycle 2
+///   - D6 (1175 Hz): near-instant (full by cycle 0-1)
+///
+/// Formula: 2 periods at ff, 3 at pp, clamped to [2ms, 15ms].
+pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64) -> f64 {
+    let period_s = 1.0 / fundamental_hz;
+    let periods = 2.0 + 1.0 * (1.0 - velocity);
+    (periods * period_s).clamp(0.002, 0.015)
 }
 
 /// Compute per-mode attenuation from the Gaussian dwell filter.
@@ -55,7 +75,9 @@ pub fn dwell_attenuation(
 /// Attack noise generator — exponentially decaying bandpass noise.
 ///
 /// Models the mechanical impact transient of felt hammer on steel reed.
-/// Duration: ~15 ms. Band: 200 Hz to 5 kHz.
+/// Duration: ~15 ms. Center frequency tracks the note (4× fundamental,
+/// clamped 200–2000 Hz) so the noise sits within the harmonic neighborhood
+/// rather than in a spectrally disconnected band.
 pub struct AttackNoise {
     amplitude: f64,
     decay_per_sample: f64,
@@ -68,19 +90,27 @@ impl AttackNoise {
     /// Create a new attack noise burst.
     ///
     /// - `velocity`: 0.0 to 1.0
+    /// - `fundamental_hz`: fundamental frequency of the note (for tracking)
     /// - `sample_rate`: audio sample rate
     /// - `seed`: RNG seed (derive from note + counter to decorrelate simultaneous notes)
-    pub fn new(velocity: f64, sample_rate: f64, seed: u32) -> Self {
-        let noise_amp = 0.15 * velocity * velocity;
+    pub fn new(velocity: f64, fundamental_hz: f64, sample_rate: f64, seed: u32) -> Self {
+        let noise_amp = 0.015 * velocity * velocity;
         let tau = 0.003;
         let decay_per_sample = (-1.0 / (tau * sample_rate)).exp();
         let duration_samples = (0.015 * sample_rate) as u32;
+
+        // Center frequency tracks the note: 4× fundamental, clamped to
+        // 200–2000 Hz. This keeps the noise in the harmonic neighborhood
+        // so it blends with the reed tone instead of sounding like a
+        // disconnected "poof" (the old fixed 1 kHz was 15 harmonics above
+        // C2's 65 Hz fundamental).
+        let center = (fundamental_hz * 4.0).clamp(200.0, 2000.0);
 
         Self {
             amplitude: noise_amp,
             decay_per_sample,
             remaining: duration_samples,
-            bpf: Biquad::bandpass(1000.0, 1.0, sample_rate),
+            bpf: Biquad::bandpass(center, 0.7, sample_rate),
             rng_state: seed,
         }
     }
@@ -138,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_attack_noise_decays() {
-        let mut noise = AttackNoise::new(1.0, 44100.0, 0x12345678);
+        let mut noise = AttackNoise::new(1.0, 440.0, 44100.0, 0x12345678);
         let mut buf = vec![0.0f64; 700];
         noise.render(&mut buf);
 
@@ -149,10 +179,42 @@ mod tests {
 
     #[test]
     fn test_attack_noise_is_done() {
-        let mut noise = AttackNoise::new(1.0, 44100.0, 0x12345678);
+        let mut noise = AttackNoise::new(1.0, 440.0, 44100.0, 0x12345678);
         let mut buf = vec![0.0f64; 1000];
         noise.render(&mut buf);
         assert!(noise.is_done());
+    }
+
+    #[test]
+    fn test_onset_ramp_register_dependent() {
+        // Bass reeds should have longer onset than treble reeds
+        let bass = onset_ramp_time(1.0, 65.0);   // C2 ff
+        let mid = onset_ramp_time(1.0, 262.0);    // C4 ff
+        let treble = onset_ramp_time(1.0, 1047.0); // C6 ff
+
+        assert!(bass > mid, "bass onset ({bass:.4}) should exceed mid ({mid:.4})");
+        assert!(mid > treble, "mid onset ({mid:.4}) should exceed treble ({treble:.4})");
+
+        // Bass should hit the 15ms clamp (2 periods of 65 Hz = 30.8ms)
+        assert!((bass - 0.015).abs() < 1e-6, "C2 ff should clamp to 15ms, got {bass:.4}");
+        // Treble should hit the 2ms floor (2 periods of 1047 Hz = 1.9ms)
+        assert!((treble - 0.002).abs() < 1e-6, "C6 ff should clamp to 2ms, got {treble:.6}");
+        // C4 ff: 2/262 = 7.6ms (unclamped)
+        assert!((mid - 2.0 / 262.0).abs() < 0.001, "C4 ff should be ~7.6ms, got {mid:.4}");
+    }
+
+    #[test]
+    fn test_onset_ramp_velocity_dependent() {
+        // pp should have longer onset than ff (softer hit = longer contact)
+        let ff = onset_ramp_time(1.0, 262.0);
+        let pp = onset_ramp_time(0.0, 262.0);
+
+        assert!(pp > ff, "pp onset ({pp:.4}) should exceed ff ({ff:.4})");
+        // ff = 2 periods, pp = 3 periods
+        let expected_ff = 2.0 / 262.0;
+        let expected_pp = 3.0 / 262.0;
+        assert!((ff - expected_ff).abs() < 0.001);
+        assert!((pp - expected_pp).abs() < 0.001);
     }
 
 }
