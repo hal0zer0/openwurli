@@ -359,30 +359,33 @@ pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES]
 /// Per-note output scaling to balance the keyboard.
 ///
 /// Applied POST-pickup to decouple volume from nonlinear displacement.
-/// Two-slope curve: steeper below C3 to compensate for both the pickup HPF
-/// attenuation of bass fundamentals AND the bass mode taper energy reduction.
+/// Uses a physics-based proxy: DS/(1-DS) captures nonlinear pickup gain,
+/// f0/sqrt(f0²+fc²) captures the pickup HPF rolloff. The product is
+/// inverted relative to C4 to flatten the keyboard, then a gentle treble
+/// voicing slope compensates for harmonic content loss at low DS values
+/// and preamp BW rolloff.
 ///
-///   A1 (MIDI 33): +13.1 dB  (steep: HPF + mode taper compensation)
-///   C2 (MIDI 36): +11.2 dB
-///   C3 (MIDI 48): +2.6 dB   (knee — slopes meet)
-///   C4 (MIDI 60): 0 dB      (reference)
-///   C5 (MIDI 72): -2.6 dB
-///   C6 (MIDI 84): -5.3 dB
-///   C7 (MIDI 96): -7.9 dB
+/// Only two tuning knobs:
+///   TARGET_DB — absolute level (C4@ff@vol=0.60 → ~-3 dBFS)
+///   VOICING_SLOPE — treble balance (dB/semi above C4)
 pub fn output_scale(midi: u8) -> f64 {
-    // -4 dB offset compensates for extra energy from DS_AT_C4=0.70 nonlinearity.
-    // Without this, bass ff clips by +4-6 dBFS.
-    const BARK_OFFSET_DB: f64 = -4.0;
-    let m = midi as f64;
-    let db = if m < 48.0 {
-        // Below C3: 0.70 dB/semi to compensate HPF + bass mode taper.
-        let db_at_c3 = -0.22 * (48.0 - 60.0); // +2.64 dB
-        db_at_c3 + 0.70 * (48.0 - m)
-    } else {
-        // C3 and above: 0.22 dB/semi from C4 reference
-        -0.22 * (m - 60.0)
-    };
-    f64::powf(10.0, (db + BARK_OFFSET_DB) / 20.0)
+    const TARGET_DB: f64 = -13.0;
+    const VOICING_SLOPE: f64 = -0.04; // dB/semi above C4
+    const HPF_FC: f64 = 2312.0;
+
+    let ds = pickup_displacement_scale(midi);
+    let f0 = midi_to_freq(midi);
+    let nl = ds / (1.0 - ds);
+    let hpf = f0 / (f0 * f0 + HPF_FC * HPF_FC).sqrt();
+
+    let f0_ref = midi_to_freq(60);
+    let nl_ref = DS_AT_C4 / (1.0 - DS_AT_C4);
+    let hpf_ref = f0_ref / (f0_ref * f0_ref + HPF_FC * HPF_FC).sqrt();
+
+    let flat_db = -20.0 * ((nl * hpf) / (nl_ref * hpf_ref)).log10();
+    let voicing_db = VOICING_SLOPE * (midi as f64 - 60.0).max(0.0);
+
+    f64::powf(10.0, (TARGET_DB + flat_db + voicing_db) / 20.0)
 }
 
 /// Register-dependent velocity exponent for dynamic expression.
