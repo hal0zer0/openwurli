@@ -1,0 +1,248 @@
+* DK AC Gain Extraction (simplified for batch mode)
+
+.MODEL Q_IDEAL NPN(
++  IS=3.03E-14 BF=100000 NF=1.0 VAF=1000
++  RB=0 RE=0 RC=0
++  CJE=0 CJC=0 TF=0 TR=0)
+
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+* CIRCUIT A: Ideal BJT, R_ldr=1M
+Vcc_a vcc_a 0 DC 15
+Vin_a in_a 0 DC 0 AC 1
+R1a in_a node_Aa 22K
+Cin_a node_Aa base1a 0.022U
+R2a vcc_a base1a 2MEG
+R3a base1a 0 470K
+Q1a coll1a base1a emit1a Q_IDEAL
+Rc1a vcc_a coll1a 150K
+Cc3a coll1a base1a 100P
+Re1a emit1a 0 33K
+Ce1a emit1a fb_ja 4.7U
+R10a outa fb_ja 56K
+Rldr_a fb_ja 0 1MEG
+Q2a coll2a coll1a emit2aa Q_IDEAL
+Rc2a vcc_a coll2a 1.8K
+Re2aa emit2aa emit2ba 270
+Ce2a emit2aa emit2ba 22U
+Re2ba emit2ba 0 820
+Cc4a coll2a coll1a 100P
+R9a coll2a outa 6.8K
+
+* CIRCUIT B: Ideal BJT, R_ldr=19K
+Vcc_b vcc_b 0 DC 15
+Vin_b in_b 0 DC 0 AC 1
+R1b in_b node_Ab 22K
+Cin_b node_Ab base1b 0.022U
+R2b vcc_b base1b 2MEG
+R3b base1b 0 470K
+Q1b coll1b base1b emit1b Q_IDEAL
+Rc1b vcc_b coll1b 150K
+Cc3b coll1b base1b 100P
+Re1b emit1b 0 33K
+Ce1b emit1b fb_jb 4.7U
+R10b outb fb_jb 56K
+Rldr_b fb_jb 0 19K
+Q2b coll2b coll1b emit2ab Q_IDEAL
+Rc2b vcc_b coll2b 1.8K
+Re2ab emit2ab emit2bb 270
+Ce2b emit2ab emit2bb 22U
+Re2bb emit2bb 0 820
+Cc4b coll2b coll1b 100P
+R9b coll2b outb 6.8K
+
+* CIRCUIT C: Full Q2N5089, R_ldr=1M
+Vcc_c vcc_c 0 DC 15
+Vin_c in_c 0 DC 0 AC 1
+R1c in_c node_Ac 22K
+Cin_c node_Ac base1c 0.022U
+R2c vcc_c base1c 2MEG
+R3c base1c 0 470K
+C20c base1c 0 220P
+D1c 0 base1c D1N4148
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100 IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+Q1c coll1c base1c emit1c Q2N5089
+Rc1c vcc_c coll1c 150K
+Cc3c coll1c base1c 100P
+Re1c emit1c 0 33K
+Ce1c emit1c fb_jc 4.7U
+R10c outc fb_jc 56K
+Rldr_c fb_jc 0 1MEG
+Q2c coll2c coll1c emit2ac Q2N5089
+Rc2c vcc_c coll2c 1.8K
+Re2ac emit2ac emit2bc 270
+Ce2c emit2ac emit2bc 22U
+Re2bc emit2bc 0 820
+Cc4c coll2c coll1c 100P
+R9c coll2c outc 6.8K
+Rload_c outc 0 100K
+
+.control
+ac dec 200 10 100K
+
+echo "==== FULL-CHAIN GAIN V(out)/V(in) ===="
+echo ""
+echo "--- Circuit A (ideal, Rldr=1M) ---"
+meas ac ga_100 find vdb(outa) at=100
+meas ac ga_500 find vdb(outa) at=500
+meas ac ga_1k find vdb(outa) at=1000
+meas ac ga_5k find vdb(outa) at=5000
+meas ac ga_10k find vdb(outa) at=10000
+meas ac ga_15k find vdb(outa) at=15000
+meas ac ga_20k find vdb(outa) at=20000
+echo "  100Hz=$&ga_100 dB"
+echo "  500Hz=$&ga_500 dB"
+echo "  1kHz=$&ga_1k dB"
+echo "  5kHz=$&ga_5k dB"
+echo "  10kHz=$&ga_10k dB"
+echo "  15kHz=$&ga_15k dB"
+echo "  20kHz=$&ga_20k dB"
+
+echo ""
+echo "--- Circuit B (ideal, Rldr=19K) ---"
+meas ac gb_100 find vdb(outb) at=100
+meas ac gb_500 find vdb(outb) at=500
+meas ac gb_1k find vdb(outb) at=1000
+meas ac gb_5k find vdb(outb) at=5000
+meas ac gb_10k find vdb(outb) at=10000
+meas ac gb_15k find vdb(outb) at=15000
+meas ac gb_20k find vdb(outb) at=20000
+echo "  100Hz=$&gb_100 dB"
+echo "  500Hz=$&gb_500 dB"
+echo "  1kHz=$&gb_1k dB"
+echo "  5kHz=$&gb_5k dB"
+echo "  10kHz=$&gb_10k dB"
+echo "  15kHz=$&gb_15k dB"
+echo "  20kHz=$&gb_20k dB"
+
+echo ""
+echo "--- Circuit C (full Q2N5089, Rldr=1M) ---"
+meas ac gc_100 find vdb(outc) at=100
+meas ac gc_500 find vdb(outc) at=500
+meas ac gc_1k find vdb(outc) at=1000
+meas ac gc_5k find vdb(outc) at=5000
+meas ac gc_10k find vdb(outc) at=10000
+meas ac gc_15k find vdb(outc) at=15000
+meas ac gc_20k find vdb(outc) at=20000
+echo "  100Hz=$&gc_100 dB"
+echo "  500Hz=$&gc_500 dB"
+echo "  1kHz=$&gc_1k dB"
+echo "  5kHz=$&gc_5k dB"
+echo "  10kHz=$&gc_10k dB"
+echo "  15kHz=$&gc_15k dB"
+echo "  20kHz=$&gc_20k dB"
+
+echo ""
+echo "==== PREAMP-ONLY GAIN V(out)/V(base1) ===="
+let pa_gain = vdb(outa) - vdb(base1a)
+let pb_gain = vdb(outb) - vdb(base1b)
+let pc_gain = vdb(outc) - vdb(base1c)
+
+echo ""
+echo "--- Circuit A (ideal, Rldr=1M) preamp-only ---"
+meas ac pa_100 find pa_gain at=100
+meas ac pa_500 find pa_gain at=500
+meas ac pa_1k find pa_gain at=1000
+meas ac pa_5k find pa_gain at=5000
+meas ac pa_10k find pa_gain at=10000
+meas ac pa_15k find pa_gain at=15000
+meas ac pa_20k find pa_gain at=20000
+echo "  100Hz=$&pa_100 dB"
+echo "  500Hz=$&pa_500 dB"
+echo "  1kHz=$&pa_1k dB"
+echo "  5kHz=$&pa_5k dB"
+echo "  10kHz=$&pa_10k dB"
+echo "  15kHz=$&pa_15k dB"
+echo "  20kHz=$&pa_20k dB"
+
+echo ""
+echo "--- Circuit B (ideal, Rldr=19K) preamp-only ---"
+meas ac pb_100 find pb_gain at=100
+meas ac pb_500 find pb_gain at=500
+meas ac pb_1k find pb_gain at=1000
+meas ac pb_5k find pb_gain at=5000
+meas ac pb_10k find pb_gain at=10000
+meas ac pb_15k find pb_gain at=15000
+meas ac pb_20k find pb_gain at=20000
+echo "  100Hz=$&pb_100 dB"
+echo "  500Hz=$&pb_500 dB"
+echo "  1kHz=$&pb_1k dB"
+echo "  5kHz=$&pb_5k dB"
+echo "  10kHz=$&pb_10k dB"
+echo "  15kHz=$&pb_15k dB"
+echo "  20kHz=$&pb_20k dB"
+
+echo ""
+echo "--- Circuit C (full Q2N5089, Rldr=1M) preamp-only ---"
+meas ac pc_100 find pc_gain at=100
+meas ac pc_500 find pc_gain at=500
+meas ac pc_1k find pc_gain at=1000
+meas ac pc_5k find pc_gain at=5000
+meas ac pc_10k find pc_gain at=10000
+meas ac pc_15k find pc_gain at=15000
+meas ac pc_20k find pc_gain at=20000
+echo "  100Hz=$&pc_100 dB"
+echo "  500Hz=$&pc_500 dB"
+echo "  1kHz=$&pc_1k dB"
+echo "  5kHz=$&pc_5k dB"
+echo "  10kHz=$&pc_10k dB"
+echo "  15kHz=$&pc_15k dB"
+echo "  20kHz=$&pc_20k dB"
+
+echo ""
+echo "==== BANDWIDTH (-3dB from 1kHz) ===="
+let tgt_a = ga_1k - 3
+let tgt_b = gb_1k - 3
+let tgt_c = gc_1k - 3
+let ptgt_a = pa_1k - 3
+let ptgt_b = pb_1k - 3
+let ptgt_c = pc_1k - 3
+
+meas ac bw_a when vdb(outa)=tgt_a cross=last from=1000 to=100000
+meas ac bw_b when vdb(outb)=tgt_b cross=last from=1000 to=100000
+meas ac bw_c when vdb(outc)=tgt_c cross=last from=1000 to=100000
+meas ac pbw_a when pa_gain=ptgt_a cross=last from=1000 to=100000
+meas ac pbw_b when pb_gain=ptgt_b cross=last from=1000 to=100000
+meas ac pbw_c when pc_gain=ptgt_c cross=last from=1000 to=100000
+
+echo ""
+echo "  Full-chain BW:"
+echo "    A (ideal, 1M): $&bw_a Hz"
+echo "    B (ideal, 19K): $&bw_b Hz"
+echo "    C (full, 1M): $&bw_c Hz"
+echo "  Preamp-only BW:"
+echo "    A (ideal, 1M): $&pbw_a Hz"
+echo "    B (ideal, 19K): $&pbw_b Hz"
+echo "    C (full, 1M): $&pbw_c Hz"
+
+echo ""
+echo "==== GBW PRODUCTS ===="
+let glin_a = 10^(ga_1k/20)
+let glin_b = 10^(gb_1k/20)
+let glin_c = 10^(gc_1k/20)
+let pglin_a = 10^(pa_1k/20)
+let pglin_b = 10^(pb_1k/20)
+let pglin_c = 10^(pc_1k/20)
+let gbw_a = glin_a * bw_a
+let gbw_b = glin_b * bw_b
+let gbw_c = glin_c * bw_c
+let pgbw_a = pglin_a * pbw_a
+let pgbw_b = pglin_b * pbw_b
+let pgbw_c = pglin_c * pbw_c
+echo "  Full-chain GBW:"
+echo "    A: gain=$&ga_1k dB ($&glin_a x), BW=$&bw_a, GBW=$&gbw_a"
+echo "    B: gain=$&gb_1k dB ($&glin_b x), BW=$&bw_b, GBW=$&gbw_b"
+echo "    C: gain=$&gc_1k dB ($&glin_c x), BW=$&bw_c, GBW=$&gbw_c"
+echo "  Preamp-only GBW:"
+echo "    A: gain=$&pa_1k dB ($&pglin_a x), BW=$&pbw_a, GBW=$&pgbw_a"
+echo "    B: gain=$&pb_1k dB ($&pglin_b x), BW=$&pbw_b, GBW=$&pgbw_b"
+echo "    C: gain=$&pc_1k dB ($&pglin_c x), BW=$&pbw_c, GBW=$&pgbw_c"
+
+.endc
+.end

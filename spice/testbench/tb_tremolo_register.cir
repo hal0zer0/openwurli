@@ -1,0 +1,462 @@
+.title Wurlitzer 200A — Tremolo Modulation Depth vs Frequency (Register)
+*
+* PURPOSE: Determine whether the tremolo gain modulation depth is constant
+* across the keyboard register or frequency-dependent.
+*
+* The DSP model shows depth increasing wildly with frequency:
+*   C3 (130 Hz): 7.6 dB, C4 (261 Hz): 9.7 dB,
+*   C5 (523 Hz): 14.5 dB, C6 (1046 Hz): 23.3 dB
+* Target should be ~5-6 dB roughly constant.
+*
+* METHOD: Two identical preamp circuits instantiated simultaneously —
+*   Circuit D (dark):  R_ldr = 1M   (maximum feedback, minimum gain)
+*   Circuit B (bright): R_ldr = 19K  (minimum feedback, maximum gain)
+* Both driven by the same AC source. Single AC sweep gives us both
+* gain curves in one dataset, so we can compute depth = bright - dark
+* without cross-run vector scoping issues.
+*
+*======================================================================
+* TRANSISTOR MODEL — Full Gummel-Poon 2N5089
+*======================================================================
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+* Protection diode model
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100
++  IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+
+*======================================================================
+* SHARED AC SOURCE — 10mV peak, typical reed signal level
+*======================================================================
+Vin in_sig 0 DC 0 AC 0.01
+
+*======================================================================
+* CIRCUIT D (DARK): R_ldr = 1M — maximum feedback, minimum gain
+*======================================================================
+Vcc_d vcc_d 0 DC 15
+
+* Input coupling: R-1 (22K) + Cin (0.022uF)
+R1d in_sig nodeA_d 22K
+Cind nodeA_d base1_d 0.022U
+
+* Base bias and protection
+R2d vcc_d base1_d 2MEG
+R3d base1_d 0 470K
+D1d 0 base1_d D1N4148
+
+* Stage 1: TR-1
+Q1d coll1_d base1_d emit1_d Q2N5089
+Rc1d vcc_d coll1_d 150K
+Cc3d coll1_d base1_d 100P
+
+* TR-1 emitter: Re1 (33K DC path), Ce1 (4.7uF AC coupling to fb junction)
+Re1d emit1_d 0 33K
+Ce1d emit1_d fb_d 4.7U
+
+* Feedback junction: R-10 (56K) from output, R_ldr (1M) to ground
+R10d out_d fb_d 56K
+Rldr_d fb_d 0 1MEG
+
+* Stage 2: TR-2 (direct-coupled from coll1)
+Q2d coll2_d coll1_d emit2a_d Q2N5089
+Rc2d vcc_d coll2_d 1.8K
+Re2ad emit2a_d emit2b_d 270
+Ce2d emit2a_d emit2b_d 22U
+Re2bd emit2b_d 0 820
+Cc4d coll2_d coll1_d 100P
+
+* Output: R-9 (6.8K) + load (100K)
+R9d coll2_d out_d 6.8K
+Rload_d out_d 0 100K
+
+*======================================================================
+* CIRCUIT B (BRIGHT): R_ldr = 19K — minimum feedback, maximum gain
+*======================================================================
+Vcc_b vcc_b 0 DC 15
+
+R1b in_sig nodeA_b 22K
+Cinb nodeA_b base1_b 0.022U
+
+R2b vcc_b base1_b 2MEG
+R3b base1_b 0 470K
+D1b 0 base1_b D1N4148
+
+Q1b coll1_b base1_b emit1_b Q2N5089
+Rc1b vcc_b coll1_b 150K
+Cc3b coll1_b base1_b 100P
+
+Re1b emit1_b 0 33K
+Ce1b emit1_b fb_b 4.7U
+
+R10b out_b fb_b 56K
+Rldr_b fb_b 0 19K
+
+Q2b coll2_b coll1_b emit2a_b Q2N5089
+Rc2b vcc_b coll2_b 1.8K
+Re2ab emit2a_b emit2b_b 270
+Ce2b emit2a_b emit2b_b 22U
+Re2bb emit2b_b 0 820
+Cc4b coll2_b coll1_b 100P
+
+R9b coll2_b out_b 6.8K
+Rload_b out_b 0 100K
+
+*======================================================================
+* CONTROL BLOCK
+*======================================================================
+.control
+
+echo ""
+echo "================================================================"
+echo " TREMOLO MODULATION DEPTH vs FREQUENCY"
+echo " Wurlitzer 200A Preamp — SPICE Reference"
+echo "================================================================"
+echo ""
+echo " Circuit D: R_ldr = 1M   (dark — max feedback — min gain)"
+echo " Circuit B: R_ldr = 19K  (bright — min feedback — max gain)"
+echo " Both circuits driven by shared 10mV AC source."
+echo ""
+
+*----------------------------------------------------------------------
+* DC OPERATING POINT — verify both circuits are biased correctly
+*----------------------------------------------------------------------
+op
+
+echo "--- DC Operating Point ---"
+echo ""
+echo " DARK (R_ldr=1M):"
+echo "  TR-1: B=$&v(base1_d) E=$&v(emit1_d) C=$&v(coll1_d)"
+echo "  TR-2: B=$&v(coll1_d) E=$&v(emit2a_d) C=$&v(coll2_d)"
+echo "  Output=$&v(out_d)  fb_junct=$&v(fb_d)"
+echo ""
+echo " BRIGHT (R_ldr=19K):"
+echo "  TR-1: B=$&v(base1_b) E=$&v(emit1_b) C=$&v(coll1_b)"
+echo "  TR-2: B=$&v(coll1_b) E=$&v(emit2a_b) C=$&v(coll2_b)"
+echo "  Output=$&v(out_b)  fb_junct=$&v(fb_b)"
+
+*----------------------------------------------------------------------
+* AC SWEEP — single run captures both dark and bright gain curves
+*----------------------------------------------------------------------
+ac dec 200 10 100K
+
+* Full-chain gain: V(out)/V(in_sig)
+let gain_dark = vdb(out_d)
+let gain_bright = vdb(out_b)
+
+* Preamp-only gain: V(out)/V(base1) — strips input coupling network
+let pre_dark = vdb(out_d) - vdb(base1_d)
+let pre_bright = vdb(out_b) - vdb(base1_b)
+
+* MODULATION DEPTH — the money shot
+let depth_full = gain_bright - gain_dark
+let depth_pre = pre_bright - pre_dark
+
+* Feedback fraction: V(emit1)/V(out) for each circuit
+let beta_dark = vdb(emit1_d) - vdb(out_d)
+let beta_bright = vdb(emit1_b) - vdb(out_b)
+let delta_beta = beta_dark - beta_bright
+
+echo ""
+echo "================================================================"
+echo " PART 1: GAIN AT MUSICAL NOTE FREQUENCIES"
+echo "================================================================"
+echo ""
+echo "  freq(Hz)   dark_full   bright_full   dark_pre   bright_pre"
+echo "  ---------  ----------  -----------  ---------  -----------"
+
+meas ac df130 find gain_dark at=130
+meas ac bf130 find gain_bright at=130
+meas ac dp130 find pre_dark at=130
+meas ac bp130 find pre_bright at=130
+
+meas ac df261 find gain_dark at=261
+meas ac bf261 find gain_bright at=261
+meas ac dp261 find pre_dark at=261
+meas ac bp261 find pre_bright at=261
+
+meas ac df523 find gain_dark at=523
+meas ac bf523 find gain_bright at=523
+meas ac dp523 find pre_dark at=523
+meas ac bp523 find pre_bright at=523
+
+meas ac df1046 find gain_dark at=1046
+meas ac bf1046 find gain_bright at=1046
+meas ac dp1046 find pre_dark at=1046
+meas ac bp1046 find pre_bright at=1046
+
+meas ac df2093 find gain_dark at=2093
+meas ac bf2093 find gain_bright at=2093
+meas ac dp2093 find pre_dark at=2093
+meas ac bp2093 find pre_bright at=2093
+
+meas ac df4186 find gain_dark at=4186
+meas ac bf4186 find gain_bright at=4186
+meas ac dp4186 find pre_dark at=4186
+meas ac bp4186 find pre_bright at=4186
+
+echo "  130 (C3):  $&df130  $&bf130  $&dp130  $&bp130"
+echo "  261 (C4):  $&df261  $&bf261  $&dp261  $&bp261"
+echo "  523 (C5):  $&df523  $&bf523  $&dp523  $&bp523"
+echo "  1046 (C6): $&df1046  $&bf1046  $&dp1046  $&bp1046"
+echo "  2093 (C7): $&df2093  $&bf2093  $&dp2093  $&bp2093"
+echo "  4186 (C8): $&df4186  $&bf4186  $&dp4186  $&bp4186"
+
+echo ""
+echo "================================================================"
+echo " PART 2: TREMOLO MODULATION DEPTH (bright - dark)"
+echo "        *** THIS IS THE KEY RESULT ***"
+echo "================================================================"
+echo ""
+
+meas ac dff130 find depth_full at=130
+meas ac dff261 find depth_full at=261
+meas ac dff523 find depth_full at=523
+meas ac dff1046 find depth_full at=1046
+meas ac dff2093 find depth_full at=2093
+meas ac dff4186 find depth_full at=4186
+
+meas ac dpf130 find depth_pre at=130
+meas ac dpf261 find depth_pre at=261
+meas ac dpf523 find depth_pre at=523
+meas ac dpf1046 find depth_pre at=1046
+meas ac dpf2093 find depth_pre at=2093
+meas ac dpf4186 find depth_pre at=4186
+
+echo "  freq(Hz)   full_chain(dB)  preamp_only(dB)"
+echo "  ---------  --------------  ---------------"
+echo "  130 (C3):  $&dff130          $&dpf130"
+echo "  261 (C4):  $&dff261          $&dpf261"
+echo "  523 (C5):  $&dff523          $&dpf523"
+echo "  1046 (C6): $&dff1046         $&dpf1046"
+echo "  2093 (C7): $&dff2093         $&dpf2093"
+echo "  4186 (C8): $&dff4186         $&dpf4186"
+
+echo ""
+echo "  If depth is ~constant (~5-6 dB) across register:"
+echo "    -> DSP model has a bug causing frequency-dependent depth"
+echo "  If depth increases with frequency:"
+echo "    -> Circuit genuinely has this behavior"
+
+echo ""
+echo "================================================================"
+echo " PART 3: FINE FREQUENCY SWEEP — depth at 20 frequencies"
+echo "================================================================"
+echo ""
+echo "  freq(Hz)   dark(dB)  bright(dB)  depth(dB)"
+echo "  ---------  --------  ----------  ---------"
+
+meas ac d50 find gain_dark at=50
+meas ac b50 find gain_bright at=50
+meas ac x50 find depth_full at=50
+
+meas ac d100 find gain_dark at=100
+meas ac b100 find gain_bright at=100
+meas ac x100 find depth_full at=100
+
+meas ac d200 find gain_dark at=200
+meas ac b200 find gain_bright at=200
+meas ac x200 find depth_full at=200
+
+meas ac d300 find gain_dark at=300
+meas ac b300 find gain_bright at=300
+meas ac x300 find depth_full at=300
+
+meas ac d500 find gain_dark at=500
+meas ac b500 find gain_bright at=500
+meas ac x500 find depth_full at=500
+
+meas ac d700 find gain_dark at=700
+meas ac b700 find gain_bright at=700
+meas ac x700 find depth_full at=700
+
+meas ac d1k find gain_dark at=1000
+meas ac b1k find gain_bright at=1000
+meas ac x1k find depth_full at=1000
+
+meas ac d1k5 find gain_dark at=1500
+meas ac b1k5 find gain_bright at=1500
+meas ac x1k5 find depth_full at=1500
+
+meas ac d2k find gain_dark at=2000
+meas ac b2k find gain_bright at=2000
+meas ac x2k find depth_full at=2000
+
+meas ac d3k find gain_dark at=3000
+meas ac b3k find gain_bright at=3000
+meas ac x3k find depth_full at=3000
+
+meas ac d4k find gain_dark at=4000
+meas ac b4k find gain_bright at=4000
+meas ac x4k find depth_full at=4000
+
+meas ac d5k find gain_dark at=5000
+meas ac b5k find gain_bright at=5000
+meas ac x5k find depth_full at=5000
+
+meas ac d7k find gain_dark at=7000
+meas ac b7k find gain_bright at=7000
+meas ac x7k find depth_full at=7000
+
+meas ac d10k find gain_dark at=10000
+meas ac b10k find gain_bright at=10000
+meas ac x10k find depth_full at=10000
+
+meas ac d15k find gain_dark at=15000
+meas ac b15k find gain_bright at=15000
+meas ac x15k find depth_full at=15000
+
+meas ac d20k find gain_dark at=20000
+meas ac b20k find gain_bright at=20000
+meas ac x20k find depth_full at=20000
+
+echo "  50 Hz:     $&d50     $&b50     $&x50"
+echo "  100 Hz:    $&d100    $&b100    $&x100"
+echo "  200 Hz:    $&d200    $&b200    $&x200"
+echo "  300 Hz:    $&d300    $&b300    $&x300"
+echo "  500 Hz:    $&d500    $&b500    $&x500"
+echo "  700 Hz:    $&d700    $&b700    $&x700"
+echo "  1000 Hz:   $&d1k     $&b1k     $&x1k"
+echo "  1500 Hz:   $&d1k5    $&b1k5    $&x1k5"
+echo "  2000 Hz:   $&d2k     $&b2k     $&x2k"
+echo "  3000 Hz:   $&d3k     $&b3k     $&x3k"
+echo "  4000 Hz:   $&d4k     $&b4k     $&x4k"
+echo "  5000 Hz:   $&d5k     $&b5k     $&x5k"
+echo "  7000 Hz:   $&d7k     $&b7k     $&x7k"
+echo "  10000 Hz:  $&d10k    $&b10k    $&x10k"
+echo "  15000 Hz:  $&d15k    $&b15k    $&x15k"
+echo "  20000 Hz:  $&d20k    $&b20k    $&x20k"
+
+echo ""
+echo "================================================================"
+echo " PART 4: BANDWIDTH COMPARISON"
+echo "================================================================"
+
+meas ac dk1k find pre_dark at=1000
+let dtgt = dk1k - 3
+meas ac dbw when pre_dark=dtgt cross=last from=1000 to=100000
+
+meas ac bk1k find pre_bright at=1000
+let btgt = bk1k - 3
+meas ac bbw when pre_bright=btgt cross=last from=1000 to=100000
+
+let dlin = 10^(dk1k/20)
+let blin = 10^(bk1k/20)
+let dgbw = dlin * dbw
+let bgbw = blin * bbw
+let gbw_ratio = bgbw / dgbw
+
+echo ""
+echo "  Dark:   midband=$&dk1k dB ($&dlin x), BW=$&dbw Hz, GBW=$&dgbw Hz"
+echo "  Bright: midband=$&bk1k dB ($&blin x), BW=$&bbw Hz, GBW=$&bgbw Hz"
+echo "  GBW ratio (bright/dark) = $&gbw_ratio"
+echo "  (If GBW ratio > 1, GBW scales with gain, not constant)"
+
+echo ""
+echo "================================================================"
+echo " PART 5: FEEDBACK FRACTION — beta(f) = V(emit1)/V(out)"
+echo "================================================================"
+echo ""
+echo "  freq(Hz)   beta_dark(dB)  beta_bright(dB)  delta(dB)"
+echo "  ---------  -------------  ---------------  ---------"
+
+meas ac bd130 find beta_dark at=130
+meas ac bb130 find beta_bright at=130
+meas ac db130 find delta_beta at=130
+
+meas ac bd261 find beta_dark at=261
+meas ac bb261 find beta_bright at=261
+meas ac db261 find delta_beta at=261
+
+meas ac bd523 find beta_dark at=523
+meas ac bb523 find beta_bright at=523
+meas ac db523 find delta_beta at=523
+
+meas ac bd1046 find beta_dark at=1046
+meas ac bb1046 find beta_bright at=1046
+meas ac db1046 find delta_beta at=1046
+
+meas ac bd2093 find beta_dark at=2093
+meas ac bb2093 find beta_bright at=2093
+meas ac db2093 find delta_beta at=2093
+
+meas ac bd5k find beta_dark at=5000
+meas ac bb5k find beta_bright at=5000
+meas ac db5k find delta_beta at=5000
+
+meas ac bd10k find beta_dark at=10000
+meas ac bb10k find beta_bright at=10000
+meas ac db10k find delta_beta at=10000
+
+meas ac bd15k find beta_dark at=15000
+meas ac bb15k find beta_bright at=15000
+meas ac db15k find delta_beta at=15000
+
+echo "  130 Hz:    $&bd130   $&bb130   $&db130"
+echo "  261 Hz:    $&bd261   $&bb261   $&db261"
+echo "  523 Hz:    $&bd523   $&bb523   $&db523"
+echo "  1046 Hz:   $&bd1046  $&bb1046  $&db1046"
+echo "  2093 Hz:   $&bd2093  $&bb2093  $&db2093"
+echo "  5000 Hz:   $&bd5k    $&bb5k    $&db5k"
+echo "  10000 Hz:  $&bd10k   $&bb10k   $&db10k"
+echo "  15000 Hz:  $&bd15k   $&bb15k   $&db15k"
+
+echo ""
+echo "  INTERPRETATION:"
+echo "  - delta_beta CONSTANT -> depth from preamp is constant"
+echo "  - delta_beta VARIES -> Ce1/Miller caps create freq-dependent feedback"
+echo "  - Even with constant delta_beta, if loop gain A*beta < 1 at"
+echo "    higher frequencies, the gain becomes open-loop and R_ldr"
+echo "    has less effect -> depth DECREASES at HF"
+echo "  - Conversely, if the two gain curves have DIFFERENT BW (bright"
+echo "    rolls off at a different frequency than dark), depth will"
+echo "    change near the BW frequencies"
+
+echo ""
+echo "================================================================"
+echo " PART 6: DEPTH AT PREAMP-ONLY (no input coupling) FREQUENCIES"
+echo " (Isolates whether input network contributes to depth variation)"
+echo "================================================================"
+echo ""
+echo "  freq(Hz)   depth_preamp(dB)"
+echo "  ---------  ----------------"
+
+meas ac xp50 find depth_pre at=50
+meas ac xp100 find depth_pre at=100
+meas ac xp200 find depth_pre at=200
+meas ac xp500 find depth_pre at=500
+meas ac xp1k find depth_pre at=1000
+meas ac xp2k find depth_pre at=2000
+meas ac xp5k find depth_pre at=5000
+meas ac xp10k find depth_pre at=10000
+meas ac xp15k find depth_pre at=15000
+meas ac xp20k find depth_pre at=20000
+
+echo "  50 Hz:     $&xp50"
+echo "  100 Hz:    $&xp100"
+echo "  200 Hz:    $&xp200"
+echo "  500 Hz:    $&xp500"
+echo "  1000 Hz:   $&xp1k"
+echo "  2000 Hz:   $&xp2k"
+echo "  5000 Hz:   $&xp5k"
+echo "  10000 Hz:  $&xp10k"
+echo "  15000 Hz:  $&xp15k"
+echo "  20000 Hz:  $&xp20k"
+
+* Save full curves for external analysis
+wrdata /tmp/trem_reg_gain.txt gain_dark gain_bright depth_full
+wrdata /tmp/trem_reg_pre.txt pre_dark pre_bright depth_pre
+wrdata /tmp/trem_reg_beta.txt beta_dark beta_bright delta_beta
+
+echo ""
+echo "================================================================"
+echo " ANALYSIS COMPLETE"
+echo "================================================================"
+echo " Data files written to /tmp/trem_reg_*.txt"
+
+.endc
+.end

@@ -313,10 +313,9 @@ fn cmd_render(args: &[String]) {
     let velocity = parse_flag(args, "--velocity", 100.0) as u8;
     let duration = parse_flag(args, "--duration", 2.0);
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
-    let preamp_gain = parse_flag(args, "--gain", 40.0);
-    let volume = parse_flag(args, "--volume", 0.05);
+    let volume = parse_flag(args, "--volume", 0.60);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
-    let tremolo_rate = parse_flag(args, "--tremolo-rate", 5.5);
+    let tremolo_rate = parse_flag(args, "--tremolo-rate", 5.63);
     let tremolo_depth = parse_flag(args, "--tremolo-depth", 0.0);
     let no_poweramp = args.contains(&"--no-poweramp".to_string());
     let no_preamp = args.contains(&"--no-preamp".to_string());
@@ -348,6 +347,7 @@ fn cmd_render(args: &[String]) {
             Some(t)
         } else {
             preamp.set_ldr_resistance(r_ldr);
+            preamp.reset(); // Re-solve DC at the new R_ldr
             None
         };
 
@@ -377,7 +377,7 @@ fn cmd_render(args: &[String]) {
         out
     };
 
-    // Output stage: gain → volume → power amp → speaker
+    // Output stage: volume → power amp (gain + crossover + clip) → speaker
     // Matches the plugin signal chain in lib.rs
     let mut power_amp = PowerAmp::new();
     let mut speaker = Speaker::new(BASE_SR);
@@ -385,7 +385,7 @@ fn cmd_render(args: &[String]) {
 
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
-        let attenuated = preamp_output[i] * preamp_gain * volume;
+        let attenuated = preamp_output[i] * volume;
         let amplified = if no_poweramp { attenuated } else { power_amp.process(attenuated) };
         final_output[i] = speaker.process(amplified);
     }
@@ -402,7 +402,7 @@ fn cmd_render(args: &[String]) {
     };
 
     if !normalize && peak > 1.0 {
-        eprintln!("WARNING: Peak exceeds 0 dBFS ({peak_dbfs:.1} dBFS) — consider reducing --gain or --volume");
+        eprintln!("WARNING: Peak exceeds 0 dBFS ({peak_dbfs:.1} dBFS) — consider reducing --volume");
     }
 
     let spec = hound::WavSpec {
@@ -430,7 +430,7 @@ fn cmd_render(args: &[String]) {
     } else {
         println!("  LDR:       {r_ldr:.0} Ω (static)");
     }
-    println!("  Gain:      {preamp_gain:.1}x, Volume: {volume:.3}");
+    println!("  Volume:    {volume:.3} (PA gain: 8.0x, headroom: 2.5x)");
     println!("  Speaker:   {speaker_char:.1}");
     if let Some(ds) = disp_scale { println!("  Disp scale: {ds:.3}"); }
     if no_preamp { println!("  Preamp:    BYPASSED"); }
@@ -452,7 +452,7 @@ fn cmd_render(args: &[String]) {
 fn cmd_bark_audit(args: &[String]) {
     // Pickup constants (duplicated here since they're private in pickup.rs)
     const SENSITIVITY: f64 = 1.8375;
-    const DISPLACEMENT_SCALE: f64 = 0.35;
+    const DISPLACEMENT_SCALE: f64 = 0.60;
     const MAX_Y: f64 = 0.90;
     const PICKUP_HPF_HZ: f64 = 2312.0;
 
@@ -508,6 +508,7 @@ fn cmd_bark_audit(args: &[String]) {
             let mut reed = ModalReed::new(
                 detuned, &params.mode_ratios, &amplitudes,
                 &params.mode_decay_rates, 0.0, BASE_SR,
+                (note as u32).wrapping_mul(2654435761),
             );
 
             let n_samples = (duration * BASE_SR) as usize;

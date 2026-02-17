@@ -10,6 +10,15 @@
 use crate::filters::Biquad;
 use crate::tables::NUM_MODES;
 
+/// Hammer dwell time (contact duration) in seconds.
+///
+/// Velocity-dependent: ff (vel=1.0) = 0.5ms, pp (vel=0.0) = 2.5ms.
+/// This is both the spectral filter width (via `dwell_attenuation`) and the
+/// onset ramp duration (via `ModalReed`'s raised-cosine ramp).
+pub fn dwell_time(velocity: f64) -> f64 {
+    0.0005 + 0.002 * (1.0 - velocity)
+}
+
 /// Compute per-mode attenuation from the Gaussian dwell filter.
 ///
 /// Uses a wide Gaussian (sigma=8 in f*T units) per the recommendation in
@@ -25,7 +34,7 @@ pub fn dwell_attenuation(
     fundamental_hz: f64,
     mode_ratios: &[f64; NUM_MODES],
 ) -> [f64; NUM_MODES] {
-    let t_dwell = 0.0005 + 0.002 * (1.0 - velocity);
+    let t_dwell = dwell_time(velocity);
     let sigma_sq = 8.0 * 8.0;
 
     let mut atten = [0.0f64; NUM_MODES];
@@ -145,4 +154,5 @@ mod tests {
         noise.render(&mut buf);
         assert!(noise.is_done());
     }
+
 }

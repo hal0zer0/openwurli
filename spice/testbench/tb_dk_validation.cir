@@ -1,0 +1,224 @@
+* DK Preamp Model Validation Testbench
+* ====================================
+* Matches DK model simplifications exactly:
+* - No C20 (220pF), no D1, no Rload (100K), no parasitic R
+* - Very high BF (100000) to approximate beta-infinity
+* - R_ldr = 1M (no tremolo) and 19K (tremolo bright)
+*
+* Compare DC operating points and AC gains against dk_preamp.rs
+
+.MODEL Q_IDEAL NPN(
++  IS=3.03E-14 BF=100000 NF=1.0 VAF=1000
++  RB=0 RE=0 RC=0
++  CJE=0 CJC=0 TF=0 TR=0)
+
+* Full SPICE model for comparison
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+* ============================================================
+* CIRCUIT A: Ideal BJT, R_ldr=1M (matches DK model)
+* ============================================================
+Vcc_a vcc_a 0 DC 15
+Vin_a in_a 0 DC 0 AC 1
+
+* Input: Cin + R1 in series
+R1a in_a node_Aa 22K
+Cin_a node_Aa base1a 0.022U
+
+* Bias network (NO C20, NO D1)
+R2a vcc_a base1a 2MEG
+R3a base1a 0 470K
+
+* Stage 1
+Q1a coll1a base1a emit1a Q_IDEAL
+Rc1a vcc_a coll1a 150K
+Cc3a coll1a base1a 100P
+Re1a emit1a 0 33K
+Ce1a emit1a fb_ja 4.7U
+
+* Feedback
+R10a outa fb_ja 56K
+Rldr_a fb_ja 0 1MEG
+
+* Stage 2
+Q2a coll2a coll1a emit2aa Q_IDEAL
+Rc2a vcc_a coll2a 1.8K
+Re2aa emit2aa emit2ba 270
+Ce2a emit2aa emit2ba 22U
+Re2ba emit2ba 0 820
+Cc4a coll2a coll1a 100P
+
+* Output (NO Rload)
+R9a coll2a outa 6.8K
+
+* ============================================================
+* CIRCUIT B: Ideal BJT, R_ldr=19K (tremolo bright)
+* ============================================================
+Vcc_b vcc_b 0 DC 15
+Vin_b in_b 0 DC 0 AC 1
+
+R1b in_b node_Ab 22K
+Cin_b node_Ab base1b 0.022U
+R2b vcc_b base1b 2MEG
+R3b base1b 0 470K
+Q1b coll1b base1b emit1b Q_IDEAL
+Rc1b vcc_b coll1b 150K
+Cc3b coll1b base1b 100P
+Re1b emit1b 0 33K
+Ce1b emit1b fb_jb 4.7U
+R10b outb fb_jb 56K
+Rldr_b fb_jb 0 19K
+Q2b coll2b coll1b emit2ab Q_IDEAL
+Rc2b vcc_b coll2b 1.8K
+Re2ab emit2ab emit2bb 270
+Ce2b emit2ab emit2bb 22U
+Re2bb emit2bb 0 820
+Cc4b coll2b coll1b 100P
+R9b coll2b outb 6.8K
+
+* ============================================================
+* CIRCUIT C: Full SPICE model, R_ldr=1M (reference)
+* ============================================================
+Vcc_c vcc_c 0 DC 15
+Vin_c in_c 0 DC 0 AC 1
+
+R1c in_c node_Ac 22K
+Cin_c node_Ac base1c 0.022U
+R2c vcc_c base1c 2MEG
+R3c base1c 0 470K
+C20c base1c 0 220P
+D1c 0 base1c D1N4148
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100 IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+Q1c coll1c base1c emit1c Q2N5089
+Rc1c vcc_c coll1c 150K
+Cc3c coll1c base1c 100P
+Re1c emit1c 0 33K
+Ce1c emit1c fb_jc 4.7U
+R10c outc fb_jc 56K
+Rldr_c fb_jc 0 1MEG
+Q2c coll2c coll1c emit2ac Q2N5089
+Rc2c vcc_c coll2c 1.8K
+Re2ac emit2ac emit2bc 270
+Ce2c emit2ac emit2bc 22U
+Re2bc emit2bc 0 820
+Cc4c coll2c coll1c 100P
+R9c coll2c outc 6.8K
+Rload_c outc 0 100K
+
+.control
+
+* ============================================================
+* DC OPERATING POINT
+* ============================================================
+op
+
+echo "================================================================"
+echo "  DK MODEL VALIDATION: DC OPERATING POINT"
+echo "================================================================"
+echo ""
+
+echo "--- Circuit A: Ideal BJT, Rldr=1M (DK model target) ---"
+echo "Node voltages:"
+print v(base1a) v(emit1a) v(coll1a)
+print v(emit2aa) v(emit2ba) v(coll2a)
+print v(outa) v(fb_ja)
+echo "Vbe, Ic:"
+let vbe1a = v(base1a) - v(emit1a)
+let vbe2a = v(coll1a) - v(emit2aa)
+print vbe1a vbe2a
+print @q1a[ic] @q2a[ic]
+let hfe1a = @q1a[ic] / @q1a[ib]
+let hfe2a = @q2a[ic] / @q2a[ib]
+print hfe1a hfe2a
+
+echo ""
+echo "--- Circuit B: Ideal BJT, Rldr=19K (tremolo bright) ---"
+echo "Node voltages:"
+print v(base1b) v(emit1b) v(coll1b)
+print v(emit2ab) v(emit2bb) v(coll2b)
+print v(outb) v(fb_jb)
+
+echo ""
+echo "--- Circuit C: Full SPICE model, Rldr=1M (reference) ---"
+echo "Node voltages:"
+print v(base1c) v(emit1c) v(coll1c)
+print v(emit2ac) v(emit2bc) v(coll2c)
+print v(outc) v(fb_jc)
+let vbe1c = v(base1c) - v(emit1c)
+let vbe2c = v(coll1c) - v(emit2ac)
+print vbe1c vbe2c
+print @q1c[ic] @q2c[ic]
+
+* ============================================================
+* AC SWEEP: Gain
+* ============================================================
+
+ac dec 100 10 100K
+
+echo ""
+echo "================================================================"
+echo "  DK MODEL VALIDATION: AC GAIN"
+echo "================================================================"
+echo ""
+
+echo "--- Circuit A (ideal, Rldr=1M): Gain at key frequencies ---"
+* Gain = V(out) / V(in) at the AC source
+echo "  Measured at output node, AC source = 1V"
+print vdb(outa) @ 100
+print vdb(outa) @ 1000
+print vdb(outa) @ 5000
+print vdb(outa) @ 10000
+print vdb(outa) @ 15000
+print vdb(outa) @ 20000
+
+echo ""
+echo "--- Circuit B (ideal, Rldr=19K): Gain at key frequencies ---"
+print vdb(outb) @ 100
+print vdb(outb) @ 1000
+print vdb(outb) @ 5000
+print vdb(outb) @ 10000
+print vdb(outb) @ 15000
+print vdb(outb) @ 20000
+
+echo ""
+echo "--- Circuit C (full, Rldr=1M): Gain at key frequencies ---"
+print vdb(outc) @ 100
+print vdb(outc) @ 1000
+print vdb(outc) @ 5000
+print vdb(outc) @ 10000
+print vdb(outc) @ 15000
+print vdb(outc) @ 20000
+
+echo ""
+echo "--- Gain measured at base1 (preamp-only, no input network) ---"
+echo "Circuit A (ideal, Rldr=1M):"
+print vdb(outa)-vdb(base1a) @ 1000
+print vdb(outa)-vdb(base1a) @ 10000
+print vdb(outa)-vdb(base1a) @ 15000
+
+echo "Circuit B (ideal, Rldr=19K):"
+print vdb(outb)-vdb(base1b) @ 1000
+print vdb(outb)-vdb(base1b) @ 10000
+print vdb(outb)-vdb(base1b) @ 15000
+
+echo ""
+echo "--- -3dB bandwidth from peak ---"
+echo "Circuit A peak gain at 1kHz (ref):"
+let peak_a = vdb(outa) @ 1000
+print peak_a
+
+echo "Circuit B peak gain at 1kHz (ref):"
+let peak_b = vdb(outb) @ 1000
+print peak_b
+
+echo ""
+echo "Done."
+
+.endc
+.end

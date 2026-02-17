@@ -1,0 +1,529 @@
+.title Wurlitzer 200A Preamp - Variable GBW Diagnostic Investigation
+*
+* PURPOSE: Determine why the gain-bandwidth product (GBW) of the preamp
+* increases when R_ldr decreases (tremolo bright).
+*
+* We measure V(out) / V(base1) to get the preamp voltage gain,
+* avoiding the input coupling network attenuation.
+*
+*======================================================================
+* TRANSISTOR MODEL
+*======================================================================
+
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100
++  IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+
+*======================================================================
+* SUPPLY
+*======================================================================
+Vcc vcc 0 DC 15
+
+*======================================================================
+* INPUT - small AC signal injected at base through high-Z coupling
+* We use a separate voltage source at base1 through the bias network
+*======================================================================
+Vin in_sig 0 DC 0 AC 0.01
+R1 in_sig node_A 22K
+Cin node_A base1 0.022U
+
+*======================================================================
+* BASE1 BIAS AND FILTERING
+*======================================================================
+R2 vcc base1 2MEG
+R3 base1 0 470K
+D1 0 base1 D1N4148
+
+*======================================================================
+* STAGE 1: TR-1
+*======================================================================
+Q1 coll1 base1 emit1 Q2N5089
+Rc1 vcc coll1 150K
+Cc3 coll1 base1 100P
+
+*======================================================================
+* TR-1 EMITTER NETWORK
+*======================================================================
+Re1 emit1 0 33K
+Ce1 emit1 fb_junct 4.7U
+
+*======================================================================
+* FEEDBACK JUNCTION
+*======================================================================
+R10 out fb_junct 56K
+Rldr fb_junct 0 {rldr_val}
+
+*======================================================================
+* STAGE 2: TR-2
+*======================================================================
+Q2 coll2 coll1 emit2a Q2N5089
+Rc2 vcc coll2 1.8K
+Re2a emit2a emit2b 270
+Ce2 emit2a emit2b 22U
+Re2b emit2b 0 820
+Cc4 coll2 coll1 100P
+
+*======================================================================
+* OUTPUT
+*======================================================================
+R9 coll2 out 6.8K
+Rload out 0 100K
+
+*======================================================================
+* PARAMETER
+*======================================================================
+.param rldr_val = 1MEG
+
+*======================================================================
+* CONTROL BLOCK
+*======================================================================
+.control
+
+*----------------------------------------------------------------------
+* Helper: print gain at many frequencies for a given configuration
+* We compute gain = vdb(out) - vdb(base1) to get preamp gain only
+*----------------------------------------------------------------------
+
+echo ""
+echo "============================================================"
+echo "EXPERIMENT 1: BASELINE AC SWEEPS"
+echo "============================================================"
+
+* --- R_ldr = 1M ---
+alterparam rldr_val = 1MEG
+reset
+op
+echo ""
+echo "--- DC OP: R_ldr = 1M ---"
+echo "  base1  emit1  coll1  coll2  out  fb_junct"
+print v(base1) v(emit1) v(coll1) v(coll2) v(out) v(fb_junct)
+
+ac dec 200 1 1MEG
+
+* Compute preamp gain = V(out)/V(base1) in dB
+let preamp_gain = vdb(out) - vdb(base1)
+let preamp_phase = vp(out) - vp(base1)
+
+echo ""
+echo "--- Preamp gain [V(out)/V(base1)] vs frequency: R_ldr = 1M ---"
+meas ac g1m_20 find preamp_gain at=20
+meas ac g1m_50 find preamp_gain at=50
+meas ac g1m_100 find preamp_gain at=100
+meas ac g1m_200 find preamp_gain at=200
+meas ac g1m_500 find preamp_gain at=500
+meas ac g1m_1k find preamp_gain at=1000
+meas ac g1m_2k find preamp_gain at=2000
+meas ac g1m_3k find preamp_gain at=3000
+meas ac g1m_5k find preamp_gain at=5000
+meas ac g1m_7k find preamp_gain at=7000
+meas ac g1m_10k find preamp_gain at=10000
+meas ac g1m_15k find preamp_gain at=15000
+meas ac g1m_20k find preamp_gain at=20000
+meas ac g1m_30k find preamp_gain at=30000
+meas ac g1m_50k find preamp_gain at=50000
+
+echo ""
+echo "  freq(Hz)  gain(dB)"
+echo "  20       $&g1m_20"
+echo "  50       $&g1m_50"
+echo "  100      $&g1m_100"
+echo "  200      $&g1m_200"
+echo "  500      $&g1m_500"
+echo "  1000     $&g1m_1k"
+echo "  2000     $&g1m_2k"
+echo "  3000     $&g1m_3k"
+echo "  5000     $&g1m_5k"
+echo "  7000     $&g1m_7k"
+echo "  10000    $&g1m_10k"
+echo "  15000    $&g1m_15k"
+echo "  20000    $&g1m_20k"
+echo "  30000    $&g1m_30k"
+echo "  50000    $&g1m_50k"
+
+* Find -3dB bandwidth
+let target_1m = g1m_1k - 3
+meas ac bw_1m when preamp_gain=target_1m cross=last from=1000 to=100000
+
+echo ""
+echo "  Midband gain (1kHz): $&g1m_1k dB"
+echo "  -3dB target: $&target_1m dB"
+echo "  Upper -3dB freq: $&bw_1m Hz"
+
+wrdata /tmp/gbw_gain_1m.txt preamp_gain preamp_phase
+
+* --- R_ldr = 19K ---
+alterparam rldr_val = 19K
+reset
+op
+echo ""
+echo "--- DC OP: R_ldr = 19K ---"
+print v(base1) v(emit1) v(coll1) v(coll2) v(out) v(fb_junct)
+
+ac dec 200 1 1MEG
+
+let preamp_gain = vdb(out) - vdb(base1)
+let preamp_phase = vp(out) - vp(base1)
+
+echo ""
+echo "--- Preamp gain [V(out)/V(base1)] vs frequency: R_ldr = 19K ---"
+meas ac g19k_20 find preamp_gain at=20
+meas ac g19k_50 find preamp_gain at=50
+meas ac g19k_100 find preamp_gain at=100
+meas ac g19k_200 find preamp_gain at=200
+meas ac g19k_500 find preamp_gain at=500
+meas ac g19k_1k find preamp_gain at=1000
+meas ac g19k_2k find preamp_gain at=2000
+meas ac g19k_3k find preamp_gain at=3000
+meas ac g19k_5k find preamp_gain at=5000
+meas ac g19k_7k find preamp_gain at=7000
+meas ac g19k_10k find preamp_gain at=10000
+meas ac g19k_15k find preamp_gain at=15000
+meas ac g19k_20k find preamp_gain at=20000
+meas ac g19k_30k find preamp_gain at=30000
+meas ac g19k_50k find preamp_gain at=50000
+
+echo ""
+echo "  freq(Hz)  gain(dB)"
+echo "  20       $&g19k_20"
+echo "  50       $&g19k_50"
+echo "  100      $&g19k_100"
+echo "  200      $&g19k_200"
+echo "  500      $&g19k_500"
+echo "  1000     $&g19k_1k"
+echo "  2000     $&g19k_2k"
+echo "  3000     $&g19k_3k"
+echo "  5000     $&g19k_5k"
+echo "  7000     $&g19k_7k"
+echo "  10000    $&g19k_10k"
+echo "  15000    $&g19k_15k"
+echo "  20000    $&g19k_20k"
+echo "  30000    $&g19k_30k"
+echo "  50000    $&g19k_50k"
+
+let target_19k = g19k_1k - 3
+meas ac bw_19k when preamp_gain=target_19k cross=last from=1000 to=100000
+
+echo ""
+echo "  Midband gain (1kHz): $&g19k_1k dB"
+echo "  -3dB target: $&target_19k dB"
+echo "  Upper -3dB freq: $&bw_19k Hz"
+
+wrdata /tmp/gbw_gain_19k.txt preamp_gain preamp_phase
+
+* --- GBW comparison ---
+echo ""
+echo "============================================================"
+echo "GBW COMPARISON (Experiment 1 results)"
+echo "============================================================"
+let gain_lin_1m = 10^(g1m_1k/20)
+let gain_lin_19k = 10^(g19k_1k/20)
+let gbw_1m = gain_lin_1m * bw_1m
+let gbw_19k = gain_lin_19k * bw_19k
+let gbw_ratio = gbw_19k / gbw_1m
+echo "  R_ldr=1M:  gain=$&g1m_1k dB ($&gain_lin_1m x), BW=$&bw_1m Hz, GBW=$&gbw_1m Hz"
+echo "  R_ldr=19K: gain=$&g19k_1k dB ($&gain_lin_19k x), BW=$&bw_19k Hz, GBW=$&gbw_19k Hz"
+echo "  GBW ratio (19K/1M) = $&gbw_ratio"
+
+*----------------------------------------------------------------------
+* EXPERIMENT 2A: Ce1 = WIRE (huge capacitance = ~0 impedance)
+*----------------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "EXPERIMENT 2A: Ce1 = WIRE"
+echo "============================================================"
+
+* R_ldr = 1M, Ce1 = wire
+alterparam rldr_val = 1MEG
+reset
+alter @Ce1[capacitance] = 1000
+ac dec 200 1 1MEG
+let preamp_gain = vdb(out) - vdb(base1)
+meas ac gw1m_1k find preamp_gain at=1000
+let tgtw1m = gw1m_1k - 3
+meas ac bww_1m when preamp_gain=tgtw1m cross=last from=1000 to=100000
+echo "  Ce1=wire, R_ldr=1M: gain=$&gw1m_1k dB, BW=$&bww_1m Hz"
+
+* R_ldr = 19K, Ce1 = wire
+alterparam rldr_val = 19K
+reset
+alter @Ce1[capacitance] = 1000
+ac dec 200 1 1MEG
+let preamp_gain = vdb(out) - vdb(base1)
+meas ac gw19k_1k find preamp_gain at=1000
+let tgtw19k = gw19k_1k - 3
+meas ac bww_19k when preamp_gain=tgtw19k cross=last from=1000 to=100000
+echo "  Ce1=wire, R_ldr=19K: gain=$&gw19k_1k dB, BW=$&bww_19k Hz"
+
+let glinw1m = 10^(gw1m_1k/20)
+let glinw19k = 10^(gw19k_1k/20)
+let gbww1m = glinw1m * bww_1m
+let gbww19k = glinw19k * bww_19k
+let gbww_ratio = gbww19k / gbww1m
+echo ""
+echo "  Ce1=wire GBW:"
+echo "    R_ldr=1M:  gain=$&gw1m_1k dB ($&glinw1m x), BW=$&bww_1m Hz, GBW=$&gbww1m Hz"
+echo "    R_ldr=19K: gain=$&gw19k_1k dB ($&glinw19k x), BW=$&bww_19k Hz, GBW=$&gbww19k Hz"
+echo "    GBW ratio = $&gbww_ratio"
+
+*----------------------------------------------------------------------
+* EXPERIMENT 2B: Ce1 = tiny cap (1 pF) — AC block
+*----------------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "EXPERIMENT 2B: Ce1 = 1pF (AC blocked)"
+echo "============================================================"
+
+alterparam rldr_val = 1MEG
+reset
+alter @Ce1[capacitance] = 1e-12
+ac dec 200 1 1MEG
+let preamp_gain = vdb(out) - vdb(base1)
+meas ac gb_1k find preamp_gain at=1000
+meas ac gb_100 find preamp_gain at=100
+meas ac gb_10k find preamp_gain at=10000
+echo "  Ce1=1pF, R_ldr=1M:"
+echo "    100Hz=$&gb_100 dB, 1kHz=$&gb_1k dB, 10kHz=$&gb_10k dB"
+echo "  (Without Ce1, no emitter feedback reaches TR-1 -> gain should be ~open-loop)"
+
+*----------------------------------------------------------------------
+* EXPERIMENT 3: FEEDBACK NETWORK ANALYSIS
+* Measure V(emit1)/V(out) = effective feedback fraction beta(f)
+* and V(fb_junct)/V(out) = divider at junction
+*----------------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "EXPERIMENT 3: FEEDBACK FRACTION beta(f) = V(emit1)/V(out)"
+echo "============================================================"
+
+* R_ldr = 1M
+alterparam rldr_val = 1MEG
+reset
+ac dec 200 1 1MEG
+let beta_db = vdb(emit1) - vdb(out)
+let fbj_db = vdb(fb_junct) - vdb(out)
+echo ""
+echo "--- R_ldr = 1M ---"
+echo "  freq    beta(dB)  fb_junct/out(dB)"
+meas ac b1m_100 find beta_db at=100
+meas ac b1m_500 find beta_db at=500
+meas ac b1m_1k find beta_db at=1000
+meas ac b1m_2k find beta_db at=2000
+meas ac b1m_5k find beta_db at=5000
+meas ac b1m_10k find beta_db at=10000
+meas ac b1m_20k find beta_db at=20000
+meas ac b1m_50k find beta_db at=50000
+meas ac f1m_100 find fbj_db at=100
+meas ac f1m_1k find fbj_db at=1000
+meas ac f1m_5k find fbj_db at=5000
+meas ac f1m_10k find fbj_db at=10000
+meas ac f1m_20k find fbj_db at=20000
+echo "  100Hz:   beta=$&b1m_100  fbj=$&f1m_100"
+echo "  500Hz:   beta=$&b1m_500"
+echo "  1kHz:    beta=$&b1m_1k   fbj=$&f1m_1k"
+echo "  2kHz:    beta=$&b1m_2k"
+echo "  5kHz:    beta=$&b1m_5k   fbj=$&f1m_5k"
+echo "  10kHz:   beta=$&b1m_10k  fbj=$&f1m_10k"
+echo "  20kHz:   beta=$&b1m_20k  fbj=$&f1m_20k"
+echo "  50kHz:   beta=$&b1m_50k"
+
+wrdata /tmp/gbw_beta_detail_1m.txt beta_db fbj_db
+
+* R_ldr = 19K
+alterparam rldr_val = 19K
+reset
+ac dec 200 1 1MEG
+let beta_db = vdb(emit1) - vdb(out)
+let fbj_db = vdb(fb_junct) - vdb(out)
+echo ""
+echo "--- R_ldr = 19K ---"
+meas ac b19k_100 find beta_db at=100
+meas ac b19k_500 find beta_db at=500
+meas ac b19k_1k find beta_db at=1000
+meas ac b19k_2k find beta_db at=2000
+meas ac b19k_5k find beta_db at=5000
+meas ac b19k_10k find beta_db at=10000
+meas ac b19k_20k find beta_db at=20000
+meas ac b19k_50k find beta_db at=50000
+meas ac f19k_100 find fbj_db at=100
+meas ac f19k_1k find fbj_db at=1000
+meas ac f19k_5k find fbj_db at=5000
+meas ac f19k_10k find fbj_db at=10000
+meas ac f19k_20k find fbj_db at=20000
+echo "  100Hz:   beta=$&b19k_100  fbj=$&f19k_100"
+echo "  500Hz:   beta=$&b19k_500"
+echo "  1kHz:    beta=$&b19k_1k   fbj=$&f19k_1k"
+echo "  2kHz:    beta=$&b19k_2k"
+echo "  5kHz:    beta=$&b19k_5k   fbj=$&f19k_5k"
+echo "  10kHz:   beta=$&b19k_10k  fbj=$&f19k_10k"
+echo "  20kHz:   beta=$&b19k_20k  fbj=$&f19k_20k"
+echo "  50kHz:   beta=$&b19k_50k"
+
+wrdata /tmp/gbw_beta_detail_19k.txt beta_db fbj_db
+
+* Compute delta_beta = how much MORE feedback at each freq for 1M vs 19K
+echo ""
+echo "--- DELTA beta (1M minus 19K) = how much MORE feedback with R_ldr=1M ---"
+let db100 = b1m_100 - b19k_100
+let db1k = b1m_1k - b19k_1k
+let db5k = b1m_5k - b19k_5k
+let db10k = b1m_10k - b19k_10k
+let db20k = b1m_20k - b19k_20k
+echo "  100Hz:  $&db100 dB"
+echo "  1kHz:   $&db1k dB"
+echo "  5kHz:   $&db5k dB"
+echo "  10kHz:  $&db10k dB"
+echo "  20kHz:  $&db20k dB"
+echo ""
+echo "  If delta_beta is CONSTANT, the feedback fraction is purely resistive"
+echo "  (frequency-independent) and GBW should be constant."
+echo "  If delta_beta DECREASES at high frequencies, feedback is weaker at HF"
+echo "  for R_ldr=1M, which would explain variable GBW."
+
+*----------------------------------------------------------------------
+* EXPERIMENT 4: OPEN-LOOP GAIN (feedback disabled)
+* Make R10 very large to break the loop
+*----------------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "EXPERIMENT 4: OPEN-LOOP GAIN (R10 = 100G)"
+echo "============================================================"
+
+alterparam rldr_val = 1MEG
+reset
+alter R10 = 100G
+op
+echo "  DC OP with open loop:"
+print v(base1) v(emit1) v(coll1) v(coll2) v(out)
+ac dec 200 1 1MEG
+let preamp_gain = vdb(out) - vdb(base1)
+echo ""
+echo "  Open-loop gain vs frequency:"
+meas ac aol_10 find preamp_gain at=10
+meas ac aol_50 find preamp_gain at=50
+meas ac aol_100 find preamp_gain at=100
+meas ac aol_200 find preamp_gain at=200
+meas ac aol_500 find preamp_gain at=500
+meas ac aol_1k find preamp_gain at=1000
+meas ac aol_2k find preamp_gain at=2000
+meas ac aol_5k find preamp_gain at=5000
+meas ac aol_10k find preamp_gain at=10000
+meas ac aol_20k find preamp_gain at=20000
+meas ac aol_50k find preamp_gain at=50000
+echo "  freq     A_ol(dB)"
+echo "  10Hz:    $&aol_10"
+echo "  50Hz:    $&aol_50"
+echo "  100Hz:   $&aol_100"
+echo "  200Hz:   $&aol_200"
+echo "  500Hz:   $&aol_500"
+echo "  1kHz:    $&aol_1k"
+echo "  2kHz:    $&aol_2k"
+echo "  5kHz:    $&aol_5k"
+echo "  10kHz:   $&aol_10k"
+echo "  20kHz:   $&aol_20k"
+echo "  50kHz:   $&aol_50k"
+
+wrdata /tmp/gbw_openloop.txt preamp_gain
+
+*----------------------------------------------------------------------
+* EXPERIMENT 5: DIRECT FEEDBACK (Ce1=wire, R_ldr=100M)
+* Pure resistive feedback — should give constant GBW
+*----------------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "EXPERIMENT 5: DIRECT FEEDBACK (Ce1=wire, R_ldr=100M)"
+echo "============================================================"
+
+alterparam rldr_val = 100MEG
+reset
+alter @Ce1[capacitance] = 1000
+ac dec 200 1 1MEG
+let preamp_gain = vdb(out) - vdb(base1)
+meas ac gdir_1k find preamp_gain at=1000
+let tgtdir = gdir_1k - 3
+meas ac bwdir when preamp_gain=tgtdir cross=last from=1000 to=100000
+let glindir = 10^(gdir_1k/20)
+let gbwdir = glindir * bwdir
+echo "  Direct feedback: gain=$&gdir_1k dB ($&glindir x), BW=$&bwdir Hz, GBW=$&gbwdir Hz"
+
+*----------------------------------------------------------------------
+* EXPERIMENT 6: R_LDR SWEEP — full GBW vs R_ldr curve
+* Using V(out)/V(base1) for proper preamp gain measurement
+*----------------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "EXPERIMENT 6: GBW vs R_ldr SWEEP"
+echo "============================================================"
+echo "  R_ldr        gain(dB)  gain(x)   BW(Hz)    GBW(Hz)"
+
+* Restore Ce1
+alter @Ce1[capacitance] = 4.7e-6
+
+foreach rldr_sweep 5K 10K 19K 33K 56K 100K 220K 470K 1MEG
+  alterparam rldr_val = $rldr_sweep
+  reset
+  ac dec 200 1 1MEG
+  let preamp_gain = vdb(out) - vdb(base1)
+  meas ac mg find preamp_gain at=1000
+  let tgt = mg - 3
+  meas ac bwh when preamp_gain=tgt cross=last from=1000 to=200000
+  let glin = 10^(mg/20)
+  let gbwval = glin * bwh
+  echo "  $rldr_sweep      $&mg    $&glin  $&bwh   $&gbwval"
+end
+
+*----------------------------------------------------------------------
+* EXPERIMENT 7: LOOP GAIN T(f) estimation
+* T(f) = A_ol(f) * beta(f)
+* We compute this from the measured A_ol and beta at each frequency
+*----------------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "EXPERIMENT 7: ESTIMATED LOOP GAIN T(f) = A_ol + beta (in dB)"
+echo "============================================================"
+
+* We already have A_ol from experiment 4 and beta from experiment 3
+* T(f) = A_ol(f_dB) + beta(f_dB)
+echo "  For R_ldr = 1M:"
+let t1m_100 = aol_100 + b1m_100
+let t1m_1k = aol_1k + b1m_1k
+let t1m_5k = aol_5k + b1m_5k
+let t1m_10k = aol_10k + b1m_10k
+let t1m_20k = aol_20k + b1m_20k
+echo "    100Hz:  T = $&aol_100 + $&b1m_100 = $&t1m_100 dB"
+echo "    1kHz:   T = $&aol_1k + $&b1m_1k = $&t1m_1k dB"
+echo "    5kHz:   T = $&aol_5k + $&b1m_5k = $&t1m_5k dB"
+echo "    10kHz:  T = $&aol_10k + $&b1m_10k = $&t1m_10k dB"
+echo "    20kHz:  T = $&aol_20k + $&b1m_20k = $&t1m_20k dB"
+
+echo ""
+echo "  For R_ldr = 19K:"
+let t19k_100 = aol_100 + b19k_100
+let t19k_1k = aol_1k + b19k_1k
+let t19k_5k = aol_5k + b19k_5k
+let t19k_10k = aol_10k + b19k_10k
+let t19k_20k = aol_20k + b19k_20k
+echo "    100Hz:  T = $&aol_100 + $&b19k_100 = $&t19k_100 dB"
+echo "    1kHz:   T = $&aol_1k + $&b19k_1k = $&t19k_1k dB"
+echo "    5kHz:   T = $&aol_5k + $&b19k_5k = $&t19k_5k dB"
+echo "    10kHz:  T = $&aol_10k + $&b19k_10k = $&t19k_10k dB"
+echo "    20kHz:  T = $&aol_20k + $&b19k_20k = $&t19k_20k dB"
+
+echo ""
+echo "  If T(f) crosses 0 dB at different frequencies for the two R_ldr"
+echo "  values, and the crossover frequency ratio does NOT match the gain"
+echo "  ratio, then GBW varies."
+
+echo ""
+echo "============================================================"
+echo "ANALYSIS COMPLETE"
+echo "============================================================"
+
+.endc
+.end

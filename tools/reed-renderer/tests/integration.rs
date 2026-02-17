@@ -96,7 +96,7 @@ fn test_cli_velocity_sweep() {
 }
 
 #[test]
-fn test_bass_quieter_than_treble() {
+fn test_register_balance() {
     for path in ["/tmp/reed_bass_test.wav", "/tmp/reed_treble_test.wav"] {
         let _ = std::fs::remove_file(path);
     }
@@ -116,9 +116,15 @@ fn test_bass_quieter_than_treble() {
     let peak_bass = wav_peak("/tmp/reed_bass_test.wav");
     let peak_treble = wav_peak("/tmp/reed_treble_test.wav");
 
+    // After voicing (output_scale), bass and treble should be within ~15 dB.
+    // With per-note displacement_scale (beam compliance), bass reeds deflect
+    // more → stronger bark → more energy. The pickup HPF + output_scale partially
+    // compensate, but bass is naturally louder at the voice output stage.
+    // Full leveling happens in the preamp/volume stages downstream.
+    let ratio_db = 20.0 * (peak_bass / peak_treble).log10();
     assert!(
-        peak_treble > peak_bass,
-        "treble ({peak_treble}) should be louder than bass ({peak_bass}) due to HPF"
+        ratio_db.abs() < 15.0,
+        "bass ({peak_bass:.6}) and treble ({peak_treble:.6}) should be within 15 dB, got {ratio_db:.1} dB"
     );
 
     std::fs::remove_file("/tmp/reed_bass_test.wav").ok();

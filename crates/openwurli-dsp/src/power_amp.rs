@@ -1,45 +1,76 @@
-/// Wurlitzer 200A power amplifier model — Class AB crossover + rail clipping.
+/// Wurlitzer 200A power amplifier model — VAS gain + Class AB crossover + rail clipping.
 ///
 /// The real 200A has a quasi-complementary push-pull Class AB output stage
-/// (TIP35C/TIP36C, ±24V rails, 20W into 8Ω). At moderate levels it's nearly
-/// transparent; the preamp dominates tonal character. At ff polyphonic or with
-/// aged bias, crossover distortion and rail clipping become audible.
+/// (TIP35C/TIP36C, ±24V rails, 20W into 8Ω). The VAS and driver stages
+/// provide voltage gain (differential input TR-7/TR-8, VAS TR-11, drivers
+/// TR-10/TR-12). At moderate levels the amp is nearly transparent; at ff
+/// polyphonic or with aged bias, crossover distortion and rail clipping
+/// become audible.
 ///
-/// Model: Hermite smoothstep dead zone (crossover, C1 continuous) + hard clip (rails).
+/// Signal flow inside the power amp model:
+///   input → voltage gain (VAS/driver) → crossover dead zone → rail clip → output
+///
+/// The voltage gain of 8.0 represents the closed-loop gain of the power amp
+/// with R-31 (15K) negative feedback. This gain was previously applied
+/// externally as "preamp_gain" — but it physically belongs here. Moving it
+/// into the power amp means the crossover distortion and rail clipping
+/// interact correctly with the actual signal level (post-volume pot).
 ///
 /// Crossover width of 0.003 models a typical lightly-aged instrument (~5-7 mA
-/// bias vs factory 10 mA). The ±3 mV dead zone adds subtle odd-harmonic grit
-/// at low volume settings where signal amplitude is in the 0.01-0.1V range.
+/// bias vs factory 10 mA). Applied to the amplified signal, this creates
+/// subtle odd-harmonic grit that becomes audible at low volume settings.
+
+/// Power amp voltage gain from VAS/driver stages (closed-loop with R-31 feedback).
+const VOLTAGE_GAIN: f64 = 8.0;
+
+/// Headroom factor matching the real ±24V power amp rails.
+///
+/// The DK preamp generates broadband subsonic energy (33-55 Hz) from tremolo
+/// R_ldr modulation. This content passes through the 40 Hz HPF and reaches the
+/// PA input. With the old rail_limit of 1.0, d=1.0 at default volume produced
+/// 0.99 × 0.25 × 8 = 1.98 — hard-clipping and generating audible in-band
+/// harmonics. The real circuit has ±24V rails (headroom ratio ~3:1 over max
+/// signal at full volume), so the subsonics never clip.
+///
+/// PA output is normalized to ±1.0 by dividing by HEADROOM after clipping.
+/// Default volume is increased to 0.60 to compensate.
+const HEADROOM: f64 = 2.5;
 
 pub struct PowerAmp {
-    /// Dead zone half-width (crossover distortion).
+    /// VAS/driver voltage gain.
+    voltage_gain: f64,
+    /// Dead zone half-width (crossover distortion, in amplified signal units).
     /// Factory-fresh: ~0.0005. Lightly aged (typical): 0.003. Worn: 0.005-0.01.
     crossover_width: f64,
-    /// Symmetric rail clipping limit (normalized to signal headroom).
+    /// Symmetric rail clipping limit (amplified signal units, NOT normalized).
     rail_limit: f64,
 }
 
 impl PowerAmp {
     pub fn new() -> Self {
         Self {
+            voltage_gain: VOLTAGE_GAIN,
             crossover_width: 0.003,
-            rail_limit: 1.0,
+            rail_limit: HEADROOM,
         }
     }
 
     pub fn process(&mut self, input: f64) -> f64 {
-        // Crossover distortion: Hermite smoothstep dead zone (C1 continuous)
-        let abs_in = input.abs();
-        let out = if abs_in < self.crossover_width {
-            let ratio = abs_in / self.crossover_width;
+        // VAS/driver voltage amplification
+        let amplified = input * self.voltage_gain;
+
+        // Output stage crossover distortion: Hermite smoothstep dead zone (C1 continuous)
+        let abs_amp = amplified.abs();
+        let out = if abs_amp < self.crossover_width {
+            let ratio = abs_amp / self.crossover_width;
             let smooth = ratio * ratio * (3.0 - 2.0 * ratio);
-            input.signum() * abs_in * smooth
+            amplified.signum() * abs_amp * smooth
         } else {
-            input
+            amplified
         };
 
-        // Hard clip at rails
-        out.clamp(-self.rail_limit, self.rail_limit)
+        // Hard clip at rails, then normalize to ±1.0 for DAC
+        out.clamp(-self.rail_limit, self.rail_limit) / self.rail_limit
     }
 
     pub fn reset(&mut self) {
@@ -52,49 +83,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_transparent_at_moderate_levels() {
+    fn test_gain_applied() {
         let mut pa = PowerAmp::new();
-        // Signal well above crossover, below rails
-        let input = 0.5;
+        // Input well above crossover threshold, below rail clip
+        let input = 0.05; // 0.05 * 8 = 0.40 (below HEADROOM, above crossover)
         let output = pa.process(input);
-        assert!((output - input).abs() < 1e-10, "Should be transparent: {output}");
+        let expected = input * VOLTAGE_GAIN / HEADROOM;
+        assert!((output - expected).abs() < 1e-10,
+            "Should apply gain + normalize: expected {expected}, got {output}");
     }
 
     #[test]
     fn test_crossover_distortion() {
         let mut pa = PowerAmp::new();
-        // Signal in the dead zone (below crossover_width of 0.003)
-        let input = 0.001;
+        // Tiny input: 0.0001 * 8 = 0.0008, which is inside dead zone (0.003)
+        let input = 0.0001;
         let output = pa.process(input);
-        assert!(output < input, "Should attenuate in dead zone: in={input}, out={output}");
+        let clean = input * VOLTAGE_GAIN / HEADROOM;
+        assert!(output < clean,
+            "Should attenuate in dead zone: clean={clean}, got={output}");
     }
 
     #[test]
     fn test_rail_clipping() {
         let mut pa = PowerAmp::new();
+        // 5.0 * 8 = 40.0, far above rail_limit of 2.5
         let output = pa.process(5.0);
-        assert_eq!(output, 1.0, "Should clip at rail limit");
+        assert!((output - 1.0).abs() < 1e-10, "Should clip and normalize to 1.0");
         let output_neg = pa.process(-5.0);
-        assert_eq!(output_neg, -1.0, "Should clip at negative rail");
+        assert!((output_neg + 1.0).abs() < 1e-10, "Should clip and normalize to -1.0");
     }
 
     #[test]
     fn test_symmetry() {
         let mut pa = PowerAmp::new();
-        let pos = pa.process(0.3);
-        let neg = pa.process(-0.3);
+        let pos = pa.process(0.05);
+        let neg = pa.process(-0.05);
         assert!((pos + neg).abs() < 1e-15, "Should be symmetric");
     }
 
     #[test]
     fn test_crossover_generates_distortion() {
-        // A small sine signal should show measurable THD from crossover
+        // A small sine signal (after gain) should show measurable THD from crossover
         use std::f64::consts::PI;
 
         let mut pa = PowerAmp::new();
         let sr = 44100.0;
         let freq = 440.0;
-        let amplitude = 0.01; // Small signal — close to crossover width
+        // After 8x gain, amplitude = 0.008 → close to crossover width of 0.003
+        let amplitude = 0.001;
 
         let n = (sr * 0.2) as usize;
         let mut samples = Vec::with_capacity(n);

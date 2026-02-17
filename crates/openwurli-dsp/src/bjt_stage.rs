@@ -13,8 +13,37 @@
 /// Asymmetric soft-clip models collector voltage rail limits:
 ///   - Positive raw (toward saturation): limited by Vce - Vce_sat
 ///   - Negative raw (toward cutoff): limited by Vcc - Vc
+///
+/// Both stages use PostNonlinearity flow (exp_transfer -> soft_clip -> Miller LPF),
+/// matching the real circuit where Miller capacitance limits the gain-bandwidth
+/// of the overall stage (not the input to the nonlinearity).
+///
+/// Stage 1 uses TptLpf (bilinear) for accurate phase at the 23 Hz dominant pole,
+/// which enables ZDF convergence (~50% instantaneous coupling vs 0.16% for forward Euler).
+/// Stage 2 uses forward Euler because its 81 kHz Miller pole is near Nyquist —
+/// discretization error is negligible and TPT's tan() hits frequency warping.
 
-use crate::filters::OnePoleLpf;
+use crate::filters::{LpfState, OnePoleLpf, TptLpf, TptLpfState};
+
+/// Miller filter variants — TPT (bilinear) or forward Euler.
+enum MillerFilter {
+    Tpt(TptLpf),
+    ForwardEuler(OnePoleLpf),
+}
+
+/// Snapshot of Miller filter state for ZDF iteration.
+#[derive(Clone, Copy)]
+enum MillerState {
+    Tpt(TptLpfState),
+    ForwardEuler(LpfState),
+}
+
+/// Snapshot of BjtStage state for ZDF feedback iteration.
+#[derive(Clone, Copy)]
+pub struct BjtState {
+    miller_state: MillerState,
+    prev_raw: f64,
+}
 
 pub struct BjtStage {
     /// Exponential scale factor: A/B = gm*Rc / (1/(n*Vt)) = Ic_q * Rc * (n*Vt)
@@ -32,82 +61,60 @@ pub struct BjtStage {
     /// Stage 1: 10.9V, Stage 2: 6.2V
     neg_limit: f64,
     /// Miller-effect dominant pole LPF
-    miller_lpf: OnePoleLpf,
+    miller: MillerFilter,
     /// Previous raw output (NR initial guess)
     prev_raw: f64,
 }
 
 impl BjtStage {
-    pub fn new(
-        gain: f64,       // A = gm * Rc
-        b: f64,          // 1/(n*Vt)
-        pos_limit: f64,  // Vce - Vce_sat (saturation headroom)
-        neg_limit: f64,  // Vcc - Vc (cutoff headroom)
-        k: f64,          // Re_unbypassed / Rc
-        miller_freq: f64,
-        sample_rate: f64,
-    ) -> Self {
+    /// Create Stage 1 (TR-1): high-gain, high-asymmetry.
+    ///
+    /// Uses TptLpf (bilinear) for accurate phase at the 23 Hz dominant pole:
+    ///   exp_transfer -> soft_clip -> Miller_TPT(23 Hz) -> output
+    ///
+    /// Emitter feedback from R-10 is handled externally by the preamp assembly.
+    pub fn stage1(sample_rate: f64) -> Self {
         Self {
-            scale: gain / b,
-            b,
-            k,
-            pos_limit,
-            neg_limit,
-            miller_lpf: OnePoleLpf::new(miller_freq, sample_rate),
+            scale: 420.0 / 38.5,  // gm1 * Rc1 / B = 2.80 mA/V * 150K / 38.5
+            b: 38.5,              // 1 / (1.0 * 0.026V)
+            k: 0.0,               // No local degeneration (R-10 feedback is external)
+            pos_limit: 2.05,      // Vce1 - Vce_sat = 2.15 - 0.10 (saturation)
+            neg_limit: 10.9,      // Vcc - Vc1 = 15.0 - 4.1 (cutoff)
+            miller: MillerFilter::Tpt(TptLpf::new(23.0, sample_rate)),
             prev_raw: 0.0,
         }
     }
 
-    /// Create Stage 1 (TR-1): high-gain, high-asymmetry.
-    /// Emitter feedback from R-10 is handled externally by the preamp assembly.
-    pub fn stage1(sample_rate: f64) -> Self {
-        Self::new(
-            420.0,   // gm1 * Rc1 = 2.80 mA/V * 150K
-            38.5,    // 1 / (1.0 * 0.026V)
-            2.05,    // Vce1 - Vce_sat = 2.15 - 0.10 (saturation, less headroom)
-            10.9,    // Vcc - Vc1 = 15.0 - 4.1 (cutoff, more headroom)
-            0.0,     // No local degeneration (R-10 feedback is external)
-            23.0,    // Miller dominant pole ~23 Hz
-            sample_rate,
-        )
-    }
-
     /// Create Stage 2 (TR-2): low-gain buffer with 820 ohm unbypassed emitter.
+    ///
+    /// Uses forward Euler for the 81 kHz Miller pole (near Nyquist):
+    ///   exp_transfer -> NR_solve -> soft_clip -> Miller_FE(81 kHz) -> output
+    ///
+    /// Forward Euler is adequate because discretization error is negligible
+    /// at 81 kHz, and TPT's tan() would hit frequency warping issues.
     pub fn stage2(sample_rate: f64) -> Self {
-        Self::new(
-            238.0,   // gm2 * Rc2 = 127 mA/V * 1.8K (before degeneration)
-            38.5,    // 1 / (1.0 * 0.026V)
-            5.3,     // Vce2 - Vce_sat = 5.4 - 0.10 (saturation)
-            6.2,     // Vcc - Vc2 = 15.0 - 8.8 (cutoff)
-            0.456,   // Re2b / Rc2 = 820 / 1800
-            81000.0, // Miller pole ~81 kHz
-            sample_rate,
-        )
+        Self {
+            scale: 238.0 / 38.5,  // gm2 * Rc2 / B = 127 mA/V * 1.8K / 38.5
+            b: 38.5,              // 1 / (1.0 * 0.026V)
+            k: 0.456,             // Re2b / Rc2 = 820 / 1800
+            pos_limit: 5.3,       // Vce2 - Vce_sat = 5.4 - 0.10 (saturation)
+            neg_limit: 6.2,       // Vcc - Vc2 = 15.0 - 8.8 (cutoff)
+            miller: MillerFilter::ForwardEuler(OnePoleLpf::new(81_000.0, sample_rate)),
+            prev_raw: 0.0,
+        }
     }
 
-    /// Process one sample.
+    /// Exponential transfer function: raw = (A/B) * (exp(B * vbe_eff) - 1).
     ///
-    /// - `input`: Base drive voltage (small-signal AC)
-    /// - `fb`: External feedback subtracted from input (emitter feedback from R-10)
-    pub fn process(&mut self, input: f64, fb: f64) -> f64 {
-        let input_eff = input - fb;
-
-        // Compute raw output via exponential transfer function.
-        // Equation: raw = (A/B) * (exp(B * (input_eff - k*raw)) - 1)
-        //
-        // For k=0 (Stage 1): solved directly, no iteration needed.
-        // For k>0 (Stage 2): Newton-Raphson iteration.
-        let raw = if self.k < 1e-10 {
-            // Direct solution (no local degeneration)
+    /// For k=0: direct solution. For k>0: Newton-Raphson iteration.
+    fn compute_raw(&self, input_eff: f64) -> f64 {
+        if self.k < 1e-10 {
             let arg = (self.b * input_eff).clamp(-20.0, 20.0);
             self.scale * (arg.exp() - 1.0)
         } else {
             // NR solver for implicit equation with local degeneration.
-            // Use linearized estimate as initial guess: raw = A*x / (1 + A*k)
-            // This prevents divergence for large negative inputs where
-            // starting from prev_raw = 0 causes the exp() to saturate and
-            // the Newton step to overshoot massively.
-            let a = self.scale * self.b; // = open-loop gain A
+            // Linearized initial guess: raw = A*x / (1 + A*k)
+            let a = self.scale * self.b;
             let mut raw = a * input_eff / (1.0 + a * self.k);
             for _ in 0..4 {
                 let arg = (self.b * (input_eff - self.k * raw)).clamp(-20.0, 20.0);
@@ -117,26 +124,66 @@ impl BjtStage {
                 raw -= f / df;
             }
             raw
-        };
+        }
+    }
 
-        // Asymmetric exponential soft-clip for collector rail limits.
-        // Positive raw -> toward saturation (less headroom in Stage 1)
-        // Negative raw -> toward cutoff (more headroom in Stage 1)
-        let clipped = if raw >= 0.0 {
+    /// Asymmetric exponential soft-clip for collector rail limits.
+    fn soft_clip(&self, raw: f64) -> f64 {
+        if raw >= 0.0 {
             self.pos_limit * (1.0 - (-raw / self.pos_limit).exp())
         } else {
             -self.neg_limit * (1.0 - (raw / self.neg_limit).exp())
-        };
+        }
+    }
 
-        // Miller-effect LPF (dominant pole bandwidth limit)
-        let output = self.miller_lpf.process(clipped);
-
+    /// Process one sample.
+    ///
+    /// Signal flow: exp_transfer -> soft_clip -> Miller LPF -> output
+    ///
+    /// - `input`: Base drive voltage (small-signal AC)
+    /// - `fb`: External feedback subtracted from input (emitter feedback from R-10)
+    pub fn process(&mut self, input: f64, fb: f64) -> f64 {
+        let input_eff = input - fb;
+        let raw = self.compute_raw(input_eff);
+        let clipped = self.soft_clip(raw);
         self.prev_raw = raw;
-        output
+        self.miller_process(clipped)
+    }
+
+    fn miller_process(&mut self, x: f64) -> f64 {
+        match &mut self.miller {
+            MillerFilter::Tpt(f) => f.process(x),
+            MillerFilter::ForwardEuler(f) => f.process(x),
+        }
+    }
+
+    /// Save stage state for ZDF feedback iteration.
+    pub fn save_state(&self) -> BjtState {
+        let miller_state = match &self.miller {
+            MillerFilter::Tpt(f) => MillerState::Tpt(f.save_state()),
+            MillerFilter::ForwardEuler(f) => MillerState::ForwardEuler(f.save_state()),
+        };
+        BjtState {
+            miller_state,
+            prev_raw: self.prev_raw,
+        }
+    }
+
+    /// Restore previously saved stage state.
+    pub fn restore_state(&mut self, state: BjtState) {
+        match (&mut self.miller, state.miller_state) {
+            (MillerFilter::Tpt(f), MillerState::Tpt(s)) => f.restore_state(s),
+            (MillerFilter::ForwardEuler(f), MillerState::ForwardEuler(s)) => f.restore_state(s),
+            _ => unreachable!("Miller filter type mismatch in restore_state"),
+        }
+        self.prev_raw = state.prev_raw;
     }
 
     pub fn reset(&mut self) {
-        self.miller_lpf.reset();
+        match &mut self.miller {
+            MillerFilter::Tpt(f) => f.reset(),
+            MillerFilter::ForwardEuler(f) => f.reset(),
+        }
         self.prev_raw = 0.0;
     }
 }
