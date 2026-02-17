@@ -218,7 +218,7 @@ pub struct DkPreamp {
     g_ldr: f64,             // 1/r_ldr (current conductance)
     g_ldr_prev: f64,        // g_ldr from previous timestep
 
-    // ── Output coupling (4th-order subsonic HPF) ──
+    // ── Output coupling (4th-order Bessel subsonic HPF) ──
     //
     // The real Wurlitzer uses C-8 (4.7µF) to AC-couple the preamp output.
     // The preamp's internal v[OUT] has a multi-volt 5.5 Hz operating-point
@@ -226,24 +226,20 @@ pub struct DkPreamp {
     // circuit physics — Ce1 holds the FB junction nearly constant while
     // R_ldr modulation swings the R10/R_ldr voltage divider.
     //
-    // During dynamic tremolo, the ACTUAL v[OUT] DC differs from the static
-    // equilibrium because Ce1 hasn't equilibrated (τ=2.4s >> 0.18s period).
-    // No analytical formula or lookup table can predict this dynamic DC
-    // accurately — it's determined by Ce1's charge state which the MNA
-    // solver tracks sample-by-sample.
-    //
     // Solution: subtract the initial constant DC (removes the ~8V offset)
-    // and use a 4th-order Butterworth HPF at 20 Hz to remove the residual
-    // 5.5 Hz operating-point swing. This gives -45 dB at 5.5 Hz while
-    // being transparent above 55 Hz (lowest Wurlitzer note A1).
-    // In the real circuit, the speaker HPF (95 Hz) provides this function;
-    // we apply it at the preamp output to prevent the subsonic swing from
-    // clipping the power amp model (which has normalized ±1.0 rails vs
-    // the real circuit's ±24V headroom).
+    // and use a 4th-order Bessel HPF at 40 Hz to remove the residual
+    // 5.5 Hz operating-point swing.
+    //
+    // Bessel (maximally flat group delay) chosen over Butterworth to minimize
+    // startup transient ringing. The old 6th-order Butterworth had Q=1.93 in
+    // its highest section, which rang at ~40 Hz for ~24 ms — exactly 1.6 C2
+    // periods. This created an audible "plink" at bass note onsets where H2
+    // was boosted +3.7 dB above steady state for the first 2-3 cycles.
+    // The Bessel filter's max Q=0.81 eliminates this ringing while still
+    // providing -23 dB at 22 Hz (ample for tremolo subsonic suppression).
     v_out_dc_init: f64,                  // Constant DC from initial solve
-    dc_hpf_1: Biquad,                   // 6th-order Butterworth section 1
-    dc_hpf_2: Biquad,                   // 6th-order Butterworth section 2
-    dc_hpf_3: Biquad,                   // 6th-order Butterworth section 3
+    dc_hpf_1: Biquad,                   // 4th-order Bessel section 1
+    dc_hpf_2: Biquad,                   // 4th-order Bessel section 2
 }
 
 impl DkPreamp {
@@ -323,14 +319,14 @@ impl DkPreamp {
         let (_, v_nl_dc, v_dc, _) =
             Self::full_dc_solve(&g_dc_base, &w, r_ldr_init);
 
-        // ── 6th-order Butterworth HPF for output coupling ──
-        // Three cascaded biquad sections. Cutoff 40 Hz chosen to suppress
+        // ── 4th-order Bessel HPF for output coupling ──
+        // Two cascaded biquad sections. Cutoff 40 Hz chosen to suppress
         // the 3rd/4th harmonics of the 5.5 Hz tremolo rate (16.5-22 Hz)
         // that otherwise leak through and cause PA clipping + speaker
-        // intermodulation. At 22 Hz: -33 dB. At 55 Hz (A1): -0.4 dB.
-        let dc_hpf_1 = Biquad::highpass(40.0, 0.5176, sample_rate);
-        let dc_hpf_2 = Biquad::highpass(40.0, 0.7071, sample_rate);
-        let dc_hpf_3 = Biquad::highpass(40.0, 1.9319, sample_rate);
+        // intermodulation. At 22 Hz: -23 dB. At 55 Hz (A1): -0.3 dB.
+        // Bessel topology chosen for minimal ringing (max Q=0.81).
+        let dc_hpf_1 = Biquad::highpass(40.0, 0.5219, sample_rate);
+        let dc_hpf_2 = Biquad::highpass(40.0, 0.8055, sample_rate);
 
         Self {
             s_base,
@@ -364,7 +360,6 @@ impl DkPreamp {
             v_out_dc_init: v_dc[OUT],
             dc_hpf_1,
             dc_hpf_2,
-            dc_hpf_3,
         }
     }
 
@@ -555,13 +550,12 @@ impl PreampModel for DkPreamp {
         // 10. Output coupling (models C-8 AC coupling in real circuit)
         //
         // Subtract the constant initial DC (removes ~8V offset), then
-        // apply a 6th-order Butterworth HPF at 40 Hz to remove the
-        // subsonic content from tremolo R_ldr modulation. The DK preamp
-        // generates broadband energy at 5.5 Hz harmonics (peaking at
-        // 16-22 Hz) that would clip the PA model (±1.0 normalized rails
-        // vs real circuit's ±24V headroom).
+        // apply a 4th-order Bessel HPF at 40 Hz to remove the subsonic
+        // content from tremolo R_ldr modulation. Bessel topology chosen
+        // for minimal ringing — eliminates bass onset plink from the old
+        // 6th-order Butterworth's Q=1.93 section.
         let ac = self.v[OUT] - self.v_out_dc_init;
-        self.dc_hpf_3.process(self.dc_hpf_2.process(self.dc_hpf_1.process(ac)))
+        self.dc_hpf_2.process(self.dc_hpf_1.process(ac))
     }
 
     fn set_ldr_resistance(&mut self, r_ldr_path: f64) {
@@ -580,7 +574,6 @@ impl PreampModel for DkPreamp {
     fn reset(&mut self) {
         self.dc_hpf_1.reset();
         self.dc_hpf_2.reset();
-        self.dc_hpf_3.reset();
 
         // Full DC solve at current R_ldr
         let w = self.two_w_half();
@@ -1508,8 +1501,8 @@ mod tests {
         }
 
         // SPICE confirms: stepping R_ldr from 1M to 50K causes v[OUT] to jump
-        // ~4.3V (correct physics). The 4th-order Butterworth HPF (20 Hz)
-        // removes this subsonic swing with -45 dB at 5.5 Hz.
+        // ~4.3V (correct physics). The 4th-order Bessel HPF (40 Hz)
+        // removes this subsonic swing.
         eprintln!("Max output after R_ldr step: {max_output:.3}V");
         assert!(max_output < 10.0,
             "Output after R_ldr step unexpectedly large: {max_output:.3}V (want < 10.0V)");

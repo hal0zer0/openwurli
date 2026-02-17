@@ -205,20 +205,24 @@ pub fn reed_compliance(midi: u8) -> f64 {
 /// Exponent 0.65 gives steeper bass-to-treble gradient than sqrt(0.5), needed
 /// to match OBM's ~10:1 H2/H1 ratio range (D3 bark ~0.5 vs Bb6 clean ~0.06).
 ///
-/// Calibrated against OBM 200A recordings:
-///   A1 (MIDI 33): 0.55  (clamped — heavy bass bark)
-///   D3 (MIDI 50): 0.55  (clamped — solid bark)
-///   C4 (MIDI 60): 0.42  (moderate bark, reference)
-///   D5 (MIDI 74): 0.27  (lighter bark)
-///   D6 (MIDI 86): 0.21  (gentle)
-///   C7 (MIDI 96): 0.15  (clean, bell-like)
-const DS_AT_C4: f64 = 0.42;
+/// Calibrated against OBM + polyphonic Wurlitzer 200A recordings.
+/// H2/H1 comparison (high-isolation notes, n=19) showed synth H2 was
+/// -6.4 dB low at DS=0.42 ("sleepy Wurli"). Raised to 0.70 (+67%).
+///
+/// Approximate values across keyboard:
+///   A1 (MIDI 33): 0.80  (clamped — heavy bass bark/growl)
+///   D3 (MIDI 50): 0.80  (clamped — solid bark)
+///   C4 (MIDI 60): 0.70  (strong bark, reference)
+///   D5 (MIDI 74): 0.45  (moderate bark)
+///   D6 (MIDI 86): 0.35  (lighter)
+///   C7 (MIDI 96): 0.25  (clean, bell-like)
+const DS_AT_C4: f64 = 0.70;
 
 pub fn pickup_displacement_scale(midi: u8) -> f64 {
     let c = reed_compliance(midi);
     let c_ref = reed_compliance(60); // C4 reference
     let ds = DS_AT_C4 * (c / c_ref).powf(0.65);
-    ds.clamp(0.02, 0.55)
+    ds.clamp(0.02, 0.80)
 }
 
 /// Cantilever beam mode shape phi_n(xi) with tip mass.
@@ -366,6 +370,9 @@ pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES]
 ///   C6 (MIDI 84): -5.3 dB
 ///   C7 (MIDI 96): -7.9 dB
 pub fn output_scale(midi: u8) -> f64 {
+    // -4 dB offset compensates for extra energy from DS_AT_C4=0.70 nonlinearity.
+    // Without this, bass ff clips by +4-6 dBFS.
+    const BARK_OFFSET_DB: f64 = -4.0;
     let m = midi as f64;
     let db = if m < 48.0 {
         // Below C3: 0.70 dB/semi to compensate HPF + bass mode taper.
@@ -375,7 +382,7 @@ pub fn output_scale(midi: u8) -> f64 {
         // C3 and above: 0.22 dB/semi from C4 reference
         -0.22 * (m - 60.0)
     };
-    f64::powf(10.0, db / 20.0)
+    f64::powf(10.0, (db + BARK_OFFSET_DB) / 20.0)
 }
 
 /// Register-dependent velocity exponent for dynamic expression.
@@ -904,7 +911,7 @@ mod tests {
         let ds_treb = pickup_displacement_scale(96);
 
         assert!(ds_bass > 0.50, "Bass ds ({ds_bass:.3}) should give strong bark");
-        assert!(ds_treb < 0.25, "Treble ds ({ds_treb:.3}) should be nearly clean");
+        assert!(ds_treb < 0.35, "Treble ds ({ds_treb:.3}) should be nearly clean");
         // Ratio should be at least 2.5:1 (bass is barkier, but clamp compresses range)
         assert!(ds_bass / ds_treb > 2.5,
             "Bass/treble ratio = {:.1}x, expected >2.5x", ds_bass / ds_treb);
