@@ -437,6 +437,7 @@ fn cmd_render(args: &[String]) {
     if no_poweramp { println!("  Power amp: BYPASSED"); }
     if normalize { println!("  Normalize: ON (-3 dBFS ceiling)"); }
     println!("  Peak:      {peak_dbfs:.1} dBFS (raw)");
+    println!("  Build:     post-OBM-calibration");
     println!("  Output:    {output_path}");
 }
 

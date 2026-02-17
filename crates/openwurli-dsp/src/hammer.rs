@@ -32,11 +32,11 @@ pub fn dwell_time(velocity: f64) -> f64 {
 ///   - D4 (294 Hz): 50% at cycle 1, 90% at cycle 2
 ///   - D6 (1175 Hz): near-instant (full by cycle 0-1)
 ///
-/// Formula: 2 periods at ff, 3 at pp, clamped to [2ms, 15ms].
+/// Formula: 2 periods at ff, 3 at pp, clamped to [2ms, 60ms].
 pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64) -> f64 {
     let period_s = 1.0 / fundamental_hz;
     let periods = 2.0 + 1.0 * (1.0 - velocity);
-    (periods * period_s).clamp(0.002, 0.015)
+    (periods * period_s).clamp(0.002, 0.060)
 }
 
 /// Compute per-mode attenuation from the Gaussian dwell filter.
@@ -195,8 +195,8 @@ mod tests {
         assert!(bass > mid, "bass onset ({bass:.4}) should exceed mid ({mid:.4})");
         assert!(mid > treble, "mid onset ({mid:.4}) should exceed treble ({treble:.4})");
 
-        // Bass should hit the 15ms clamp (2 periods of 65 Hz = 30.8ms)
-        assert!((bass - 0.015).abs() < 1e-6, "C2 ff should clamp to 15ms, got {bass:.4}");
+        // C2 ff: 2 periods of 65 Hz = 30.8ms (no longer clamped by 60ms ceiling)
+        assert!((bass - 2.0 / 65.0).abs() < 0.001, "C2 ff should be ~30.8ms, got {bass:.4}");
         // Treble should hit the 2ms floor (2 periods of 1047 Hz = 1.9ms)
         assert!((treble - 0.002).abs() < 1e-6, "C6 ff should clamp to 2ms, got {treble:.6}");
         // C4 ff: 2/262 = 7.6ms (unclamped)
