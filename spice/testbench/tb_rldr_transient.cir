@@ -1,0 +1,131 @@
+.title Wurlitzer 200A Preamp - R_ldr Transient Response
+*
+* PURPOSE: Verify transient behavior when R_ldr changes.
+* Compare against DK preamp model to verify correctness.
+*
+*======================================================================
+* TRANSISTOR MODEL (Ideal, matching DK model)
+*======================================================================
+
+.MODEL Q_IDEAL NPN(
++  IS=3.03E-14 BF=100000 NF=1.0 VAF=1000
++  RB=0 RE=0 RC=0
++  CJE=0 CJC=0 TF=0 TR=0)
+
+*======================================================================
+* SUPPLY
+*======================================================================
+Vcc vcc 0 DC 15
+
+*======================================================================
+* INPUT - small 1kHz sine at 1mV (matching Rust test)
+*======================================================================
+Vin in_sig 0 SIN(0 0.001 1000)
+
+*======================================================================
+* INPUT NETWORK
+*======================================================================
+R1 in_sig node_A 22K
+Cin node_A base1 0.022U
+
+*======================================================================
+* BASE1 BIAS
+*======================================================================
+R2 vcc base1 2MEG
+R3 base1 0 470K
+
+*======================================================================
+* STAGE 1
+*======================================================================
+Q1 coll1 base1 emit1 Q_IDEAL
+Rc1 vcc coll1 150K
+Cc3 coll1 base1 100P
+Re1 emit1 0 33K
+Ce1 emit1 fb_j 4.7U
+
+*======================================================================
+* FEEDBACK NETWORK
+*======================================================================
+R10 out fb_j 56K
+
+* R_ldr: step from 1M to 50K at t=0.5s
+* Use behavioral source: R = 1M for t<0.5, 50K for t>=0.5
+* G_1M = 1e-6, G_50K = 2e-5
+Bldr fb_j 0 I=V(fb_j) * (1e-6 + (2e-5 - 1e-6) * u(time - 0.5))
+
+*======================================================================
+* STAGE 2
+*======================================================================
+Q2 coll2 coll1 emit2a Q_IDEAL
+Rc2 vcc coll2 1.8K
+Re2a emit2a emit2b 270
+Ce2 emit2a emit2b 22U
+Re2b emit2b 0 820
+Cc4 coll2 coll1 100P
+
+*======================================================================
+* OUTPUT
+*======================================================================
+R9 coll2 out 6.8K
+
+*======================================================================
+* ANALYSIS
+*======================================================================
+
+.control
+
+* Transient analysis: 0 to 4 seconds, step=10us
+* Longer to see full settling
+tran 10u 4.0 uic
+
+* Use .meas-like approach: find values at specific times
+* ngspice batch: use let + interpolation
+
+echo "================================================================"
+echo "  R_ldr STEP TRANSIENT: 1M -> 50K at t=0.5s"
+echo "================================================================"
+
+* Write key node voltages to a file for easy parsing
+wrdata /tmp/rldr_transient_out.csv v(out) v(coll2) v(emit1) v(fb_j)
+
+* Measure at specific time points using meas
+meas tran v_emit1_before FIND v(emit1) AT=0.49
+meas tran v_fbj_before FIND v(fb_j) AT=0.49
+meas tran v_coll2_before FIND v(coll2) AT=0.49
+meas tran v_out_before FIND v(out) AT=0.49
+
+meas tran v_emit1_1ms FIND v(emit1) AT=0.501
+meas tran v_fbj_1ms FIND v(fb_j) AT=0.501
+meas tran v_coll2_1ms FIND v(coll2) AT=0.501
+meas tran v_out_1ms FIND v(out) AT=0.501
+
+meas tran v_emit1_10ms FIND v(emit1) AT=0.51
+meas tran v_fbj_10ms FIND v(fb_j) AT=0.51
+meas tran v_coll2_10ms FIND v(coll2) AT=0.51
+meas tran v_out_10ms FIND v(out) AT=0.51
+
+meas tran v_emit1_100ms FIND v(emit1) AT=0.6
+meas tran v_fbj_100ms FIND v(fb_j) AT=0.6
+meas tran v_coll2_100ms FIND v(coll2) AT=0.6
+meas tran v_out_100ms FIND v(out) AT=0.6
+
+meas tran v_emit1_500ms FIND v(emit1) AT=1.0
+meas tran v_fbj_500ms FIND v(fb_j) AT=1.0
+meas tran v_coll2_500ms FIND v(coll2) AT=1.0
+meas tran v_out_500ms FIND v(out) AT=1.0
+
+meas tran v_emit1_1500ms FIND v(emit1) AT=2.0
+meas tran v_fbj_1500ms FIND v(fb_j) AT=2.0
+meas tran v_coll2_1500ms FIND v(coll2) AT=2.0
+meas tran v_out_1500ms FIND v(out) AT=2.0
+
+meas tran v_emit1_3500ms FIND v(emit1) AT=4.0
+meas tran v_fbj_3500ms FIND v(fb_j) AT=4.0
+meas tran v_coll2_3500ms FIND v(coll2) AT=4.0
+meas tran v_out_3500ms FIND v(out) AT=4.0
+
+echo ""
+echo "Done."
+
+.endc
+.end

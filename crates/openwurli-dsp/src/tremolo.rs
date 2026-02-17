@@ -3,7 +3,7 @@
 /// The tremolo modulates preamp gain by varying the LDR resistance in the
 /// emitter feedback path. The signal flow is:
 ///
-///   Twin-T oscillator (~5.5 Hz) -> half-wave rectified -> LED current
+///   Twin-T oscillator (~5.63 Hz per SPICE) -> half-wave rectified -> LED current
 ///   -> CdS LDR (light-dependent resistor) -> R_ldr
 ///   -> feedback junction -> modulates preamp closed-loop gain
 ///
@@ -43,7 +43,7 @@ pub struct Tremolo {
 impl Tremolo {
     /// Create a new tremolo at the given rate and sample rate.
     ///
-    /// - `rate`: LFO frequency in Hz (default ~5.5)
+    /// - `rate`: LFO frequency in Hz (default 5.63 per SPICE twin-T measurement)
     /// - `depth`: 0.0 to 1.0 (maps to vibrato pot position)
     /// - `sample_rate`: audio sample rate
     pub fn new(rate: f64, depth: f64, sample_rate: f64) -> Self {
@@ -60,7 +60,7 @@ impl Tremolo {
             ldr_release: (-1.0 / (release_tau * sample_rate)).exp(),
             r_ldr_min: 50.0,
             r_ldr_max: 1_000_000.0,
-            gamma: 0.7,
+            gamma: 1.1,
             r_series: 18_000.0,
         }
     }
@@ -104,14 +104,18 @@ impl Tremolo {
         };
         self.ldr_envelope = led_drive + coeff * (self.ldr_envelope - led_drive);
 
-        // CdS power-law: R_ldr = R_dark * (drive + epsilon)^(-gamma)
-        // Normalized so full drive -> R_min, zero drive -> R_max
+        // CdS LDR: resistance varies logarithmically with illumination.
+        // Real CdS cells span ~4 decades (50Ω fully lit to 1MΩ dark).
+        // log(R) interpolates between log(R_max) and log(R_min) as drive
+        // increases, with gamma controlling the knee of the response curve.
         let drive = self.ldr_envelope.clamp(0.0, 1.0);
         if drive < 1e-6 {
             self.r_ldr = self.r_ldr_max;
         } else {
-            // Power law mapping
-            self.r_ldr = self.r_ldr_min + (self.r_ldr_max - self.r_ldr_min) * (1.0 - drive).powf(1.0 / self.gamma);
+            let log_min = self.r_ldr_min.ln();
+            let log_max = self.r_ldr_max.ln();
+            let log_r = log_max + (log_min - log_max) * drive.powf(self.gamma);
+            self.r_ldr = log_r.exp();
         }
 
         // Total path resistance: series resistors + LDR

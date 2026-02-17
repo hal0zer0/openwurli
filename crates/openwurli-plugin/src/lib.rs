@@ -1,9 +1,10 @@
 // OpenWurli — Wurlitzer 200A virtual instrument plugin (CLAP + VST3).
 
 use nih_plug::prelude::*;
+use openwurli_dsp::dk_preamp::DkPreamp;
 use openwurli_dsp::oversampler::Oversampler;
 use openwurli_dsp::power_amp::PowerAmp;
-use openwurli_dsp::preamp::{EbersMollPreamp, PreampModel};
+use openwurli_dsp::preamp::PreampModel;
 use openwurli_dsp::speaker::Speaker;
 use openwurli_dsp::tremolo::Tremolo;
 use openwurli_dsp::tables;
@@ -17,11 +18,9 @@ use params::OpenWurliParams;
 const MAX_VOICES: usize = 12;
 const MAX_BLOCK_SIZE: usize = 8192;
 
-// Note: PREAMP_INPUT_SCALE is no longer needed. The pickup model now includes
-// DISPLACEMENT_SCALE (0.30) which converts reed displacement to physical y = x/d_0,
-// applies the nonlinear 1/(1-y) capacitance model, and outputs calibrated millivolt
-// signals that feed directly to the preamp. The nonlinear pickup is where the
-// Wurlitzer bark comes from — not the preamp (which is a clean gain stage).
+// Signal path: reed → pickup (1/(1-y) nonlinearity + HPF) → preamp (DK method)
+// → volume pot (attenuator) → power amp (VAS gain + crossover + clip) → speaker.
+// The pickup's 1/(1-y) nonlinearity is the primary source of Wurlitzer bark.
 
 // ── Voice management ────────────────────────────────────────────────────────
 
@@ -67,7 +66,7 @@ struct OpenWurli {
     age_counter: u64,
 
     // Shared signal chain (mono, post voice-sum)
-    preamp: EbersMollPreamp,
+    preamp: DkPreamp,
     tremolo: Tremolo,
     oversampler: Oversampler,
     power_amp: PowerAmp,
@@ -92,8 +91,8 @@ impl Default for OpenWurli {
             params: Arc::new(OpenWurliParams::default()),
             voices: (0..MAX_VOICES).map(|_| VoiceSlot::default()).collect(),
             age_counter: 0,
-            preamp: EbersMollPreamp::new(os_sr),
-            tremolo: Tremolo::new(5.5, 0.5, os_sr),
+            preamp: DkPreamp::new(os_sr),
+            tremolo: Tremolo::new(5.63, 0.5, os_sr),
             oversampler: Oversampler::new(),
             power_amp: PowerAmp::new(),
             speaker: Speaker::new(sr),
@@ -287,7 +286,7 @@ impl Plugin for OpenWurli {
         self.os_sample_rate = self.sample_rate * 2.0;
 
         // Reinitialize DSP modules at correct sample rate
-        self.preamp = EbersMollPreamp::new(self.os_sample_rate);
+        self.preamp = DkPreamp::new(self.os_sample_rate);
         self.tremolo = Tremolo::new(
             self.params.tremolo_rate.value() as f64,
             self.params.tremolo_depth.value() as f64,
@@ -386,17 +385,17 @@ impl Plugin for OpenWurli {
             next_event = context.next_event();
         }
 
-        // Signal chain: preamp -> gain -> volume -> power amp -> speaker -> output
-        // Speaker character: per-buffer is fine (50ms smoother, slow-changing knob)
+        // Signal chain: preamp -> volume pot -> power amp (gain + crossover + clip) -> speaker
+        // Matches real 200A topology: volume pot sits between preamp and power amp.
+        // Power amp has internal voltage gain (VAS/driver stages).
         let speaker_char = self.params.speaker_character.smoothed.next() as f64;
         self.speaker.set_character(speaker_char);
 
         for (i, mut channel_samples) in buffer.iter_samples().enumerate() {
-            // Per-sample smoothing prevents zipper noise on gain/volume changes
-            let preamp_gain = self.params.preamp_gain.smoothed.next() as f64;
             let volume = self.params.volume.smoothed.next() as f64;
-            // Volume attenuates BEFORE power amp (real circuit topology)
-            let attenuated = self.out_buf[i] * preamp_gain * volume;
+            // Volume pot attenuates before power amp (3K audio taper in real circuit)
+            let attenuated = self.out_buf[i] * volume;
+            // Power amp: VAS gain → crossover distortion → rail clip
             let amplified = self.power_amp.process(attenuated);
             let shaped = self.speaker.process(amplified);
             let sample = shaped as f32;

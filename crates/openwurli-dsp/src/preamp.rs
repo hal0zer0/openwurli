@@ -1,11 +1,13 @@
 /// Wurlitzer 200A preamp model — two-stage direct-coupled BJT amplifier.
 ///
-/// Signal flow per oversampled sample:
-///   input -> Stage 1 (with R-10 feedback) -> Stage 2 -> DC block -> output
-///
-/// Note: C20 (220 pF) appears only on the 206A board, NOT the 200A board.
-/// The 200A uses only the .022µF input coupling cap. Bass rolloff comes from
-/// the pickup's system RC (f_c = 2312 Hz) and the preamp's own bandwidth limit.
+/// Signal flow per oversampled sample (ZDF feedback):
+///   for iter in 0..3:
+///     restore stage1 + stage2 state
+///     fb_est = prev_s2_out * fb_fraction  (seeded from last sample)
+///     s1_out = stage1.process(input, fb_est)
+///     s2_out = stage2.process(s1_out, 0.0)
+///     fb_est = s2_out * fb_fraction
+///   output = dc_block(s2_out)
 ///
 /// Emitter feedback from R-10 (56K):
 ///   output -> R-10 -> fb_junction -> Ce1 -> TR-1 emitter
@@ -14,11 +16,20 @@
 /// Calibration targets (from SPICE):
 ///   - Gain @ 1kHz, no tremolo: 6.0 dB (2.0x)
 ///   - Gain @ 1kHz, tremolo bright: 12.1 dB (4.0x)
-///   - BW: 19 Hz - 9.9 kHz (no trem) / 19 Hz - 8.3 kHz (trem bright)
 ///   - H2 > H3 at all dynamics
+///
+/// Known limitation — nested feedback loops (see docs/preamp-circuit.md 5.5.1):
+///   The real preamp has TWO nested feedback loops: inner (C-3/C-4 Miller caps,
+///   ~15.5 kHz BW) and outer (R-10/Ce1/R_ldr, gain control). This model treats
+///   each stage independently with simple Miller poles, giving constant GBW and
+///   incorrect trem-bright BW (~5.2 kHz vs SPICE ~15.2 kHz preamp-only). The
+///   inner C-3/C-4 loop must be modeled explicitly (WDF or coupled solver) to
+///   fix this. Current DSP BW is ~10.5 kHz no-trem (acceptable) and ~5.2 kHz
+///   trem-bright (too narrow, but only affects the brief peak of tremolo cycle
+///   at frequencies above the highest fundamental).
 
 use crate::bjt_stage::BjtStage;
-use crate::filters::{DcBlocker, OnePoleLpf};
+use crate::filters::DcBlocker;
 
 /// PreampModel trait — swappable implementations for A/B testing.
 pub trait PreampModel {
@@ -30,53 +41,40 @@ pub trait PreampModel {
 /// Ebers-Moll preamp — the shipping candidate.
 ///
 /// Two BjtStage objects with exponential transfer functions.
-/// R-10 emitter feedback modeled via calibrated voltage-divider fraction.
+/// R-10 emitter feedback via 3-iteration zero-delay feedback (ZDF).
+///
+/// The ZDF loop replaces the previous one-sample-delay feedback + 16 kHz
+/// compensating LPF. With Stage 1's TptLpf Miller filter providing ~50%
+/// instantaneous input coupling, 3 iterations converge to < 0.25 dB residual
+/// (loop gain ~0.3 at midband -> 0.3^3 = 2.7%).
 pub struct EbersMollPreamp {
-    /// Stage 1: high-gain, high-asymmetry
+    /// Stage 1: high-gain, high-asymmetry (TptLpf Miller, pre-nonlinearity)
     stage1: BjtStage,
-    /// Stage 2: low-gain buffer
+    /// Stage 2: low-gain buffer (forward Euler Miller, post-nonlinearity)
     stage2: BjtStage,
     /// Output DC blocker
     dc_block: DcBlocker,
-    /// Bandwidth LPF — models Stage 2 Miller effect + stray capacitance.
-    ///
-    /// The Stage 2 Miller pole (C-4=100pF, Rc1||ro1=135K source impedance,
-    /// Av2=-2.06) calculates to 3.85 kHz. However, placing this pole inside
-    /// the discrete feedback loop causes resonance due to the one-sample delay
-    /// (9.5° phase margin at crossover). Instead, we model the combined HF
-    /// rolloff as a post-loop LPF calibrated to match SPICE: -3 dB at 9.9 kHz.
-    ///
-    /// Known limitation: with low feedback (tremolo bright, R_ldr=19K), the
-    /// feedback loop's natural BW is ~6.5 kHz vs SPICE's 8.3 kHz. This is
-    /// inherent to the single-dominant-pole discrete model and cannot be
-    /// corrected by the post-loop LPF. The error only affects the brief peak
-    /// of the tremolo cycle, at frequencies above the highest fundamental.
-    bw_lpf: OnePoleLpf,
-    /// Feedback fraction: how much of prev_output reaches Stage 1 emitter.
+    /// Feedback fraction: how much of Stage 2 output reaches Stage 1 emitter.
     /// Calibrated to match SPICE: fb = 0.509 * R_ldr / (R_ldr + 20K).
     /// Range: ~0 (LDR bright, gain 4x) to ~0.5 (LDR dark, gain 2x).
     fb_fraction: f64,
-    /// Previous output (one-sample delay for feedback loop)
-    prev_output: f64,
+    /// Previous Stage 2 output (seeds next sample's ZDF iteration)
+    prev_s2_out: f64,
 }
+
+/// Number of ZDF fixed-point iterations per sample.
+/// Loop gain ~0.3 at midband -> residual after 3 iters: 0.3^3 = 2.7% (< 0.25 dB).
+const ZDF_ITERATIONS: usize = 3;
 
 impl EbersMollPreamp {
     /// Create a new Ebers-Moll preamp at the given (oversampled) sample rate.
     pub fn new(sample_rate: f64) -> Self {
-        // Bandwidth LPF cutoff: calibrated so the closed-loop preamp response
-        // (with the one-sample feedback delay) matches SPICE's -3 dB at 9.9 kHz.
-        // The delay makes the feedback less effective at HF, widening BW to ~16 kHz.
-        // This 16 kHz post-loop LPF compensates, representing Stage 2 Miller
-        // effect + stray capacitance that can't be placed inside the loop.
-        let bw_cutoff = 16_000.0;
-
         Self {
             stage1: BjtStage::stage1(sample_rate),
             stage2: BjtStage::stage2(sample_rate),
             dc_block: DcBlocker::new(sample_rate),
-            bw_lpf: OnePoleLpf::new(bw_cutoff, sample_rate),
             fb_fraction: Self::calc_fb_fraction(1_000_000.0),
-            prev_output: 0.0,
+            prev_s2_out: 0.0,
         }
     }
 
@@ -95,27 +93,28 @@ impl EbersMollPreamp {
 
 impl PreampModel for EbersMollPreamp {
     fn process_sample(&mut self, input: f64) -> f64 {
-        // 1. Stage 1 with R-10 emitter feedback (one-sample delay)
-        //    The feedback signal is the previous output scaled by fb_fraction.
-        //    This is subtracted from the input at Stage 1's emitter
-        //    (series-series negative feedback).
-        let fb_signal = self.prev_output * self.fb_fraction;
-        let stage1_out = self.stage1.process(input, fb_signal);
+        // Save stage states before ZDF iteration
+        let s1_state = self.stage1.save_state();
+        let s2_state = self.stage2.save_state();
 
-        // 2. Direct coupling to Stage 2 (no coupling cap)
-        let stage2_out = self.stage2.process(stage1_out, 0.0);
+        // Seed feedback estimate from previous sample's output
+        let mut fb_est = self.prev_s2_out * self.fb_fraction;
+        let mut s2_out = 0.0;
 
-        // 3. Bandwidth LPF (Stage 2 Miller effect + stray capacitance)
-        let bw_out = self.bw_lpf.process(stage2_out);
+        // Fixed-point ZDF iteration: converge feedback within this sample
+        for _ in 0..ZDF_ITERATIONS {
+            self.stage1.restore_state(s1_state);
+            self.stage2.restore_state(s2_state);
 
-        // 4. DC block (20 Hz HPF)
-        let output = self.dc_block.process(bw_out);
+            let s1_out = self.stage1.process(input, fb_est);
+            s2_out = self.stage2.process(s1_out, 0.0);
+            fb_est = s2_out * self.fb_fraction;
+        }
 
-        // Store for next sample's feedback (tap before BW LPF and DC block,
-        // matching the real circuit where R-10 taps from Stage 2 collector)
-        self.prev_output = stage2_out;
+        self.prev_s2_out = s2_out;
 
-        output
+        // DC block (20 Hz HPF)
+        self.dc_block.process(s2_out)
     }
 
     fn set_ldr_resistance(&mut self, r_ldr_path: f64) {
@@ -125,9 +124,8 @@ impl PreampModel for EbersMollPreamp {
     fn reset(&mut self) {
         self.stage1.reset();
         self.stage2.reset();
-        self.bw_lpf.reset();
         self.dc_block.reset();
-        self.prev_output = 0.0;
+        self.prev_s2_out = 0.0;
     }
 }
 

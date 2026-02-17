@@ -507,6 +507,53 @@ At 10 kHz:
 
 This means the open-loop gain of Stage 1 alone is less than unity above ~10 kHz! Combined with Stage 2 (Av2 = 2.2), the two-stage open-loop gain at 10 kHz is only ~2.1. The feedback can only reduce gain below the open-loop value, so above ~10 kHz, the closed-loop gain approaches the open-loop gain.
 
+### 5.5.1 Nested Feedback Loops — Critical Finding (Feb 2026 SPICE Analysis)
+
+**The preamp has TWO nested feedback loops, not one.** This has major implications for bandwidth modeling.
+
+| Loop | Components | Type | Effect |
+|------|-----------|------|--------|
+| **Inner** | C-3 (100pF) coll1→base1, C-4 (100pF) coll2→coll1 | Local Miller feedback | Dominates bandwidth; sets BW at ~15.5 kHz |
+| **Outer** | R-10 (56K) via Ce1 to emitter, R_ldr shunt | Global emitter feedback | Controls gain (2x–4x); barely affects BW |
+
+**SPICE experiments confirmed:**
+
+1. **Preamp-only bandwidth (base1→out) is nearly constant regardless of R_ldr:**
+
+| R_ldr | Gain (dB) | Gain (x) | BW (Hz) | GBW (Hz) |
+|-------|-----------|----------|---------|----------|
+| 1M | 6.70 | 2.16 | 15,686 | 33,905 |
+| 19K | 12.83 | 4.38 | 15,211 | 66,647 |
+
+   BW changes by only 3% (15,686 → 15,211 Hz) despite a 2x gain change. GBW is **NOT constant** — it scales proportionally with gain. This is the signature of a nested-loop topology where the inner loop dominates bandwidth.
+
+2. **Ce1 is NOT the mechanism for variable BW.** Replacing Ce1 with a wire (huge capacitance) produces identical results. Ce1's impedance is negligible at audio frequencies (34Ω at 1 kHz). Its only job is DC blocking.
+
+3. **The feedback fraction beta is frequency-independent in the audio band.** Delta-beta between R_ldr=1M and R_ldr=19K is flat at 6.17 dB from 100 Hz to 5 kHz. The R_ldr/R-10 resistive divider is the sole gain-control mechanism.
+
+4. **The inner loop (C-3/C-4) determines bandwidth.** With R-10 disconnected (outer loop open), the combined two-stage gain is only ~7x (16.9 dB) — the inner Miller feedback has already reduced the gain from 912x to 7x. The bandwidth of this inner-loop-limited amplifier is ~15.5 kHz.
+
+**Why the earlier analysis reported 9.9 kHz / 8.3 kHz bandwidth:**
+
+Those measurements were **full-chain** (V(in_sig)→V(out)), which includes the input coupling network (R-1=22K, C_in=0.022µF, R-2/R-3 bias). The input network's HF attenuation increases with gain because:
+- Higher gain → more Miller multiplication of C-3 → lower impedance at base1
+- Lower base1 impedance → more loading on the input coupling network at HF
+- This adds ~0.8 dB extra attenuation at 10 kHz when R_ldr drops from 1M to 19K
+
+| Measurement | R_ldr=1M BW | R_ldr=19K BW | BW Ratio |
+|------------|-------------|--------------|----------|
+| Preamp-only (base1→out) | 15,686 Hz | 15,211 Hz | 0.97 |
+| Full-chain (in_sig→out) | 11,760 Hz | 9,674 Hz | 0.82 |
+
+**Implications for DSP modeling:**
+
+A model that treats Stage 1 as having constant GBW (e.g., gain=420, pole=23 Hz, GBW≈9.7 kHz) will incorrectly halve the bandwidth when gain doubles. The real preamp maintains ~15.5 kHz bandwidth because the inner C-3/C-4 Miller loop dominates. Correctly modeling this requires either:
+- A coupled solver that captures the inner Miller feedback within each stage
+- A Wave Digital Filter model that handles the reactive feedback elements natively
+- Or, as a pragmatic approximation, parameterizing the Miller pole as a function of outer-loop gain
+
+**SPICE testbench:** `spice/testbench/tb_variable_gbw.cir`
+
 ### 5.6 Closed-Loop Frequency Response
 
 The overall preamp is a two-stage amplifier with:
@@ -519,18 +566,28 @@ The overall preamp is a two-stage amplifier with:
   - **Tremolo modulation range: ~6.1 dB** (matches EP-Forum "6 dB boost" measurement exactly).
   - The gain is remarkably constant with input level (2.007x from pp to extreme) — the strong emitter feedback linearizes the circuit effectively.
 
-The gain-bandwidth product (GBW) of the open-loop amplifier:
+**GBW is NOT constant** (see Section 5.5.1 for full analysis):
 ```
-GBW = Av_open_DC * f_dominant = 900 * 23 = 20,700 Hz
-```
-
-The closed-loop -3 dB bandwidth (from SPICE AC sweep):
-```
-f_low = 19 Hz, f_high = 9.9 kHz (no tremolo, Rldr_path = 1M)
-f_high = 8.3 kHz (tremolo bright, Rldr_path = 19K)
+Preamp-only GBW (base1→out):
+  R_ldr = 1M:  GBW = 33,905 Hz  (gain 2.16x, BW 15,686 Hz)
+  R_ldr = 19K: GBW = 66,647 Hz  (gain 4.38x, BW 15,211 Hz)
 ```
 
-The bandwidth DECREASES as gain increases (tremolo bright → higher gain, narrower BW), consistent with constant GBW product.
+The preamp-only bandwidth is nearly constant at ~15.5 kHz because the inner
+C-3/C-4 Miller feedback loop dominates bandwidth, independent of the outer
+R-10 emitter feedback loop that controls gain. GBW scales with gain (2:1 ratio).
+
+The **full-chain** bandwidth (including input coupling network loading) is narrower:
+```
+Full-chain -3 dB bandwidth (in_sig→out, from SPICE AC sweep):
+  f_low = 19 Hz, f_high = 11,760 Hz (no tremolo, Rldr_path = 1M)
+  f_high = 9,674 Hz (tremolo bright, Rldr_path = 19K)
+```
+
+The full-chain bandwidth decreases with gain because higher gain increases
+Miller multiplication of C-3, loading the input coupling network more at HF.
+Earlier analysis reported 9.9 kHz and 8.3 kHz, likely measured with
+R_ldr=120K (the original netlist default) and R_ldr=19K respectively.
 
 **Open-loop gain at key frequencies (combined two stages):**
 
@@ -579,7 +636,7 @@ The preamp's closed-loop response (no tremolo, Rldr_path = 1M):
 
 **Tonal shaping:** The preamp itself has nearly flat gain from 19 Hz to 9.9 kHz (with a mild peak at ~447 Hz from feedback loop resonance). The Wurlitzer's characteristic mid-forward tonal balance comes from the **pickup's system RC HPF at 2312 Hz** (which heavily attenuates bass fundamentals before they reach the preamp) combined with the preamp's HF rolloff. This creates the signature sound: bass notes sound thin and "reedy" (harmonics dominate over fundamentals), while the midrange (500 Hz - 5 kHz) has body and bark.
 
-With tremolo at bright peak (Rldr_path = 19K), gain increases to 12.1 dB (4.0x), and the HF -3 dB point shifts down to 8.3 kHz due to reduced loop bandwidth.
+With tremolo at bright peak (Rldr_path = 19K), gain increases to 12.1 dB (4.0x). The preamp-only BW barely changes (~15.2 kHz), but the full-chain BW narrows to ~9.7 kHz due to increased Miller loading on the input coupling network. See Section 5.5.1 for the nested-loop analysis.
 
 ### 5.8 Emitter Bypass Cap Corner Effects
 
@@ -778,7 +835,7 @@ When LDR path impedance is **HIGH** (dark phase): fb_junct carries the full R-10
 - **No tremolo (baseline):** Gain = 6.0 dB (2.0x) — strong emitter feedback from R-10 reaching emitter
 - **Tremolo bright peak** (Rldr_path ≈ 19K): Gain = 12.1 dB (4.0x)
 - **Modulation range: 6.1 dB** — matches EP-Forum "6 dB gain boost" measurement exactly
-- **Bandwidth decreases with gain:** 9.9 kHz at 2x gain → 8.3 kHz at 4x gain (constant GBW product)
+- **Full-chain bandwidth decreases with gain:** 9.9 kHz at 2x gain → 8.3 kHz at 4x gain (full-chain measurement including input coupling network loading; preamp-only BW is ~15.5 kHz, nearly constant — see Section 5.5.1)
 - **Gain is remarkably constant with input level** (2.007x from 0.5mV to 200mV) — the strong feedback linearizes the circuit, producing very low THD (0.0004% at mf, 0.04% at extreme 200mV)
 
 The distortion character changes through the tremolo cycle: at the gain peak (LDR low, weak feedback), the preamp's higher gain amplifies the pickup-generated harmonics more and pushes the preamp closer to its own saturation, producing more apparent H2 and "bark." At the gain trough (LDR high, strong feedback), the preamp operates more linearly. This creates a subtle but important **timbral modulation** that distinguishes the real 200A tremolo from simple volume modulation.
@@ -837,13 +894,13 @@ Two independent BjtStage objects with exponential transfer functions, NR solver 
 **Cons:** Misses inter-stage DC bias modulation ("sag"); feedback cap implementation must have correct polarity (see Section 9)
 **Role:** Primary shipping implementation. A/B tested against Approach 1.
 
-#### Approach 3: Wave Digital Filter (WDF) Model — DEFERRED
+#### Approach 3: Wave Digital Filter (WDF) Model — UNDER EVALUATION
 
 Model each resistor, capacitor, and transistor junction as a WDF element. Solves the full circuit implicitly at each sample.
 
-**Pros:** Correct at all operating points; handles direct coupling naturally; well-suited for real-time
-**Cons:** Complex to implement; debugging is difficult; WDF junction models for BJTs are nontrivial; delay-free feedback loop from R-10/Ce1/LDR topology requires special handling
-**Status:** Deferred. May revisit if Approach 2 proves insufficient.
+**Pros:** Correct at all operating points; handles direct coupling naturally; well-suited for real-time; would automatically capture the nested feedback loop behavior (C-3/C-4 inner loop + R-10 outer loop) that Approach 2 cannot model correctly (see Section 5.5.1)
+**Cons:** No Rust WDF library exists; would require either FFI to C++ chowdsp_wdf or a Rust port; WDF junction models for BJTs are nontrivial; R-type adaptor needed for the bridged feedback topology
+**Status:** Under active evaluation (Feb 2026). The nested-loop SPICE analysis (Section 5.5.1) confirmed that Approach 2's constant-GBW model is structurally inadequate — preamp-only BW is ~15.5 kHz regardless of R_ldr, but a constant-GBW model gives 5.2 kHz at trem-bright. The C-3/C-4 inner Miller loop must be modeled explicitly, which is exactly what WDF handles naturally. Options being evaluated: (a) Rust port of chowdsp_wdf core, (b) FFI bindings to C++ chowdsp_wdf, (c) minimal custom WDF for this specific topology.
 
 #### Approach 4: Polynomial Approximation — NOT RECOMMENDED
 
@@ -859,8 +916,8 @@ Taylor-expand the transfer function to 3rd or 4th order: `y = a1*x + a2*x^2 + a3
 |-------------|-------------------|----------|
 | Asymmetric soft-clip (Stage 1 Vce headroom 2.05V vs 10.9V) | Adds H2 at ff dynamics (pickup dominates at mf) | CRITICAL |
 | Exponential transfer function (exp(Vbe/nVt)) | H2 >> H3 harmonic ratio | HIGH |
-| Frequency-dependent feedback (C-3 100pF Miller, dominant pole ~23 Hz) | Register-dependent gain and distortion | HIGH |
-| Closed-loop bandwidth limit (~9.9 kHz no trem / ~8.3 kHz trem bright) | HF rolloff above ~10 kHz | HIGH |
+| Frequency-dependent feedback (C-3/C-4 100pF Miller caps, nested inner loop) | Register-dependent gain and distortion; inner loop dominates BW at ~15.5 kHz (see Section 5.5.1) | HIGH |
+| Closed-loop bandwidth limit (preamp-only ~15.5 kHz; full-chain ~11.8 kHz no trem / ~9.7 kHz trem bright) | HF rolloff above ~10 kHz; full-chain BW varies with gain due to Miller loading on input network | HIGH |
 | Direct-coupling bias shift (Stage 1 DC modulates Stage 2) | Dynamic compression, "sag", "bloom" | MEDIUM-HIGH |
 | Tremolo gain modulation (R-10=56K/LG-1 in feedback) | Timbral variation through tremolo cycle | MEDIUM |
 | Cascaded Stage 2 nonlinearity (harmonics-of-harmonics) | Spectral enrichment at ff | MEDIUM |
@@ -890,7 +947,7 @@ For a perceptually accurate Wurlitzer 200A preamp model, the minimum implementat
 2. **Asymmetric soft-clip** with satLimit = 10.9V, cutoffLimit = 2.05V (Stage 1)
 3. **Frequency-dependent feedback** via C-3 (100 pF) Miller effect — dominant pole at ~23 Hz. CORRECT polarity: less feedback at LF (more gain/distortion), more feedback at HF (less gain/distortion)
 4. **Closed-loop gain** of ~6 dB (2.0x) without tremolo, up to ~12 dB (4.0x) at tremolo peak, set by R-10 emitter feedback via Ce1
-5. **Closed-loop bandwidth** ~10 kHz without tremolo, ~8.3 kHz at tremolo peak
+5. **Closed-loop bandwidth** — preamp-only target ~15.5 kHz (nearly constant with R_ldr). Full-chain BW is ~11.8 kHz no-trem / ~9.7 kHz trem-bright due to input network Miller loading. See Section 5.5.1 for nested-loop analysis.
 6. **Direct coupling** to Stage 2 (can be instantaneous coupling for simplicity)
 7. **Stage 2** with Av = 2.2, nearly symmetric soft-clip (satLimit = 6.2V, cutoffLimit = 5.3V)
 8. **Output DC block** at ~20 Hz
@@ -1057,8 +1114,15 @@ f_dc_block = 20 Hz (to be determined by output coupling cap)
 total_closed_loop_gain_no_trem = 6.0 dB (2.0x) [Rldr_path = 1M]
 total_closed_loop_gain_trem_bright = 12.1 dB (4.0x) [Rldr_path = 19K]
 tremolo_modulation_range = 6.1 dB
-closed_loop_bandwidth_no_trem = 19 Hz - 9.9 kHz
-closed_loop_bandwidth_trem_bright = 19 Hz - 8.3 kHz
+
+// Bandwidth — TWO NESTED FEEDBACK LOOPS (see Section 5.5.1):
+// Inner loop (C-3/C-4 Miller) dominates BW at ~15.5 kHz, nearly constant.
+// Outer loop (R-10/Ce1/R_ldr) controls gain only.
+// GBW is NOT constant — scales with gain (nested-loop behavior).
+preamp_only_bandwidth = ~15.5 kHz (nearly constant, both R_ldr values)
+full_chain_bandwidth_no_trem = 19 Hz - 11.8 kHz (includes input network loading)
+full_chain_bandwidth_trem_bright = 19 Hz - 9.7 kHz (input network loaded more by higher gain)
+// Earlier "9.9 kHz / 8.3 kHz" figures were full-chain, possibly with R_ldr=120K default
 passband_peak = ~450 Hz (from feedback loop resonance)
 kPreampInputDrive = should be ~1.0 if gain staging is correct
 

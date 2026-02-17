@@ -3,7 +3,7 @@
 /// Signal flow: modal_oscillator -> pickup_hpf -> output
 /// Attack noise mixed in during first ~15 ms.
 
-use crate::hammer::{dwell_attenuation, AttackNoise};
+use crate::hammer::{dwell_attenuation, dwell_time, AttackNoise};
 use crate::pickup::Pickup;
 use crate::reed::ModalReed;
 use crate::tables::{self, NUM_MODES};
@@ -13,6 +13,7 @@ pub struct Voice {
     reed: ModalReed,
     pickup: Pickup,
     noise: AttackNoise,
+    post_pickup_gain: f64,
     sample_rate: f64,
     midi_note: u8,
 }
@@ -37,32 +38,57 @@ impl Voice {
             amplitudes[i] = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i];
         }
 
-        // Register-dependent velocity curve and output voicing
+        // Register-dependent velocity curve (physical hammer force — pre-pickup).
+        // output_scale is applied POST-pickup to decouple volume from nonlinearity.
         let vel_exp = tables::velocity_exponent(midi_note);
         let vel_scale = velocity.powf(vel_exp);
-        let out_scale = tables::output_scale(midi_note);
         for a in &mut amplitudes {
-            *a *= vel_scale * out_scale;
+            *a *= vel_scale;
         }
 
-        let reed = ModalReed::new(
+        let t_dwell = dwell_time(velocity);
+
+        let mut reed = ModalReed::new(
             detuned_fundamental,
             &params.mode_ratios,
             &amplitudes,
             &params.mode_decay_rates,
+            t_dwell,
             sample_rate,
+            noise_seed,
         );
 
-        let pickup = Pickup::new(sample_rate);
+        // Hammer impact overshoot: the reed tip rebounds past its steady-state
+        // vibration amplitude during the first few cycles after hammer contact.
+        // Harder hits → more felt compression → more elastic rebound energy.
+        // Tau: 3 fundamental cycles with 12ms floor — even short treble reeds
+        // need several ms to settle after hammer rebound. At 100ms+ (sustain
+        // window), overshoot has decayed to <0.02% regardless of tau.
+        let overshoot_amount = 1.0 * velocity;
+        let overshoot_tau = (3.0 / detuned_fundamental).max(0.012);
+        reed.set_impact_overshoot(overshoot_amount, overshoot_tau, sample_rate);
+
+        let mut pickup = Pickup::new(sample_rate);
+        pickup.set_displacement_scale(tables::pickup_displacement_scale(midi_note));
         let noise = AttackNoise::new(velocity, sample_rate, noise_seed);
+
+        // Post-pickup gain: technician voicing (gap adjustment) affects volume
+        // without changing the nonlinear displacement fraction y.
+        let post_pickup_gain = tables::output_scale(midi_note);
 
         Self {
             reed,
             pickup,
             noise,
+            post_pickup_gain,
             sample_rate,
             midi_note,
         }
+    }
+
+    /// Override the pickup displacement scale.
+    pub fn set_displacement_scale(&mut self, scale: f64) {
+        self.pickup.set_displacement_scale(scale);
     }
 
     /// Start the damper (called on note_off).
@@ -85,6 +111,13 @@ impl Voice {
         }
 
         self.pickup.process(output);
+
+        // Apply post-pickup voicing gain (technician gap/level adjustment).
+        // This affects volume without changing bark character.
+        let gain = self.post_pickup_gain;
+        for s in output.iter_mut() {
+            *s *= gain;
+        }
     }
 
     /// Check if the voice has decayed to silence.
@@ -98,8 +131,19 @@ impl Voice {
 
     /// Render a complete note of given duration to a Vec.
     pub fn render_note(midi_note: u8, velocity: f64, duration_secs: f64, sample_rate: f64) -> Vec<f64> {
+        Self::render_note_with_scale(midi_note, velocity, duration_secs, sample_rate, None)
+    }
+
+    /// Render a complete note with optional displacement scale override.
+    pub fn render_note_with_scale(
+        midi_note: u8, velocity: f64, duration_secs: f64, sample_rate: f64,
+        displacement_scale: Option<f64>,
+    ) -> Vec<f64> {
         let noise_seed = (midi_note as u32).wrapping_mul(2654435761);
         let mut voice = Voice::note_on(midi_note, velocity, sample_rate, noise_seed);
+        if let Some(scale) = displacement_scale {
+            voice.set_displacement_scale(scale);
+        }
         let num_samples = (duration_secs * sample_rate) as usize;
         let mut output = vec![0.0f64; num_samples];
 

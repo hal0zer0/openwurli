@@ -2,13 +2,10 @@ use nih_plug::prelude::*;
 
 #[derive(Params)]
 pub struct OpenWurliParams {
-    /// Master volume: post-everything output level.
+    /// Volume pot: attenuator between preamp and power amp (real circuit topology).
+    /// At low settings, signal drops into the power amp's crossover distortion region.
     #[id = "volume"]
     pub volume: FloatParam,
-
-    /// Post-preamp output gain (linear multiplier).
-    #[id = "gain"]
-    pub preamp_gain: FloatParam,
 
     /// Tremolo LFO rate in Hz.
     #[id = "trem_rate"]
@@ -28,7 +25,7 @@ impl Default for OpenWurliParams {
         Self {
             volume: FloatParam::new(
                 "Volume",
-                0.05,
+                0.60,
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 1.0,
@@ -40,20 +37,9 @@ impl Default for OpenWurliParams {
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_string_to_value(formatters::s2v_f32_percentage()),
 
-            preamp_gain: FloatParam::new(
-                "Preamp Gain",
-                40.0,
-                FloatRange::Skewed {
-                    min: 1.0,
-                    max: 200.0,
-                    factor: FloatRange::skew_factor(-2.0),
-                },
-            )
-            .with_smoother(SmoothingStyle::Logarithmic(5.0)),
-
             tremolo_rate: FloatParam::new(
                 "Tremolo Rate",
-                5.5,
+                5.63,
                 FloatRange::Linear {
                     min: 0.1,
                     max: 15.0,

@@ -13,6 +13,7 @@ pub mod voice;
 
 // Preamp circuit simulation
 pub mod bjt_stage;
+pub mod dk_preamp;
 pub mod oversampler;
 pub mod preamp;
 pub mod tremolo;
