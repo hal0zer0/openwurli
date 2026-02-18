@@ -25,15 +25,9 @@ const VOLTAGE_GAIN: f64 = 8.0;
 
 /// Headroom factor matching the real ±24V power amp rails.
 ///
-/// The DK preamp generates broadband subsonic energy (33-55 Hz) from tremolo
-/// R_ldr modulation. This content passes through the 40 Hz HPF and reaches the
-/// PA input. With the old rail_limit of 1.0, d=1.0 at default volume produced
-/// 0.99 × 0.25 × 8 = 1.98 — hard-clipping and generating audible in-band
-/// harmonics. The real circuit has ±24V rails (headroom ratio ~3:1 over max
-/// signal at full volume), so the subsonics never clip.
-///
-/// PA output is normalized to ±1.0 by dividing by HEADROOM after clipping.
-/// Default volume is increased to 0.60 to compensate.
+/// The real circuit has ±24V rails (headroom ratio ~3:1 over max signal at
+/// full volume). PA output is normalized to ±1.0 by dividing by HEADROOM
+/// after clipping.
 const HEADROOM: f64 = 2.5;
 
 pub struct PowerAmp {
