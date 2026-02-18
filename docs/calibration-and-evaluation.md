@@ -4,6 +4,8 @@
 
 This document provides concrete, source-attributed calibration data and evaluation criteria for building a physically accurate Wurlitzer 200A electric piano synthesizer. Every value has an uncertainty range, every claim has a source, and every metric has an assessment of whether it actually correlates with perceptual quality.
 
+> **See also:** [Reed and Hammer Physics](reed-and-hammer-physics.md) (modal synthesis parameters), [Signal Chain Architecture](signal-chain-architecture.md) (overall DSP spec), [DK Preamp Testing](dk-preamp-testing.md) (preamp validation targets)
+
 CRITICAL CONTEXT: A previous iteration of this project achieved good FFT-derived metrics (H2>H3 compliance, decay rates within range, spectral centroid targets met) but sounded terrible to human listeners. This document addresses why that happened and how to prevent it.
 
 ---
@@ -236,6 +238,8 @@ Reed mode ratios (from Euler-Bernoulli cantilever beam with tip mass correction)
 | 3 | 17.55 | 17.9 | 19.5 | 17.6 |
 | 4 | 34.39 | 35.4 | 39.0 | 34.5 |
 
+> **Note:** The fixed per-register ratios above are approximate reference values. The deployed code computes ratios dynamically from `tip_mass_ratio(midi)` via eigenvalue interpolation of the cantilever-with-tip-mass characteristic equation. This produces a smooth, per-note ratio that varies continuously across the keyboard rather than using discrete register boundaries.
+
 Sources: Pfeifle DAFx 2017, Euler-Bernoulli beam theory, characteristic equation numerical solutions.
 
 **Perceptual importance: LOW for sustained sound, MODERATE for attack.** The inharmonic modes are 65-86 dB below the fundamental in the sustained signal. The prominent harmonics in a Wurlitzer spectrum fall on exact integer multiples of f0 -- these come from the preamp nonlinearity applied to the fundamental-dominant displacement, not from individual reed modes. The inharmonic modes matter primarily in the first 5-30 ms (attack transient) where all modes are at comparable amplitudes and their non-integer relationships create the characteristic "complex" attack texture.
@@ -250,7 +254,7 @@ The attack is the most perceptually important phase. It establishes the instrume
 
 **Three components:**
 
-1. **Hammer noise burst (0-5 ms):** Broadband energy from felt-on-steel impact. Velocity-dependent bandwidth (soft: ~2 kHz, hard: ~8 kHz). Creates the initial "click" or "thump." Spectral flatness ratio (first 2ms vs 5-10ms) >= 1.0 when present. More prominent in mid register.
+1. **Hammer noise burst (0-5 ms):** Broadband energy from felt-on-steel impact. Center frequency = `4 * f0` clamped [200, 2000] Hz, Q = 0.7, amplitude = `0.015 * vel^2`, decay tau = 3 ms, duration = 15 ms. Bandwidth is note-tracking (not velocity-dependent). Creates the initial "click" or "thump." Spectral flatness ratio (first 2ms vs 5-10ms) >= 1.0 when present. More prominent in mid register.
 
 2. **Mode overshoot (2-15 ms):** All reed modes are at their initial amplitudes in the first few ms. Since upper modes decay faster, the initial sum is louder and brighter than the sustained (fundamental-dominant) signal. This creates a natural "overshoot" of 2-5 dB at mf, 5-10 dB at ff.
 
@@ -281,13 +285,11 @@ The attack is the most perceptually important phase. It establishes the instrume
 
 **Doubling interval:** Decay rate roughly doubles every 14 semitones (~1.2 octaves).
 
-**Per-mode decay:** Higher modes decay faster than the fundamental. Relative decay time scale:
+**Per-mode decay:** Higher modes decay faster than the fundamental. The deployed code uses a power-law model:
 ```
-Mode:   1     2     3     4     5     6     7
-Scale:  1.00  0.55  0.30  0.18  0.10  0.06  0.035
+decay_rate_n = base_rate * (f_n / f_1) ^ 1.5
 ```
-
-This means mode 2 decays in 55% of the time it takes the fundamental, mode 3 in 30%, etc. This is the mechanism for natural timbral darkening during sustain.
+where `MODE_DECAY_EXPONENT = 1.5` and `MIN_DECAY_RATE = 3.0 dB/s` (bass floor). For C4 (f2/f1 = 6.3): mode 2 decays 6.3^1.5 = 15.7x faster than the fundamental. This is far more aggressive than the old fixed array `[1.00, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` which implied only 1.8x faster decay for mode 2. The power-law model produces the characteristic "bright attack darkening to sine-like tail" timbral evolution.
 
 ### 4.3 Timbral Darkening (Centroid Drift)
 
@@ -362,7 +364,7 @@ From the design evaluation document (musician evaluator):
 | "Bloom" (30-80 ms) | Timbral shift as attack transient dies and sustained harmonics establish | Players feel this as "responsiveness" -- too fast bloom = machine-like, too slow = sluggish |
 | Chord preamp interaction | ff chord drives preamp harder than any single note | Bark from a 6-note ff chord != sum of individual bark. Must compress and "snarl" as a unit |
 | Release varies with hold duration | 100 ms release has richer damper thud than 2 s release | Because modes are still present at 100 ms but not at 2 s |
-| Tuning imperfection | Real Wurlitzers rarely in perfect 12-TET | +/- 2-5 cents per note deterministic variation adds "organic" quality |
+| Tuning imperfection | Real Wurlitzers rarely in perfect 12-TET | +/- 3 cents frequency detuning (factory spec per US Patent 2,919,616), +/- 8% amplitude variation per mode, seeded deterministically by note number |
 | Mechanical action noise | Key-bed thud, adjacent reed rattle, damper clunk | Low priority for core sound, but absence noticed by experienced players |
 
 ---

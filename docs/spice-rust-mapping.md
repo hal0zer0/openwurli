@@ -18,7 +18,7 @@ Each row maps a circuit block from schematic → SPICE netlist → Rust implemen
 | **Feedback network** | R-10=56K, Ce1=4.7µF, Re1=33K | `spice/testbench/preamp_emitter_fb.cir` | `dk_preamp.rs` (outer loop) | Series-series negative feedback | Ce1 is DC-blocking short at audio freq |
 | **LDR / Tremolo** | LG-1 (CdS LDR), cable-routed | `spice/subcircuits/tremolo_osc.cir`, `spice/testbench/tb_tremolo_osc.cir` | `tremolo.rs` | Rldr shunts fb_junction to GND | Modulates closed-loop gain, not volume |
 | **Power amplifier** | TR-7/TR-8 (142128), Class AB | `spice/subcircuits/power_amp.cir`, `spice/testbench/tb_power_amp.cir` | `power_amp.rs` | Crossover distortion at ~3mV | Transparent at normal signal levels |
-| **Speaker** | 4×8" oval, 16Ω ceramic | (not modeled in SPICE) | `speaker.rs` | Hammerstein polynomial: a2=0.14, a3=0.42 | Variable HPF/LPF + nonlinearity |
+| **Speaker** | 4×8" oval, 16Ω ceramic | (not modeled in SPICE) | `speaker.rs` | Hammerstein polynomial: a2=0.2, a3=0.6 | Variable HPF/LPF + nonlinearity + tanh Xmax |
 | **Full chain** | End-to-end | `spice/testbench/tb_full_chain.cir` | `voice.rs` → plugin `lib.rs` | — | Integration testbench |
 
 ### SPICE Subcircuits

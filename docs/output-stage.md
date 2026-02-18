@@ -1,5 +1,7 @@
 # Wurlitzer 200A Output Stage: Power Amplifier, Tremolo, and Speaker/Cabinet
 
+> **See also:** [Preamp Circuit](preamp-circuit.md) (tremolo feedback integration, Section 7), [Signal Chain Architecture](signal-chain-architecture.md) (overall signal flow)
+
 ---
 
 ## Table of Contents
@@ -86,7 +88,7 @@ Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vc
 
 **Output swing:** 11.8 Vpp (target ~11.5 Vpp). Near rail-to-rail.
 
-**Waveform:** Mildly distorted sinusoidal, estimated THD 3-10%.
+**Waveform:** The real twin-T oscillator produces a mildly distorted sinusoid (estimated THD 3-10%). The OpenWurli implementation uses a pure sine LFO (`phase.sin()`) -- the mild oscillator distortion is not modeled, as it has negligible audible effect on the tremolo character.
 
 **LED drive path:** Node G → R17 (4.7K) → LG-1 pin 1 (LED cathode) → LED → pin 2 (LED anode) → return to Vcc via cable. The LG-1 LED symbol points downward on the schematic (anode=pin 2 at top, cathode=pin 1 at bottom).
 
@@ -111,7 +113,7 @@ Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vc
 
 CdS devices exhibit strongly asymmetric time constants (fast on, slow off). This produces the characteristic "choppy" tremolo quality of the 200A.
 
-**CdS nonlinearity:** Resistance follows power law R ~ L^(-gamma), where gamma is approximately 0.7-0.9. This means the relationship between LED drive current and resulting signal attenuation is nonlinear.
+**CdS nonlinearity:** Resistance follows a power law. Datasheet values for gamma are typically 0.7-0.9, but the OpenWurli implementation uses gamma = 1.1, calibrated to match OBM tremolo depth measurements. The code uses a log-space interpolation model: `log_r = log_max + (log_min - log_max) * drive^gamma` (see `tremolo.rs`), rather than the simpler `R = R_dark * illumination^(-gamma)` formula.
 
 ### 2.3 Feedback Divider Operation
 
@@ -389,7 +391,7 @@ Multiple factors contribute to the bass rolloff:
 2. **Open baffle cancellation:** Below the baffle step frequency (~100-150 Hz), front and rear waves partially cancel
 3. **Combined effect:** Approximately 12 dB/octave rolloff below ~100 Hz (speaker resonance + open baffle)
 
-**Previous model used HPF at 85 Hz, Q=0.75.** This is a reasonable approximation. A second-order HPF at 85-100 Hz with moderate Q captures the combined speaker resonance and baffle step. The Q of 0.75 (slightly underdamped) is appropriate for the mild resonant bump that occurs near the rolloff frequency.
+**Current model uses HPF at 95 Hz, Q=0.75.** A second-order HPF at 95 Hz with moderate Q captures the combined speaker resonance and baffle step. The Q of 0.75 (slightly underdamped) is appropriate for the mild resonant bump that occurs near the rolloff frequency.
 
 #### High Frequency Rolloff
 
@@ -401,22 +403,25 @@ Multiple factors contribute to the bass rolloff:
 
 #### Speaker Resonance Effects
 
-The HPF near 85 Hz naturally creates a resonant bump that can boost harmonics in the 100-200 Hz range. For bass notes (A1 = 55 Hz fundamental), the H2 at 110 Hz falls near this resonance, receiving approximately 3-5 dB of natural boost. This partially explains why real 200A recordings show stronger H2 in the bass register than the preamp alone would produce.
+The HPF near 95 Hz naturally creates a resonant bump that can boost harmonics in the 100-200 Hz range. For bass notes (A1 = 55 Hz fundamental), the H2 at 110 Hz falls near this resonance, receiving approximately 3-5 dB of natural boost. This partially explains why real 200A recordings show stronger H2 in the bass register than the preamp alone would produce.
 
-### 5.4 Recommended Speaker Model
+### 5.4 Current Speaker Model
 
-For digital modeling, a simple two-filter approach remains appropriate:
+The current implementation (`speaker.rs`) uses a Hammerstein architecture: static polynomial waveshaper followed by linear filters.
+
+**Linear filters:**
 
 ```
-HPF: 2nd-order highpass at 85-100 Hz, Q = 0.7-0.8
-LPF: 2nd-order lowpass at 8-10 kHz, Q = 0.707 (Butterworth)
+HPF: 2nd-order highpass at 95 Hz, Q = 0.75
+LPF: 2nd-order lowpass at 7500 Hz, Q = 0.707 (Butterworth)
 ```
 
-**The existing model (HPF 85 Hz Q=0.75, LPF 8 kHz Butterworth) is a defensible approximation.** Potential refinements:
-- Add a mild resonant peak (+2-3 dB) at the HPF frequency to model speaker resonance
-- Consider raising the HPF to 100 Hz based on physical analysis
-- Consider lowering the LPF to 7 kHz for ceramic-magnet drivers (vs 8 kHz for alnico)
-- For higher accuracy, a measured impulse response from a real 200A through its speakers would be ideal, but no such measurements were found publicly available
+**Nonlinear features:**
+- **Hammerstein polynomial waveshaper:** `y = x + a2*x^2 + a3*x^3` where a2 = 0.2 (BL force factor asymmetry, generates even harmonics) and a3 = 0.6 (Kms suspension hardening, generates odd harmonics). Coefficients scale with the Speaker Character parameter.
+- **Cone excursion limiting (Xmax):** `tanh()` soft saturation after the polynomial, modeling the physical excursion limits of the spider and surround. At normal levels (|x| < 0.5): < 8% compression. At ff chords (|x| > 1.0): graceful saturation.
+- **Thermal voice coil compression:** Slow envelope follower (tau = 5.0 s) reduces gain under sustained loud signal, modeling the increase in voice coil DC resistance as the coil heats up.
+
+**Speaker Character parameter:** Blends from bypass (0.0: flat, linear passthrough) to authentic (1.0: full nonlinearity + HPF + LPF). Filter cutoffs interpolate logarithmically between bypass (HPF 20 Hz, LPF 20 kHz) and authentic positions.
 
 ---
 
@@ -450,84 +455,81 @@ LPF: 2nd-order lowpass at 8-10 kHz, Q = 0.707 (Butterworth)
 
 ### 7.1 Tremolo Model
 
-**Current model status:** Post-preamp gain multiplier with asymmetric LDR time constants.
+**Status: IMPLEMENTED.** Tremolo operates inside the preamp feedback loop. The `Tremolo` module (`tremolo.rs`) computes a per-sample LDR path resistance, which is passed to the DkPreamp via `set_ldr_resistance()`. The DkPreamp's 8-node MNA circuit solver then modulates the feedback loop gain accordingly, producing the correct timbral variation (gain + distortion character change) through the tremolo cycle.
 
-**Recommended corrections:**
-
-1. **Move tremolo INTO the preamp emitter feedback path.** The current implementation applies tremolo as a post-preamp volume multiplier. The real circuit modulates the preamp's closed-loop gain by varying the LDR path impedance from the emitter feedback junction to ground. This means:
-   - The tremolo should vary the effective emitter feedback (and thus gain and distortion character)
-   - The LDR path impedance controls how much of R-10's feedback signal reaches TR-1's emitter via Ce1
-   - The timbral variation through the tremolo cycle is subtle but contributes to the characteristic "living" quality
-
-2. **LDR parameters to use:**
+**Implementation details:**
 
 ```
-// Oscillator
-rate = 5.6 Hz (twin-T oscillator, approximately sinusoidal)
+// Oscillator (tremolo.rs)
+rate = 5.63 Hz (pure sine LFO; real twin-T oscillator's mild THD not modeled)
+waveform: phase.sin(), half-wave rectified for LED drive
 
 // LDR time constants (VTL5C3-like)
-attack_tau = 2.5-3.0 ms  (fast on)
-release_tau = 25-50 ms    (slow off)
+attack_tau = 3.0 ms  (fast on)
+release_tau = 50 ms   (slow off)
 
-// CdS nonlinearity
-resistance = R_dark * (illumination)^(-gamma)
-gamma = 0.7-0.9
+// CdS LDR resistance model (log-space interpolation)
+log_r = log(R_max) + (log(R_min) - log(R_max)) * drive^gamma
+R_min = 50 ohm, R_max = 1M ohm, gamma = 1.1
+(gamma calibrated to OBM tremolo depth; datasheet range 0.7-0.9)
 
-// Emitter feedback modulation
-// LDR path: fb_junct -> Pin 1 -> 50K VIBRATO -> 18K -> LG-1 -> GND
-// R_ldr_path = 50K*depth + 18K + R_ldr
-// When R_ldr_path HIGH (dark): full feedback reaches emitter -> lower gain
-// When R_ldr_path LOW (lit): feedback shunted to ground -> higher gain
-// The LDR path acts as a shunt across the emitter feedback junction
+// Total LDR path resistance → DkPreamp::set_ldr_resistance()
+R_ldr_path = R_series + R_ldr
+R_series = 18K + 50K * (1 - depth)
 ```
 
-3. **Depth control:** The vibrato depth pot and trimpot (R-17) control how much of the oscillator signal reaches the LED. At full depth, the preamp gain can approximately double, which at high signal levels causes clipping.
+**Depth control:** The vibrato depth pot and trimpot (R-17) control how much of the oscillator signal reaches the LED. At full depth, the preamp gain can approximately double, which at high signal levels causes clipping.
 
 ### 7.2 Power Amplifier Model
 
-**Priority: LOW for clean instruments, MODERATE for authenticity at ff polyphonic.**
+**Status: IMPLEMENTED** in `power_amp.rs`.
 
-Recommended implementation (simplest effective model):
+The power amp is modeled as a fixed-gain stage with crossover distortion and symmetric rail clipping, operating on normalized signal levels:
 
+```rust
+// power_amp.rs — signal flow
+let amplified = input * VOLTAGE_GAIN;            // VOLTAGE_GAIN = 8.0 (fixed)
+
+// Crossover dead zone: Hermite smoothstep (C1 continuous)
+if abs(amplified) < crossover_width {             // crossover_width = 0.003
+    let ratio = abs / crossover_width;
+    let smooth = ratio * ratio * (3.0 - 2.0 * ratio);  // Hermite smoothstep
+    output = sign(amplified) * abs * smooth;
+}
+
+// Hard clip at HEADROOM = 2.5, normalize to +/-1.0
+output = clamp(output, -HEADROOM, HEADROOM) / HEADROOM;
 ```
-// Clean gain stage with symmetric hard clip
-power_amp_gain = volume_pot_position * open_loop_gain / (1 + feedback_ratio)
-output = hard_clip(input * power_amp_gain, +V_rail_effective, -V_rail_effective)
 
-where:
-  V_rail_effective = 19-21V (accounting for Vce_sat drops from +-22-24V rails)
+**Key parameters:**
 
-// Optional: crossover distortion for aged instruments
-if abs(input) < dead_zone_threshold:
-    output *= crossover_smoothing_function
-// dead_zone_threshold relates to bias current
-// Well-biased (10mA): negligible dead zone
-// Aged: dead_zone equivalent to 10-50mV at input
-```
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| VOLTAGE_GAIN | 8.0 | Closed-loop gain with R-31 (15K) feedback |
+| crossover_width | 0.003 | Models lightly-aged instrument (~5-7 mA bias vs factory 10 mA) |
+| HEADROOM | 2.5 | Normalized signal units; maps to real +/-24V rails with ~3:1 headroom ratio |
+| Smoothstep formula | ratio^2 * (3 - 2*ratio) | Hermite, C1 continuous at the boundary |
 
-**The existing tanh limiter at masterVol=0.05 is functionally inert** and provides no power-amp-like behavior. If power amp modeling is desired:
-- Apply it AFTER the volume control
-- Use symmetric clipping (not the preamp's asymmetric clip)
-- Hard clip or mild soft clip (not tanh which is too smooth)
-- The clip level should correspond to the rail voltage minus transistor drops
+The crossover distortion produces odd harmonics that become audible at low volume settings where the signal amplitude is comparable to the dead zone width. At moderate to high volumes, the crossover is imperceptible.
 
 ### 7.3 Speaker Model
 
-**DECISION: Variable speaker emulation with bypass-to-authentic range.**
+**Status: IMPLEMENTED** in `speaker.rs`. See Section 5.4 for full details.
 
-The speaker HPF/LPF are a physical limitation, not a design choice. The plugin exposes a "Speaker Character" knob that blends from bypass (full-range, no filtering) to authentic (full HPF + LPF). This lets users who want more bass or treble simply dial back the speaker emulation.
+Variable speaker emulation with bypass-to-authentic range. The plugin exposes a "Speaker Character" knob that blends from bypass (flat, linear passthrough) to authentic (full Hammerstein nonlinearity + HPF + LPF).
 
-Implementation: variable-cutoff biquad HPF and LPF with smoothed coefficient updates. At "authentic" position:
-- HPF: 85-100 Hz, Q=0.7-0.8, ~12 dB/oct
-- LPF: 7-8 kHz, Q=0.707 (Butterworth)
-- Optional: 2-3 dB resonant bump near HPF corner (speaker resonance)
+At "authentic" position (character = 1.0):
+- HPF: 95 Hz, Q=0.75, ~12 dB/oct
+- LPF: 7500 Hz, Q=0.707 (Butterworth)
+- Polynomial waveshaper: a2=0.2 (BL asymmetry), a3=0.6 (Kms hardening)
+- tanh Xmax limiting for cone excursion
+- Thermal voice coil compression (tau=5.0s)
 
-At "bypass" position: both filters disabled (flat passthrough). Intermediate positions interpolate the cutoff frequencies toward their extremes (HPF toward 20 Hz, LPF toward 20 kHz).
+At "bypass" position (character = 0.0): flat linear passthrough (HPF 20 Hz, LPF 20 kHz, no nonlinearity). Intermediate positions interpolate logarithmically.
 
-Possible refinements for "authentic" mode:
-- Raise HPF to 90-100 Hz based on physical analysis
-- Lower LPF to 7 kHz for ceramic-magnet drivers
+Possible refinements:
 - Add mild midrange presence peak (1-3 kHz) from speaker's natural response
+- Measured impulse response from a real 200A would improve accuracy, but none is publicly available
 
 ### 7.4 Signal Chain Order
 

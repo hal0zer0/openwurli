@@ -22,6 +22,7 @@ The signal chain:
 - 12-voice polyphony with voice stealing and crossfade
 - 2x oversampled preamp processing
 - Tremolo that modulates timbre (not just amplitude), matching the real 200A topology
+- Per-note MLP corrections trained on real Wurlitzer recordings (experimental)
 - Per-note variation in tuning and amplitude (no two notes sound identical)
 - Per-mode frequency jitter to break digital coherence
 - CLAP and VST3 plugin formats
@@ -33,7 +34,7 @@ Download the latest release from the [Releases](https://github.com/hal0zer0/open
 | Format | Linux | macOS | Windows |
 |--------|-------|-------|---------|
 | CLAP | `~/.clap/` | `~/Library/Audio/Plug-Ins/CLAP/` | `%LOCALAPPDATA%\Programs\Common\CLAP\` |
-| VST3 | `~/.vst3/` | `~/Library/Audio/Plug-Ins/VST3/` | `%LOCALAPPDATA%\Programs\Common\VST3\` |
+| VST3 | `~/.vst3/` | `~/Library/Audio/Plug-Ins/VST3/` | `%COMMONPROGRAMFILES%\VST3\` |
 
 ## Build from Source
 
@@ -82,10 +83,13 @@ Detailed technical documentation is in [`docs/`](docs/):
 - [Signal Chain Architecture](docs/signal-chain-architecture.md) — complete DSP specification
 - [Preamp Circuit Reference](docs/preamp-circuit.md) — component values, DC bias, harmonic analysis
 - [DK Preamp Derivation](docs/dk-preamp-derivation.md) — Discretization-K method math
+- [DK Preamp Testing](docs/dk-preamp-testing.md) — five-layer test pyramid strategy
 - [Output Stage](docs/output-stage.md) — power amp, tremolo, speaker
 - [Pickup System](docs/pickup-system.md) — electrostatic pickup physics
 - [Reed and Hammer Physics](docs/reed-and-hammer-physics.md) — modal synthesis parameters
 - [Calibration and Evaluation](docs/calibration-and-evaluation.md) — test methodology and targets
+- [SPICE-Rust Mapping](docs/spice-rust-mapping.md) — SPICE-to-Rust translation reference
+- [Schematic Source](docs/SCHEMATIC_SOURCE.md) — how to obtain the Wurlitzer 200A schematic
 
 ## License
 

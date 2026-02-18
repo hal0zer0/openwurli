@@ -28,6 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLAP and VST3 plugin formats via nih-plug
 - Standalone reed renderer CLI tool
 - Preamp validation bench CLI tool (gain, sweep, harmonics, tremolo, render)
-- Comprehensive technical documentation (9 reference documents)
+- Comprehensive technical documentation (10 reference documents)
 - ngspice testbenches for circuit validation
 - ML pipeline for per-note correction (experimental)

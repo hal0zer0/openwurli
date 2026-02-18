@@ -31,6 +31,9 @@ pub struct ModalReed {
     // rather than jumping to full amplitude. All modes ramp together.
     onset_ramp_samples: u64,
     onset_ramp_inc: f64,
+    // Velocity-dependent ramp shape: pp uses softer (Hann-squared-like) onset,
+    // ff uses standard raised cosine. Models progressive felt compression.
+    onset_shape_exp: f64,
     // Damper state
     damper_active: bool,
     damper_rates: [f64; NUM_MODES],
@@ -52,6 +55,7 @@ impl ModalReed {
     /// - `amplitudes`: initial amplitude for each mode (post dwell-filter, post variation)
     /// - `decay_rates_db`: decay rate in dB/s for each mode
     /// - `dwell_time_s`: hammer contact duration in seconds (0.0 = instantaneous)
+    /// - `velocity`: 0.0 (pp) to 1.0 (ff), controls onset ramp shape
     /// - `sample_rate`: audio sample rate in Hz
     /// - `jitter_seed`: RNG seed for per-mode frequency jitter (decorrelates voices)
     pub fn new(
@@ -60,6 +64,7 @@ impl ModalReed {
         amplitudes: &[f64; NUM_MODES],
         decay_rates_db: &[f64; NUM_MODES],
         dwell_time_s: f64,
+        velocity: f64,
         sample_rate: f64,
         jitter_seed: u32,
     ) -> Self {
@@ -114,6 +119,11 @@ impl ModalReed {
             *d = JITTER_SIGMA * r * (2.0 * std::f64::consts::PI * u2).cos();
         }
 
+        // Velocity-dependent ramp shape: pp gets a softer (Hann-squared-like)
+        // onset, ff gets standard raised cosine. Exponent blends from 1.0 (ff)
+        // to 2.0 (pp). Models progressive felt compression (Giordano & Milne 1998).
+        let onset_shape_exp = 1.0 + (1.0 - velocity);
+
         Self {
             phases: [0.0; NUM_MODES],
             phase_incs,
@@ -122,6 +132,7 @@ impl ModalReed {
             sample: 0,
             onset_ramp_samples: ramp_samps,
             onset_ramp_inc: ramp_inc,
+            onset_shape_exp,
             damper_active: false,
             damper_rates: [0.0; NUM_MODES],
             damper_ramp_samples: 0.0,
@@ -195,8 +206,10 @@ impl ModalReed {
             }
 
             // Onset ramp: all modes ramp together during hammer contact.
+            // Shape exponent: ff → cosine^1 (standard), pp → cosine^2 (softer)
             let onset = if self.sample < self.onset_ramp_samples {
-                0.5 * (1.0 - (n * self.onset_ramp_inc).cos())
+                let cosine = 0.5 * (1.0 - (n * self.onset_ramp_inc).cos());
+                cosine.powf(self.onset_shape_exp)
             } else {
                 1.0
             };
@@ -284,7 +297,7 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 44100.0, 42);
+        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, 44100.0, 42);
         let mut buf = vec![0.0f64; 44100];
         reed.render(&mut buf);
 
@@ -307,7 +320,7 @@ mod tests {
         decays[0] = 60.0;
 
         let sr = 44100.0;
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, sr, 42);
+        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
 
         let half_sec = (sr * 0.5) as usize;
         let mut buf = vec![0.0f64; half_sec];
@@ -332,7 +345,7 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, ramp, sr, 42);
+        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, ramp, 1.0, sr, 42);
         let n = (sr * 0.050) as usize;
         let mut buf = vec![0.0f64; n];
         reed.render(&mut buf);
@@ -377,8 +390,8 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed_ff = ModalReed::new(440.0, &ratios, &amps, &decays, 0.001, sr, 42);
-        let mut reed_pp = ModalReed::new(440.0, &ratios, &amps, &decays, 0.005, sr, 42);
+        let mut reed_ff = ModalReed::new(440.0, &ratios, &amps, &decays, 0.001, 1.0, sr, 42);
+        let mut reed_pp = ModalReed::new(440.0, &ratios, &amps, &decays, 0.005, 0.0, sr, 42);
 
         let n = (sr * 0.010) as usize; // 10ms window
         let mut buf_ff = vec![0.0f64; n];
@@ -405,7 +418,7 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, sr, 42);
+        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
         let mut buf = vec![0.0f64; 100];
         reed.render(&mut buf);
 
@@ -428,8 +441,8 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed_a = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, sr, 100);
-        let mut reed_b = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, sr, 200);
+        let mut reed_a = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 100);
+        let mut reed_b = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 200);
 
         let n = (sr * 0.5) as usize;
         let mut buf_a = vec![0.0f64; n];
@@ -470,8 +483,8 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed_a = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, sr, 42);
-        let mut reed_b = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, sr, 42);
+        let mut reed_a = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
+        let mut reed_b = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
 
         let n = (sr * 0.2) as usize;
         let mut buf_a = vec![0.0f64; n];
@@ -492,7 +505,7 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, sr, 77);
+        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 77);
         let n = sr as usize; // 1 second
         let mut buf = vec![0.0f64; n];
         reed.render(&mut buf);
