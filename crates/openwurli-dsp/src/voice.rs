@@ -1,18 +1,15 @@
-/// Single voice: reed + hammer + pickup + decay.
-///
-/// Signal flow: modal_oscillator -> pickup_hpf -> output
-/// Attack noise mixed in during first ~15 ms.
+//! Single voice: reed + hammer + pickup + decay.
+//!
+//! Signal flow: modal_oscillator -> pickup_hpf -> output
+//! Attack noise mixed in during first ~15 ms.
+#![allow(clippy::needless_range_loop)]
 
-use crate::hammer::{dwell_attenuation, onset_ramp_time, AttackNoise};
+use crate::hammer::{AttackNoise, dwell_attenuation, onset_ramp_time};
+use crate::mlp_correction::MlpCorrections;
 use crate::pickup::Pickup;
 use crate::reed::ModalReed;
 use crate::tables::{self, NUM_MODES};
 use crate::variation;
-
-/// TEMPORARY: bypass all attack shaping for A/B comparison.
-/// When true: instant organ-style onset, no dwell filter, no attack noise.
-/// Flip to `false` to restore the full attack model.
-const BYPASS_ATTACK: bool = false;
 
 pub struct Voice {
     reed: ModalReed,
@@ -36,7 +33,7 @@ impl Voice {
         let detuned_fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
 
         let dwell = dwell_attenuation(velocity, detuned_fundamental, &params.mode_ratios);
-        let t_dwell = if BYPASS_ATTACK { 0.0 } else { onset_ramp_time(velocity, detuned_fundamental) };
+        let t_dwell = onset_ramp_time(velocity, detuned_fundamental);
         let amp_offsets = variation::mode_amplitude_offsets(midi_note);
 
         let mut amplitudes = [0.0f64; NUM_MODES];
@@ -52,24 +49,60 @@ impl Voice {
             *a *= vel_scale;
         }
 
+        // MLP per-note corrections (zero per-sample cost — runs once at note-on).
+        // Adjusts mode amplitudes, frequencies, decay rates, and displacement scale
+        // based on learned residuals vs OBM recordings.
+        let corrections = MlpCorrections::infer(midi_note, velocity);
+
+        // Apply amplitude corrections to modes 1-6 (mode 0 = fundamental, never corrected)
+        for m in 1..NUM_MODES {
+            let db = if m < 6 {
+                corrections.amp_offsets_db[m - 1]
+            } else {
+                // Mode 6: average H7 and H8 corrections
+                (corrections.amp_offsets_db[5] + corrections.amp_offsets_db[6]) / 2.0
+            };
+            amplitudes[m] *= f64::powf(10.0, db / 20.0);
+        }
+
+        // Apply frequency corrections to mode ratios
+        let mut corrected_ratios = params.mode_ratios;
+        for m in 1..NUM_MODES {
+            let cents = if m < 6 {
+                corrections.freq_offsets_cents[m - 1]
+            } else {
+                (corrections.freq_offsets_cents[5] + corrections.freq_offsets_cents[6]) / 2.0
+            };
+            corrected_ratios[m] *= f64::powf(2.0, cents / 1200.0);
+        }
+
+        // Apply decay corrections
+        let mut corrected_decay = params.mode_decay_rates;
+        for m in 1..NUM_MODES {
+            let ratio = if m < 6 {
+                corrections.decay_offsets[m - 1]
+            } else {
+                (corrections.decay_offsets[5] + corrections.decay_offsets[6]) / 2.0
+            };
+            corrected_decay[m] /= ratio;
+        }
+
+        // Apply displacement scale correction
+        let corrected_ds = tables::pickup_displacement_scale(midi_note) * corrections.ds_correction;
+
         let reed = ModalReed::new(
             detuned_fundamental,
-            &params.mode_ratios,
+            &corrected_ratios,
             &amplitudes,
-            &params.mode_decay_rates,
+            &corrected_decay,
             t_dwell,
             sample_rate,
             noise_seed,
         );
 
         let mut pickup = Pickup::new(sample_rate);
-        pickup.set_displacement_scale(tables::pickup_displacement_scale(midi_note));
-        let noise = AttackNoise::new(
-            if BYPASS_ATTACK { 0.0 } else { velocity },
-            detuned_fundamental,
-            sample_rate,
-            noise_seed,
-        );
+        pickup.set_displacement_scale(corrected_ds);
+        let noise = AttackNoise::new(velocity, detuned_fundamental, sample_rate, noise_seed);
 
         // Post-pickup gain: technician voicing (gap adjustment) affects volume
         // without changing the nonlinear displacement fraction y.
@@ -129,13 +162,21 @@ impl Voice {
     }
 
     /// Render a complete note of given duration to a Vec.
-    pub fn render_note(midi_note: u8, velocity: f64, duration_secs: f64, sample_rate: f64) -> Vec<f64> {
+    pub fn render_note(
+        midi_note: u8,
+        velocity: f64,
+        duration_secs: f64,
+        sample_rate: f64,
+    ) -> Vec<f64> {
         Self::render_note_with_scale(midi_note, velocity, duration_secs, sample_rate, None)
     }
 
     /// Render a complete note with optional displacement scale override.
     pub fn render_note_with_scale(
-        midi_note: u8, velocity: f64, duration_secs: f64, sample_rate: f64,
+        midi_note: u8,
+        velocity: f64,
+        duration_secs: f64,
+        sample_rate: f64,
         displacement_scale: Option<f64>,
     ) -> Vec<f64> {
         let noise_seed = (midi_note as u32).wrapping_mul(2654435761);
@@ -176,7 +217,10 @@ mod tests {
 
         let peak_soft = soft.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
         let peak_loud = loud.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        assert!(peak_loud > peak_soft, "loud ({peak_loud}) should exceed soft ({peak_soft})");
+        assert!(
+            peak_loud > peak_soft,
+            "loud ({peak_loud}) should exceed soft ({peak_soft})"
+        );
     }
 
     #[test]

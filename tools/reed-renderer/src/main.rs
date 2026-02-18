@@ -1,7 +1,7 @@
-/// Reed Renderer — Wurlitzer 200A modal synthesis WAV renderer.
-///
-/// Standalone CLI tool for rendering reed tones to WAV files.
-/// Uses physics-derived parameters from docs/reed-and-hammer-physics.md.
+//! Reed Renderer -- Wurlitzer 200A modal synthesis WAV renderer.
+//!
+//! Standalone CLI tool for rendering reed tones to WAV files.
+//! Uses physics-derived parameters from docs/reed-and-hammer-physics.md.
 
 use openwurli_dsp::tables;
 use openwurli_dsp::voice::Voice;
@@ -68,8 +68,12 @@ fn main() {
     }
 
     for &n in &notes {
-        if n < tables::MIDI_LO || n > tables::MIDI_HI {
-            eprintln!("MIDI note {n} out of range ({}-{})", tables::MIDI_LO, tables::MIDI_HI);
+        if !(tables::MIDI_LO..=tables::MIDI_HI).contains(&n) {
+            eprintln!(
+                "MIDI note {n} out of range ({}-{})",
+                tables::MIDI_LO,
+                tables::MIDI_HI
+            );
             std::process::exit(1);
         }
     }
@@ -96,7 +100,10 @@ fn main() {
             let samples = Voice::render_note(midi_note, velocity_f, duration, SAMPLE_RATE);
 
             let peak = samples.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-            eprintln!("  Peak amplitude: {peak:.6} ({:.1} dBFS)", 20.0 * peak.log10());
+            eprintln!(
+                "  Peak amplitude: {peak:.6} ({:.1} dBFS)",
+                20.0 * peak.log10()
+            );
 
             write_wav(&filename, &samples, SAMPLE_RATE as u32);
             eprintln!("  Written: {filename}");
@@ -123,7 +130,9 @@ fn write_wav(path: &str, samples: &[f64], sample_rate: u32) {
 }
 
 fn midi_note_name(midi: u8) -> String {
-    let names = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
+    let names = [
+        "C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B",
+    ];
     let octave = (midi / 12) as i32 - 1;
     let note = (midi % 12) as usize;
     format!("{}{}", names[note], octave)

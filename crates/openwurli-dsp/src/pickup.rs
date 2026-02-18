@@ -1,29 +1,29 @@
-/// Electrostatic pickup model — nonlinear capacitance + RC HPF.
-///
-/// The Wurlitzer 200A pickup is a capacitive sensor: reed vibration modulates
-/// the capacitance between the reed and a charged metal plate (+147V DC).
-///
-/// The reed-plate capacitance varies nonlinearly with displacement:
-///   C(y) = C_0 / (1 - y)
-/// where y = x/d_0 is the normalized displacement (fraction of rest gap,
-/// positive toward the plate).
-///
-/// This 1/(1-y) nonlinearity is the PRIMARY source of the Wurlitzer "bark."
-/// It generates H2 that scales with displacement amplitude:
-///   y=0.02 (pp): THD 1.7%,  H2 = -35 dB
-///   y=0.10 (mf): THD 8.7%,  H2 = -21 dB
-///   y=0.20 (f):  THD 17.6%, H2 = -15 dB
-/// (Validated against SPICE pickup model, tb_pickup.cir)
-///
-/// The preamp, by contrast, produces < 0.01% THD at normal playing levels.
-/// The bark comes from HERE, not the preamp.
-///
-/// One high-pass filter shapes the frequency response:
-///   Pickup RC: 1-pole HPF at 2312 Hz (R_total=287K, C=240pF)
-///   R_total = R_feed (1M) || (R-1 + R-2||R-3) = 1M || 402K = 287K
-///
-/// The HPF also amplifies H2 relative to H1 (since H2 is at 2f, where
-/// the HPF has higher gain), adding ~1.9x boost to the H2/H1 ratio.
+//! Electrostatic pickup model — nonlinear capacitance + RC HPF.
+//!
+//! The Wurlitzer 200A pickup is a capacitive sensor: reed vibration modulates
+//! the capacitance between the reed and a charged metal plate (+147V DC).
+//!
+//! The reed-plate capacitance varies nonlinearly with displacement:
+//!   C(y) = C_0 / (1 - y)
+//! where y = x/d_0 is the normalized displacement (fraction of rest gap,
+//! positive toward the plate).
+//!
+//! This 1/(1-y) nonlinearity is the PRIMARY source of the Wurlitzer "bark."
+//! It generates H2 that scales with displacement amplitude:
+//!   y=0.02 (pp): THD 1.7%,  H2 = -35 dB
+//!   y=0.10 (mf): THD 8.7%,  H2 = -21 dB
+//!   y=0.20 (f):  THD 17.6%, H2 = -15 dB
+//! (Validated against SPICE pickup model, tb_pickup.cir)
+//!
+//! The preamp, by contrast, produces < 0.01% THD at normal playing levels.
+//! The bark comes from HERE, not the preamp.
+//!
+//! One high-pass filter shapes the frequency response:
+//!   Pickup RC: 1-pole HPF at 2312 Hz (R_total=287K, C=240pF)
+//!   R_total = R_feed (1M) || (R-1 + R-2||R-3) = 1M || 402K = 287K
+//!
+//! The HPF also amplifies H2 relative to H1 (since H2 is at 2f, where
+//! the HPF has higher gain), adding ~1.9x boost to the H2/H1 ratio.
 
 use crate::filters::OnePoleHpf;
 
@@ -177,7 +177,10 @@ mod tests {
         let h2 = dft_magnitude(signal, 2.0 * freq, sr);
         let h3 = dft_magnitude(signal, 3.0 * freq, sr);
 
-        assert!(h2 > h3, "H2 ({h2:.2e}) should dominate H3 ({h3:.2e}) from 1/(1-y)");
+        assert!(
+            h2 > h3,
+            "H2 ({h2:.2e}) should dominate H3 ({h3:.2e}) from 1/(1-y)"
+        );
         // At y_peak = 0.35: H2/H1 ≈ y/2 * HPF_boost ≈ 17.5% * ~1.1 ≈ 19%
         let h2_ratio = h2 / h1;
         assert!(

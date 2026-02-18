@@ -1,8 +1,6 @@
 # SPICE ↔ Rust Translation Reference
 
-**Purpose:** Field manual for Rusty Spice and anyone debugging mismatches between ngspice circuit
-simulations and Rust DSP implementations. Optimized for AI consumption — structured, explicit,
-cross-referenced.
+**Purpose:** Field manual for debugging mismatches between ngspice circuit simulations and Rust DSP implementations. Structured, explicit, cross-referenced.
 
 ---
 

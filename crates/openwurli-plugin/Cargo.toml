@@ -1,7 +1,10 @@
 [package]
 name = "openwurli"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 description = "Wurlitzer 200A virtual instrument — CLAP and VST3 plugin"
 
 [lib]

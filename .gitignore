@@ -1,8 +1,8 @@
 # Python virtual environment
 .venv/
 
-# Claude Code local settings
-.claude/
+# AI agent configuration (private dev tooling)
+CLAUDE.md
 
 # OS files
 .DS_Store
@@ -28,6 +28,11 @@ cmake-build-*/
 __pycache__/
 *.pyc
 
+# Copyrighted reference materials (obtain separately, see docs/SCHEMATIC_SOURCE.md)
+docs/verified_wurlitzer_200A_series_schematic.pdf
+*.mid
+midi/
+
 # Rendered schematic tiles (large PNGs, regenerate from PDF as needed)
 schematic_tiles/
 
@@ -45,3 +50,11 @@ spice/output/
 *.dat
 *.data
 *.plt
+
+# ML pipeline artifacts (regenerate with ml/pipeline.py)
+ml/ml_data/
+ml/input
+ml/notes.json
+ml/scored_notes.json
+ml/harmonics.json
+ml/model_harmonics.json

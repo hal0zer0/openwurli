@@ -1,24 +1,24 @@
-/// Wurlitzer 200A power amplifier model — VAS gain + Class AB crossover + rail clipping.
-///
-/// The real 200A has a quasi-complementary push-pull Class AB output stage
-/// (TIP35C/TIP36C, ±24V rails, 20W into 8Ω). The VAS and driver stages
-/// provide voltage gain (differential input TR-7/TR-8, VAS TR-11, drivers
-/// TR-10/TR-12). At moderate levels the amp is nearly transparent; at ff
-/// polyphonic or with aged bias, crossover distortion and rail clipping
-/// become audible.
-///
-/// Signal flow inside the power amp model:
-///   input → voltage gain (VAS/driver) → crossover dead zone → rail clip → output
-///
-/// The voltage gain of 8.0 represents the closed-loop gain of the power amp
-/// with R-31 (15K) negative feedback. This gain was previously applied
-/// externally as "preamp_gain" — but it physically belongs here. Moving it
-/// into the power amp means the crossover distortion and rail clipping
-/// interact correctly with the actual signal level (post-volume pot).
-///
-/// Crossover width of 0.003 models a typical lightly-aged instrument (~5-7 mA
-/// bias vs factory 10 mA). Applied to the amplified signal, this creates
-/// subtle odd-harmonic grit that becomes audible at low volume settings.
+//! Wurlitzer 200A power amplifier model -- VAS gain + Class AB crossover + rail clipping.
+//!
+//! The real 200A has a quasi-complementary push-pull Class AB output stage
+//! (TIP35C/TIP36C, +/-24V rails, 20W into 8 ohm). The VAS and driver stages
+//! provide voltage gain (differential input TR-7/TR-8, VAS TR-11, drivers
+//! TR-10/TR-12). At moderate levels the amp is nearly transparent; at ff
+//! polyphonic or with aged bias, crossover distortion and rail clipping
+//! become audible.
+//!
+//! Signal flow inside the power amp model:
+//!   input -> voltage gain (VAS/driver) -> crossover dead zone -> rail clip -> output
+//!
+//! The voltage gain of 8.0 represents the closed-loop gain of the power amp
+//! with R-31 (15K) negative feedback. This gain was previously applied
+//! externally as "preamp_gain" -- but it physically belongs here. Moving it
+//! into the power amp means the crossover distortion and rail clipping
+//! interact correctly with the actual signal level (post-volume pot).
+//!
+//! Crossover width of 0.003 models a typical lightly-aged instrument (~5-7 mA
+//! bias vs factory 10 mA). Applied to the amplified signal, this creates
+//! subtle odd-harmonic grit that becomes audible at low volume settings.
 
 /// Power amp voltage gain from VAS/driver stages (closed-loop with R-31 feedback).
 const VOLTAGE_GAIN: f64 = 8.0;
@@ -78,6 +78,12 @@ impl PowerAmp {
     }
 }
 
+impl Default for PowerAmp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,8 +95,10 @@ mod tests {
         let input = 0.05; // 0.05 * 8 = 0.40 (below HEADROOM, above crossover)
         let output = pa.process(input);
         let expected = input * VOLTAGE_GAIN / HEADROOM;
-        assert!((output - expected).abs() < 1e-10,
-            "Should apply gain + normalize: expected {expected}, got {output}");
+        assert!(
+            (output - expected).abs() < 1e-10,
+            "Should apply gain + normalize: expected {expected}, got {output}"
+        );
     }
 
     #[test]
@@ -100,8 +108,10 @@ mod tests {
         let input = 0.0001;
         let output = pa.process(input);
         let clean = input * VOLTAGE_GAIN / HEADROOM;
-        assert!(output < clean,
-            "Should attenuate in dead zone: clean={clean}, got={output}");
+        assert!(
+            output < clean,
+            "Should attenuate in dead zone: clean={clean}, got={output}"
+        );
     }
 
     #[test]
@@ -109,9 +119,15 @@ mod tests {
         let mut pa = PowerAmp::new();
         // 5.0 * 8 = 40.0, far above rail_limit of 2.5
         let output = pa.process(5.0);
-        assert!((output - 1.0).abs() < 1e-10, "Should clip and normalize to 1.0");
+        assert!(
+            (output - 1.0).abs() < 1e-10,
+            "Should clip and normalize to 1.0"
+        );
         let output_neg = pa.process(-5.0);
-        assert!((output_neg + 1.0).abs() < 1e-10, "Should clip and normalize to -1.0");
+        assert!(
+            (output_neg + 1.0).abs() < 1e-10,
+            "Should clip and normalize to -1.0"
+        );
     }
 
     #[test]
@@ -147,8 +163,10 @@ mod tests {
         let f3 = dft_mag(slice, 3.0 * freq, sr);
 
         let h3_ratio = f3 / f1;
-        assert!(h3_ratio > 0.001,
-            "Crossover should produce measurable H3 at low amplitude: {h3_ratio:.5}");
+        assert!(
+            h3_ratio > 0.001,
+            "Crossover should produce measurable H3 at low amplitude: {h3_ratio:.5}"
+        );
     }
 
     fn dft_mag(samples: &[f64], freq: f64, sr: f64) -> f64 {

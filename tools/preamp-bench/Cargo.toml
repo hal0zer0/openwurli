@@ -1,7 +1,10 @@
 [package]
 name = "preamp-bench"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 description = "Preamp DSP validation CLI — compare against SPICE reference data"
 
 [dependencies]

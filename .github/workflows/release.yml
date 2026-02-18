@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: openwurli-linux-x64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: openwurli-macos-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: openwurli-macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: openwurli-windows-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Bundle plugin
+        run: cargo xtask bundle openwurli --release --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p ${{ matrix.archive }}
+          cp target/bundled/openwurli.clap ${{ matrix.archive }}/ 2>/dev/null || true
+          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/ 2>/dev/null || true
+          tar czf ${{ matrix.archive }}.tar.gz ${{ matrix.archive }}
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p ${{ matrix.archive }}
+          cp target/bundled/openwurli.clap ${{ matrix.archive }}/ 2>/dev/null || true
+          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/ 2>/dev/null || true
+          7z a ${{ matrix.archive }}.zip ${{ matrix.archive }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: |
+            ${{ matrix.archive }}.tar.gz
+            ${{ matrix.archive }}.zip
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        run: |
+          mkdir release
+          find artifacts -name '*.tar.gz' -o -name '*.zip' | xargs -I{} cp {} release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

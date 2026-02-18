@@ -1,11 +1,11 @@
-/// 2x polyphase IIR half-band oversampler.
-///
-/// Uses cascaded allpass sections in a polyphase decomposition for efficient
-/// half-band filtering. This provides the antialiasing needed for the preamp's
-/// nonlinear processing (BJT soft-clip generates harmonics that must not alias).
-///
-/// Design: Regalia-Mitra allpass-based half-band IIR.
-/// ~100 dB stopband rejection with 6 coefficient pairs (12 allpass sections).
+//! 2x polyphase IIR half-band oversampler.
+//!
+//! Uses cascaded allpass sections in a polyphase decomposition for efficient
+//! half-band filtering. This provides the antialiasing needed for the preamp's
+//! nonlinear processing (BJT soft-clip generates harmonics that must not alias).
+//!
+//! Design: Regalia-Mitra allpass-based half-band IIR.
+//! ~100 dB stopband rejection with 6 coefficient pairs (12 allpass sections).
 
 /// Half-band IIR allpass coefficients for ~100 dB stopband rejection.
 ///
@@ -147,6 +147,12 @@ impl Oversampler {
     }
 }
 
+impl Default for Oversampler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,8 +177,14 @@ mod tests {
 
         // Allow settling time, then check amplitude preservation
         let start = n / 2;
-        let input_peak = input[start..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        let output_peak = output[start..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+        let input_peak = input[start..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f64, f64::max);
+        let output_peak = output[start..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f64, f64::max);
 
         let ratio = output_peak / input_peak;
         assert!(
@@ -202,8 +214,14 @@ mod tests {
         os.downsample_2x(&upsampled, &mut output);
 
         let start = n / 2;
-        let input_peak = upsampled[n..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        let output_peak = output[start..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+        let input_peak = upsampled[n..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f64, f64::max);
+        let output_peak = output[start..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f64, f64::max);
 
         let attenuation_db = 20.0 * (output_peak / input_peak).log10();
         // 3-per-branch half-band gives ~28 dB at 30 kHz (near transition band edge).
@@ -234,8 +252,14 @@ mod tests {
         os.downsample_2x(&upsampled, &mut output);
 
         let start = n * 3 / 4;
-        let input_peak = input[start..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        let output_peak = output[start..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+        let input_peak = input[start..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f64, f64::max);
+        let output_peak = output[start..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f64, f64::max);
 
         let error_db = (20.0 * (output_peak / input_peak).log10()).abs();
         assert!(

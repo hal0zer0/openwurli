@@ -1,27 +1,27 @@
-/// Single BJT common-emitter stage — NR solver + asymmetric soft-clip.
-///
-/// Models the Ebers-Moll exponential transfer function:
-///   raw = (A/B) * (exp(B * vbe_eff) - 1)
-///   where A = gm*Rc (open-loop gain), B = 1/(n*Vt) = 38.5
-///
-/// For small signals: raw ≈ A * vbe_eff (linearized gain).
-///
-/// With local emitter degeneration (Stage 2):
-///   vbe_eff = input - k * raw   where k = Re_unbypassed / Rc
-///   Solved iteratively via Newton-Raphson.
-///
-/// Asymmetric soft-clip models collector voltage rail limits:
-///   - Positive raw (toward saturation): limited by Vce - Vce_sat
-///   - Negative raw (toward cutoff): limited by Vcc - Vc
-///
-/// Both stages use PostNonlinearity flow (exp_transfer -> soft_clip -> Miller LPF),
-/// matching the real circuit where Miller capacitance limits the gain-bandwidth
-/// of the overall stage (not the input to the nonlinearity).
-///
-/// Stage 1 uses TptLpf (bilinear) for accurate phase at the 23 Hz dominant pole,
-/// which enables ZDF convergence (~50% instantaneous coupling vs 0.16% for forward Euler).
-/// Stage 2 uses forward Euler because its 81 kHz Miller pole is near Nyquist —
-/// discretization error is negligible and TPT's tan() hits frequency warping.
+//! Single BJT common-emitter stage -- NR solver + asymmetric soft-clip.
+//!
+//! Models the Ebers-Moll exponential transfer function:
+//!   raw = (A/B) * (exp(B * vbe_eff) - 1)
+//!   where A = gm*Rc (open-loop gain), B = 1/(n*Vt) = 38.5
+//!
+//! For small signals: raw ~= A * vbe_eff (linearized gain).
+//!
+//! With local emitter degeneration (Stage 2):
+//!   vbe_eff = input - k * raw   where k = Re_unbypassed / Rc
+//!   Solved iteratively via Newton-Raphson.
+//!
+//! Asymmetric soft-clip models collector voltage rail limits:
+//!   - Positive raw (toward saturation): limited by Vce - Vce_sat
+//!   - Negative raw (toward cutoff): limited by Vcc - Vc
+//!
+//! Both stages use PostNonlinearity flow (exp_transfer -> soft_clip -> Miller LPF),
+//! matching the real circuit where Miller capacitance limits the gain-bandwidth
+//! of the overall stage (not the input to the nonlinearity).
+//!
+//! Stage 1 uses TptLpf (bilinear) for accurate phase at the 23 Hz dominant pole,
+//! which enables ZDF convergence (~50% instantaneous coupling vs 0.16% for forward Euler).
+//! Stage 2 uses forward Euler because its 81 kHz Miller pole is near Nyquist --
+//! discretization error is negligible and TPT's tan() hits frequency warping.
 
 use crate::filters::{LpfState, OnePoleLpf, TptLpf, TptLpfState};
 
@@ -75,11 +75,11 @@ impl BjtStage {
     /// Emitter feedback from R-10 is handled externally by the preamp assembly.
     pub fn stage1(sample_rate: f64) -> Self {
         Self {
-            scale: 420.0 / 38.5,  // gm1 * Rc1 / B = 2.80 mA/V * 150K / 38.5
-            b: 38.5,              // 1 / (1.0 * 0.026V)
-            k: 0.0,               // No local degeneration (R-10 feedback is external)
-            pos_limit: 2.05,      // Vce1 - Vce_sat = 2.15 - 0.10 (saturation)
-            neg_limit: 10.9,      // Vcc - Vc1 = 15.0 - 4.1 (cutoff)
+            scale: 420.0 / 38.5, // gm1 * Rc1 / B = 2.80 mA/V * 150K / 38.5
+            b: 38.5,             // 1 / (1.0 * 0.026V)
+            k: 0.0,              // No local degeneration (R-10 feedback is external)
+            pos_limit: 2.05,     // Vce1 - Vce_sat = 2.15 - 0.10 (saturation)
+            neg_limit: 10.9,     // Vcc - Vc1 = 15.0 - 4.1 (cutoff)
             miller: MillerFilter::Tpt(TptLpf::new(23.0, sample_rate)),
             prev_raw: 0.0,
         }
@@ -94,11 +94,11 @@ impl BjtStage {
     /// at 81 kHz, and TPT's tan() would hit frequency warping issues.
     pub fn stage2(sample_rate: f64) -> Self {
         Self {
-            scale: 238.0 / 38.5,  // gm2 * Rc2 / B = 127 mA/V * 1.8K / 38.5
-            b: 38.5,              // 1 / (1.0 * 0.026V)
-            k: 0.456,             // Re2b / Rc2 = 820 / 1800
-            pos_limit: 5.3,       // Vce2 - Vce_sat = 5.4 - 0.10 (saturation)
-            neg_limit: 6.2,       // Vcc - Vc2 = 15.0 - 8.8 (cutoff)
+            scale: 238.0 / 38.5, // gm2 * Rc2 / B = 127 mA/V * 1.8K / 38.5
+            b: 38.5,             // 1 / (1.0 * 0.026V)
+            k: 0.456,            // Re2b / Rc2 = 820 / 1800
+            pos_limit: 5.3,      // Vce2 - Vce_sat = 5.4 - 0.10 (saturation)
+            neg_limit: 6.2,      // Vcc - Vc2 = 15.0 - 8.8 (cutoff)
             miller: MillerFilter::ForwardEuler(OnePoleLpf::new(81_000.0, sample_rate)),
             prev_raw: 0.0,
         }

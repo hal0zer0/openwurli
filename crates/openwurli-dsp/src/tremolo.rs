@@ -1,17 +1,17 @@
-/// Wurlitzer 200A tremolo — LFO + LED + CdS LDR model.
-///
-/// The tremolo modulates preamp gain by varying the LDR resistance in the
-/// emitter feedback path. The signal flow is:
-///
-///   Twin-T oscillator (~5.63 Hz per SPICE) -> half-wave rectified -> LED current
-///   -> CdS LDR (light-dependent resistor) -> R_ldr
-///   -> feedback junction -> modulates preamp closed-loop gain
-///
-/// LDR characteristics:
-///   - CdS photoresistors have asymmetric response: fast attack (~3ms),
-///     slow decay (~50ms) — the "memory" effect.
-///   - Resistance follows approximate power law: R = R_dark * (I_led / I_ref)^(-gamma)
-///   - R_dark ~ 1M ohm, gamma ~ 0.7 for typical CdS cells
+//! Wurlitzer 200A tremolo -- LFO + LED + CdS LDR model.
+//!
+//! The tremolo modulates preamp gain by varying the LDR resistance in the
+//! emitter feedback path. The signal flow is:
+//!
+//!   Twin-T oscillator (~5.63 Hz per SPICE) -> half-wave rectified -> LED current
+//!   -> CdS LDR (light-dependent resistor) -> R_ldr
+//!   -> feedback junction -> modulates preamp closed-loop gain
+//!
+//! LDR characteristics:
+//!   - CdS photoresistors have asymmetric response: fast attack (~3ms),
+//!     slow decay (~50ms) -- the "memory" effect.
+//!   - Resistance follows approximate power law: R = R_dark * (I_led / I_ref)^(-gamma)
+//!   - R_dark ~ 1M ohm, gamma ~ 0.7 for typical CdS cells
 
 use std::f64::consts::PI;
 

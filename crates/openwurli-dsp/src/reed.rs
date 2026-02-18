@@ -1,13 +1,14 @@
-/// Modal reed oscillator — 7 damped sinusoidal modes.
-///
-/// Each mode: A_n * sin(phase_n) * exp(-alpha_n * t)
-/// where alpha_n = decay_dB_per_sec / 8.686 (convert dB/s to nepers/s).
-///
-/// Per-mode frequency jitter (Ornstein-Uhlenbeck process) breaks the perfect
-/// phase coherence of digital oscillators. Real reeds have nonlinear frequency-
-/// amplitude coupling (backbone curve), pickup loading, and micro-turbulence
-/// that cause each mode's frequency to wander slightly. Without this, the
-/// static spectral interference pattern sounds "metallic" and "resonant."
+//! Modal reed oscillator — 7 damped sinusoidal modes.
+//!
+//! Each mode: A_n * sin(phase_n) * exp(-alpha_n * t)
+//! where alpha_n = decay_dB_per_sec / 8.686 (convert dB/s to nepers/s).
+//!
+//! Per-mode frequency jitter (Ornstein-Uhlenbeck process) breaks the perfect
+//! phase coherence of digital oscillators. Real reeds have nonlinear frequency-
+//! amplitude coupling (backbone curve), pickup loading, and micro-turbulence
+//! that cause each mode's frequency to wander slightly. Without this, the
+//! static spectral interference pattern sounds "metallic" and "resonant."
+#![allow(clippy::needless_range_loop)]
 
 use crate::tables::NUM_MODES;
 
@@ -39,7 +40,7 @@ pub struct ModalReed {
     // Per-mode Ornstein-Uhlenbeck frequency jitter
     jitter_state: u32,
     jitter_drift: [f64; NUM_MODES],
-    jitter_revert: f64,   // exp(-dt/tau): mean-reversion per sample
+    jitter_revert: f64,    // exp(-dt/tau): mean-reversion per sample
     jitter_diffusion: f64, // noise scaling per sample
 }
 
@@ -228,9 +229,15 @@ impl ModalReed {
     #[inline]
     fn lcg_normal(&mut self) -> f64 {
         // LCG step (Numerical Recipes constants)
-        self.jitter_state = self.jitter_state.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.jitter_state = self
+            .jitter_state
+            .wrapping_mul(1664525)
+            .wrapping_add(1013904223);
         let u1 = (self.jitter_state >> 1) as f64 / (u32::MAX as f64 / 2.0); // (0, 1)
-        self.jitter_state = self.jitter_state.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.jitter_state = self
+            .jitter_state
+            .wrapping_mul(1664525)
+            .wrapping_add(1013904223);
         let u2 = (self.jitter_state >> 1) as f64 / (u32::MAX as f64 / 2.0);
         // Box-Muller: only use one of the two outputs for simplicity
         let r = (-2.0 * u1.max(1e-30).ln()).sqrt();
@@ -306,7 +313,10 @@ mod tests {
         let mut buf = vec![0.0f64; half_sec];
         reed.render(&mut buf);
 
-        let peak = buf[buf.len() - 200..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+        let peak = buf[buf.len() - 200..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f64, f64::max);
         assert!(peak < 0.1, "expected decay, got peak {peak}");
         assert!(peak > 0.01, "decayed too much, got peak {peak}");
     }
@@ -328,22 +338,33 @@ mod tests {
         reed.render(&mut buf);
 
         // First sample should be near zero (raised cosine starts at 0)
-        assert!(buf[0].abs() < 0.01,
-            "First sample should be near zero, got {:.6}", buf[0]);
+        assert!(
+            buf[0].abs() < 0.01,
+            "First sample should be near zero, got {:.6}",
+            buf[0]
+        );
 
         // At half the ramp time, the ramp should be at ~0.5
         let mid_ramp = (ramp * 0.5 * sr) as usize;
-        let mid_peak = buf[mid_ramp.saturating_sub(5)..mid_ramp + 5].iter()
-            .map(|x| x.abs()).fold(0.0f64, f64::max);
-        assert!(mid_peak < 0.8,
-            "Mid-ramp peak should be < 0.8, got {mid_peak:.4}");
+        let mid_peak = buf[mid_ramp.saturating_sub(5)..mid_ramp + 5]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f64, f64::max);
+        assert!(
+            mid_peak < 0.8,
+            "Mid-ramp peak should be < 0.8, got {mid_peak:.4}"
+        );
 
         // Well after ramp, amplitude should be ~1.0
         let late_start = (sr * 0.030) as usize;
-        let late_peak = buf[late_start..late_start + 200].iter()
-            .map(|x| x.abs()).fold(0.0f64, f64::max);
-        assert!(late_peak > 0.85,
-            "Post-ramp peak should be ~1.0, got {late_peak:.4}");
+        let late_peak = buf[late_start..late_start + 200]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f64, f64::max);
+        assert!(
+            late_peak > 0.85,
+            "Post-ramp peak should be ~1.0, got {late_peak:.4}"
+        );
     }
 
     #[test]
@@ -369,8 +390,10 @@ mod tests {
         let t2ms = (sr * 0.002) as usize;
         let ff_energy: f64 = buf_ff[..t2ms].iter().map(|x| x * x).sum();
         let pp_energy: f64 = buf_pp[..t2ms].iter().map(|x| x * x).sum();
-        assert!(ff_energy > pp_energy * 1.5,
-            "ff should be louder than pp at 2ms: ff={ff_energy:.6}, pp={pp_energy:.6}");
+        assert!(
+            ff_energy > pp_energy * 1.5,
+            "ff should be louder than pp at 2ms: ff={ff_energy:.6}, pp={pp_energy:.6}"
+        );
     }
 
     #[test]
@@ -388,8 +411,10 @@ mod tests {
 
         // With dwell=0, all modes start at full amplitude immediately
         let early_peak = buf[..10].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        assert!(early_peak > 0.05,
-            "Zero dwell should give immediate amplitude, got {early_peak:.6}");
+        assert!(
+            early_peak > 0.05,
+            "Zero dwell should give immediate amplitude, got {early_peak:.6}"
+        );
     }
 
     #[test]
@@ -426,10 +451,14 @@ mod tests {
         // With 0.04% jitter over 20ms correlation, outputs should measurably differ
         // but not be wildly different
         let relative_diff = rms_diff / rms_sig.max(1e-10);
-        assert!(relative_diff > 0.001,
-            "Jitter should cause measurable difference: relative_diff={relative_diff:.6}");
-        assert!(relative_diff < 0.5,
-            "Jitter should be subtle, not overwhelming: relative_diff={relative_diff:.4}");
+        assert!(
+            relative_diff > 0.001,
+            "Jitter should cause measurable difference: relative_diff={relative_diff:.6}"
+        );
+        assert!(
+            relative_diff < 0.5,
+            "Jitter should be subtle, not overwhelming: relative_diff={relative_diff:.4}"
+        );
     }
 
     #[test]
@@ -475,8 +504,9 @@ mod tests {
             }
         }
         // 0.04% jitter → frequency within ~0.2 Hz of 440
-        assert!((crossings as f64 - 440.0).abs() < 1.0,
-            "Average frequency should be ~440 Hz, got {crossings} crossings");
+        assert!(
+            (crossings as f64 - 440.0).abs() < 1.0,
+            "Average frequency should be ~440 Hz, got {crossings} crossings"
+        );
     }
-
 }

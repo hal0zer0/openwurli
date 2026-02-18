@@ -1,32 +1,32 @@
-/// Wurlitzer 200A preamp model — two-stage direct-coupled BJT amplifier.
-///
-/// Signal flow per oversampled sample (ZDF feedback):
-///   for iter in 0..3:
-///     restore stage1 + stage2 state
-///     fb_est = prev_s2_out * fb_fraction  (seeded from last sample)
-///     s1_out = stage1.process(input, fb_est)
-///     s2_out = stage2.process(s1_out, 0.0)
-///     fb_est = s2_out * fb_fraction
-///   output = dc_block(s2_out)
-///
-/// Emitter feedback from R-10 (56K):
-///   output -> R-10 -> fb_junction -> Ce1 -> TR-1 emitter
-///   LDR path shunts fb_junction to ground, modulating feedback amount.
-///
-/// Calibration targets (from SPICE):
-///   - Gain @ 1kHz, no tremolo: 6.0 dB (2.0x)
-///   - Gain @ 1kHz, tremolo bright: 12.1 dB (4.0x)
-///   - H2 > H3 at all dynamics
-///
-/// Known limitation — nested feedback loops (see docs/preamp-circuit.md 5.5.1):
-///   The real preamp has TWO nested feedback loops: inner (C-3/C-4 Miller caps,
-///   ~15.5 kHz BW) and outer (R-10/Ce1/R_ldr, gain control). This model treats
-///   each stage independently with simple Miller poles, giving constant GBW and
-///   incorrect trem-bright BW (~5.2 kHz vs SPICE ~15.2 kHz preamp-only). The
-///   inner C-3/C-4 loop must be modeled explicitly (WDF or coupled solver) to
-///   fix this. Current DSP BW is ~10.5 kHz no-trem (acceptable) and ~5.2 kHz
-///   trem-bright (too narrow, but only affects the brief peak of tremolo cycle
-///   at frequencies above the highest fundamental).
+//! Wurlitzer 200A preamp model -- two-stage direct-coupled BJT amplifier.
+//!
+//! Signal flow per oversampled sample (ZDF feedback):
+//!   for iter in 0..3:
+//!     restore stage1 + stage2 state
+//!     fb_est = prev_s2_out * fb_fraction  (seeded from last sample)
+//!     s1_out = stage1.process(input, fb_est)
+//!     s2_out = stage2.process(s1_out, 0.0)
+//!     fb_est = s2_out * fb_fraction
+//!   output = dc_block(s2_out)
+//!
+//! Emitter feedback from R-10 (56K):
+//!   output -> R-10 -> fb_junction -> Ce1 -> TR-1 emitter
+//!   LDR path shunts fb_junction to ground, modulating feedback amount.
+//!
+//! Calibration targets (from SPICE):
+//!   - Gain @ 1kHz, no tremolo: 6.0 dB (2.0x)
+//!   - Gain @ 1kHz, tremolo bright: 12.1 dB (4.0x)
+//!   - H2 > H3 at all dynamics
+//!
+//! Known limitation -- nested feedback loops (see docs/preamp-circuit.md 5.5.1):
+//!   The real preamp has TWO nested feedback loops: inner (C-3/C-4 Miller caps,
+//!   ~15.5 kHz BW) and outer (R-10/Ce1/R_ldr, gain control). This model treats
+//!   each stage independently with simple Miller poles, giving constant GBW and
+//!   incorrect trem-bright BW (~5.2 kHz vs SPICE ~15.2 kHz preamp-only). The
+//!   inner C-3/C-4 loop must be modeled explicitly (WDF or coupled solver) to
+//!   fix this. Current DSP BW is ~10.5 kHz no-trem (acceptable) and ~5.2 kHz
+//!   trem-bright (too narrow, but only affects the brief peak of tremolo cycle
+//!   at frequencies above the highest fundamental).
 
 use crate::bjt_stage::BjtStage;
 use crate::filters::DcBlocker;
