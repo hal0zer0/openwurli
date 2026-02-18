@@ -1,0 +1,33 @@
+* Wurlitzer 200A Preamp — DC Operating Point vs R_ldr
+* ===================================================
+* Measure V(out), V(coll2), V(fb_junct), V(emit1) at various R_ldr values.
+* No audio signal. Answers: how many volts does the output swing when
+* R_ldr modulates between 19K and 1M?
+
+.title Preamp DC vs R_ldr
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* Supply
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp
+Xpre  in_sig out vcc 0 fb_junct  wurli_preamp
+
+* No audio — ground input through R-1
+Vin  in_sig 0  DC 0
+
+* LDR path: parametric sweep
+* Use a VCVS trick: R_ldr swept via .DC on a voltage source
+Vldr_ctrl  ldr_ctrl 0  DC 19K
+Rldr  fb_junct 0  R='V(ldr_ctrl)'
+
+* DC sweep: R_ldr from 19K to 1M (logarithmic would be ideal but
+* ngspice .DC is linear; use multiple runs)
+.DC Vldr_ctrl 19K 1000K 10K
+
+.print DC V(out) V(Xpre.coll2) V(Xpre.emit1) V(fb_junct) V(Xpre.coll1) V(Xpre.base1)
+
+.end

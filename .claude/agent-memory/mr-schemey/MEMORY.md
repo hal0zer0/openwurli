@@ -22,6 +22,15 @@
 - Bark audit: preamp adds < 2.3 pp H2 (only C2 ff shows meaningful preamp H2)
 - Preamp accuracy unchanged from rev 267856a (all deltas identical within measurement noise)
 
+### Tremolo Pump Analysis (Feb 2026)
+- **V(out) DC swing: 0.86V pp** (8.34V at R_ldr=19K to 9.20V at R_ldr=1M). REAL PHYSICS.
+- TR-1/TR-2 bias: IMMUNE to R_ldr (Ce1 blocks DC). emit1/coll1/base1 constant to 6 decimal places.
+- fb_junct swings 6.6V (2.1-8.7V) but Ce1 isolates emitter from this.
+- C-8 (4.7uF into ~10K) = first-order HPF at 3.4 Hz, only -1.3 dB at 5.63 Hz. NOT the main pump suppression.
+- Real pump suppression: speakers (30+ dB/oct below 70 Hz) >> volume pot >> C-8.
+- DK preamp: DC subtraction + 4th-order Bessel at 80 Hz = ~46 dB pump suppression. Correct.
+- SPICE testbench: `spice/testbench/tb_preamp_dc_vs_rldr.cir`
+
 ### Key File Locations
 - DSP sources: `crates/openwurli-dsp/src/`
 - Plugin wiring: `crates/openwurli-plugin/src/lib.rs`

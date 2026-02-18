@@ -2,14 +2,15 @@
 //!
 //! The 200A uses two 4"x8" oval ceramic-magnet speakers in an open-backed
 //! ABS plastic lid. This produces:
-//!   - Bass rolloff: open-baffle cancellation + speaker resonance (~85-100 Hz)
+//!   - Bass rolloff: cone resonance + open-baffle dipole + radiation impedance
+//!     → combined ~-30 dB/oct below 100 Hz (three cascaded HPF sections)
 //!   - Treble rolloff: cone breakup (~7-8 kHz)
 //!   - Cone nonlinearity: Kms hardening (odd harmonics) + BL asymmetry
 //!     (even harmonics). Modeled as a direct memoryless polynomial -- harmonics
 //!     are phase-coherent with the input signal by construction.
 //!   - Thermal voice coil compression: slow power-dependent gain reduction (~5s tau)
 //!
-//! Architecture: static polynomial waveshaper -> linear filters (HPF + LPF).
+//! Architecture: static polynomial waveshaper -> linear filters (3×HPF + LPF).
 //! This is a textbook Hammerstein model. The polynomial is memoryless (no
 //! internal filters), so generated harmonics maintain natural phase relationships
 //! with the fundamental and with any existing harmonics from upstream stages.
@@ -20,16 +21,36 @@
 
 use crate::filters::Biquad;
 
-/// HPF cutoff at fully authentic position.
-const HPF_AUTHENTIC_HZ: f64 = 95.0;
-/// HPF Q (slightly underdamped for speaker resonance bump).
-const HPF_Q: f64 = 0.75;
+/// HPF1 cutoff at fully authentic position (cone resonance + mechanical rolloff).
+/// 4x8" oval ceramic-magnet drivers have Fs of 120-180 Hz. 150 Hz is typical
+/// for a small oval with ceramic magnet.
+const HPF1_AUTHENTIC_HZ: f64 = 150.0;
+/// HPF1 Q (slightly underdamped for speaker resonance bump).
+const HPF1_Q: f64 = 0.75;
+/// HPF2 cutoff at fully authentic position (open-baffle dipole cancellation).
+/// Baffle step for ~24" ABS lid: f = c/(π·w) ≈ 180 Hz. Dipole cancellation
+/// onset about 1 octave below → ~100 Hz with 6 dB/oct slope.
+const HPF2_AUTHENTIC_HZ: f64 = 100.0;
+/// HPF2 Q (Butterworth — smooth transition, no peak).
+const HPF2_Q: f64 = 0.707;
+/// HPF3 cutoff at fully authentic position (radiation impedance rolloff).
+/// Small cone's acoustic radiation resistance ∝ f² below ka=1 transition.
+/// For a 4x8" effective piston radius ~5cm: f = c/(2π·a) ≈ 1090 Hz.
+/// Below this the radiation impedance falls, but the rolloff is gradual;
+/// 70 Hz captures the regime where radiation loss dominates cone resonance.
+const HPF3_AUTHENTIC_HZ: f64 = 70.0;
+/// HPF3 Q (overdamped — gradual radiation rolloff).
+const HPF3_Q: f64 = 0.5;
 /// LPF cutoff at fully authentic position.
 const LPF_AUTHENTIC_HZ: f64 = 7500.0;
 /// LPF Q (Butterworth).
 const LPF_Q: f64 = 0.707;
-/// HPF cutoff at bypass position (effectively transparent).
-const HPF_BYPASS_HZ: f64 = 20.0;
+/// HPF1 cutoff at bypass position (effectively transparent).
+const HPF1_BYPASS_HZ: f64 = 20.0;
+/// HPF2 cutoff at bypass position (effectively transparent).
+const HPF2_BYPASS_HZ: f64 = 10.0;
+/// HPF3 cutoff at bypass position (effectively transparent).
+const HPF3_BYPASS_HZ: f64 = 5.0;
 /// LPF cutoff at bypass position (effectively transparent).
 const LPF_BYPASS_HZ: f64 = 20000.0;
 
@@ -37,7 +58,9 @@ const LPF_BYPASS_HZ: f64 = 20000.0;
 const THERMAL_TAU: f64 = 5.0;
 
 pub struct Speaker {
-    hpf: Biquad,
+    hpf1: Biquad,
+    hpf2: Biquad,
+    hpf3: Biquad,
     lpf: Biquad,
     character: f64,
     sample_rate: f64,
@@ -52,7 +75,9 @@ pub struct Speaker {
 impl Speaker {
     pub fn new(sample_rate: f64) -> Self {
         let mut s = Self {
-            hpf: Biquad::highpass(HPF_AUTHENTIC_HZ, HPF_Q, sample_rate),
+            hpf1: Biquad::highpass(HPF1_AUTHENTIC_HZ, HPF1_Q, sample_rate),
+            hpf2: Biquad::highpass(HPF2_AUTHENTIC_HZ, HPF2_Q, sample_rate),
+            hpf3: Biquad::highpass(HPF3_AUTHENTIC_HZ, HPF3_Q, sample_rate),
             lpf: Biquad::lowpass(LPF_AUTHENTIC_HZ, LPF_Q, sample_rate),
             character: 1.0,
             sample_rate,
@@ -78,9 +103,13 @@ impl Speaker {
     fn update_coefficients(&mut self) {
         let c = self.character;
         // Logarithmic interpolation of cutoff frequencies
-        let hpf_hz = HPF_BYPASS_HZ * (HPF_AUTHENTIC_HZ / HPF_BYPASS_HZ).powf(c);
+        let hpf1_hz = HPF1_BYPASS_HZ * (HPF1_AUTHENTIC_HZ / HPF1_BYPASS_HZ).powf(c);
+        let hpf2_hz = HPF2_BYPASS_HZ * (HPF2_AUTHENTIC_HZ / HPF2_BYPASS_HZ).powf(c);
+        let hpf3_hz = HPF3_BYPASS_HZ * (HPF3_AUTHENTIC_HZ / HPF3_BYPASS_HZ).powf(c);
         let lpf_hz = LPF_BYPASS_HZ * (LPF_AUTHENTIC_HZ / LPF_BYPASS_HZ).powf(c);
-        self.hpf.set_highpass(hpf_hz, HPF_Q, self.sample_rate);
+        self.hpf1.set_highpass(hpf1_hz, HPF1_Q, self.sample_rate);
+        self.hpf2.set_highpass(hpf2_hz, HPF2_Q, self.sample_rate);
+        self.hpf3.set_highpass(hpf3_hz, HPF3_Q, self.sample_rate);
         self.lpf.set_lowpass(lpf_hz, LPF_Q, self.sample_rate);
 
         // Polynomial coefficients — all zero at character=0
@@ -111,13 +140,17 @@ impl Speaker {
         self.thermal_state += (power - self.thermal_state) * self.thermal_alpha;
         let thermal_gain = 1.0 / (1.0 + self.thermal_coeff * self.thermal_state.sqrt());
 
-        // 4. Linear filters (HPF + LPF)
-        let filtered = self.hpf.process(limited * thermal_gain);
+        // 4. Linear filters: 3 cascaded HPFs (cone + dipole + radiation) + LPF
+        let filtered = self.hpf1.process(limited * thermal_gain);
+        let filtered = self.hpf2.process(filtered);
+        let filtered = self.hpf3.process(filtered);
         self.lpf.process(filtered)
     }
 
     pub fn reset(&mut self) {
-        self.hpf.reset();
+        self.hpf1.reset();
+        self.hpf2.reset();
+        self.hpf3.reset();
         self.lpf.reset();
         self.thermal_state = 0.0;
     }

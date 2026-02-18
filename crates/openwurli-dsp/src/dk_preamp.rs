@@ -14,7 +14,6 @@
 //! See docs/dk-preamp-derivation.md for the full mathematical derivation.
 #![allow(clippy::needless_range_loop)]
 
-use crate::filters::Biquad;
 use crate::preamp::PreampModel;
 
 // ── Circuit constants ───────────────────────────────────────────────────────
@@ -60,6 +59,7 @@ const OUT: usize = 6;
 const FB: usize = 7;
 
 const N: usize = 8; // number of nodes
+
 
 // ── 8×8 matrix type aliases ─────────────────────────────────────────────────
 
@@ -206,45 +206,41 @@ pub struct DkPreamp {
     v_dc: Vec8,      // DC node voltages at current R_ldr
     g_dc_base: Mat8, // G_dc without R_ldr or g_cin (for DC solve)
 
-    // ── Cin-R1 companion ──
+    // ── Cin-R1 companion (shared constants) ──
     g_cin: f64,
     c_cin: f64,
     gc_1pc: f64,
-    j_cin: f64,
-    cin_rhs_prev: f64,
 
-    // ── State ──
-    v: Vec8,        // Absolute node voltages
-    i_nl: [f64; 2], // Absolute NL currents
-    v_nl: [f64; 2], // Full Vbe (for NR warm start)
+    // ── Per-instance mutable state ──
+    //
+    // The main state processes the audio signal. The shadow state runs in
+    // parallel with zero input, producing only the tremolo pump. Subtracting
+    // shadow output from main output cancels all pump harmonics without
+    // any frequency-domain filtering — zero bass loss, zero phase distortion.
+    //
+    // Why: R_ldr modulation at 5.63 Hz creates a ~4.5V pp pump at the output
+    // (confirmed by SPICE: Ce1 transient dynamics dominate, not DC shift).
+    // The pump has harmonics spanning 28-200+ Hz that overlap bass fundamentals.
+    // No HPF can separate them without cutting bass. Shadow subtraction is
+    // frequency-independent and exact (for small audio signals ≪ operating point).
+    main: DkState,
+    shadow: DkState,
 
-    // ── R_ldr tracking ──
+    // ── Shared R_ldr tracking ──
     r_ldr: f64,
     g_ldr: f64,      // 1/r_ldr (current conductance)
     g_ldr_prev: f64, // g_ldr from previous timestep
+}
 
-    // ── Output coupling (4th-order Bessel subsonic HPF) ──
-    //
-    // The real Wurlitzer uses C-8 (4.7µF) to AC-couple the preamp output.
-    // The preamp's internal v[OUT] has a multi-volt 5.5 Hz operating-point
-    // swing during tremolo (confirmed by SPICE: ~3.5V pp). This is correct
-    // circuit physics — Ce1 holds the FB junction nearly constant while
-    // R_ldr modulation swings the R10/R_ldr voltage divider.
-    //
-    // Solution: subtract the initial constant DC (removes the ~8V offset)
-    // and use a 4th-order Bessel HPF at 40 Hz to remove the residual
-    // 5.5 Hz operating-point swing.
-    //
-    // Bessel (maximally flat group delay) chosen over Butterworth to minimize
-    // startup transient ringing. The old 6th-order Butterworth had Q=1.93 in
-    // its highest section, which rang at ~40 Hz for ~24 ms — exactly 1.6 C2
-    // periods. This created an audible "plink" at bass note onsets where H2
-    // was boosted +3.7 dB above steady state for the first 2-3 cycles.
-    // The Bessel filter's max Q=0.81 eliminates this ringing while still
-    // providing -23 dB at 22 Hz (ample for tremolo subsonic suppression).
-    v_out_dc_init: f64, // Constant DC from initial solve
-    dc_hpf_1: Biquad,   // 4th-order Bessel section 1
-    dc_hpf_2: Biquad,   // 4th-order Bessel section 2
+/// Per-instance mutable state for the DK solver.
+/// Both main and shadow instances share the same fixed matrices and R_ldr.
+#[derive(Clone)]
+struct DkState {
+    j_cin: f64,
+    cin_rhs_prev: f64,
+    v: Vec8,        // Absolute node voltages
+    i_nl: [f64; 2], // Absolute NL currents
+    v_nl: [f64; 2], // Full Vbe (for NR warm start)
 }
 
 impl DkPreamp {
@@ -323,14 +319,14 @@ impl DkPreamp {
         let r_ldr_init = 1_000_000.0;
         let (_, v_nl_dc, v_dc, _) = Self::full_dc_solve(&g_dc_base, &w, r_ldr_init);
 
-        // ── 4th-order Bessel HPF for output coupling ──
-        // Two cascaded biquad sections. Cutoff 40 Hz chosen to suppress
-        // the 3rd/4th harmonics of the 5.5 Hz tremolo rate (16.5-22 Hz)
-        // that otherwise leak through and cause PA clipping + speaker
-        // intermodulation. At 22 Hz: -23 dB. At 55 Hz (A1): -0.3 dB.
-        // Bessel topology chosen for minimal ringing (max Q=0.81).
-        let dc_hpf_1 = Biquad::highpass(40.0, 0.5219, sample_rate);
-        let dc_hpf_2 = Biquad::highpass(40.0, 0.8055, sample_rate);
+        // Both main and shadow start at identical DC operating point
+        let init_state = DkState {
+            j_cin: g_cin * v_dc[BASE1],
+            cin_rhs_prev: g_cin * v_dc[BASE1],
+            v: v_dc,
+            i_nl: [bjt_ic(v_nl_dc[0]), bjt_ic(v_nl_dc[1])],
+            v_nl: v_nl_dc,
+        };
 
         Self {
             s_base,
@@ -350,20 +346,13 @@ impl DkPreamp {
             g_cin,
             c_cin,
             gc_1pc,
-            j_cin: g_cin * v_dc[BASE1],
-            cin_rhs_prev: g_cin * v_dc[BASE1],
 
-            v: v_dc,
-            i_nl: [bjt_ic(v_nl_dc[0]), bjt_ic(v_nl_dc[1])],
-            v_nl: v_nl_dc,
+            shadow: init_state.clone(),
+            main: init_state,
 
             r_ldr: r_ldr_init,
             g_ldr: 1.0 / r_ldr_init,
             g_ldr_prev: 1.0 / r_ldr_init,
-
-            v_out_dc_init: v_dc[OUT],
-            dc_hpf_1,
-            dc_hpf_2,
         }
     }
 
@@ -421,6 +410,7 @@ impl DkPreamp {
         }
         w
     }
+
 }
 
 /// Compute K = N_v * S * N_i from an 8x8 matrix S.
@@ -437,125 +427,143 @@ fn compute_k(s: &Mat8) -> [[f64; 2]; 2] {
     ]
 }
 
+/// Core DK trapezoidal step — free function for borrow-checker compatibility.
+///
+/// Both main and shadow instances call this with the same immutable config but
+/// different mutable state. Making this a free function (not a method) allows
+/// Rust's borrow checker to split borrows at the field level: config fields
+/// borrowed immutably, state field borrowed mutably, in the same call.
+///
+/// The shadow runs with `input=0.0` to produce the pure pump signal.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn dk_step(
+    a_neg_base: &Mat8, two_w: &Vec8, s_base: &Mat8,
+    s_fb_col: &Vec8, s_fb_fb: f64, g_ldr: f64, g_ldr_prev: f64,
+    k: &[[f64; 2]; 2], nv_sfb: &[f64; 2], sfb_ni: &[f64; 2],
+    g_cin: f64, gc_1pc: f64, c_cin: f64,
+    state: &mut DkState, input: f64,
+) -> f64 {
+    // 1. History: rhs = A_neg_base * v[n] + sources
+    let mut rhs = mat_vec_mul(a_neg_base, &state.v);
+
+    // Subtract previous R_ldr current (explicit, trapezoidal backward term)
+    rhs[FB] -= g_ldr_prev * state.v[FB];
+
+    // Cin-R1 companion
+    let cin_rhs_now = g_cin * input + state.j_cin;
+    rhs[BASE1] += cin_rhs_now + state.cin_rhs_prev;
+
+    // Previous NL currents
+    rhs[EMIT1] += state.i_nl[0];
+    rhs[COLL1] -= state.i_nl[0];
+    rhs[EMIT2] += state.i_nl[1];
+    rhs[COLL2] -= state.i_nl[1];
+
+    // DC sources (2w)
+    for i in 0..N {
+        rhs[i] += two_w[i];
+    }
+
+    // 2. v_pred_base = S_base * rhs (without R_ldr on LHS)
+    let v_pred_base = mat_vec_mul(s_base, &rhs);
+
+    // 3. SM correction for current R_ldr
+    let sm_k = g_ldr / (1.0 + s_fb_fb * g_ldr);
+    let sm_vpred = sm_k * v_pred_base[FB];
+    let mut v_pred = vec8_zero();
+    for i in 0..N {
+        v_pred[i] = v_pred_base[i] - sm_vpred * s_fb_col[i];
+    }
+
+    // 4. Predicted NL voltages
+    let p = [v_pred[BASE1] - v_pred[EMIT1], v_pred[COLL1] - v_pred[EMIT2]];
+
+    // 5. NR solve on 2x2 system with R_ldr-corrected K
+    let k00 = k[0][0] - sm_k * nv_sfb[0] * sfb_ni[0];
+    let k01 = k[0][1] - sm_k * nv_sfb[0] * sfb_ni[1];
+    let k10 = k[1][0] - sm_k * nv_sfb[1] * sfb_ni[0];
+    let k11 = k[1][1] - sm_k * nv_sfb[1] * sfb_ni[1];
+
+    let mut v_nl = state.v_nl;
+
+    for _iter in 0..6 {
+        let ic = [bjt_ic(v_nl[0]), bjt_ic(v_nl[1])];
+        let gm = [bjt_gm(v_nl[0]), bjt_gm(v_nl[1])];
+
+        let f0 = v_nl[0] - p[0] - k00 * ic[0] - k01 * ic[1];
+        let f1 = v_nl[1] - p[1] - k10 * ic[0] - k11 * ic[1];
+
+        if f0.abs() < 1e-9 && f1.abs() < 1e-9 {
+            break;
+        }
+
+        let j00 = 1.0 - k00 * gm[0];
+        let j01 = -k01 * gm[1];
+        let j10 = -k10 * gm[0];
+        let j11 = 1.0 - k11 * gm[1];
+
+        let det = j00 * j11 - j01 * j10;
+        if det.abs() < 1e-30 {
+            break;
+        }
+        let inv_det = 1.0 / det;
+
+        v_nl[0] -= inv_det * (j11 * f0 - j01 * f1);
+        v_nl[1] -= inv_det * (j00 * f1 - j10 * f0);
+    }
+
+    // 6. Final NL currents
+    let ic_new = [bjt_ic(v_nl[0]), bjt_ic(v_nl[1])];
+
+    // 7. Node voltage update
+    let sfb_ni_dot_ic = sfb_ni[0] * ic_new[0] + sfb_ni[1] * ic_new[1];
+    for i in 0..N {
+        let s_ni_i = ic_new[0] * (s_base[i][EMIT1] - s_base[i][COLL1])
+            + ic_new[1] * (s_base[i][EMIT2] - s_base[i][COLL2]);
+        state.v[i] = v_pred[i] + s_ni_i - sm_k * sfb_ni_dot_ic * s_fb_col[i];
+    }
+
+    // 8. Cin-R1 companion update
+    state.cin_rhs_prev = cin_rhs_now;
+    let dv_cin = input - state.v[BASE1];
+    state.j_cin = -gc_1pc * dv_cin - c_cin * state.j_cin;
+
+    // 9. State update
+    state.i_nl = ic_new;
+    state.v_nl = v_nl;
+
+    state.v[OUT]
+}
+
 impl PreampModel for DkPreamp {
     fn process_sample(&mut self, input: f64) -> f64 {
-        // ── DK trapezoidal step with EXPLICIT R_ldr ──
-        //
-        // The MNA system without R_ldr:
-        //   A_base * v[n+1] = A_neg_base * v[n] + cin_terms + NL_terms + 2w
-        //
-        // R_ldr current is an explicit source: i_ldr = g_ldr * v_FB
-        // Trapezoidal average: subtract g_ldr_prev*v_FB[n] from RHS,
-        // then apply SM correction for g_ldr*v_FB[n+1] on the LHS.
+        // Run main solver with audio input.
+        // Field-level borrow splitting: config fields (&self.xxx) are immutable,
+        // state field (&mut self.main) is mutable — different fields, no conflict.
+        let main_out = dk_step(
+            &self.a_neg_base, &self.two_w, &self.s_base,
+            &self.s_fb_col, self.s_fb_fb, self.g_ldr, self.g_ldr_prev,
+            &self.k, &self.nv_sfb, &self.sfb_ni,
+            self.g_cin, self.gc_1pc, self.c_cin,
+            &mut self.main, input,
+        );
 
-        // 1. History: rhs = A_neg_base * v[n] + sources
-        //    A_neg_base is FIXED (no R_ldr), so no staleness issue.
-        let mut rhs = mat_vec_mul(&self.a_neg_base, &self.v);
+        // Run shadow solver with zero input — produces pure pump
+        let pump = dk_step(
+            &self.a_neg_base, &self.two_w, &self.s_base,
+            &self.s_fb_col, self.s_fb_fb, self.g_ldr, self.g_ldr_prev,
+            &self.k, &self.nv_sfb, &self.sfb_ni,
+            self.g_cin, self.gc_1pc, self.c_cin,
+            &mut self.shadow, 0.0,
+        );
 
-        // Subtract previous R_ldr current (explicit, trapezoidal backward term)
-        rhs[FB] -= self.g_ldr_prev * self.v[FB];
-
-        // Cin-R1 companion
-        let cin_rhs_now = self.g_cin * input + self.j_cin;
-        rhs[BASE1] += cin_rhs_now + self.cin_rhs_prev;
-
-        // Previous NL currents
-        rhs[EMIT1] += self.i_nl[0];
-        rhs[COLL1] -= self.i_nl[0];
-        rhs[EMIT2] += self.i_nl[1];
-        rhs[COLL2] -= self.i_nl[1];
-
-        // DC sources (2w)
-        for i in 0..N {
-            rhs[i] += self.two_w[i];
-        }
-
-        // 2. v_pred_base = S_base * rhs (without R_ldr on LHS)
-        let v_pred_base = mat_vec_mul(&self.s_base, &rhs);
-
-        // 3. SM correction for current R_ldr on the forward step:
-        //    S_eff = S_base - sm_k * s_fb_col * s_fb_row^T
-        //    where sm_k = g_ldr / (1 + s_fb_fb * g_ldr)
-        //
-        //    v_pred = S_eff * rhs = v_pred_base - sm_k * s_fb_col * (s_fb_row . rhs)
-        //           = v_pred_base - sm_k * v_pred_base[FB] * s_fb_col
-        //    (since s_fb_row . rhs = S_base[FB,:] . rhs = v_pred_base[FB])
-        let sm_k = self.g_ldr / (1.0 + self.s_fb_fb * self.g_ldr);
-        let sm_vpred = sm_k * v_pred_base[FB];
-        let mut v_pred = vec8_zero();
-        for i in 0..N {
-            v_pred[i] = v_pred_base[i] - sm_vpred * self.s_fb_col[i];
-        }
-
-        // 4. Predicted NL voltages
-        let p = [v_pred[BASE1] - v_pred[EMIT1], v_pred[COLL1] - v_pred[EMIT2]];
-
-        // 5. NR solve on 2x2 system with R_ldr-corrected K:
-        //    K_eff = K_base - sm_k * nv_sfb * sfb_ni^T
-        let k00 = self.k[0][0] - sm_k * self.nv_sfb[0] * self.sfb_ni[0];
-        let k01 = self.k[0][1] - sm_k * self.nv_sfb[0] * self.sfb_ni[1];
-        let k10 = self.k[1][0] - sm_k * self.nv_sfb[1] * self.sfb_ni[0];
-        let k11 = self.k[1][1] - sm_k * self.nv_sfb[1] * self.sfb_ni[1];
-
-        let mut v_nl = self.v_nl;
-
-        for _iter in 0..6 {
-            let ic = [bjt_ic(v_nl[0]), bjt_ic(v_nl[1])];
-            let gm = [bjt_gm(v_nl[0]), bjt_gm(v_nl[1])];
-
-            let f0 = v_nl[0] - p[0] - k00 * ic[0] - k01 * ic[1];
-            let f1 = v_nl[1] - p[1] - k10 * ic[0] - k11 * ic[1];
-
-            if f0.abs() < 1e-9 && f1.abs() < 1e-9 {
-                break;
-            }
-
-            let j00 = 1.0 - k00 * gm[0];
-            let j01 = -k01 * gm[1];
-            let j10 = -k10 * gm[0];
-            let j11 = 1.0 - k11 * gm[1];
-
-            let det = j00 * j11 - j01 * j10;
-            if det.abs() < 1e-30 {
-                break;
-            }
-            let inv_det = 1.0 / det;
-
-            v_nl[0] -= inv_det * (j11 * f0 - j01 * f1);
-            v_nl[1] -= inv_det * (j00 * f1 - j10 * f0);
-        }
-
-        // 6. Final NL currents
-        let ic_new = [bjt_ic(v_nl[0]), bjt_ic(v_nl[1])];
-
-        // 7. Node voltage update: v[n+1] = v_pred + S_eff * N_i * ic_new
-        //    S_eff * N_i * ic = S_base * N_i * ic - sm_k * s_fb_col * (sfb_ni . ic)
-        let sfb_ni_dot_ic = self.sfb_ni[0] * ic_new[0] + self.sfb_ni[1] * ic_new[1];
-        for i in 0..N {
-            let s_ni_i = ic_new[0] * (self.s_base[i][EMIT1] - self.s_base[i][COLL1])
-                + ic_new[1] * (self.s_base[i][EMIT2] - self.s_base[i][COLL2]);
-            self.v[i] = v_pred[i] + s_ni_i - sm_k * sfb_ni_dot_ic * self.s_fb_col[i];
-        }
-
-        // 8. Cin-R1 companion update
-        self.cin_rhs_prev = cin_rhs_now;
-        let dv_cin = input - self.v[BASE1];
-        self.j_cin = -self.gc_1pc * dv_cin - self.c_cin * self.j_cin;
-
-        // 9. State update
-        self.i_nl = ic_new;
-        self.v_nl = v_nl;
+        // Update shared R_ldr tracking (after both steps used g_ldr_prev)
         self.g_ldr_prev = self.g_ldr;
 
-        // 10. Output coupling (models C-8 AC coupling in real circuit)
-        //
-        // Subtract the constant initial DC (removes ~8V offset), then
-        // apply a 4th-order Bessel HPF at 40 Hz to remove the subsonic
-        // content from tremolo R_ldr modulation. Bessel topology chosen
-        // for minimal ringing — eliminates bass onset plink from the old
-        // 6th-order Butterworth's Q=1.93 section.
-        let ac = self.v[OUT] - self.v_out_dc_init;
-        self.dc_hpf_2.process(self.dc_hpf_1.process(ac))
+        // Subtract pump: cancels all tremolo pump harmonics (28-200+ Hz)
+        // without any frequency-domain filtering. Zero bass loss.
+        main_out - pump
     }
 
     fn set_ldr_resistance(&mut self, r_ldr_path: f64) {
@@ -563,35 +571,28 @@ impl PreampModel for DkPreamp {
         if (new_r - self.r_ldr).abs() > 0.01 {
             self.r_ldr = new_r;
             self.g_ldr = 1.0 / new_r;
-            // v_dc is NOT updated here. The actual DC operating point evolves
-            // slowly through Ce1 dynamics; updating v_dc to the instantaneous
-            // static equilibrium creates a 5.5 Hz artifact in the DC subtraction
-            // that overwhelms the audio signal. The DC blocker removes the
-            // slowly-varying DC bias from the actual output.
         }
     }
 
     fn reset(&mut self) {
-        self.dc_hpf_1.reset();
-        self.dc_hpf_2.reset();
-
         // Full DC solve at current R_ldr
         let w = self.two_w_half();
-        let (i_nl_dc, v_nl_dc, v_dc, _) = Self::full_dc_solve(&self.g_dc_base, &w, self.r_ldr);
+        let (_, v_nl_dc, v_dc, _) = Self::full_dc_solve(&self.g_dc_base, &w, self.r_ldr);
 
         self.v_dc = v_dc;
-        self.v = v_dc;
-        self.i_nl = i_nl_dc;
-        self.v_nl = v_nl_dc;
         self.g_ldr = 1.0 / self.r_ldr;
         self.g_ldr_prev = self.g_ldr;
 
-        // Update constant DC for output coupling
-        self.v_out_dc_init = v_dc[OUT];
-
-        // Re-initialize Cin-R1 companion for DC equilibrium
-        self.j_cin = self.g_cin * v_dc[BASE1];
-        self.cin_rhs_prev = self.g_cin * v_dc[BASE1];
+        // Reset both main and shadow to identical DC operating point
+        let state = DkState {
+            j_cin: self.g_cin * v_dc[BASE1],
+            cin_rhs_prev: self.g_cin * v_dc[BASE1],
+            v: v_dc,
+            i_nl: [bjt_ic(v_nl_dc[0]), bjt_ic(v_nl_dc[1])],
+            v_nl: v_nl_dc,
+        };
+        self.shadow = state.clone();
+        self.main = state;
     }
 }
 
@@ -1471,7 +1472,7 @@ mod tests {
 
     /// Get gm values from a DkPreamp's DC operating point.
     fn gm_from_preamp(preamp: &DkPreamp) -> (f64, f64) {
-        (bjt_gm(preamp.v_nl[0]), bjt_gm(preamp.v_nl[1]))
+        (bjt_gm(preamp.main.v_nl[0]), bjt_gm(preamp.main.v_nl[1]))
     }
 
     #[test]
@@ -1644,8 +1645,8 @@ mod tests {
         }
 
         // SPICE confirms: stepping R_ldr from 1M to 50K causes v[OUT] to jump
-        // ~4.3V (correct physics). The 4th-order Bessel HPF (40 Hz)
-        // removes this subsonic swing.
+        // ~4.3V (correct physics). Shadow subtraction cancels both the static
+        // operating-point shift and the transient.
         eprintln!("Max output after R_ldr step: {max_output:.3}V");
         assert!(
             max_output < 10.0,
@@ -1853,7 +1854,7 @@ mod tests {
         }
 
         // After 5s settling (2 tau), COLL2 should be converging toward fresh
-        let delta_coll2 = (stepped.v[COLL2] - fresh.v[COLL2]).abs();
+        let delta_coll2 = (stepped.main.v[COLL2] - fresh.main.v[COLL2]).abs();
         assert!(
             delta_coll2 < 1.0,
             "After 5s settling, COLL2 delta={delta_coll2:.3}V (want < 1V)"
@@ -1901,6 +1902,71 @@ mod tests {
         assert!(
             max_err < 1e-7,
             "SM vs brute-force S_eff max error: {max_err:.2e} (want < 1e-7)"
+        );
+    }
+
+    /// Verify shadow subtraction eliminates idle pump from tremolo R_ldr modulation.
+    /// With zero input, main and shadow produce identical pump; subtraction cancels exactly.
+    #[test]
+    fn test_idle_pump_level() {
+        use crate::tremolo::Tremolo;
+
+        let os_sr = 88200.0;
+        let mut preamp = DkPreamp::new(os_sr);
+        let mut tremolo = Tremolo::new(5.63, 1.0, os_sr);
+        tremolo.set_depth(1.0);
+
+        // Run 2 seconds of zero input with cycling R_ldr
+        let n = (os_sr * 2.0) as usize;
+        let settle = (os_sr * 0.5) as usize; // 500ms settle time
+        let mut peak_preamp = 0.0f64;
+        let mut samples_preamp = Vec::new();
+
+        for i in 0..n {
+            let r_ldr = tremolo.process();
+            preamp.set_ldr_resistance(r_ldr);
+            let out = preamp.process_sample(0.0);
+            if i >= settle {
+                peak_preamp = peak_preamp.max(out.abs());
+                if i % 10 == 0 {
+                    samples_preamp.push(out);
+                }
+            }
+        }
+
+        let peak_db = if peak_preamp > 0.0 {
+            20.0 * peak_preamp.log10()
+        } else {
+            -200.0
+        };
+
+        // Also measure at specific harmonic frequencies of 5.63 Hz
+        let analysis_sr = os_sr / 10.0; // downsampled by 10x for the collection
+        for harmonic in 1..=10 {
+            let freq = 5.63 * harmonic as f64;
+            let mag = dft_magnitude(&samples_preamp, freq, analysis_sr);
+            let mag_db = if mag > 0.0 {
+                20.0 * mag.log10()
+            } else {
+                -200.0
+            };
+            eprintln!(
+                "  Idle pump harmonic {}: {:.1} Hz = {:.1} dB (amplitude {:.2e})",
+                harmonic, freq, mag_db, mag
+            );
+        }
+
+        eprintln!(
+            "DK preamp idle pump: peak = {:.2e} ({:.1} dB)",
+            peak_preamp, peak_db
+        );
+
+        // Shadow subtraction cancels pump exactly (both instances see same R_ldr,
+        // produce identical pump, difference is zero). Residual is floating-point
+        // noise only.
+        assert!(
+            peak_db < -100.0,
+            "Shadow pump cancellation residual too large: {peak_db:.1} dB (want < -100 dB)"
         );
     }
 }

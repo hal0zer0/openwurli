@@ -387,11 +387,16 @@ No direct measurements of the 200A speaker+cabinet system are publicly available
 #### Low Frequency Rolloff
 
 Multiple factors contribute to the bass rolloff:
-1. **Speaker free-air resonance (Fs):** For a small 4x8" oval driver, Fs is typically 100-150 Hz
-2. **Open baffle cancellation:** Below the baffle step frequency (~100-150 Hz), front and rear waves partially cancel
-3. **Combined effect:** Approximately 12 dB/octave rolloff below ~100 Hz (speaker resonance + open baffle)
+1. **Speaker free-air resonance (Fs):** For a small 4x8" oval driver, Fs is typically 100-150 Hz. Below Fs, the cone's mechanical compliance dominates and output falls at ~12 dB/oct.
+2. **Open baffle dipole cancellation:** Below the baffle step frequency (~100-150 Hz for the ~24" ABS lid), front and rear waves partially cancel. This adds an additional ~6 dB/oct rolloff.
+3. **Combined effect:** Approximately **18 dB/octave** rolloff below ~80 Hz (speaker resonance 12 dB/oct + open baffle dipole 6 dB/oct)
 
-**Current model uses HPF at 95 Hz, Q=0.75.** A second-order HPF at 95 Hz with moderate Q captures the combined speaker resonance and baffle step. The Q of 0.75 (slightly underdamped) is appropriate for the mild resonant bump that occurs near the rolloff frequency.
+**Current model uses three cascaded HPF sections:**
+- **HPF1** at 150 Hz, Q=0.75: Models cone resonance and mechanical rolloff (Fs). The slightly underdamped Q produces the mild resonant bump near the rolloff frequency. 150 Hz is typical for a small 4x8" oval ceramic-magnet driver.
+- **HPF2** at 100 Hz, Q=0.707: Models the open-baffle front/rear wave cancellation (dipole effect). Butterworth Q for a smooth transition with no resonant peak.
+- **HPF3** at 70 Hz, Q=0.5: Models the radiation impedance rolloff. Below ka=1 (~1090 Hz for a ~5cm effective piston radius), acoustic radiation resistance falls as f². The overdamped Q captures the gradual onset of this regime.
+
+The three cascaded HPFs provide ~30 dB/oct combined rolloff below 70 Hz, matching the physics of a small open-baffle speaker. Note: the preamp's tremolo pump (5.63 Hz harmonics spanning 28-200+ Hz) is eliminated at source via shadow preamp subtraction (a second DK solver instance runs with zero input, producing pure pump; subtracting it from the main output cancels all pump at every frequency). The speaker HPFs are purely physics-motivated — they model the real speakers' inability to reproduce deep bass, not pump suppression.
 
 #### High Frequency Rolloff
 
@@ -403,7 +408,7 @@ Multiple factors contribute to the bass rolloff:
 
 #### Speaker Resonance Effects
 
-The HPF near 95 Hz naturally creates a resonant bump that can boost harmonics in the 100-200 Hz range. For bass notes (A1 = 55 Hz fundamental), the H2 at 110 Hz falls near this resonance, receiving approximately 3-5 dB of natural boost. This partially explains why real 200A recordings show stronger H2 in the bass register than the preamp alone would produce.
+The HPF1 near 150 Hz naturally creates a resonant bump that can boost harmonics in the 120-250 Hz range. For bass notes (A1 = 55 Hz fundamental), the H2 at 110 Hz sits just below this resonance. This partially explains why real 200A recordings show stronger H2 in the bass register than the preamp alone would produce.
 
 ### 5.4 Current Speaker Model
 
@@ -412,8 +417,10 @@ The current implementation (`speaker.rs`) uses a Hammerstein architecture: stati
 **Linear filters:**
 
 ```
-HPF: 2nd-order highpass at 95 Hz, Q = 0.75
-LPF: 2nd-order lowpass at 7500 Hz, Q = 0.707 (Butterworth)
+HPF1: 2nd-order highpass at 150 Hz, Q = 0.75  (cone resonance Fs)
+HPF2: 2nd-order highpass at 100 Hz, Q = 0.707 (open-baffle dipole cancellation)
+HPF3: 2nd-order highpass at 70 Hz,  Q = 0.5   (radiation impedance rolloff)
+LPF:  2nd-order lowpass at 7500 Hz, Q = 0.707 (Butterworth)
 ```
 
 **Nonlinear features:**
@@ -421,7 +428,7 @@ LPF: 2nd-order lowpass at 7500 Hz, Q = 0.707 (Butterworth)
 - **Cone excursion limiting (Xmax):** `tanh()` soft saturation after the polynomial, modeling the physical excursion limits of the spider and surround. At normal levels (|x| < 0.5): < 8% compression. At ff chords (|x| > 1.0): graceful saturation.
 - **Thermal voice coil compression:** Slow envelope follower (tau = 5.0 s) reduces gain under sustained loud signal, modeling the increase in voice coil DC resistance as the coil heats up.
 
-**Speaker Character parameter:** Blends from bypass (0.0: flat, linear passthrough) to authentic (1.0: full nonlinearity + HPF + LPF). Filter cutoffs interpolate logarithmically between bypass (HPF 20 Hz, LPF 20 kHz) and authentic positions.
+**Speaker Character parameter:** Blends from bypass (0.0: flat, linear passthrough) to authentic (1.0: full nonlinearity + HPF + LPF). Filter cutoffs interpolate logarithmically between bypass positions (HPF1: 20 Hz, HPF2: 10 Hz, HPF3: 5 Hz, LPF: 20 kHz) and authentic positions.
 
 ---
 
@@ -519,13 +526,16 @@ The crossover distortion produces odd harmonics that become audible at low volum
 Variable speaker emulation with bypass-to-authentic range. The plugin exposes a "Speaker Character" knob that blends from bypass (flat, linear passthrough) to authentic (full Hammerstein nonlinearity + HPF + LPF).
 
 At "authentic" position (character = 1.0):
-- HPF: 95 Hz, Q=0.75, ~12 dB/oct
+- HPF1: 150 Hz, Q=0.75 (cone resonance Fs)
+- HPF2: 100 Hz, Q=0.707 (open-baffle dipole cancellation)
+- HPF3: 70 Hz, Q=0.5 (radiation impedance rolloff)
+- Combined ~30 dB/oct rolloff below 70 Hz
 - LPF: 7500 Hz, Q=0.707 (Butterworth)
 - Polynomial waveshaper: a2=0.2 (BL asymmetry), a3=0.6 (Kms hardening)
 - tanh Xmax limiting for cone excursion
 - Thermal voice coil compression (tau=5.0s)
 
-At "bypass" position (character = 0.0): flat linear passthrough (HPF 20 Hz, LPF 20 kHz, no nonlinearity). Intermediate positions interpolate logarithmically.
+At "bypass" position (character = 0.0): flat linear passthrough (HPF1 20 Hz, HPF2 10 Hz, HPF3 5 Hz, LPF 20 kHz, no nonlinearity). Intermediate positions interpolate logarithmically.
 
 Possible refinements:
 - Add mild midrange presence peak (1-3 kHz) from speaker's natural response

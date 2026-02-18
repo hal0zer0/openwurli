@@ -1,0 +1,422 @@
+.title Wurlitzer 200A — Tremolo Pump Noise Measurement
+*
+* PURPOSE: Quantify the 5.63 Hz pump signal that appears at the preamp
+* output when R_ldr modulates sinusoidally between 19K (bright) and 1M
+* (dark) with ZERO audio input signal.
+*
+* The LDR modulates the feedback fraction, which shifts the DC operating
+* point of TR-2 collector (and hence the output). Even though the preamp
+* input is grounded, the gain modulation itself creates a low-frequency
+* voltage swing at the output — this is "tremolo pump noise."
+*
+* CRITICAL QUESTION: Does C-8 (4.7uF coupling cap to power amp input
+* impedance R-31=15K) adequately filter this pump? The HPF corner is:
+*   f_c = 1/(2*pi*C8*R31) = 1/(2*pi*4.7e-6*15e3) = 2.26 Hz
+* At 5.63 Hz this is only 2.5x above the corner — significant
+* attenuation is NOT guaranteed. Let's find out.
+*
+* SETUP:
+*   - Full preamp: 2-stage NPN CE (TR-1/TR-2, 2N5089), all components
+*   - Zero input: grounded through R-1 (22K) + Cin (0.022uF)
+*   - R_ldr: B-source implementing sinusoidal modulation at 5.63 Hz
+*     between 19K (bright) and 1M (dark) — log-domain sweep
+*   - C-8 (4.7uF) + R-31 (15K) models the coupling to power amp
+*   - Measurement at "out" (before C-8) and "pwr_in" (after C-8)
+*
+*======================================================================
+* TRANSISTOR MODEL — Full Gummel-Poon 2N5089
+*======================================================================
+.MODEL Q2N5089 NPN(
++  IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1
++  ISC=1.065E-11 NC=1.41 RB=57 RE=0.518 RC=2.58
++  CJE=3.22E-12 VJE=0.65 MJE=0.33 TF=5.4E-10
++  CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
+
+* Protection diode
+.MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100
++  IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
+
+*======================================================================
+* SUPPLY
+*======================================================================
+Vcc vcc 0 DC 15
+
+*======================================================================
+* INPUT — GROUNDED (zero signal, measuring pump noise only)
+* R-1 and Cin present to maintain correct DC bias path
+*======================================================================
+R1 0 node_A 22K
+Cin node_A base1 0.022U
+
+*======================================================================
+* BASE1 BIAS NETWORK
+*======================================================================
+R2 vcc base1 2MEG
+R3 base1 0 470K
+D1 0 base1 D1N4148
+
+*======================================================================
+* STAGE 1: TR-1 (2N5089 NPN common-emitter)
+*======================================================================
+Q1 coll1 base1 emit1 Q2N5089
+Rc1 vcc coll1 150K
+Cc3 coll1 base1 100P
+Re1 emit1 0 33K
+Ce1 emit1 fb_junct 4.7U
+
+*======================================================================
+* FEEDBACK NETWORK — R-10 from output, R_ldr to ground
+*======================================================================
+R10 out fb_junct 56K
+
+* LDR modulation: sinusoidal at 5.63 Hz in LOG domain
+* R_ldr sweeps between 19K (bright, low R) and 1M (dark, high R)
+*
+* Log-domain midpoint: exp((ln(19e3) + ln(1e6))/2) = 137.8K (geometric mean)
+* Log-domain amplitude: (ln(1e6) - ln(19e3))/2 = 1.964
+*
+* R(t) = exp( ln(137.8e3) + 1.964 * sin(2*pi*5.63*t) )
+*      = 137.8e3 * exp(1.964 * sin(2*pi*5.63*t))
+*
+* At sin=+1: 137.8K * exp(1.964) = 137.8K * 7.13 = 982K ~ 1M  (dark)
+* At sin=-1: 137.8K * exp(-1.964) = 137.8K * 0.140 = 19.3K ~ 19K (bright)
+*
+* B-source implements I = V(fb_junct) / R(t), i.e., a conductance source.
+* The conductance G(t) = 1/R(t) = exp(-ln(137.8e3) - 1.964*sin(2*pi*5.63*t)) / 1
+*
+* Numerical constants:
+*   ln(137800) = 11.834
+*   2*pi*5.63 = 35.376
+
+Bldr fb_junct 0 I = V(fb_junct) * exp(-11.834 - 1.964 * sin(35.376 * time))
+
+*======================================================================
+* STAGE 2: TR-2 (2N5089, direct-coupled from TR-1 collector)
+*======================================================================
+Q2 coll2 coll1 emit2a Q2N5089
+Rc2 vcc coll2 1.8K
+Re2a emit2a emit2b 270
+Ce2 emit2a emit2b 22U
+Re2b emit2b 0 820
+Cc4 coll2 coll1 100P
+
+*======================================================================
+* OUTPUT: R-9 (6.8K) series output resistor + 100K load (scope probe)
+*======================================================================
+R9 coll2 out 6.8K
+Rload out 0 100K
+
+*======================================================================
+* C-8 COUPLING TO POWER AMP
+* C-8 = 4.7 uF, R-31 = 15K (power amp input impedance)
+* HPF corner: f_c = 1/(2*pi*4.7u*15K) = 2.26 Hz
+*======================================================================
+C8 out pwr_in 4.7U
+R31 pwr_in 0 15K
+
+*======================================================================
+* INITIAL CONDITIONS — help convergence for the feedback network
+* Use known DC operating points from project documentation
+*======================================================================
+.nodeset V(base1)=2.45 V(emit1)=1.95 V(coll1)=4.1
++ V(emit2a)=3.4 V(coll2)=8.8 V(out)=8.0
+
+*======================================================================
+* ANALYSIS
+*======================================================================
+.control
+
+echo ""
+echo "================================================================"
+echo " TREMOLO PUMP NOISE — Wurlitzer 200A Preamp"
+echo " R_ldr sinusoidal modulation: 19K <-> 1M at 5.63 Hz"
+echo " Zero audio input signal"
+echo "================================================================"
+echo ""
+
+*----------------------------------------------------------------------
+* PART 0: STATIC DC OPERATING POINTS AT EXTREME R_ldr VALUES
+* Temporarily replace B-source with fixed resistors
+*----------------------------------------------------------------------
+
+echo "================================================================"
+echo " PART 0: DC OPERATING POINTS (Static R_ldr)"
+echo "================================================================"
+echo ""
+
+* Save/alter the B-source by zeroing it and adding a fixed resistor.
+* We cannot easily alter a B-source, so instead we do two separate
+* DC analyses using .alter or parameter tricks.
+* Approach: Use the transient sim to read DC at t ~ 0 (R_ldr starts
+* at geometric mean) and at the bright/dark extremes.
+* First, let the transient run and extract values.
+
+*----------------------------------------------------------------------
+* PART 1: TRANSIENT ANALYSIS — 10 full tremolo cycles (1.776 s)
+* Plus 2 seconds of settling time before measurement
+*----------------------------------------------------------------------
+
+echo "================================================================"
+echo " PART 1: TRANSIENT ANALYSIS"
+echo " 10 tremolo cycles at 5.63 Hz = 1.776 s"
+echo " Total sim: 4.0 s (2.2 s settle + 1.776 s measure)"
+echo "================================================================"
+echo ""
+
+* Timestep: tremolo period = 177.6 ms, use 100 us step (1776 pts/cycle)
+* Run for 10 seconds: 0-3s settling, 3-5s early measurement, 8-10s late measurement
+* If early and late Vpp match, the sim has fully settled.
+tran 100u 10.0
+
+* Report DC-like values at the extremes of the LDR modulation
+* At t=2.2s, sin(35.376*2.2) = sin(77.83) — need to find actual peaks
+* Period = 177.6 ms. After settling, first bright peak (sin=-1):
+*   t = 2.0 + 0.75 * 0.1776 = 2.133 s (sin at -1)
+* First dark peak (sin=+1):
+*   t = 2.0 + 0.25 * 0.1776 = 2.044 s (sin at +1)
+* Let's use later cycles for better settling:
+*   Bright: t = 2.0 + 3.75 * 0.1776 = 2.666 s
+*   Dark:   t = 2.0 + 3.25 * 0.1776 = 2.577 s
+* Actually, let's just measure multiple and take a mid-run sample.
+* We need sin(35.376*t) = +1 and -1.
+* Compute peak times in the fully-settled region (t > 9s).
+* sin(35.376*t) = +1 when t = (pi/2 + 2*n*pi)/35.376
+*   n=51: t = (pi/2 + 102*pi)/35.376 = 322.0/35.376 = 9.102 s (dark peak)
+* sin(35.376*t) = -1 when t = (3*pi/2 + 2*n*pi)/35.376
+*   n=51: t = (3*pi/2 + 102*pi)/35.376 = 325.3/35.376 = 9.196 s (bright peak)
+
+echo "--- DC at R_ldr dark peak (t=9.102s, R_ldr ~ 1M) ---"
+meas tran v_base1_dk FIND v(base1) AT=9.102
+meas tran v_emit1_dk FIND v(emit1) AT=9.102
+meas tran v_coll1_dk FIND v(coll1) AT=9.102
+meas tran v_emit2a_dk FIND v(emit2a) AT=9.102
+meas tran v_coll2_dk FIND v(coll2) AT=9.102
+meas tran v_out_dk FIND v(out) AT=9.102
+meas tran v_pwr_dk FIND v(pwr_in) AT=9.102
+meas tran v_fb_dk FIND v(fb_junct) AT=9.102
+echo ""
+echo "  TR-1: B=$&v_base1_dk  E=$&v_emit1_dk  C=$&v_coll1_dk"
+echo "  TR-2: B=$&v_coll1_dk  E=$&v_emit2a_dk  C=$&v_coll2_dk"
+echo "  Output (before C-8) = $&v_out_dk"
+echo "  Power amp in (after C-8) = $&v_pwr_dk"
+echo "  Feedback junction = $&v_fb_dk"
+
+echo ""
+echo "--- DC at R_ldr bright peak (t=9.196s, R_ldr ~ 19K) ---"
+meas tran v_base1_br FIND v(base1) AT=9.196
+meas tran v_emit1_br FIND v(emit1) AT=9.196
+meas tran v_coll1_br FIND v(coll1) AT=9.196
+meas tran v_emit2a_br FIND v(emit2a) AT=9.196
+meas tran v_coll2_br FIND v(coll2) AT=9.196
+meas tran v_out_br FIND v(out) AT=9.196
+meas tran v_pwr_br FIND v(pwr_in) AT=9.196
+meas tran v_fb_br FIND v(fb_junct) AT=9.196
+echo ""
+echo "  TR-1: B=$&v_base1_br  E=$&v_emit1_br  C=$&v_coll1_br"
+echo "  TR-2: B=$&v_coll1_br  E=$&v_emit2a_br  C=$&v_coll2_br"
+echo "  Output (before C-8) = $&v_out_br"
+echo "  Power amp in (after C-8) = $&v_pwr_br"
+echo "  Feedback junction = $&v_fb_br"
+
+echo ""
+echo "--- DC shift between dark and bright ---"
+let dc_shift_out = v_out_dk - v_out_br
+let dc_shift_pwr = v_pwr_dk - v_pwr_br
+let dc_shift_c2 = v_coll2_dk - v_coll2_br
+echo "  TR-2 collector shift: $&dc_shift_c2 V"
+echo "  Output (before C-8) shift: $&dc_shift_out V"
+echo "  Power amp in (after C-8) shift: $&dc_shift_pwr V"
+
+*----------------------------------------------------------------------
+* PART 2A: SETTLING CHECK — compare early vs late pump amplitude
+*----------------------------------------------------------------------
+echo ""
+echo "================================================================"
+echo " PART 2A: SETTLING CHECK"
+echo " Compare pump Vpp at t=3-4s vs t=9-10s"
+echo "================================================================"
+echo ""
+
+meas tran out_early_max MAX v(out) FROM=3.0 TO=4.0
+meas tran out_early_min MIN v(out) FROM=3.0 TO=4.0
+let out_early_vpp = out_early_max - out_early_min
+
+meas tran out_late_max MAX v(out) FROM=9.0 TO=10.0
+meas tran out_late_min MIN v(out) FROM=9.0 TO=10.0
+let out_late_vpp = out_late_max - out_late_min
+
+let settle_diff_pct = 100.0 * abs(out_late_vpp - out_early_vpp) / out_late_vpp
+echo "  Vpp at t=3-4s: $&out_early_vpp V"
+echo "  Vpp at t=9-10s: $&out_late_vpp V"
+echo "  Difference: $&settle_diff_pct %"
+echo "  (< 1% means well settled)"
+
+*----------------------------------------------------------------------
+* PART 2B: PEAK-TO-PEAK PUMP VOLTAGE (measured over last 5 cycles)
+*----------------------------------------------------------------------
+echo ""
+echo "================================================================"
+echo " PART 2B: PEAK-TO-PEAK PUMP VOLTAGE"
+echo " Measured over t = 9.0 to 10.0 s (fully settled)"
+echo "================================================================"
+echo ""
+
+* Before C-8 (raw preamp output)
+meas tran out_max MAX v(out) FROM=9.0 TO=10.0
+meas tran out_min MIN v(out) FROM=9.0 TO=10.0
+let out_vpp = out_max - out_min
+
+echo "  Before C-8 [v(out)]:"
+echo "    Max = $&out_max V"
+echo "    Min = $&out_min V"
+echo "    Vpp = $&out_vpp V"
+
+* After C-8 (at power amp input)
+meas tran pwr_max MAX v(pwr_in) FROM=9.0 TO=10.0
+meas tran pwr_min MIN v(pwr_in) FROM=9.0 TO=10.0
+let pwr_vpp = pwr_max - pwr_min
+
+echo ""
+echo "  After C-8 [v(pwr_in)]:"
+echo "    Max = $&pwr_max V"
+echo "    Min = $&pwr_min V"
+echo "    Vpp = $&pwr_vpp V"
+
+* Attenuation ratio
+let atten_ratio = pwr_vpp / out_vpp
+let atten_db = 20 * log(pwr_vpp / out_vpp) / log(10)
+echo ""
+echo "  C-8 pump attenuation:"
+echo "    Ratio = $&atten_ratio"
+echo "    dB = $&atten_db"
+
+*----------------------------------------------------------------------
+* PART 3: INDIVIDUAL NODE PUMP AMPLITUDES
+*----------------------------------------------------------------------
+echo ""
+echo "================================================================"
+echo " PART 3: PUMP AMPLITUDE AT EACH NODE"
+echo " (Vpp, t = 9.0 to 10.0 s, fully settled)"
+echo "================================================================"
+echo ""
+
+meas tran b1_max MAX v(base1) FROM=9.0 TO=10.0
+meas tran b1_min MIN v(base1) FROM=9.0 TO=10.0
+let b1_vpp = b1_max - b1_min
+
+meas tran e1_max MAX v(emit1) FROM=9.0 TO=10.0
+meas tran e1_min MIN v(emit1) FROM=9.0 TO=10.0
+let e1_vpp = e1_max - e1_min
+
+meas tran c1_max MAX v(coll1) FROM=9.0 TO=10.0
+meas tran c1_min MIN v(coll1) FROM=9.0 TO=10.0
+let c1_vpp = c1_max - c1_min
+
+meas tran fb_max MAX v(fb_junct) FROM=9.0 TO=10.0
+meas tran fb_min MIN v(fb_junct) FROM=9.0 TO=10.0
+let fb_vpp = fb_max - fb_min
+
+meas tran c2_max MAX v(coll2) FROM=9.0 TO=10.0
+meas tran c2_min MIN v(coll2) FROM=9.0 TO=10.0
+let c2_vpp = c2_max - c2_min
+
+meas tran e2_max MAX v(emit2a) FROM=9.0 TO=10.0
+meas tran e2_min MIN v(emit2a) FROM=9.0 TO=10.0
+let e2_vpp = e2_max - e2_min
+
+echo "  Node          Vpp (mV)"
+echo "  ------        --------"
+echo "  base1:        { $&b1_vpp * 1000 }"
+echo "  emit1:        { $&e1_vpp * 1000 }"
+echo "  coll1/base2:  { $&c1_vpp * 1000 }"
+echo "  fb_junct:     { $&fb_vpp * 1000 }"
+echo "  emit2a:       { $&e2_vpp * 1000 }"
+echo "  coll2:        { $&c2_vpp * 1000 }"
+echo "  out (pre-C8): { $&out_vpp * 1000 }"
+echo "  pwr_in (post-C8): { $&pwr_vpp * 1000 }"
+
+*----------------------------------------------------------------------
+* PART 4: C-8/R-31 HPF ANALYSIS
+*----------------------------------------------------------------------
+echo ""
+echo "================================================================"
+echo " PART 4: C-8 / R-31 HPF CHARACTERISTICS"
+echo "================================================================"
+echo ""
+echo "  C-8 = 4.7 uF, R-31 = 15 K"
+
+let fc_calc = 1.0 / (2.0 * 3.14159265 * 4.7e-6 * 15e3)
+echo "  Calculated f_c = $&fc_calc Hz"
+echo ""
+
+* Theoretical attenuation at 5.63 Hz
+* H(f) = f / sqrt(f^2 + fc^2) for first-order HPF
+* At f=5.63: H = 5.63 / sqrt(5.63^2 + 2.26^2) = 5.63 / 6.07 = 0.928
+* That's only -0.65 dB !
+let f_trem = 5.63
+let fc = fc_calc
+let h_mag = f_trem / sqrt(f_trem * f_trem + fc * fc)
+let h_db = 20.0 * log(h_mag) / log(10.0)
+echo "  Theoretical HPF response at 5.63 Hz:"
+echo "    |H(5.63)| = $&h_mag"
+echo "    |H(5.63)| = $&h_db dB"
+echo ""
+echo "  At 2nd harmonic (11.26 Hz):"
+let h2_mag = 11.26 / sqrt(11.26 * 11.26 + fc * fc)
+let h2_db = 20.0 * log(h2_mag) / log(10.0)
+echo "    |H(11.26)| = $&h2_mag"
+echo "    |H(11.26)| = $&h2_db dB"
+echo ""
+echo "  MEASURED attenuation (from Vpp ratio above):"
+echo "    $&atten_db dB"
+echo ""
+echo "  NOTE: Measured attenuation may differ from theoretical because"
+echo "  the pump waveform has harmonics (R_ldr modulation is nonlinear"
+echo "  in voltage terms despite sinusoidal in log-R domain)."
+
+*----------------------------------------------------------------------
+* PART 5: REFERENCE LEVELS — how big is the pump vs. typical signal?
+*----------------------------------------------------------------------
+echo ""
+echo "================================================================"
+echo " PART 5: PUMP vs. TYPICAL SIGNAL LEVELS"
+echo "================================================================"
+echo ""
+echo "  Preamp gain (bright) ~ 4.0x = 12 dB"
+echo "  Typical reed signal: ~10 mV peak at R-1 input"
+echo "  -> Expected output signal: ~40 mV peak (80 mV pp)"
+echo ""
+echo "  Pump Vpp before C-8: $&out_vpp V"
+let pump_vs_sig_pre = out_vpp / 0.080
+let pump_vs_sig_pre_db = 20.0 * log(pump_vs_sig_pre) / log(10.0)
+echo "  Pump/Signal ratio (before C-8): $&pump_vs_sig_pre ($&pump_vs_sig_pre_db dB)"
+echo ""
+echo "  Pump Vpp after C-8: $&pwr_vpp V"
+let pump_vs_sig_post = pwr_vpp / 0.080
+let pump_vs_sig_post_db = 20.0 * log(pump_vs_sig_post) / log(10.0)
+echo "  Pump/Signal ratio (after C-8): $&pump_vs_sig_post ($&pump_vs_sig_post_db dB)"
+
+*----------------------------------------------------------------------
+* PART 6: SAVE WAVEFORM DATA FOR EXTERNAL ANALYSIS
+*----------------------------------------------------------------------
+echo ""
+echo "================================================================"
+echo " PART 6: SAVING WAVEFORM DATA"
+echo "================================================================"
+echo ""
+
+wrdata /tmp/tremolo_pump_out.txt v(out) v(pwr_in)
+echo "  Saved: /tmp/tremolo_pump_out.txt (output and power amp input)"
+
+wrdata /tmp/tremolo_pump_nodes.txt v(base1) v(emit1) v(coll1) v(fb_junct) v(coll2) v(out) v(pwr_in)
+echo "  Saved: /tmp/tremolo_pump_nodes.txt (all key nodes)"
+
+echo ""
+echo "================================================================"
+echo " ANALYSIS COMPLETE"
+echo "================================================================"
+
+.endc
+.end
