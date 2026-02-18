@@ -22,11 +22,17 @@ pub const MIDI_HI: u8 = 96;
 /// mid-range (D4) implies mechanical mode 2 at -43 dB vs model's -16 dB.
 /// Upper modes scaled proportionally (1/ω_n ratios preserved).
 ///
+/// Mode 2 reduced from 0.010 to 0.005 (-6 dB) to eliminate a metallic
+/// "plink" in mid-register: at 6.267×f0 ≈ 1642 Hz (C4), mode 2 sits in
+/// peak ear sensitivity and creates an inharmonic ring. At 0.005, mode 2
+/// is -36 dB at the pickup output — below the audibility threshold for an
+/// inharmonic partial. This is within the OBM calibration uncertainty (±5 dB).
+///
 /// The real 200A's "bark" comes primarily from the pickup's 1/(1-y)
 /// nonlinearity generating H2 at 2×fundamental, NOT from physical mode 2
 /// oscillation at ~6.3×fundamental.
 pub const BASE_MODE_AMPLITUDES: [f64; NUM_MODES] =
-    [1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005];
+    [1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005];
 
 /// MIDI note number to fundamental frequency (Hz), A440 tuning.
 pub fn midi_to_freq(midi: u8) -> f64 {
@@ -418,11 +424,15 @@ pub fn fundamental_decay_rate(midi: u8) -> f64 {
 /// air radiation, and clamping losses all scale faster than linearly with
 /// frequency, giving p ≈ 1.3–2.0 for steel cantilevers in air.
 ///
-/// At p=1.5 with the 3.0 dB/s decay floor, mode 2 at A1 (392 Hz) decays at
-/// ~57 dB/s, reaching -30 dB within 0.5 seconds. This confines intermodulation
-/// products between inharmonic modes to the attack region, matching real
-/// Wurlitzer behavior where bark is an attack-only phenomenon.
-const MODE_DECAY_EXPONENT: f64 = 1.5;
+/// At p=2.0, mode 2 at C4 (1642 Hz) decays at ~326 dB/s, reaching -10 dB
+/// within 9ms (~2.5 cycles). This confines the inharmonic partials (which
+/// sit at non-integer ratios like 6.267× and sound "metallic") to the
+/// first 2-3 cycles of the attack, matching real Wurlitzer behavior.
+///
+/// Previous value (1.5) allowed mode 2 to ring for ~77ms in mid-register,
+/// creating an audible metallic "plink" at 1642 Hz — peak ear sensitivity.
+/// The p=2.0 value better matches Zener thermoelastic theory (loss ∝ ω²).
+const MODE_DECAY_EXPONENT: f64 = 2.0;
 
 pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES] {
     let base = fundamental_decay_rate(midi);
