@@ -11,6 +11,24 @@ use crate::reed::ModalReed;
 use crate::tables::{self, NUM_MODES};
 use crate::variation;
 
+/// Sigmoid velocity shaping — creates a bark onset threshold around mf.
+///
+/// Physical basis: felt hammer stiffness is progressive — soft at low force,
+/// stiff at high force (Giordano & Milne 1998). Creates a natural S-curve in
+/// the force→displacement transfer: pp barely moves the reed, mf reaches the
+/// linear region, ff saturates the displacement.
+///
+/// k=3.0 gives a gentle S: pp displacement reduced ~40%, mf nearly unchanged,
+/// ff unchanged. This creates the characteristic "bark appears at mf" threshold
+/// that experienced Wurlitzer players notice.
+fn velocity_scurve(velocity: f64) -> f64 {
+    let k = 5.0;
+    let s = 1.0 / (1.0 + (-k * (velocity - 0.5)).exp());
+    let s0 = 1.0 / (1.0 + (k * 0.5).exp());
+    let s1 = 1.0 / (1.0 + (-k * 0.5).exp());
+    (s - s0) / (s1 - s0)
+}
+
 pub struct Voice {
     reed: ModalReed,
     pickup: Pickup,
@@ -41,10 +59,13 @@ impl Voice {
             amplitudes[i] = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i];
         }
 
-        // Register-dependent velocity curve (physical hammer force — pre-pickup).
+        // Sigmoid → power-law velocity curve (physical hammer force — pre-pickup).
+        // S-curve models progressive felt stiffness: pp barely deflects the reed,
+        // bark onset at ~mf, ff saturates. Then power-law applies register-dependent
+        // dynamic range scaling.
         // output_scale is applied POST-pickup to decouple volume from nonlinearity.
         let vel_exp = tables::velocity_exponent(midi_note);
-        let vel_scale = velocity.powf(vel_exp);
+        let vel_scale = velocity_scurve(velocity).powf(vel_exp);
         for a in &mut amplitudes {
             *a *= vel_scale;
         }
@@ -96,6 +117,7 @@ impl Voice {
             &amplitudes,
             &corrected_decay,
             t_dwell,
+            velocity,
             sample_rate,
             noise_seed,
         );

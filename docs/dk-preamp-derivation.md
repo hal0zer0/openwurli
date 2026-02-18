@@ -1,5 +1,7 @@
 # DK Method Preamp Derivation
 
+> **See also:** [Preamp Circuit](preamp-circuit.md) (circuit analysis and component values), [DK Preamp Testing](dk-preamp-testing.md) (validation test pyramid)
+
 ## 1. Circuit Overview
 
 Two-stage direct-coupled NPN CE amplifier (TR-1/TR-2, 2N5089) with:
@@ -235,29 +237,54 @@ J_inv = (1/det) · [[J[1,1], -J[0,1]], [-J[1,0], J[0,0]]]
 
 Cost: 12 multiplies + 1 divide per NR iteration.
 
-## 11. Sherman-Morrison for R_ldr
+## 11. Explicit R_ldr with Per-Sample Sherman-Morrison
 
-Only `G[7,7]` depends on R_ldr. The base system `S_fixed = inv(A_base)` is computed without R_ldr.
+### Design rationale
 
-Adding R_ldr modifies A by `ΔA = diag(0,...,0, 1/R_ldr)` = `u · v^T` where `u = v = e_7 · √(1/R_ldr)`.
+R_ldr is the only time-varying element. The naive approach — stamping R_ldr into G and recomputing S when R_ldr changes — causes a subtle problem: Ce1's trapezoidal companion model stores history that depends on the previous G matrix. If G changes (because R_ldr changed), the Ce1 companion's history source is inconsistent with the new system matrix, producing 5.5 Hz artifacts (the tremolo rate). Keeping R_ldr out of G entirely avoids this.
 
-Sherman-Morrison:
+### Approach: Explicit R_ldr
+
+G_base and S_base are computed **without** R_ldr. The history matrix A_neg_base = (2C/T - G_base) is therefore **constant** — it never changes when R_ldr varies.
+
+Pre-computed Sherman-Morrison projection vectors (one-time at init):
+- `s_fb_col = S_base[:, FB]` — column FB (=7) of S_base
+- `s_fb_row = S_base[FB, :]` — row FB of S_base
+- `s_fb_fb = S_base[FB, FB]` — scalar pivot
+- `nv_sfb[k] = N_v[k,:] · s_fb_col` — 2-element vector (projected NL extraction)
+- `sfb_ni[k] = s_fb_row · N_i[:,k]` — 2-element vector (projected NL injection)
+
+### Per-sample correction
+
+Each sample, compute the SM correction factor:
 ```
-S = S_fixed - α · s7 ⊗ s7
+g_ldr = 1 / R_ldr
+alpha = g_ldr / (1 + g_ldr * s_fb_fb)
 ```
 
-where:
-- `s7 = S_fixed[:, 7]` (column 7)
-- `α = (1/R_ldr) / (1 + (1/R_ldr) · S_fixed[7,7])`
-
-Cost: 64 multiplies + 1 divide per R_ldr change.
-
-Also update `a_neg[7][7]`: the history matrix `(2C/T - G)` has `G[7,7]` with opposite sign:
+Apply SM correction to v_pred:
 ```
-a_neg[7][7] = a_neg_base_77 - (1/R_ldr)
+v_pred_fb = dot(s_fb_row, rhs)              // predicted v[FB] without R_ldr
+v_pred[i] -= alpha * s_fb_col[i] * v_pred_fb   // rank-1 correction to all nodes
 ```
 
-One subtraction. Critical to avoid history term drift.
+Compute K_eff per-sample from precomputed K_base plus SM correction terms:
+```
+K_eff[i][j] = K_base[i][j] - alpha * nv_sfb[i] * sfb_ni[j]
+```
+
+### Backward step (trapezoidal consistency)
+
+In the history/RHS computation, the R_ldr contribution uses the **previous** sample's conductance to maintain trapezoidal integrator consistency:
+```
+rhs[FB] -= g_ldr_prev * v[FB]
+```
+
+This ensures the trapezoidal rule sees the same G for both the forward and backward terms within each integration step.
+
+### Cost
+
+The per-sample SM overhead is simple scalar and dot-product operations — approximately 30 FLOPs per sample (not per R_ldr change). The benefit is that A_neg_base is constant, eliminating the Ce1 companion model consistency problem entirely.
 
 ## 12. DC Initialization
 
@@ -277,6 +304,10 @@ Target: TR-1: E=1.95V, B=2.45V, C=4.1V; TR-2: E=3.4V, B=4.1V, C=8.8V.
 
 ## 13. BJT Saturation Safety
 
+**Note:** The tanh saturation approach described below was designed but not implemented. The deployed code (`dk_preamp.rs`) uses Vbe clamping to [-1.0, 0.85] to prevent exp() overflow, without explicit Ic saturation limiting.
+
+### Designed (not deployed) tanh limiting:
+
 Soft-clip Ic at physical maximum:
 ```
 Ic_max_1 = (Vcc - 0.2) / Rc1 = 14.8 / 150K = 98.7µA
@@ -289,7 +320,7 @@ Ic_clipped = Ic_max · tanh(Ic_raw / Ic_max)
 gm_eff = gm_raw · sech²(Ic_raw / Ic_max)     // = gm_raw · (1 - tanh²(...))
 ```
 
-**Critical:** NR Jacobian must use `gm_eff`, not raw `gm`. Using raw gm with clipped Ic causes NR overshoot near saturation.
+**Critical (if implemented):** NR Jacobian must use `gm_eff`, not raw `gm`. Using raw gm with clipped Ic causes NR overshoot near saturation.
 
 ## 14. Per-Sample Algorithm
 
@@ -301,14 +332,15 @@ function process_sample(Vin):
     // 2. History term (trapezoidal)
     rhs = A_neg · v + (cin_rhs_now + cin_rhs_prev) · e_0
           + N_i · i_nl_prev + 2·w
-    v_pred = S · rhs
+    rhs[FB] -= g_ldr_prev · v[FB]   // explicit R_ldr backward term (trapezoidal consistency)
+    v_pred = S · rhs                 // S = S_base (no R_ldr); SM correction applied after
 
     // 3. Predicted NL voltages
     p = N_v · v_pred     // [Vbe1_pred, Vbe2_pred]
 
-    // 4. NR solve (2-4 iterations, warm-started from previous v_nl)
+    // 4. NR solve (up to 6 iterations, warm-started from previous v_nl)
     v_nl = v_nl_prev     // warm start
-    for iter in 0..4:
+    for iter in 0..6:
         ic = [bjt_ic(v_nl[0]), bjt_ic(v_nl[1])]
         gm = [bjt_gm(v_nl[0]), bjt_gm(v_nl[1])]
         F = v_nl - p - K · ic
@@ -330,8 +362,10 @@ function process_sample(Vin):
     dv_cin = Vin - v[0]
     J_cin = -g_cin·(1+c_cin)·dv_cin - c_cin·J_cin
 
-    // 7. Output: v[6] (output node), DC-blocked
-    return dc_block(v[6] - v_out_dc)
+    // 7. Output: v[6] (output node), filtered through 4th-order Bessel HPF at 40 Hz
+    //    (Q=0.5219, Q=0.8055) — chosen over Butterworth to eliminate bass onset ringing.
+    //    Provides -23 dB at 22 Hz.
+    return bessel_hpf(v[6] - v_out_dc)
 ```
 
 ## 15. Computational Cost
@@ -343,7 +377,7 @@ function process_sample(Vin):
 | N_v · v_pred (2×8 · 8) | 30 | per sample |
 | NR iteration (×3 avg) | 3×40 = 120 | per sample |
 | S · N_i · i_nl (8×2 · 2) | 30 | per sample |
-| Sherman-Morrison (if R_ldr changed) | 70 | per R_ldr change |
-| **Total** | **~420** | per sample |
+| Sherman-Morrison (explicit R_ldr) | ~30 | per sample (scalar ops) |
+| **Total** | **~450** | per sample |
 
 At 88.2 kHz (2x oversampled): ~37 MFLOP/s. Negligible on modern CPUs.

@@ -1,6 +1,6 @@
 # Signal Chain Architecture: Wurlitzer 200A Physical Model
 
-Complete specification for a physically-accurate Wurlitzer 200A electric piano plugin using modal synthesis, Ebers-Moll preamp modeling, and per-note ML correction. Every processing stage is fully specified with formulas, parameter values, and implementation guidance.
+Complete specification for a physically-accurate Wurlitzer 200A electric piano plugin using modal synthesis, DK-method preamp circuit simulation, and per-note ML correction. Every processing stage is fully specified with formulas, parameter values, and implementation guidance.
 
 ---
 
@@ -29,7 +29,7 @@ Complete specification for a physically-accurate Wurlitzer 200A electric piano p
 21. [Damper and Release Model](#21-damper-and-release-model)
 22. [Polyphony and Voice Management](#22-polyphony-and-voice-management)
 23. [Implementation Order](#23-implementation-order)
-24. [Lessons from Previous Implementation (Vurli)](#24-lessons-from-previous-implementation-vurli)
+24. [Lessons from Previous Implementation (OpenWurli)](#24-lessons-from-previous-implementation-openwurli)
 25. [Comparison with Existing Plugins](#25-comparison-with-existing-plugins)
 26. [CLAP Plugin Requirements](#26-clap-plugin-requirements)
 27. [References](#27-references)
@@ -107,20 +107,19 @@ MIDI note-on (key, velocity, channel, note_id)
        [B] Gaussian Dwell Filter (hammer contact time spectral shaping, sigma=8.0)
        [C] Attack Noise Burst (felt-on-steel impact, 2-5 ms)
        [D] Per-Note Variation (deterministic +-0.8% freq, +-8% amp)
-       [E] Electrostatic Pickup (constant-charge, linear with minGap clamp)
+       [E] Electrostatic Pickup (1/(1-y) capacitive nonlinearity)
      -> Sum all voices (mono)
 
   Mono shared processing:
-     -> 2x Upsample (HIIR polyphase IIR, 12 coefficients, ~100 dB rejection)
-        [F] Two-Stage Ebers-Moll Preamp WITH INTEGRATED TREMOLO
+     -> 2x Upsample (6-coefficient (3+3) allpass polyphase IIR, ~28 dB rejection at 30 kHz)
+        [F] DkPreamp (8-node coupled MNA solver) WITH INTEGRATED TREMOLO
             Tremolo: LDR (LG-1) + R-10 (56K) modulate feedback ratio
-            Stage 1: gain=420, B=38.5, satLimit=10.9V, cutoffLimit=2.05V
-              -> Miller pole (~25 Hz open-loop; ~9.9 kHz closed-loop BW no trem)
+            DkPreamp: 8-node coupled MNA solver (DK method)
+              -> Stage 1: Miller pole ~23 Hz open-loop
               -> Direct coupling
-            Stage 2: gain=238, B=38.5, satLimit=6.2V, cutoffLimit=5.3V, re=0.456
-              -> Miller pole ~3.3 kHz
+              -> Stage 2: Miller pole ~81 kHz
         [H] DC Block HPF (20 Hz)
-     -> 2x Downsample (HIIR polyphase IIR)
+     -> 2x Downsample (matching allpass polyphase IIR)
      [I] Volume Control (real attenuator, audio taper, between preamp and power amp)
      [K] Power Amplifier (Class AB, crossover distortion at low signal levels)
      [L] Speaker Cabinet (variable: bypass to authentic HPF 85-100 Hz + LPF 7-8 kHz)
@@ -146,7 +145,7 @@ MIDI note-on (key, velocity, channel, note_id)
 | Tremolo (in preamp feedback) | Mildly nonlinear (modulates preamp gain/distortion) | YES (inside preamp oversampled block) | 2x |
 | Volume | Yes (gain scaling) | No | Base |
 | Power Amp | Mildly nonlinear (crossover distortion) | Marginal (2x sufficient) | Base |
-| Speaker | Yes (biquad filters) | No | Base |
+| Speaker | NO (biquad filters + Hammerstein polynomial waveshaper a2=0.2/a3=0.6 + tanh Xmax limiting + thermal voice coil compression) | Marginal (low-order distortion at speaker stage) | Base |
 | Output Limiter | Mildly nonlinear (tanh/soft-clip) | No (at output, minimal aliasing concern) | Base |
 
 **Conclusion:** Only the preamp requires oversampling. 2x is sufficient because the preamp's input signal is already bandlimited by the pickup's natural bandwidth and the preamp's own Miller-effect rolloff. The preamp generates harmonics, but the highest-energy harmonics that could alias are well below Nyquist at 2x.
@@ -195,7 +194,7 @@ At note-off:
 ### Voice Death Detection
 
 A voice is dead and can be freed when:
-- State is `RELEASING` AND release time > 0.1s AND all mode amplitudes < 1e-6
+- State is `RELEASING` AND release time > 0.1s AND all mode amplitudes < 1e-4 (-80 dB)
 - OR release time > 10.0s (safety timeout)
 
 ---
@@ -216,77 +215,78 @@ The reed is modeled as 7 exponentially decaying sinusoids. This is physically ju
 f_mode[m] = f_fundamental * ratio[m] * (1 + variation[m])
 ```
 
-Mode ratios are interpolated linearly by MIDI note between three register anchors:
+Mode ratios are computed dynamically per note from the Euler-Bernoulli characteristic equation:
 
-| Anchor | MIDI | Ratios [mode 0-6] |
-|--------|------|-------------------|
-| Bass | 33 | 1.0, 6.3, 17.9, 35.4, 58.7, 88.0, 123.0 |
-| Mid | 60 | 1.0, 6.8, 19.5, 39.0, 64.0, 96.0, 134.0 |
-| Treble | 84 | 1.0, 6.3, 17.6, 34.5, 57.0, 85.0, 118.0 |
+```
+1 + cos(L)cosh(L) + L*mu*(cos(L)sinh(L) - sin(L)cosh(L)) = 0
+```
 
-These ratios derive from solving the Euler-Bernoulli characteristic equation `1 + cos(L)cosh(L) + L*mu*(cos(L)sinh(L) - sin(L)cosh(L)) = 0` with estimated tip-mass ratios (mu). Bare beam ratios (6.267, 17.55, 34.39, 56.84) are the minimum; solder mass INCREASES ratios above these values.
+The tip-mass ratio `mu = tip_mass_ratio(midi)` varies per note (heavier solder on bass reeds, lighter on treble). The code solves for eigenvalues numerically and derives ratios from them. Bare beam ratios (6.267, 17.55, 34.39, 56.84) are the minimum; solder mass increases ratios above these values.
 
 **Important:** Mode frequencies above 0.45 * sampleRate should be zeroed to prevent aliasing. This primarily affects modes 5-6 at the highest notes.
 
 ### Mode Amplitudes
 
-Base amplitudes by register (before dwell filter and velocity scaling):
+Base amplitudes (OBM-calibrated, single table for all registers, before dwell filter and velocity scaling):
 
-| Register | Mode amplitudes [0-6] |
-|----------|----------------------------------------------|
-| Bass | 0.35, 0.10, 0.030, 0.015, 0.010, 0.006, 0.004 |
-| Mid | 0.18, 0.079, 0.018, 0.010, 0.006, 0.004, 0.002 |
-| Treble | 0.12, 0.057, 0.014, 0.008, 0.004, 0.002, 0.002 |
+```
+[1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]
+```
 
-These approximate 1/omega scaling (physical modal participation from a velocity impulse at the free end). With the Gaussian dwell filter (sigma=8.0), the fundamental receives negligible attenuation, so no mode 1 boost compensation is needed.
+These are OBM-calibrated values derived from OldBassMan 200A recordings. The previous 1/omega_n Euler-Bernoulli values were 20-37 dB too hot vs OBM data. Real Wurlitzer reeds (solder tip mass, non-uniform geometry) suppress upper modes far below ideal beam theory. The characteristic "bark" (H2) comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental, NOT from physical mode 2 at 6.3x the fundamental.
 
 ### Velocity Scaling
 
-All modes scale uniformly with `velMapped = velocity^2`. The quadratic mapping widens the usable dynamic range:
-- pp (vel=0.3): velMapped = 0.09
-- mf (vel=0.7): velMapped = 0.49
-- ff (vel=0.95): velMapped = 0.90
+Velocity scaling uses a register-dependent exponent: a bell curve from 0.75 (extremes of keyboard) to 1.4 (mid-range), applied as `velMapped = velocity^exp`. This shapes the dynamic response to match the mechanical leverage differences across the keyboard.
+
+Example values at mid-range (exp ~ 1.4):
+- pp (vel=0.3): velMapped = 0.14
+- mf (vel=0.7): velMapped = 0.55
+- ff (vel=0.95): velMapped = 0.93
 
 Timbral brightening at ff comes from two sources that do NOT require per-mode velocity exponents:
 1. Shorter dwell time at ff -> dwell filter passes more upper partials
-2. Preamp nonlinearity -> louder signal generates more harmonics
+2. Pickup 1/(1-y) nonlinearity -> louder signal generates more harmonics
 
-Per-mode velocity exponents (`pow(vel, 1 + (curve-1)*(m/6)^0.6)`) double-count with the dwell filter -- both brighten at ff. Do not use per-mode exponents.
+Per-mode velocity exponents double-count with the dwell filter's velocity-dependent brightening. Do not use per-mode exponents.
 
 ### Decay
 
 ```
-decay_time = base_decay * min(2^((69 - key) / 12), 10.0)
-decay_rate[m] = 1.0 / (decay_time * decay_scale[m])
+base_decay_dB_per_sec = 0.26 * exp(0.049 * midi)  // with 3.0 dB/s floor
+decay_rate[m] = base_decay * ratio[m]^1.5          // power-law per-mode scaling
 ```
 
-- `base_decay`: 1.1 seconds (geometric mean fit to OldBassMan 200A calibration data across 11 notes; see reed-and-hammer-physics.md Section 5.7)
-- Decay scales: [1.0, 0.20, 0.08, 0.05, 0.03, 0.02, 0.015]
+- Base decay rate follows an exponential curve calibrated to OldBassMan 200A recordings (see reed-and-hammer-physics.md Section 5.7)
+- The 3.0 dB/s floor prevents unrealistically long bass sustain
+- Per-mode scaling uses a `ratio^1.5` power law: higher modes (with larger frequency ratios) decay faster
+- This replaces the previous fixed decay scales array `[1.0, 0.20, 0.08, ...]` with a physics-derived power law
 - Higher modes decay faster -> timbre darkens over time (bright attack, sine-like tail)
-- Register scaling `/12` gives approximate doubling every octave
 
-Decay scales are physics-derived values based on constant-Q damping with a mounting-loss floor (see reed-and-hammer-physics.md Section 5.8). Calibration target from OldBassMan 200A recordings: `decay_rate_dB_per_sec = 0.26 * exp(0.049 * MIDI)` with +/-30% tolerance.
+Calibration target: `decay_rate_dB_per_sec = 0.26 * exp(0.049 * MIDI)` with +/-30% tolerance.
 
 ### Per-Sample Rendering
 
-```cpp
+```rust
 for each sample:
     signal = 0.0
     for each mode m:
-        envelope = amps[m] * exp(-decayRates[m] * time)
+        envelope = amps[m] * exp(-decay_rates[m] * time)
         // Add damper if releasing (see Section 21)
         signal += envelope * sin(phases[m])
         phases[m] += 2*PI * freqs[m] * dt
-        if phases[m] >= 2*PI: phases[m] -= 2*PI
+        if phases[m] >= 2*PI { phases[m] -= 2*PI }
 ```
 
 ### Phase Initialization
 
-Reed starts at zero displacement (hammer imparts velocity, not displacement):
+Reed starts at zero displacement (hammer imparts velocity, not displacement). All mode phases start at 0. A raised cosine onset ramp models the gradual buildup of reed vibration during hammer contact:
+
 ```
-phase[m] = fmod(PI * freq[m] * t_dwell, 2*PI)
+onset_envelope(t) = 0.5 * (1 - cos(PI * t / T_onset))
 ```
-The dwell offset accounts for phase accumulated during hammer contact.
+
+The onset ramp time `T_onset` is register-dependent: `(periods / f0).clamp(2ms, 60ms)`, where `periods` ranges from 2 (ff) to 3 (pp). This models reed mechanical inertia -- bass reeds take more time to reach full amplitude than treble reeds.
 
 ### Attack Overshoot: Let Physics Handle It
 
@@ -303,12 +303,13 @@ The hammer contact time creates a finite-duration force pulse that spectrally sh
 ### Dwell Time
 
 ```
-t_dwell = 0.001 + 0.003 * (1.0 - velocity)
+t_dwell = 0.0005 + 0.002 * (1.0 - velocity)
 ```
 
-- ff (vel ~0.95): ~1.15 ms (shorter contact, brighter)
-- mf (vel ~0.7): ~1.9 ms
-- pp (vel ~0.3): ~3.1 ms (longer contact, darker)
+- ff (vel ~0.95): ~0.6 ms (shorter contact, brighter)
+- mf (vel ~0.7): ~1.1 ms
+- pp (vel ~0.3): ~1.9 ms (longer contact, darker)
+- Range: 0.5-2.5 ms
 
 ### Force Pulse Shape: Gaussian (NOT Rectangular, NOT Half-Sine)
 
@@ -350,13 +351,14 @@ Without normalization, the dwell filter would also attenuate the fundamental, ch
 The felt-tipped hammer striking a steel reed produces a broadband impact noise that lasts 2-5 ms. This is separate from the modal vibration.
 
 ```
-noise_amp = max(vel^2, 0.10) * 0.15 * register_scale
+noise_amp = 0.015 * vel^2
 noise_decay = 1/0.003  // 3 ms time constant
-noise_cutoff = 2000 + 6000 * vel  // velocity-dependent bandwidth
+noise_cutoff = (4 * f0).clamp(200, 2000)  // tracks fundamental, not velocity
 ```
 
-- `register_scale = clamp(2^((48 - key) / 24), 0.4, 1.0)` -- bass has more mechanical energy, treble noise must not dominate the modal signal
-- LCG pseudo-random generator -> one-pole LPF at `noise_cutoff` -> exponential decay envelope
+- No floor or register scaling -- amplitude scales purely with velocity squared
+- Noise center frequency tracks the fundamental (4x f0), clamped to 200-2000 Hz, Q=0.7
+- LCG pseudo-random generator -> bandpass at `noise_cutoff` -> exponential decay envelope (3ms decay, 15ms duration)
 - Added to the voice signal BEFORE the pickup model
 
 The noise burst is subtle but contributes to the "woody" percussive attack character. Without it, notes have an artificially pure, synthesizer-like onset.
@@ -401,12 +403,12 @@ The per-reed constant-charge approximation is a defensible engineering tradeoff 
 
 In constant-charge regime, V_ac is proportional to gap displacement (linear):
 
-```cpp
-d0 = pickup_d0 * gap_scale  // base gap, register-scaled
-min_gap = d0 * 0.20         // reed can't hit plate (20% minimum)
-gap = max(d0 + signal + offset, min_gap)
-pickup = gap - d0            // = signal + offset when not clamped
-output = signal * (1 - mix) + pickup * mix  // mix=1.0 for full pickup
+```rust
+let d0 = pickup_d0 * gap_scale;  // base gap, register-scaled
+let min_gap = d0 * 0.20;         // reed can't hit plate (20% minimum)
+let gap = (d0 + signal + offset).max(min_gap);
+let pickup = gap - d0;            // = signal + offset when not clamped
+let output = signal * (1.0 - mix) + pickup * mix;  // mix=1.0 for full pickup
 ```
 
 The ONLY nonlinearity is the minGap clamp (reed approaching plate). In normal playing this is rarely triggered. The pickup is effectively a pass-through with a DC offset.
@@ -437,10 +439,12 @@ Model: `gap_scale = 2^((60 - key) / 60)` gives bass:treble ratio of ~1.74:1 (clo
 
 All active voices render into a shared mono buffer via addition:
 
-```cpp
-memset(mono_buffer, 0, frames * sizeof(double))
-for each active voice:
-    voice.renderBlock(mono_buffer, frames, ...)  // += into buffer
+```rust
+// Zero the mono buffer
+mono_buffer.fill(0.0);
+for voice in active_voices {
+    voice.render_block(&mut mono_buffer, frames, ...);  // += into buffer
+}
 ```
 
 This matches the real 200A topology: all reeds sum into one pickup plate, producing a single mono signal that feeds the preamp.
@@ -457,40 +461,23 @@ This is the most complex processing stage. The preamp adds harmonic coloring at 
 
 ### DECISION: Trait-Based A/B Architecture
 
-The preamp implements a `PreampModel` trait/interface with `process_sample()`, `set_ldr_resistance()`, `reset()`. Two implementations exist behind this interface:
-1. **Full SPICE-derived model** — coupled NR solver, ground truth reference
-2. **Simplified Ebers-Moll** — independent stages, shipping candidate
-
-The voice holds a swappable `PreampModel`. A/B test until the simplified version is perceptually indistinguishable from the reference. See `preamp-circuit.md` Section 8.1 for details.
+The preamp implements a `PreampModel` trait with `process_sample()`, `set_ldr_resistance()`, `reset()`. Two implementations exist behind this interface:
+1. **DkPreamp** (8-node coupled MNA solver using the DK method) — the shipping implementation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `docs/dk-preamp-derivation.md`.
+2. **EbersMollPreamp** — legacy reference with independent per-stage NR solvers. Retained for comparison only; not used in production.
 
 ### Oversampling Wrapper
 
-The preamp runs at 2x the base sample rate inside an HIIR polyphase IIR oversampler:
+The preamp runs at 2x the base sample rate inside a polyphase IIR oversampler:
 
-1. **Upsample:** HIIR 2x upsampler (12 coefficients, ~100 dB stopband rejection, transition band 0.01)
-2. **Process:** Run Stage 1 + Miller LPF + Stage 2 + Miller LPF + DC Block at 2x rate
-3. **Downsample:** HIIR 2x downsampler (matching filter)
+1. **Upsample:** 6-coefficient (3+3) allpass polyphase half-band upsampler (~28 dB rejection at 30 kHz)
+2. **Process:** Run DkPreamp (coupled 8-node MNA solver) at 2x rate
+3. **Downsample:** Matching allpass polyphase half-band downsampler
 
-The oversampler uses minimum-phase IIR filters (HIIR library), which have lower latency than linear-phase FIR alternatives at the cost of slight phase distortion. For a musical instrument, the phase behavior is inaudible and the reduced latency is beneficial.
+The oversampler uses allpass IIR filters (custom Rust implementation in `oversampler.rs`). The ~28 dB rejection is sufficient because the preamp's Miller-effect rolloff naturally limits harmonic energy above ~15 kHz.
 
 ### Input Drive
 
-The voice summation output must be scaled to the correct amplitude range for the preamp's Ebers-Moll exponential to produce physically accurate nonlinearity:
-
-```cpp
-preamp_input = voice_sum * kPreampInputDrive
-preamp_output = preamp.processSample(preamp_input) * preampGain
-```
-
-The `kPreampInputDrive` parameter is an artificial scaling factor that compensates for the mismatch between the plugin's internal signal levels and the real millivolt-scale signals in the physical circuit. In the real 200A, the pickup generates microvolt signals that the preamp amplifies by ~6 dB. In the plugin, the oscillator produces much larger signals (0.05-0.9 range), requiring a drive factor to place them in the correct regime of the Ebers-Moll curve.
-
-**The correct approach is to ensure that at mf single-note:**
-- `B * preamp_input` should be 1-3 (mild nonlinearity)
-- At pp: `B * input` ~ 0.1-0.5 (nearly linear)
-- At ff: `B * input` ~ 5-10 (moderate saturation)
-- At ff 6-note chord: `B * input` ~ 15-30 (heavy saturation, compression)
-
-With B = 38.5 V^-1, this means the preamp input signal should be in the range 0.003V (pp) to 0.5V (ff chord). The kPreampInputDrive value should be calibrated to produce these input levels.
+The DkPreamp receives the voice summation output directly. Because the DK method models the full circuit with physical component values, no artificial input drive scaling is needed -- the circuit's gain, impedances, and nonlinear behavior emerge naturally from the MNA equations. The voice output is scaled by `output_scale()` (physics-based, computed from displacement scale and pickup geometry) to approximate millivolt-level signals before entering the preamp.
 
 ### BJT Stage Model
 
@@ -547,7 +534,7 @@ The correct model:
 
 // Corner frequency from Miller multiplication:
 // f_miller = 1 / (2*PI * Ccb * (1+Av) * R_source)
-// For Stage 1: C-3=100pF, Av=420 -> C_miller=42,100pF -> f_dominant ~25 Hz
+// For Stage 1: C-3=100pF, Av=420 -> C_miller=42,100pF -> f_dominant ~23 Hz
 
 // Implementation:
 hf_feedback = output - fbCapState  // HF component (what cap can't track)
@@ -558,17 +545,17 @@ effectiveRe = re + feedbackBeta * (something proportional to HF content)
 ```
 
 Target corner frequencies based on physical Miller multiplication (C-3 = C-4 = 100 pF):
-- Stage 1: ~25 Hz open-loop dominant pole (C-3=100pF × (1+420) = 42,100 pF Miller-multiplied)
-- Stage 2: ~3.3 kHz (C-4=100pF × (1+2.2) = 320 pF, into 150K source impedance)
+- Stage 1: ~23 Hz open-loop dominant pole (C-3=100pF × (1+420) = 42,100 pF Miller-multiplied)
+- Stage 2: ~81 kHz (C-4=100pF × (1+2.2) = 320 pF, into low source impedance from Stage 1 output)
 - Closed-loop bandwidth: **~10 kHz** (no tremolo) / **~8.3 kHz** (tremolo bright)
 
 ### Miller LPF (After Each Stage)
 
 First-order LPF modeling Miller-effect bandwidth limitation. With C-3 = C-4 = 100 pF:
-- After Stage 1: dominant pole at ~25 Hz open-loop; closed-loop BW ~9.9 kHz (no trem) / ~8.3 kHz (trem bright)
-- After Stage 2: ~3.3 kHz (Stage 2 has low gain of ~2.2, so Miller multiplication is mild)
+- After Stage 1: dominant pole at ~23 Hz open-loop
+- After Stage 2: ~81 kHz (Stage 2 has low gain of ~2.2, so Miller multiplication is mild)
 
-Stage 1's Miller pole at ~25 Hz is the dominant open-loop pole. With the global feedback loop (R-10 = 56K via Ce1 to emitter), the closed-loop bandwidth is ~9.9 kHz (no tremolo) / ~8.3 kHz (tremolo bright). The plugin's per-stage Miller LPF implementation may need restructuring to properly model this feedback topology -- see preamp-circuit.md Sections 5-6 for full analysis.
+Stage 1's Miller pole at ~23 Hz is the dominant open-loop pole. The DkPreamp's coupled MNA solver handles both stages and their feedback interactions as a single system, so separate per-stage Miller LPF modeling is not needed. Full-chain BW: ~15.5 kHz (preamp only), ~11.8 kHz (no trem), ~9.7 kHz (trem bright). See preamp-circuit.md Section 5.5.1 for full analysis.
 
 ### Stage 2 Parameters
 
@@ -654,7 +641,7 @@ Because the tremolo modulates the preamp's emitter feedback (via the LDR shunt a
 
 | Parameter | Default | Range | Notes |
 |-----------|---------|-------|-------|
-| Rate | 5.5 Hz | 0.1-15.0 | Most real instruments 5.3-7 Hz |
+| Rate | 5.63 Hz | 0.1-15.0 | Most real instruments 5.3-7 Hz |
 | Depth | 0.5 | 0.0-1.0 | 0=off, 0.5 ~ 4.5 dB dip, 1.0 ~ 9 dB dip |
 
 ---
@@ -675,7 +662,7 @@ output = input * audio_taper
 // -> feeds into power amplifier stage
 ```
 
-The `masterVolume` parameter default of 0.05 reflects the typical attenuation needed to bring the preamp's output level into a reasonable range. In the real instrument, the volume pot output is measured at 2-7 mV AC.
+The `masterVolume` parameter default of 0.40 reflects the typical attenuation needed to bring the preamp's output level into a reasonable range. In the real instrument, the volume pot output is measured at 2-7 mV AC.
 
 ---
 
@@ -753,15 +740,15 @@ output = tanh(input)  // or equivalent soft saturation
 
 At the signal levels reaching this point (after volume control), this is effectively transparent -- providing only safety limiting against extreme transients. The tanh function at typical signal levels (< 0.5) introduces less than 0.04 dB of compression.
 
-**Note:** The previous implementation used `tanh(signal * masterVol)`, combining volume and limiting. This is functionally a volume control with negligible saturation, since `tanh(0.05) ~ 0.05`.
+**Note:** The volume control is a separate stage before the power amp (see Section 12), not combined with the output limiter.
 
 ### Stereo Output
 
 The Wurlitzer 200A is a mono instrument. The plugin duplicates the mono signal to both stereo channels:
 
-```cpp
-outL[i] = float(mono_signal)
-outR[i] = float(mono_signal)
+```rust
+out_l[i] = mono_signal as f32;
+out_r[i] = mono_signal as f32;
 ```
 
 Optional enhancement: slight stereo widening via a short decorrelation delay (e.g., 0.2ms on one channel) or mid-side processing. But the authentic sound is mono.
@@ -770,7 +757,7 @@ Optional enhancement: slight stereo widening via a short decorrelation delay (e.
 
 ## 16. Gain Staging Analysis
 
-This section traces signal levels through the entire chain, identifying where levels are too high or too low and where the artificial `kPreampInputDrive` compensation originates.
+This section traces signal levels through the entire chain. Note: the DkPreamp uses physical component values directly and does not require artificial input drive scaling (see "Input Drive (Historical)" below).
 
 ### Real 200A Signal Levels
 
@@ -789,27 +776,17 @@ This section traces signal levels through the entire chain, identifying where le
 |---------------|-------------------------------|-------|
 | Single voice, mf | ~0.05-0.15 | After pickup |
 | 6-voice chord, ff | ~0.3-0.9 | Sum of voices |
-| After kPreampInputDrive (28x) | ~1.4-25 | Into preamp |
-| After C20 HPF (varies by freq) | ~0.1-5 | Bass heavily attenuated |
+| After output_scale() | scaled to mV range | Into DkPreamp |
 | After preamp Stage 1 | ~0.5-11 | Depends on gain/feedback |
 | After preamp Stage 2 | ~0.5-6.5 | Clipped by soft-limits |
 | After preampGain (0.7x) | ~0.35-4.5 | Into tremolo/speaker |
-| After masterVol (0.05x) | ~0.02-0.22 | Into output |
+| After masterVol (0.40x) | ~0.14-1.80 | Into output |
 
-### The kPreampInputDrive Problem
+### Input Drive (Historical)
 
-The artificial `kPreampInputDrive` exists because the plugin's oscillator produces signals at arbitrary scale (0.05-0.9), not at the millivolt scale of the real circuit. This is NORMAL for virtual analog -- nobody models actual millivolt signals in floating point (unnecessary precision waste).
+**Note:** The `kPreampInputDrive` scaling factor discussed here is historical and applies only to the legacy `EbersMollPreamp`. The shipping `DkPreamp` implementation uses physical component values directly (resistances, capacitances, transistor parameters) and does not require artificial input drive scaling. The DK method MNA solver operates on the actual circuit equations, so signal levels are determined by the component values themselves.
 
-**Set kPreampInputDrive ONCE** based on the desired operating point (B * input ~ 1-3 at mf), then NEVER change it during tuning. All tonal adjustments should come from physically motivated parameters (gain, feedback cap values, soft-clip limits). If the sound is wrong, the preamp model is wrong -- do not compensate by changing the input drive.
-
-SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo, 12.1 dB (4.0x) at tremolo bright peak. BW: ~10 kHz (no trem) / ~8.3 kHz (trem bright). The kPreampInputDrive value of 28.0 **will need recalibration** once these parameters are implemented.
-
-### Recommendations
-
-1. Normalize oscillator output so that mf single-voice peaks at ~1.0
-2. Set kPreampInputDrive = 1/(B * desired_mf_input) to place mf at B*x ~ 2
-3. With B=38.5, desired mf input of ~0.05 -> kPreampInputDrive ~ 0.05/1.0 = 0.05... but the C20 HPF attenuation must be factored in
-4. Alternatively: scale oscillator output to match real millivolt levels and eliminate kPreampInputDrive entirely
+SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo, 12.1 dB (4.0x) at tremolo bright peak. BW: ~15.5 kHz preamp-only, ~11.8 kHz full-chain (no trem) / ~9.7 kHz (trem bright).
 
 ---
 
@@ -832,20 +809,19 @@ The preamp's input is naturally bandlimited by the pickup's RC HPF (~2312 Hz) an
 
 For 44.1 kHz base rate, 2x gives 88.2 kHz with 44.1 kHz Nyquist. Still adequate given the natural input bandwidth.
 
-### Filter Choice: HIIR Polyphase IIR
+### Filter Choice: Allpass Polyphase IIR Half-Band
 
-- Library: HIIR (Laurent de Soras)
-- Architecture: Polyphase IIR half-band filter
-- Coefficients: 12 (steep transition, ~100 dB stopband rejection)
-- Transition band: 0.01 of half-band
-- Phase: Minimum-phase (lower latency than linear-phase FIR)
+- Architecture: Polyphase IIR half-band filter using two allpass branches (3 coefficients each, 6 total)
+- Stopband rejection: ~28 dB at 30 kHz (sufficient given the preamp's Miller-effect rolloff limits harmonic energy above ~15 kHz)
+- Phase: Allpass (constant group delay within each branch)
 - CPU cost: Very efficient -- only multiply-accumulate operations, no table lookups
+- Implementation: Custom Rust port in `oversampler.rs`, not the HIIR library
 
 ### Alternative: ADAA (Anti-Derivative Anti-Aliasing)
 
 ADAA can reduce aliasing without oversampling by computing the antiderivative of the nonlinear function and using it to perform continuous-time convolution. Research shows 2x oversampling + ADAA provides aliasing suppression comparable to 6x oversampling without ADAA.
 
-However, ADAA requires the nonlinear function to have a closed-form antiderivative. The Ebers-Moll exponential with Newton-Raphson solver and feedback caps is too complex for straightforward ADAA application. HIIR 2x oversampling is simpler and sufficient.
+However, ADAA requires the nonlinear function to have a closed-form antiderivative. The DkPreamp's coupled MNA solver with Newton-Raphson iteration is too complex for straightforward ADAA application. Allpass polyphase 2x oversampling is simpler and sufficient.
 
 ---
 
@@ -861,7 +837,7 @@ The 1/(1-y) pickup model generates significant even harmonics (H2/H1 ~ -21 dB at
 
 ### Preamp
 
-Addressed by 2x oversampling (Section 17). The 100 dB stopband rejection of the HIIR filter means aliased components are at -100 dB -- well below the noise floor.
+Addressed by 2x oversampling (Section 17). The ~28 dB rejection at 30 kHz is sufficient because the preamp's Miller-effect rolloff naturally limits harmonic energy at high frequencies, so aliased components are well below the audible signal.
 
 ### Output Limiter
 
@@ -871,12 +847,7 @@ The tanh limiter at the output operates on a signal that has already been throug
 
 After the preamp, decaying voices produce very small signal values that can become denormal floating-point numbers, causing CPU spikes on x86 processors. Set FTZ (Flush-to-Zero) and DAZ (Denormals-Are-Zero) bits in the MXCSR register at the start of the process callback:
 
-```cpp
-unsigned int old_mxcsr = _mm_getcsr();
-_mm_setcsr(old_mxcsr | 0x8040);  // FTZ (0x8000) | DAZ (0x0040)
-// ... process audio ...
-_mm_setcsr(old_mxcsr);  // restore at end
-```
+In Rust/nih-plug, denormal protection is typically handled by the framework or via inline assembly. The nih-plug `process()` callback runs with FTZ/DAZ already set by the host in most DAWs. If needed, Rust's `std::arch::x86_64` intrinsics can be used directly.
 
 ---
 
@@ -909,25 +880,17 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 
 | ID | Name | Module | Min | Max | Default | Purpose |
 |----|------|--------|-----|-----|---------|---------|
-| 0 | Master Volume | output | 0.0 | 1.0 | 0.05 | Post-everything output level |
-| 1 | Base Decay | reed | 0.2 | 10.0 | 1.1 | Fundamental decay time at A4 (seconds) |
-| 2 | Velocity Curve | reed | 1.5 | 8.0 | 3.0 | NOT USED if per-mode exponents removed. Reserve for future use. |
-| 3 | Pickup Gap | pickup | 0.3 | 6.0 | 0.50 | Base capacitive gap d0 |
-| 4 | Pickup Mix | pickup | 0.0 | 1.0 | 1.0 | Blend between raw signal and pickup output |
-| 5 | Pickup Offset | pickup | -0.5 | 0.5 | -0.10 | DC offset correction |
-| 6 | Preamp Gain | preamp | 0.2 | 16.0 | 0.7 | Post-preamp output gain (linear) |
-| 7 | Preamp Drive | preamp | 0.2 | 3.0 | 1.0 | Multiplier on Stage 1 open-loop gain |
-| 8 | Asymmetry | preamp | 0.0 | 2.0 | 1.0 | Reserved (asymmetry is physical) |
-| 9 | Tremolo Rate | tremolo | 0.1 | 15.0 | 5.5 | LFO frequency (Hz) |
-| 10 | Tremolo Depth | tremolo | 0.0 | 1.0 | 0.5 | Modulation amount |
-| 11 | Speaker Character | speaker | 0.0 | 1.0 | 1.0 | 0.0=bypass (full range), 1.0=authentic (HPF+LPF) |
-| 12 | Attack Overshoot | reed | 0.0 | 6.0 | 4.0 | DEPRECATED: should be removed; attack emerges from physics |
+| 0 | Volume | output | 0% | 100% | 40% | Audio taper attenuator between preamp and power amp |
+| 1 | Tremolo Rate | tremolo | 0.1 | 15.0 Hz | 5.63 Hz | LFO frequency |
+| 2 | Tremolo Depth | tremolo | 0% | 100% | 50% | Modulation amount |
+| 3 | Speaker Character | speaker | 0% | 100% | 100% | 0%=bypass (full range), 100%=authentic (HPF+LPF+waveshaper) |
+
+All other parameters (decay rates, pickup gap, preamp component values, mode amplitudes, velocity curve, attack overshoot) are hardcoded internally based on physical circuit analysis and OBM calibration data. They are not exposed to the user.
 
 ### Internal Constants (Not Exposed)
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| kPreampInputDrive | 28.0 | Scales voice sum into preamp operating range |
 | B (thermal voltage) | 38.5 | 1/(n*Vt) for BJT Ebers-Moll |
 | Stage 1 gain | 420 (max) | gm1 × Rc1 = 2.80 mA/V × 150K (open-loop, fb_junct grounded) |
 | Stage 1 satLimit | 10.9 V | Vcc - Vc1 = 15 - 4.1 |
@@ -936,9 +899,9 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 | Stage 2 satLimit | 6.2 V | Vcc - Vc2 = 15 - 8.8 |
 | Stage 2 cutoffLimit | 5.3 V | Vc2 - Ve2 - Vce_sat = 8.8 - 3.4 - 0.1 |
 | Stage 2 re | 0.456 | Re2_unbypassed / Rc2 = 820Ω / 1.8K |
-| Miller pole 1 (open-loop) | ~25 Hz | Stage 1 dominant pole (C-3=100pF, Miller-multiplied) |
-| Miller pole 2 | ~3300 Hz | Stage 2 (C-4=100pF, low Miller multiplication) |
-| Closed-loop bandwidth | ~9900 Hz (no trem) / ~8300 Hz (trem bright) | Combined preamp with R-10 emitter feedback |
+| Miller pole 1 (open-loop) | ~23 Hz | Stage 1 dominant pole (C-3=100pF, Miller-multiplied) |
+| Miller pole 2 | ~81 kHz | Stage 2 (C-4=100pF, low Miller multiplication) |
+| Full-chain bandwidth | ~11800 Hz (no trem) / ~9700 Hz (trem bright) | Preamp-only ~15.5 kHz; full chain includes speaker rolloff |
 | DC block frequency | 20 Hz | Output DC removal |
 | Speaker HPF (authentic) | 85-100 Hz, Q=0.75 | Open-baffle resonance + bass cancellation |
 | Speaker LPF (authentic) | 7000-8000 Hz, Q=0.707 | Cone breakup |
@@ -1021,8 +984,7 @@ The Wurlitzer 200A has 64 keys but practical polyphony is limited by the player 
 ### Voice Stealing Behavior
 
 When a voice is stolen:
-- It is immediately silenced (set to FREE state)
-- No crossfade or fadeout (the abrupt cutoff is masked by the new note's attack)
+- A 5ms linear crossfade is applied (stolen voice fades out while new voice fades in)
 - The host receives a NOTE_END event for the stolen voice
 
 ### CPU Considerations
@@ -1040,9 +1002,9 @@ When a voice is stolen:
 | 12 voices x 7 modes | ~84 sin, ~84 exp | Per-voice oscillator |
 | Pickup per voice | ~12 max/add | Minimal |
 | Voice sum | ~12 additions | Trivial |
-| 2x oversampler up | ~12 multiply-adds | HIIR filter |
+| 2x oversampler up | ~12 multiply-adds | Allpass polyphase filter |
 | Preamp (2 samples at 2x) | ~2 x (3 NR iterations x 2 stages) = 12 exp calls | Most expensive shared stage |
-| 2x oversampler down | ~12 multiply-adds | HIIR filter |
+| 2x oversampler down | ~12 multiply-adds | Allpass polyphase filter |
 | Tremolo | ~2 multiply-adds | Trivial |
 | Speaker (2 biquads) | ~10 multiply-adds | Trivial |
 
@@ -1101,12 +1063,12 @@ All critical analog subcircuits validated in ngspice before DSP implementation:
 
 This is the most complex and sonically important stage. Component values and topology were validated in SPICE (Phase 2).
 
-1. Integrate HIIR library, build oversampler wrapper
-2. Implement BjtStage class (NR solver, asymmetric soft-clip)
-3. Implement Miller LPFs (C-3 = C-4 = 100 pF)
-4. Wire up Wurlitzer200APreamp (Stage 1 -> Miller -> Stage 2 -> Miller -> DC Block)
+1. Build allpass polyphase oversampler wrapper
+2. Implement DkPreamp (8-node coupled MNA solver using DK method)
+3. Miller caps and direct coupling handled within DK circuit equations
+4. Wire up DkPreamp with oversampler and DC block
 5. Implement emitter feedback path: R-10 (56K) -> fb_junction -> Ce1 (4.7µF) -> TR-1 emitter
-6. Calibrate kPreampInputDrive and preampGain against SPICE gain targets (2.0x no-trem, 4.0x trem-bright)
+6. Validate DkPreamp gain against SPICE targets (2.0x no-trem, 4.0x trem-bright)
 
 **Test:** Verify H2 > H3 on all notes at mf. Check that pp is clean, mf has moderate bark, ff has aggressive bark. Check dynamic range: pp should be at least 15 dB quieter than ff. Cross-validate gain and THD against SPICE measurements.
 
@@ -1139,23 +1101,26 @@ This is the most complex and sonically important stage. Component values and top
 4. Dynamic range verification (pp vs ff: target 20-30 dB)
 5. Polyphonic chord test (compression, intermodulation)
 
-### Phase 8: ML Correction (Future)
+### Phase 8: ML Correction (Deployed, Experimental)
 
-1. Train MLP: `(pitch, velocity) -> (amp_offsets, freq_offsets, decay_offsets, d0_correction)`
-2. Generate baked weights header file
-3. Apply corrections at note-on (zero per-sample cost)
-4. Deploy via RTNeural or custom inference code
+Per-note MLP corrections are deployed. Architecture: 2 inputs (pitch, velocity) -> 8 hidden -> 8 hidden -> 22 outputs (amp/freq/decay offsets). 294 parameters total, runs at note-on only (<10 us inference time, zero per-sample cost).
+
+1. Training data: 9 OBM gold-tier notes (MIDI 65-97, vel=80), SNR-filtered
+2. Weights baked into `mlp_weights.rs` (no external files needed)
+3. Corrections applied at note-on via `mlp_correction.rs`
+4. Outside training range: corrections fade to identity over 12 semitones
+5. See `ml/compute_residuals.py` and `ml/train_mlp.py` for training pipeline
 
 ---
 
-## 24. Lessons from Previous Implementation (Vurli)
+## 24. Lessons from Previous Implementation (OpenWurli)
 
 Key failure patterns from the previous project (40+ tuning rounds without convergence):
 
 1. **No fudge factors.** Every parameter must trace to a physical quantity. If a compensation knob is needed, find and fix the underlying modeling error.
 2. **Gaussian dwell filter only.** Sinc (rectangular pulse) and half-sine models have deep spectral nulls that forced 20x mode amplitude compensation, destroying the attack-to-sustain ratio.
 3. **Miller cap polarity matters.** The cap provides MORE feedback at HF (low impedance), LESS at LF. Inverting this breaks register-dependent distortion.
-4. **Set kPreampInputDrive once.** Calibrate it to place mf at B*x ~ 2, then never change it during tonal tuning. Tweaking it cascades into every other parameter.
+4. **No artificial drive scaling.** The DkPreamp uses physical component values. If the sound is wrong, fix the circuit model, not the input scaling.
 5. **No per-mode velocity exponents.** They double-count with the dwell filter's velocity-dependent brightening. Use uniform vel^2 scaling.
 6. **DAW state override.** Changing parameter defaults requires users to re-add the plugin. Consider a version check in `stateLoad()`.
 
@@ -1244,9 +1209,9 @@ The plugin must implement these CLAP extensions:
 ### Audio Thread Safety
 
 - Zero heap allocation in `process()` callback
-- All buffers pre-allocated in `activate()`
-- Use `std::atomic<double>` for parameter values (read in audio thread, written in main thread)
-- FTZ/DAZ set at start of `process()`, restored at end
+- All buffers pre-allocated at initialization
+- nih-plug handles parameter thread safety via its `Params` derive macro and `AtomicFloat` types
+- FTZ/DAZ typically set by the host DAW
 
 ### Event Processing
 
@@ -1259,11 +1224,11 @@ CLAP requires sample-accurate event processing. The process callback must:
 
 ### Parameter Threading
 
-Parameters are stored as `std::atomic<double>`. The audio thread reads with `memory_order_relaxed`. The main thread writes via `handleParamValue()`. No locks needed for this simple double-exchange pattern.
+Parameters are managed by nih-plug's `Params` derive macro, which provides thread-safe access via `AtomicFloat` and `AtomicCell` types. The audio thread reads smoothed parameter values; the main thread writes via the framework's parameter handling. No manual atomics or locks needed.
 
 ### State Format
 
-Simple text serialization: `VURLI-STATE-V1;0=0.050000;1=1.100000;...`
+State serialization uses nih-plug's built-in state persistence mechanism (JSON-based, handled automatically by the framework). No custom serialization format is needed.
 
 ---
 

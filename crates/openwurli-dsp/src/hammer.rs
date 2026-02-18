@@ -12,15 +12,20 @@ use crate::tables::NUM_MODES;
 
 /// Hammer dwell time (contact duration) in seconds — for spectral filtering only.
 ///
-/// Velocity-dependent: ff (vel=1.0) = 0.5ms, pp (vel=0.0) = 2.5ms.
-/// This controls the Gaussian spectral filter (how hammer contact duration
-/// shapes mode excitation). With sigma=8, this is nearly transparent at all
-/// velocities — the OBM-calibrated BASE_MODE_AMPLITUDES already capture the
-/// per-mode energy distribution.
+/// Register-dependent per Miessner patent US 2,932,231: the hammer contacts
+/// the reed for "three fourths to one cycle of vibration at its fundamental
+/// frequency." This makes dwell strongly register-dependent:
+///   - A1 (55 Hz) ff: 13.6 ms    pp: 18.2 ms
+///   - C4 (262 Hz) ff: 2.9 ms    pp: 3.8 ms
+///   - C6 (1047 Hz) ff: 0.72 ms  pp: 0.95 ms
+///
+/// The velocity mapping: ff = 0.75 cycles (hard, brief contact), pp = 1.0 cycle
+/// (soft, lingering contact from neoprene foam compression).
 ///
 /// For the time-domain onset ramp, see `onset_ramp_time`.
-pub fn dwell_time(velocity: f64) -> f64 {
-    0.0005 + 0.002 * (1.0 - velocity)
+pub fn dwell_time(velocity: f64, fundamental_hz: f64) -> f64 {
+    let cycles = 0.75 + 0.25 * (1.0 - velocity);
+    (cycles / fundamental_hz).clamp(0.0003, 0.020)
 }
 
 /// Register-dependent onset ramp time — models reed mechanical inertia.
@@ -32,10 +37,12 @@ pub fn dwell_time(velocity: f64) -> f64 {
 ///   - D4 (294 Hz): 50% at cycle 1, 90% at cycle 2
 ///   - D6 (1175 Hz): near-instant (full by cycle 0-1)
 ///
-/// Formula: 2 periods at ff, 3 at pp, clamped to [2ms, 60ms].
+/// Formula: 2 periods at ff, 4.5 at pp, clamped to [2ms, 60ms].
+/// Softer hammer contact = longer force profile = gentler reed onset
+/// (felt compression is progressive, Giordano & Milne 1998).
 pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64) -> f64 {
     let period_s = 1.0 / fundamental_hz;
-    let periods = 2.0 + 1.0 * (1.0 - velocity);
+    let periods = 2.0 + 2.5 * (1.0 - velocity);
     (periods * period_s).clamp(0.002, 0.060)
 }
 
@@ -54,7 +61,7 @@ pub fn dwell_attenuation(
     fundamental_hz: f64,
     mode_ratios: &[f64; NUM_MODES],
 ) -> [f64; NUM_MODES] {
-    let t_dwell = dwell_time(velocity);
+    let t_dwell = dwell_time(velocity, fundamental_hz);
     let sigma_sq = 8.0 * 8.0;
 
     let mut atten = [0.0f64; NUM_MODES];
@@ -228,9 +235,9 @@ mod tests {
         let pp = onset_ramp_time(0.0, 262.0);
 
         assert!(pp > ff, "pp onset ({pp:.4}) should exceed ff ({ff:.4})");
-        // ff = 2 periods, pp = 3 periods
+        // ff = 2 periods, pp = 4.5 periods
         let expected_ff = 2.0 / 262.0;
-        let expected_pp = 3.0 / 262.0;
+        let expected_pp = 4.5 / 262.0;
         assert!((ff - expected_ff).abs() < 0.001);
         assert!((pp - expected_pp).abs() < 0.001);
     }

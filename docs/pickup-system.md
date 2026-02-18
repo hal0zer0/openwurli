@@ -4,6 +4,8 @@
 
 This document provides the complete physics, circuit analysis, and modeling decisions for the Wurlitzer 200A electrostatic (capacitive) pickup system.
 
+> **See also:** [Reed and Hammer Physics](reed-and-hammer-physics.md) (the vibrating element), [Preamp Circuit](preamp-circuit.md) (what the pickup feeds into), [Signal Chain Architecture](signal-chain-architecture.md) (overall signal flow)
+
 ---
 
 ## 1. Physical Construction
@@ -30,14 +32,16 @@ Measured physical pickup slot widths from EP-Forum thread (140B/200 series, simi
 | Reeds 43-50 | 0.110" (2.79 mm) | 0.114" (2.90 mm) | ~0.002" (0.05 mm) |
 | Reeds 51-64 (treble) | 0.097" (2.46 mm) | 0.114" (2.90 mm) | 0.0085" (0.22 mm) |
 
-**Critical note:** These are the **slot widths** (lateral clearance), not the vertical gap between the reed face and the bottom of the slot. The vertical gap is harder to measure and is not directly documented in community sources. Service manual procedures describe adjusting reed height relative to the pickup, but specific gap dimensions in thousandths of an inch are not published.
+**Patent design specification (US 2,919,616, Andersen, 1960):** The pickup slot is specified as **"0.005 inch greater than the width of the associated reed, thereby providing a normal clearance gap of about 0.0025 inch on either side of the reed."** The patent also references spacing tools of ".002, .0025, .003 inch etc." for adjusting pickup sensitivity. The 0.0025"/side (0.064mm) design specification is tighter than the community-measured values above (0.002"-0.012"), likely reflecting manufacturing tolerances and differences between patent ideals and production reality.
+
+**Critical note:** These are **slot widths** (lateral clearance), not the vertical gap between the reed face and the bottom of the slot. The vertical gap is not documented in any patent or service manual. Service manual procedures describe adjusting reed height relative to the pickup by bending the pickup tabs, but no specific vertical gap dimension has been found. The only published d₀ value is Pfeifle's 1.5mm (EP300 model, DAFx-17, 2017) — not directly applicable to the 200A. See [Memory: DISPLACEMENT_SCALE absorbs this unknown](../CLAUDE.md).
 
 ### 1.4 Slot Width Ratios
 
 - Bass (reed 1) to treble (reed 64) slot width ratio: 0.172 / 0.114 = **1.51:1**
 - Bass to treble side clearance ratio: 0.0115 / 0.0085 = **1.35:1**
 
-These ratios constrain any register-dependent gap scaling model. The current Vurli model uses `2^((60-key)/60)` which gives a ratio of ~1.74:1 across the keyboard — moderately steeper than the measured 1.51:1 slot width ratio.
+These ratios constrain any register-dependent gap scaling model. The current OpenWurli model uses `2^((60-key)/60)` which gives a ratio of ~1.74:1 across the keyboard — moderately steeper than the measured 1.51:1 slot width ratio.
 
 ### 1.5 Pickup Plate Dimensions (per reed)
 
@@ -57,6 +61,22 @@ The Wurlitzer 200A includes two shielding elements to reduce hum pickup:
 - **Reed bar shield:** Added in later production runs and as an aftermarket upgrade. Reduces electromagnetic interference from power transformer and mains wiring.
 
 "Most hum from Wurlitzer electric pianos derives from the reed bar" because the high-impedance electrostatic pickup acts as an antenna for electromagnetic interference.
+
+### 1.7 Pickup Longitudinal Position (Along Reed Axis)
+
+Multiple Miessner and Andersen patents specify the pickup electrode position along the reed axis:
+
+- **US 2,942,512** (Miessner, 1960): "the nodal point of the second partial of the reed vibration (typically removed from the secured end of the reed by approximately 78%, and from the free end by approximately 22%, of the active length of the reed)"
+- **US 2,966,821** (Miessner, 1961): "approximately 78/100 of the reed length away from the fixed extremity"
+- **US 2,919,616** (Andersen, 1960): "Pick-up centers align at approximately 0.22L from the reed's free end"
+
+This position (0.78L from the clamp = 0.22L from the tip) corresponds to the **node of the 2nd partial** for a bare cantilever beam. Placing the pickup at this node strongly suppresses the inharmonic 2nd partial (at 6.27x the fundamental), which would otherwise produce dissonant overtones.
+
+**Discrepancy with current model:** The OpenWurli spatial coupling code (`tables.rs:spatial_coupling_coefficients()`) integrates mode shapes over the last 6mm at the reed tip (`PLATE_ACTIVE_LENGTH_MM = 6.0`), placing the pickup at xi=[0.92, 1.0] — the **antinode** of mode 2, not its node. At the tip, mode 2 is at maximum amplitude and couples strongly.
+
+**Resolution (open question):** The 200/200A production reed bar has a comb construction where the reed tip enters a slot. The physical geometry places the pickup electrode at or very near the free end. The 0.22L patent specification may describe an ideal that was not achieved in the mass-production design, or it may describe the effective center of the pickup face (which could be inset from the tip). Without direct measurement of a disassembled 200A reed bar, this discrepancy remains unresolved. Since the OBM-calibrated `BASE_MODE_AMPLITUDES` already embed the correct per-mode energy (including whatever spatial coupling the real pickup provides), this primarily affects the physical interpretation, not the sound.
+
+**Pickup face geometry (US 2,966,821):** The pickup face can be rectangular (horizontal:vertical limited to 3:1), square, or circular. Rectangular faces produce stronger signals; square faces "flatten peak tops." Maximum angular deviation between pickup face and reed plane: approximately 11-18 degrees in production.
 
 ---
 
@@ -577,50 +597,60 @@ The patent describes the general principle; the specific 200A implementation may
 
 ## 8. Modeling Decisions and Recommendations
 
-### 8.1 Current Model (Vurli)
+### 8.1 Current Model (OpenWurli)
 
-The current implementation in `voice.cpp` (lines 294-303) uses:
+The current implementation in `pickup.rs` uses the full 1/(1-y) nonlinearity with a one-pole RC high-pass filter:
 
-```cpp
-double d0 = pickupD0;
-double minGap = d0 * 0.20;
-double gap = std::max(d0 + signal + pickupOffset, minGap);
-double pickup = gap - d0;  // = signal + pickupOffset (when not clamped)
+```rust
+// pickup.rs — core transfer function
+let y = (displacement * displacement_scale).clamp(-MAX_Y, MAX_Y);
+let nonlinear = y / (1.0 - y);          // 1/(1-y) capacitance nonlinearity
+let v = nonlinear * SENSITIVITY;         // scale to voltage
+output = hpf.process(v);                 // one-pole HPF at 2312 Hz
 ```
 
-This is equivalent to: `V_ac = signal + offset`, which is **purely linear** (no 1/d nonlinearity, no frequency-dependent RC behavior). The only nonlinearity is the minGap clamp.
+**Key parameters:**
+
+| Parameter | Value | Derivation |
+|-----------|-------|------------|
+| SENSITIVITY | 1.8375 V | V_hv * C_0 / (C_0 + C_p) = 147 * 3/240 |
+| DISPLACEMENT_SCALE | 0.70 at C4 | Beam compliance L^3 / (w * t^3) with exponent 0.65 |
+| MAX_Y | 0.90 | Safety clamp to prevent 1/(1-y) singularity |
+| HPF corner | 2312 Hz | R_total=287K, C=240pF (one-pole) |
+
+**Displacement scaling:** Per-note displacement scale is derived from reed beam compliance (`tables.rs:pickup_displacement_scale()`), normalized so C4 = 0.70. Bass reeds have higher compliance (larger displacement fraction, more bark); treble reeds have lower compliance (cleaner, more bell-like). The exponent of 0.65 was calibrated against OBM recordings.
+
+**HPF harmonic boost:** The one-pole HPF at 2312 Hz boosts H2 relative to H1 by approximately 1.9x, because H2 (at 2f) is at a frequency where the HPF has higher gain than H1 (at f). This amplifies the even-harmonic "bark" generated by the 1/(1-y) nonlinearity.
+
+**Implementation files:** `pickup.rs` (pickup model), `voice.rs` (per-voice assembly including pickup), `tables.rs` (per-note displacement scale).
 
 ### 8.2 Assessment of Current Model
 
 **What it gets right:**
-- In the constant-charge regime, the pickup IS approximately linear for small displacements
-- The minGap clamp correctly models the physical limit of reed-plate contact
+- Full 1/(1-y) nonlinearity produces physically correct even-harmonic content (H2 dominant)
+- One-pole HPF at 2312 Hz models the pickup RC high-pass characteristic, correctly attenuating bass fundamentals relative to treble
+- Register-dependent displacement scale (derived from beam compliance) captures the natural variation in pickup sensitivity across the keyboard
+- SENSITIVITY constant (1.8375 V) includes the parasitic capacitance voltage divider C_0/(C_0+C_p)
 - The signal summation (all voices into mono) correctly models the shared pickup plate
+- MAX_Y = 0.90 clamp prevents the 1/(1-y) singularity while allowing extreme nonlinearity at ff
 
-**What it gets wrong or omits:**
-1. **No RC frequency-dependent behavior.** The pickup is modeled as a simple displacement sensor with no high-pass characteristic. Bass notes get the same pickup sensitivity as treble notes. The C20 HPF partially compensates, but the pickup's own RC HPF (~2312 Hz) is missing.
+**Potential refinements (deferred to OBM comparison phase):**
+1. **Miessner asymmetric modulation** — the U-channel geometry may produce additional asymmetry beyond the 1/(1-y) model. This depends on the specific reed alignment and is deferred to calibration against recordings.
+2. **Full RC circuit model** — the current one-pole HPF approximates the pickup RC dynamics. A full time-varying RC model (see Option B in Section 8.3) would capture transient charge dynamics during attack, but the audible difference is likely small.
 
-2. **No register-dependent sensitivity.** The gap scaling (`2^((60-key)/60)`) affects the minGap clamp threshold but not the signal gain. In reality, wider gaps (bass) produce lower sensitivity (`V_bias/d_0` decreases with larger d_0).
+### 8.3 Implementation Status
 
-3. **No parasitic capacitance loading.** The signal from each reed is not attenuated by the capacitive voltage divider with the other 63 static reeds.
+The recommendations from earlier versions of this document have been implemented and surpassed:
 
-4. **Pickup offset is static.** The real DC offset comes from the physical gap asymmetry, but it doesn't change with reed position.
+**Implemented (current model in `pickup.rs`):**
+- Full 1/(1-y) nonlinearity (not the linear approximation)
+- One-pole HPF at 2312 Hz (pickup RC filter)
+- Register-dependent displacement scale from beam compliance (not simple gap scaling)
+- Parasitic capacitance included in SENSITIVITY constant (C_0/(C_0+C_p) = 3/240)
 
-### 8.3 Recommended Model for Next Implementation
+**Future refinement: Full RC Circuit Model**
 
-**Option A: Simple Linear (Current, Adequate)**
-
-Keep the current linear model but add register-dependent gain:
-
-```
-V_ac = (V_bias / d0_scaled) * displacement
-```
-
-where `d0_scaled` varies with register per the EP-Forum measurements. The C20 HPF provides the bass rolloff. Note: the implemented model uses the full 1/(1-y) nonlinearity (not linear), since SPICE confirmed the pickup is the dominant H2 source at normal dynamics.
-
-**Option B: RC Circuit Model (More Physical)**
-
-Model the pickup as an explicit RC circuit per-voice:
+If needed, the one-pole HPF could be replaced with an explicit time-varying RC circuit per-voice:
 
 ```
 tau = R_total * C_total = 287k * 240p = 68.9 us   // see Section 3.7
@@ -634,13 +664,7 @@ q[n+1] = (q[n] * (1 - alpha) + 2*beta) / (1 + alpha)
 V_ac = (q/c - 1) * d0                 // AC signal
 ```
 
-This correctly produces:
-- Bass fundamental attenuation (~34 dB at A1)
-- Transition-zone behavior at mid-register
-- Constant-charge behavior at treble
-- Slight nonlinearity from the 1/C relationship
-
-**Recommendation:** Option A is sufficient given that the C20 HPF already provides bass rolloff. Option B should be considered only if the model needs to reproduce the specific register-dependent tonal balance without relying on the C20 HPF, or if the RC dynamics (attack transient behavior, frequency-dependent pickup response) are audibly important.
+This would capture transient charge dynamics during attack that the one-pole HPF approximation does not model. However, the audible difference is expected to be small, and A/B testing against OBM recordings has not revealed deficiencies attributable to the HPF approximation.
 
 ### 8.4 Signal Level Estimation
 
@@ -713,7 +737,7 @@ This is consistent with Brad Avenson's measurement of **2-7 mV AC at the volume 
 | Miessner's asymmetric modulation in 200A | **DEFERRED** to OBM recording comparison phase. Unknown if preserved in production design. Will calibrate against OldBassMan recordings. |
 | Exact signal level at pickup output | Sub-mV to low mV estimated; no direct measurement found |
 
-**Pickup nonlinearity DECISION:** Implement the full model: 1/d capacitance relationship (even harmonics from asymmetric modulation), minGap clamp (soft saturation as reed approaches plate), and register-dependent gap scaling (`gap_scale = 2^((60-key)/60)`). The two deferred items above affect calibration constants only, not the model topology.
+**Pickup nonlinearity DECISION: IMPLEMENTED.** The full 1/(1-y) nonlinearity model is implemented in `pickup.rs` (line 97: `let nonlinear = y / (1.0 - y)`), with MAX_Y = 0.90 clamp, one-pole HPF at 2312 Hz, and register-dependent displacement scaling from beam compliance (`tables.rs:pickup_displacement_scale()`). The two deferred items above affect calibration constants only, not the model topology.
 
 ---
 
@@ -749,6 +773,26 @@ This is consistent with Brad Avenson's measurement of **2-7 mV AC at the volume 
 8. **US Patent 3,038,363** — Miessner, B.F. "Electronic Piano." Filed 1950, issued 1962.
    - [Google Patents](https://patents.google.com/patent/US3038363)
    - U-channel geometry, asymmetric modulation, pickup electrode design
+
+9. **US Patent 2,919,616** — Andersen, C.W. "Clamping and Control Apparatus for Reed Generators." Issued 1960.
+   - [Google Patents](https://patents.google.com/patent/US2919616)
+   - **Gold standard for manufacturing tolerances**: slot clearance 0.0025"/side, reed material Rockwell C-50, spacing tools, pickup nodal position 0.22L from free end, hammer strike at 0.25-0.35L
+
+10. **US Patent 2,942,512** — Miessner, B.F. "Electronic Piano." Issued 1960.
+    - [Google Patents](https://patents.google.com/patent/US2942512)
+    - Pickup at 2nd partial node (0.78L), capstan rod adjustability, reed base grouping
+
+11. **US Patent 2,966,821** — Miessner, B.F. "Electronic Piano." Issued 1961.
+    - [Google Patents](https://patents.google.com/patent/US2966821)
+    - Pickup face geometry, angular deviation specs, frequency ratios
+
+12. **US Patent 2,932,231** — Miessner, B.F. "Tone Generating Apparatus." Issued 1960.
+    - [Google Patents](https://patents.google.com/patent/US2932231)
+    - Hammer contact: neoprene foam 1/8-1/4" thick, contact length 10-30% of reed, duration 3/4-1 cycle
+
+13. **US Patent 3,215,765** — Miessner, B.F. "Fixed Free-Reed Electronic Piano with Improved Interpartial-Ratio Integralizing Arrangements." Issued 1965.
+    - [Google Patents](https://patents.google.com/patent/US3215765)
+    - Interpartial ratios (6.001-6.029), tuner-damper system (NOT used in 200A production), reed taper specs
 
 9. **Physics LibreTexts** — "Changing the Distance Between the Plates of a Capacitor"
    - [LibreTexts 5.15](https://phys.libretexts.org/Bookshelves/Electricity_and_Magnetism/Electricity_and_Magnetism_(Tatum)/05:_Capacitors/5.15:__Changing_the_Distance_Between_the_Plates_of_a_Capacitor)

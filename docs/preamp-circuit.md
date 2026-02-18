@@ -2,6 +2,8 @@
 
 Comprehensive technical reference for implementing a digital model of the Wurlitzer 200A reed-bar preamplifier. Covers verified component values (from direct reading of BustedGear 200A schematic at 900 DPI), DC bias analysis, AC signal analysis, harmonic generation mechanisms, tremolo integration, and modeling recommendations.
 
+> **See also:** [DK Preamp Derivation](dk-preamp-derivation.md) (MNA math), [DK Preamp Testing](dk-preamp-testing.md) (test pyramid), [Output Stage](output-stage.md) (tremolo LDR integration)
+
 ---
 
 ## Table of Contents
@@ -878,29 +880,29 @@ At low preamp drive levels (pp), the distinction between gain modulation and vol
 
 The voice holds a swappable `PreampModel` implementation. A/B testing compares the two until the simplified version is perceptually indistinguishable from the reference. If CPU allows, ship both as a quality toggle.
 
-#### Approach 1: Full SPICE-Level Simulation (Highest Fidelity) — REFERENCE IMPLEMENTATION
+#### Approach 1: DK Method — Coupled 8-Node MNA Solver — SHIPPING IMPLEMENTATION
 
-Model the complete circuit with Ebers-Moll equations for both transistors, explicit feedback networks (C-3, C-4, R-10 emitter feedback via Ce1, LG-1 LDR shunt), and direct coupling. Coupled NR solver for both stages simultaneously.
+Model the complete circuit as an 8-node Modified Nodal Analysis (MNA) system using the Discretization-Kernel (DK) method. Trapezoidal discretization with a precomputed system inverse reduces the per-sample nonlinear solve to a 2x2 Newton-Raphson iteration on Vbe1/Vbe2. Implemented as `DkPreamp` in `dk_preamp.rs`. See [DK Preamp Derivation](dk-preamp-derivation.md) for the full math.
 
-**Pros:** Most accurate harmonic content, correct frequency-dependent gain, proper bias-shift dynamics
-**Cons:** Requires solving two coupled implicit equations per sample (Newton-Raphson iteration); computationally expensive at audio rates
-**Role:** Ground truth for A/B comparison. Use this to validate that the simplified model sounds correct.
+**Pros:** Most accurate harmonic content, correct frequency-dependent gain (captures nested C-3/C-4 Miller loop), proper bias-shift dynamics, explicit R_ldr handling via Sherman-Morrison
+**Cons:** Requires solving two coupled implicit equations per sample (Newton-Raphson iteration); ~420 FLOPs/sample
+**Role:** Shipping implementation. Correctly models the ~15.5 kHz bandwidth that is independent of R_ldr (see Section 5.5.1).
 
-#### Approach 2: Simplified Ebers-Moll with Feedback Caps — SHIPPING CANDIDATE
+#### Approach 2: Simplified Ebers-Moll with Feedback Caps — LEGACY REFERENCE
 
-Two independent BjtStage objects with exponential transfer functions, NR solver for feedback, and asymmetric soft-clip for collector limits.
+Two independent BjtStage objects with exponential transfer functions, NR solver for feedback, and asymmetric soft-clip for collector limits. Implementation exists in `preamp.rs` as `EbersMollPreamp`.
 
 **Pros:** Captures the key H2 mechanism; reasonable computational cost; NR converges quickly at physical signal levels
-**Cons:** Misses inter-stage DC bias modulation ("sag"); feedback cap implementation must have correct polarity (see Section 9)
-**Role:** Primary shipping implementation. A/B tested against Approach 1.
+**Cons:** Misses inter-stage DC bias modulation ("sag"); constant-GBW model is structurally inadequate (gives ~5.2 kHz BW at trem-bright vs real ~15.5 kHz — see Section 5.5.1)
+**Status:** Superseded by DkPreamp. Retained in `preamp.rs` as legacy reference for A/B comparison.
 
-#### Approach 3: Wave Digital Filter (WDF) Model — UNDER EVALUATION
+#### Approach 3: Wave Digital Filter (WDF) Model — NOT PURSUED
 
-Model each resistor, capacitor, and transistor junction as a WDF element. Solves the full circuit implicitly at each sample.
+Model each resistor, capacitor, and transistor junction as a WDF element.
 
-**Pros:** Correct at all operating points; handles direct coupling naturally; well-suited for real-time; would automatically capture the nested feedback loop behavior (C-3/C-4 inner loop + R-10 outer loop) that Approach 2 cannot model correctly (see Section 5.5.1)
-**Cons:** No Rust WDF library exists; would require either FFI to C++ chowdsp_wdf or a Rust port; WDF junction models for BJTs are nontrivial; R-type adaptor needed for the bridged feedback topology
-**Status:** Under active evaluation (Feb 2026). The nested-loop SPICE analysis (Section 5.5.1) confirmed that Approach 2's constant-GBW model is structurally inadequate — preamp-only BW is ~15.5 kHz regardless of R_ldr, but a constant-GBW model gives 5.2 kHz at trem-bright. The C-3/C-4 inner Miller loop must be modeled explicitly, which is exactly what WDF handles naturally. Options being evaluated: (a) Rust port of chowdsp_wdf core, (b) FFI bindings to C++ chowdsp_wdf, (c) minimal custom WDF for this specific topology.
+**Pros:** Correct at all operating points; handles direct coupling naturally; well-suited for real-time; would automatically capture the nested feedback loop behavior
+**Cons:** No Rust WDF library exists; would require FFI to C++ chowdsp_wdf or a Rust port; WDF junction models for BJTs are nontrivial; R-type adaptor needed for the bridged feedback topology
+**Status:** Not pursued. The DK method (Approach 1 variant) achieves the same coupled-system fidelity with a simpler implementation path.
 
 #### Approach 4: Polynomial Approximation — NOT RECOMMENDED
 
@@ -950,7 +952,7 @@ For a perceptually accurate Wurlitzer 200A preamp model, the minimum implementat
 5. **Closed-loop bandwidth** — preamp-only target ~15.5 kHz (nearly constant with R_ldr). Full-chain BW is ~11.8 kHz no-trem / ~9.7 kHz trem-bright due to input network Miller loading. See Section 5.5.1 for nested-loop analysis.
 6. **Direct coupling** to Stage 2 (can be instantaneous coupling for simplicity)
 7. **Stage 2** with Av = 2.2, nearly symmetric soft-clip (satLimit = 6.2V, cutoffLimit = 5.3V)
-8. **Output DC block** at ~20 Hz
+8. **Output coupling**: 4th-order Bessel HPF at 40 Hz (Q values 0.5219 and 0.8055), chosen over Butterworth to eliminate bass onset ringing ("plink"). Provides -23 dB rejection at 22 Hz.
 9. **R-9 series output** (6.8K) — provides output impedance for volume pot interaction
 
 ### 8.5 Enhanced Model (for Future Implementation)
@@ -967,7 +969,7 @@ Add to the minimum model:
 
 Key lessons from previous modeling attempts:
 
-1. **kPreampInputDrive should be ~1.0.** A value >> 1 indicates wrong gain staging in the model. The real preamp has open-loop gain ~900, reduced by emitter feedback to ~6 dB (2.0x) closed-loop.
+1. **(Historical — EbersMollPreamp only)** The old `kPreampInputDrive` constant (removed from codebase) should have been ~1.0. A value >> 1 indicated wrong gain staging. The DkPreamp implementation does not use an input drive constant; the MNA system handles gain staging implicitly.
 
 2. **Miller feedback polarity: MORE feedback at HF, LESS at LF.** The capacitor passes high frequencies and blocks low frequencies. An LPF-based feedback implementation inverts this behavior.
 
@@ -1107,8 +1109,10 @@ R_1 = 22K (series from reed bar)
 R_2 = 2 MEG (to +15V; see Note 1 on discrepancy)
 R_3 = 470K (to ground)
 
-// Output DC block
-f_dc_block = 20 Hz (to be determined by output coupling cap)
+// Output coupling: 4th-order Bessel HPF at 40 Hz (Q=0.5219, Q=0.8055)
+// Chosen over Butterworth to eliminate bass onset ringing ("plink").
+// Provides -23 dB rejection at 22 Hz.
+f_output_hpf = 40 Hz (Bessel, 4th order)
 
 // Overall closed-loop (emitter feedback via R-10/Ce1)
 total_closed_loop_gain_no_trem = 6.0 dB (2.0x) [Rldr_path = 1M]
@@ -1124,7 +1128,7 @@ full_chain_bandwidth_no_trem = 19 Hz - 11.8 kHz (includes input network loading)
 full_chain_bandwidth_trem_bright = 19 Hz - 9.7 kHz (input network loaded more by higher gain)
 // Earlier "9.9 kHz / 8.3 kHz" figures were full-chain, possibly with R_ldr=120K default
 passband_peak = ~450 Hz (from feedback loop resonance)
-kPreampInputDrive = should be ~1.0 if gain staging is correct
+// kPreampInputDrive: removed (was EbersMollPreamp only; DkPreamp handles gain implicitly)
 
 // Note: C20 (220 pF) appears only on 206A board, NOT on 200A.
 // Bass rolloff comes from pickup RC (f_c = 2312 Hz), not from preamp.

@@ -482,7 +482,6 @@ fn cmd_render(args: &[String]) {
 fn cmd_bark_audit(args: &[String]) {
     // Pickup constants (duplicated here since they're private in pickup.rs)
     const SENSITIVITY: f64 = 1.8375;
-    const DISPLACEMENT_SCALE: f64 = 0.60;
     const MAX_Y: f64 = 0.90;
     const PICKUP_HPF_HZ: f64 = 2312.0;
 
@@ -546,6 +545,7 @@ fn cmd_bark_audit(args: &[String]) {
                 &amplitudes,
                 &params.mode_decay_rates,
                 0.0,
+                velocity,
                 BASE_SR,
                 (note as u32).wrapping_mul(2654435761),
             );
@@ -561,9 +561,10 @@ fn cmd_bark_audit(args: &[String]) {
             let _reed_h2 = dft_magnitude(reed_steady, h2_freq, BASE_SR);
 
             // ── Stage 2: After nonlinearity (before HPF) ──
+            let displacement_scale = tables::pickup_displacement_scale(note);
             let mut nl_buf = reed_buf.clone();
             for s in &mut nl_buf {
-                let y = (*s * DISPLACEMENT_SCALE).clamp(-MAX_Y, MAX_Y);
+                let y = (*s * displacement_scale).clamp(-MAX_Y, MAX_Y);
                 *s = (y / (1.0 - y)) * SENSITIVITY;
             }
             let nl_steady = &nl_buf[measure_offset..];
@@ -571,7 +572,7 @@ fn cmd_bark_audit(args: &[String]) {
             let nl_h1 = dft_magnitude(nl_steady, freq, BASE_SR);
             let nl_h2 = dft_magnitude(nl_steady, h2_freq, BASE_SR);
             let nl_h2_h1 = if nl_h1 > 1e-15 { nl_h2 / nl_h1 } else { 0.0 };
-            let y_peak = reed_peak * DISPLACEMENT_SCALE;
+            let y_peak = reed_peak * displacement_scale;
 
             // ── Stage 3: After pickup HPF ──
             let mut hpf = OnePoleHpf::new(PICKUP_HPF_HZ, BASE_SR);
@@ -625,7 +626,7 @@ fn cmd_bark_audit(args: &[String]) {
     // Summary
     println!("Legend:");
     println!("  Reed pk   = peak reed displacement (model units)");
-    println!("  y_peak    = physical displacement fraction (y = reed_pk * {DISPLACEMENT_SCALE})");
+    println!("  y_peak    = physical displacement fraction (y = reed_pk * DS), DS = per-note from tables");
     println!("  NL H2/H1  = H2/H1 after 1/(1-y) nonlinearity, before HPF");
     println!("  NL pk(mV) = peak signal after nonlinearity (millivolts)");
     println!("  HPF H2/H1 = H2/H1 after pickup RC HPF at {PICKUP_HPF_HZ} Hz");

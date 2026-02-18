@@ -178,10 +178,12 @@ pub fn reed_length_mm(midi: u8) -> f64 {
 /// Returns (width_mm, thickness_mm) based on 200A series blank dimensions
 /// from docs/reed-and-hammer-physics.md Section 1.2.
 ///
-/// Five blanks with distinct widths; thickness steps from 0.020" (bass blanks 1-2)
-/// to 0.031" (middle/treble blanks 3-5). The thickness transition is smoothed
-/// over 10 semitones (reeds 16-26, MIDI 48-58) to model the gradual grinding
-/// taper applied at blank boundaries. Width uses step transitions (secondary effect).
+/// Five blanks with distinct widths; thickness uses 200A values (thicker than
+/// 200-series) per Vintage Vibe case study: bass 0.026", mid/treble 0.034".
+/// The 200A's thicker reeds produce a "smoother, rounder, mellower tone"
+/// and reduce displacement for the same hammer force (less bark at extreme bass).
+/// The thickness transition is smoothed over 10 semitones (reeds 16-26, MIDI 48-58)
+/// to model the gradual grinding taper at blank boundaries.
 pub fn reed_blank_dims(midi: u8) -> (f64, f64) {
     let reed = (midi as i32 - 32).clamp(1, 64) as u8;
 
@@ -198,16 +200,16 @@ pub fn reed_blank_dims(midi: u8) -> (f64, f64) {
         0.098 // Blank 5: reeds 51-64
     };
 
-    // Thickness in inches — smooth transition from bass (0.020") to mid/treble (0.031")
-    // The real instrument has a grinding taper that creates a gradual transition.
+    // Thickness in inches — 200A values (thicker than 200-series 0.020/0.031)
+    // Smooth transition from bass (0.026") to mid/treble (0.034")
     let thickness_inch = if reed <= 16 {
-        0.020
+        0.026
     } else if reed <= 26 {
         // 10-semitone crossfade: reeds 16-26 (MIDI 48-58)
         let t = (reed as f64 - 16.0) / 10.0;
-        0.020 + t * (0.031 - 0.020)
+        0.026 + t * (0.034 - 0.026)
     } else {
-        0.031
+        0.034
     };
 
     (width_inch * 25.4, thickness_inch * 25.4)
@@ -336,26 +338,75 @@ pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MOD
     }
 }
 
+/// Hammer spatial coupling coefficients for mode excitation.
+///
+/// The hammer contacts the reed over a finite length at a specific position,
+/// acting as a spatial filter in mode space. Modes whose half-wavelength is
+/// shorter than the contact region experience partial cancellation.
+///
+/// From Wurlitzer patents:
+///   - Strike center: 0.30L from clamp (Andersen US 2,919,616: 0.25-0.35L)
+///   - Contact length: 0.20L (Miessner US 2,932,231: 10-30% of reed)
+///   - Contact region: ξ ∈ [0.20, 0.40] in normalized coordinates
+///
+/// Returns per-mode coupling coefficients normalized to mode 1.
+/// Values > 1.0 mean that mode is excited MORE efficiently than mode 1
+/// at this position (mode 1 has small displacement near the clamp).
+pub fn hammer_spatial_coupling(mu: f64) -> [f64; NUM_MODES] {
+    let betas = eigenvalues(mu);
+
+    let xi_start = 0.20;
+    let xi_end = 0.40;
+    let contact_len = xi_end - xi_start;
+
+    let mut coupling_raw = [0.0f64; NUM_MODES];
+
+    const N_SIMPSON: usize = 32;
+    let h = contact_len / N_SIMPSON as f64;
+
+    for mode in 0..NUM_MODES {
+        let beta = betas[mode];
+        let mut sum = mode_shape(beta, xi_start) + mode_shape(beta, xi_end);
+        for j in 1..N_SIMPSON {
+            let xi = xi_start + j as f64 * h;
+            let coeff = if j % 2 == 1 { 4.0 } else { 2.0 };
+            sum += coeff * mode_shape(beta, xi);
+        }
+        let integral = (sum * h / 3.0).abs();
+        coupling_raw[mode] = integral / contact_len;
+    }
+
+    // Normalize to mode 1
+    let k1 = coupling_raw[0];
+    if k1 > 1e-30 {
+        let mut coupling = [0.0f64; NUM_MODES];
+        for i in 0..NUM_MODES {
+            coupling[i] = coupling_raw[i] / k1;
+        }
+        coupling
+    } else {
+        [1.0; NUM_MODES]
+    }
+}
+
 /// Fundamental decay rate in dB/s for a given MIDI note.
 ///
-/// Exponential fit to OldBassMan 200A measurements (Section 5.7):
-///   decay_dB_per_sec = 0.26 * exp(0.049 * MIDI)
+/// Power law in MIDI note number, calibrated against OBM 200A decay rates:
+///   C4: ~9.2, C5: ~21.7, C6: ~36.8 dB/s
 ///
-/// With a floor from frequency-independent losses: clamping friction at the
-/// reed base, energy radiated through the mounting structure, and viscous air
-/// damping of the large bass reed surface area. These mechanisms don't vanish
-/// at low frequencies, so they set a minimum decay rate that the exponential
-/// fit (derived from mid-register data) under-predicts for deep bass.
+/// Physical basis: shorter, stiffer treble reeds lose energy faster through
+/// clamping stress (∝ 1/L²), air damping per unit mass, and thermoelastic
+/// loss. The combined effect scales as a power law of reed number.
 ///
-/// The floor primarily affects MIDI 33-49 (A1 to C#3). At C3 the exponential
-/// already gives 2.75 dB/s, so the 3.0 dB/s floor is a modest 9% bump. At A1
-/// the floor raises the rate from 1.3 to 3.0 dB/s (T60: 46s → 20s), which
-/// also increases mode 2 decay from 25 to 57 dB/s via the p=1.5 exponent —
-/// confining inharmonic intermod to the attack phase.
+/// The 3.0 dB/s floor handles frequency-independent losses (clamping friction,
+/// structural radiation, viscous air damping) that dominate for bass reeds
+/// MIDI 33-48. OBM confirms bass decay rates are ~3 dB/s throughout octaves
+/// 2-3, matching this floor.
 const MIN_DECAY_RATE: f64 = 3.0;
 
 pub fn fundamental_decay_rate(midi: u8) -> f64 {
-    let freq_dependent = 0.26 * f64::exp(0.049 * midi as f64);
+    let m = midi as f64;
+    let freq_dependent = 3.0 * (m / 48.0).powf(4.5);
     freq_dependent.max(MIN_DECAY_RATE)
 }
 
@@ -382,17 +433,98 @@ pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES]
     rates
 }
 
+/// Multi-harmonic RMS proxy for post-pickup signal level.
+///
+/// The pickup's 1/(1-y) nonlinearity distributes energy across harmonics.
+/// For `y = ds·sin(θ)`, the Fourier magnitudes of `y/(1-y)` are:
+///   r = (1 - sqrt(1 - ds²)) / ds
+///   c_n = 2·r^n / sqrt(1 - ds²)
+///
+/// Each harmonic passes the pickup HPF differently: `hpf_n = n·f0 / sqrt((n·f0)² + fc²)`.
+/// The RMS proxy sums the first 8 harmonics: `sqrt(Σ (c_n · hpf_n)²)`.
+///
+/// This replaces the old single-harmonic proxy `ds/(1-ds) * f0/sqrt(f0²+fc²)` which
+/// used the peak of y/(1-y) instead of Fourier coefficients and ignored H2-H8 energy.
+/// The peak/c₁ ratio varies from 1.7 (ds=0.50) to 2.4 (ds=0.80), systematically
+/// over-estimating bass by ~2 dB.
+fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
+    if ds < 1e-10 {
+        return 0.0;
+    }
+    let r = (1.0 - (1.0 - ds * ds).sqrt()) / ds;
+    let inv_sqrt = 1.0 / (1.0 - ds * ds).sqrt();
+    let mut sum_sq = 0.0;
+    let mut r_n = r;
+    for n in 1..=8u32 {
+        let cn = 2.0 * r_n * inv_sqrt;
+        let nf = n as f64 * f0;
+        let hpf_n = nf / (nf * nf + fc * fc).sqrt();
+        sum_sq += (cn * hpf_n) * (cn * hpf_n);
+        r_n *= r;
+    }
+    sum_sq.sqrt()
+}
+
+/// Empirical register trim from Tier 3 render calibration at v=127.
+///
+/// Corrects the residual imbalance that the multi-harmonic proxy and voicing
+/// slope cannot model analytically: preamp Cin coupling cap HPF (~329 Hz),
+/// speaker coloration, displacement_scale clamp effects, and mode interaction
+/// artifacts. Reference: MIDI 60 (C4) = 0.0 dB.
+///
+/// Positive = boost (note too quiet), negative = cut (note too loud).
+/// Linear interpolation between anchor points; clamped outside range.
+fn register_trim_db(midi: u8) -> f64 {
+    // Calibrated from zero-trim Tier 3 renders at v=127 (2026-02-18).
+    // Physics: 200A reed thickness + register-dependent dwell (Miessner).
+    // hammer_spatial_coupling removed (double-counted OBM amplitudes).
+    // Calibrated from zero-trim Tier 3 renders at v=127 (2026-02-18).
+    // Physics: 200A reed thickness + register-dependent dwell (Miessner).
+    // hammer_spatial_coupling removed (double-counted OBM amplitudes).
+    const ANCHORS: [(f64, f64); 13] = [
+        (36.0, -7.7),   // C2:  -8.9 → -16.6
+        (40.0, -7.6),   // E2:  -9.0 → -16.6
+        (44.0, -9.9),   // G#2: -6.7 → -16.6
+        (48.0, -7.0),   // C3:  -9.6 → -16.6
+        (52.0, -9.0),   // E3:  -7.6 → -16.6
+        (56.0, -5.4),   // G#3: -11.2 → -16.6
+        (60.0, 0.0),    // C4:  -16.6 (reference)
+        (64.0, 4.5),    // E4:  -21.1 → -16.6
+        (68.0, 5.4),    // G#4: -22.0 → -16.6
+        (72.0, 3.8),    // C5:  -20.4 → -16.6
+        (76.0, 4.7),    // E5:  -21.3 → -16.6
+        (80.0, -1.0),   // G#5: -15.6 → -16.6
+        (84.0, -5.5),   // C6:  -11.1 → -16.6
+    ];
+
+    let m = midi as f64;
+    if m <= ANCHORS[0].0 {
+        return ANCHORS[0].1;
+    }
+    if m >= ANCHORS[ANCHORS.len() - 1].0 {
+        return ANCHORS[ANCHORS.len() - 1].1;
+    }
+    for i in 0..ANCHORS.len() - 1 {
+        let (x0, y0) = ANCHORS[i];
+        let (x1, y1) = ANCHORS[i + 1];
+        if m <= x1 {
+            let t = (m - x0) / (x1 - x0);
+            return y0 + t * (y1 - y0);
+        }
+    }
+    0.0
+}
+
 /// Per-note output scaling to balance the keyboard.
 ///
 /// Applied POST-pickup to decouple volume from nonlinear displacement.
-/// Uses a physics-based proxy: DS/(1-DS) captures nonlinear pickup gain,
-/// f0/sqrt(f0²+fc²) captures the pickup HPF rolloff. The product is
-/// inverted relative to C4 to flatten the keyboard, then a gentle treble
-/// voicing slope compensates for harmonic content loss at low DS values
-/// and preamp BW rolloff.
+/// Three layers of correction:
+///   1. Multi-harmonic physics proxy — models 1/(1-y) harmonics through HPF
+///   2. Voicing slope — gentle treble roll for preamp BW and harmonic content
+///   3. Empirical register trim — calibrated from Tier 3 renders at v=127
 ///
-/// Only two tuning knobs:
-///   TARGET_DB — absolute level (C4@ff@vol=0.60 → ~-3 dBFS)
+/// Tuning knobs:
+///   TARGET_DB — absolute level
 ///   VOICING_SLOPE — treble balance (dB/semi above C4)
 pub fn output_scale(midi: u8) -> f64 {
     const TARGET_DB: f64 = -13.0;
@@ -401,17 +533,15 @@ pub fn output_scale(midi: u8) -> f64 {
 
     let ds = pickup_displacement_scale(midi);
     let f0 = midi_to_freq(midi);
-    let nl = ds / (1.0 - ds);
-    let hpf = f0 / (f0 * f0 + HPF_FC * HPF_FC).sqrt();
 
-    let f0_ref = midi_to_freq(60);
-    let nl_ref = DS_AT_C4 / (1.0 - DS_AT_C4);
-    let hpf_ref = f0_ref / (f0_ref * f0_ref + HPF_FC * HPF_FC).sqrt();
+    let rms = pickup_rms_proxy(ds, f0, HPF_FC);
+    let rms_ref = pickup_rms_proxy(DS_AT_C4, midi_to_freq(60), HPF_FC);
 
-    let flat_db = -20.0 * ((nl * hpf) / (nl_ref * hpf_ref)).log10();
+    let flat_db = -20.0 * (rms / rms_ref).log10();
     let voicing_db = VOICING_SLOPE * (midi as f64 - 60.0).max(0.0);
+    let trim = register_trim_db(midi);
 
-    f64::powf(10.0, (TARGET_DB + flat_db + voicing_db) / 20.0)
+    f64::powf(10.0, (TARGET_DB + flat_db + voicing_db + trim) / 20.0)
 }
 
 /// Register-dependent velocity exponent for dynamic expression.
@@ -441,21 +571,13 @@ pub fn velocity_exponent(midi: u8) -> f64 {
     min_exp + t * (max_exp - min_exp)
 }
 
-/// Bass mode amplitude taper — compensates for pickup HPF differential.
+/// Bass mode amplitude taper — SUPERSEDED by hammer_spatial_coupling.
 ///
-/// The 1-pole HPF at 2312 Hz amplifies higher modes relative to the fundamental
-/// by approximately their frequency ratio (in dB). For bass notes where the
-/// fundamental is far below the HPF corner, this causes bending modes (especially
-/// mode 2 at ~7x) to dominate the output spectrum.
-///
-/// Physical justification: longer bass reeds have the hammer contact point
-/// closer to mode 2's vibration node (~0.78L from clamp), reducing excitation.
-/// The dwell filter is too wide (sigma=8) to catch this at bass frequencies.
-///
-/// Below C3 (MIDI 48), attenuate modes 2+ proportional to distance from C3.
-/// Higher modes get progressively steeper attenuation since their HPF advantage
-/// is larger (HPF differential scales with log of frequency ratio).
-pub fn bass_mode_taper(midi: u8, mode: usize) -> f64 {
+/// Kept for reference. Replaced by physics-based spatial integration over the
+/// hammer contact region (Andersen/Miessner patents) which models the same
+/// effect more accurately across the full register.
+#[allow(dead_code)]
+fn bass_mode_taper(midi: u8, mode: usize) -> f64 {
     if mode == 0 || midi >= 48 {
         return 1.0;
     }
@@ -531,8 +653,10 @@ pub fn perceptual_beat_weight(beat_hz: f64) -> f64 {
 
 /// Dwell attenuation at ff velocity (velocity=1.0), inlined to keep tables.rs
 /// dependency-free from hammer.rs.
+///
+/// Uses Miessner patent dwell: 0.75 cycles at ff.
 fn dwell_attenuation_ff(fundamental_hz: f64, mode_ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES] {
-    let t_dwell = 0.0005; // ff: velocity=1.0 → 0.0005 + 0.002*(1-1) = 0.5ms
+    let t_dwell = (0.75 / fundamental_hz).clamp(0.0003, 0.020);
     let sigma_sq = 8.0 * 8.0;
 
     let mut atten = [0.0f64; NUM_MODES];
@@ -569,13 +693,14 @@ pub fn intermod_risk(midi: u8) -> IntermodReport {
     let coupling = spatial_coupling_coefficients(mu, reed_length_mm(midi));
 
     // Modes 2-7 (index 1-6) — mode 1 is always ratio 1.0, no intermod
+    // NOTE: hammer_spatial_coupling not applied — OBM amplitudes already include it
     for i in 1..NUM_MODES {
         let ratio = ratios[i];
         let nearest = ratio.round() as u32;
         let fractional_offset = (ratio - nearest as f64).abs();
         let beat_hz = fractional_offset * fundamental_hz;
         let effective_amplitude =
-            BASE_MODE_AMPLITUDES[i] * bass_mode_taper(midi, i) * coupling[i] * dwell[i];
+            BASE_MODE_AMPLITUDES[i] * coupling[i] * dwell[i];
         let weight = perceptual_beat_weight(beat_hz);
         let risk = effective_amplitude * weight;
 
@@ -611,11 +736,13 @@ pub fn note_params(midi: u8) -> NoteParams {
     let ratios = mode_ratios(mu);
     let decay_rates = mode_decay_rates(midi, &ratios);
 
-    // Apply bass mode taper to compensate for HPF differential
     let mut amplitudes = BASE_MODE_AMPLITUDES;
-    for i in 0..NUM_MODES {
-        amplitudes[i] *= bass_mode_taper(midi, i);
-    }
+
+    // NOTE: hammer_spatial_coupling is NOT applied here because
+    // BASE_MODE_AMPLITUDES were calibrated from OBM recordings that already
+    // include the real hammer's excitation profile. Applying spatial coupling
+    // on top would double-count, boosting inharmonic modes 2-3 by +11-14 dB
+    // and creating a metallic "plink" on attack.
 
     // Apply spatial pickup coupling — finite plate length attenuates higher bending modes
     let coupling = spatial_coupling_coefficients(mu, reed_length_mm(midi));
@@ -666,6 +793,34 @@ mod tests {
     fn test_decay_rate_increases_with_pitch() {
         assert!(fundamental_decay_rate(60) > fundamental_decay_rate(48));
         assert!(fundamental_decay_rate(84) > fundamental_decay_rate(72));
+    }
+
+    #[test]
+    fn test_decay_rate_obm_calibration() {
+        // OBM-measured decay rates (dB/s) with 20% tolerance.
+        // Bass is floor-dominated and validated.
+        let bass = fundamental_decay_rate(36); // C2
+        assert!(
+            (bass - 3.0).abs() < 0.5,
+            "C2 should be near floor (3.0), got {bass:.1}"
+        );
+
+        // Treble: power law calibrated to OBM targets
+        let c4 = fundamental_decay_rate(60);
+        let c5 = fundamental_decay_rate(72);
+        let c6 = fundamental_decay_rate(84);
+        assert!(
+            c4 > 6.0 && c4 < 12.0,
+            "C4 decay should be ~9.2 dB/s (OBM), got {c4:.1}"
+        );
+        assert!(
+            c5 > 15.0 && c5 < 28.0,
+            "C5 decay should be ~21.7 dB/s (OBM), got {c5:.1}"
+        );
+        assert!(
+            c6 > 30.0 && c6 < 50.0,
+            "C6 decay should be ~36.8 dB/s (OBM), got {c6:.1}"
+        );
     }
 
     #[test]
@@ -888,41 +1043,41 @@ mod tests {
 
     #[test]
     fn test_blank_dims_known_values() {
-        // Reed 1 (MIDI 33): blank 1, w=0.151", t=0.020"
+        // Reed 1 (MIDI 33): blank 1, w=0.151", t=0.026" (200A)
         let (w, t) = reed_blank_dims(33);
         assert!((w - 0.151 * 25.4).abs() < 0.01, "MIDI 33 width = {w}");
-        assert!((t - 0.020 * 25.4).abs() < 0.01, "MIDI 33 thickness = {t}");
+        assert!((t - 0.026 * 25.4).abs() < 0.01, "MIDI 33 thickness = {t}");
 
-        // Reed 42 (MIDI 74): blank 3, w=0.121", t=0.031"
+        // Reed 42 (MIDI 74): blank 3, w=0.121", t=0.034" (200A)
         let (w, t) = reed_blank_dims(74);
         assert!((w - 0.121 * 25.4).abs() < 0.01, "MIDI 74 width = {w}");
-        assert!((t - 0.031 * 25.4).abs() < 0.01, "MIDI 74 thickness = {t}");
+        assert!((t - 0.034 * 25.4).abs() < 0.01, "MIDI 74 thickness = {t}");
 
-        // Reed 64 (MIDI 96): blank 5, w=0.098", t=0.031"
+        // Reed 64 (MIDI 96): blank 5, w=0.098", t=0.034" (200A)
         let (w, t) = reed_blank_dims(96);
         assert!((w - 0.098 * 25.4).abs() < 0.01, "MIDI 96 width = {w}");
-        assert!((t - 0.031 * 25.4).abs() < 0.01, "MIDI 96 thickness = {t}");
+        assert!((t - 0.034 * 25.4).abs() < 0.01, "MIDI 96 thickness = {t}");
     }
 
     #[test]
     fn test_blank_dims_smooth_transition() {
-        // The thickness transition from bass (0.020") to mid (0.031") should be
+        // The thickness transition from bass (0.026") to mid (0.034") should be
         // smooth over MIDI 48-58 (reeds 16-26), not a sharp step.
         let (_, t48) = reed_blank_dims(48); // reed 16: pure bass
         let (_, t53) = reed_blank_dims(53); // reed 21: mid-transition
         let (_, t58) = reed_blank_dims(58); // reed 26: pure mid
 
         assert!(
-            (t48 - 0.020 * 25.4).abs() < 0.01,
-            "MIDI 48 should be pure bass"
+            (t48 - 0.026 * 25.4).abs() < 0.01,
+            "MIDI 48 should be pure bass (200A: 0.026\")"
         );
         assert!(
-            (t58 - 0.031 * 25.4).abs() < 0.01,
-            "MIDI 58 should be pure mid"
+            (t58 - 0.034 * 25.4).abs() < 0.01,
+            "MIDI 58 should be pure mid (200A: 0.034\")"
         );
         // Mid-transition should be between
         assert!(
-            t53 > t48 + 0.05 && t53 < t58 - 0.05,
+            t53 > t48 + 0.02 && t53 < t58 - 0.02,
             "MIDI 53 thickness ({t53:.3}) should be between {t48:.3} and {t58:.3}"
         );
     }

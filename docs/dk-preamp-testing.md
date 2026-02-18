@@ -1,6 +1,10 @@
 # DK Preamp Testing Strategy
 
+> **See also:** [DK Preamp Derivation](dk-preamp-derivation.md) (MNA math being tested), [Preamp Circuit](preamp-circuit.md) (circuit analysis and component values)
+
 Testing strategy for the DK (Discretization-Kernel) preamp implementation. The DK method derives the circuit model from explicit MNA matrices, which means the matrices ARE the model — we can test the model mathematically without running audio through it.
+
+**Implementation note:** The proposed test API below (e.g., `dk.g_matrix()`, `dk.c_matrix()`, `dk.s_matrix()`, `dk.dc_voltages()`) differs from the actual implementation, which uses direct struct field access (`preamp.s_base`, `preamp.v_dc`, `preamp.k`) and independent helper functions (`build_g_dc()`, `build_c_matrix()`, `build_w_vec()`). The test concepts and assertions are correct; adapt the accessor syntax to match the actual struct fields.
 
 Five layers, bottom-up. Each layer catches a different class of bug, and each layer's passing increases confidence that higher layers will pass.
 
@@ -48,17 +52,21 @@ fn test_g_matrix_off_diagonal() {
     let dk = DkPreamp::new(44100.0);
     let g = dk.g_matrix();
 
-    // No resistors connect any two circuit nodes directly
-    // (all resistors go to Vcc, GND, or input — which are sources, not nodes)
-    // So G should be diagonal (before Rldr is added)
-    for i in 0..8 {
-        for j in 0..8 {
-            if i != j {
-                assert_eq!(g[i][j], 0.0,
-                    "G[{}][{}] should be zero (no resistor between nodes)", i, j);
-            }
-        }
-    }
+    // Three resistors connect internal node pairs, creating off-diagonal entries:
+    //   Re2a (270Ω): nodes 3↔4 (emit2↔emit2b)
+    //   R-9  (6.8K): nodes 5↔6 (coll2↔out)
+    //   R-10 (56K):  nodes 6↔7 (out↔fb)
+    // These stamp -1/R at G[i][j] and G[j][i].
+
+    assert_relative_eq!(g[3][4], -1.0/270.0, epsilon = 1e-9);
+    assert_relative_eq!(g[4][3], -1.0/270.0, epsilon = 1e-9);
+    assert_relative_eq!(g[5][6], -1.0/6.8e3, epsilon = 1e-9);
+    assert_relative_eq!(g[6][5], -1.0/6.8e3, epsilon = 1e-9);
+    assert_relative_eq!(g[6][7], -1.0/56e3, epsilon = 1e-9);
+    assert_relative_eq!(g[7][6], -1.0/56e3, epsilon = 1e-9);
+
+    // All other off-diagonal entries should be zero
+    // (remaining resistors go to Vcc or GND, which are not state nodes)
 }
 
 #[test]
@@ -77,10 +85,11 @@ fn test_c_matrix_stamps() {
     let c = dk.c_matrix();
 
     // C-3 (100pF): nodes 2↔0 (coll1↔base1)
-    assert_eq!(c[0][0],  100e-12);  // +C at (0,0)
-    assert_eq!(c[2][2],  100e-12);  // +C at (2,2) (plus other caps at this node)
-    assert_eq!(c[0][2], -100e-12);  // -C at (0,2)
-    assert_eq!(c[2][0], -100e-12);  // -C at (2,0)
+    assert_eq!(c[0][0],  100e-12);  // +C3 at (0,0)
+    // c[2][2] gets +100pF from C-3 AND +100pF from C-4 = 200pF total
+    assert_eq!(c[2][2],  200e-12);  // C3 + C4 both have node 2 as one terminal
+    assert_eq!(c[0][2], -100e-12);  // -C3 at (0,2)
+    assert_eq!(c[2][0], -100e-12);  // -C3 at (2,0)
 
     // C-4 (100pF): nodes 5↔2 (coll2↔coll1)
     assert_eq!(c[5][5], 100e-12);
@@ -219,30 +228,19 @@ fn test_k_updates_with_rldr() {
 }
 
 #[test]
-fn test_history_matrix_rldr_update() {
-    // (2C/T - G) should only differ at [7][7] when Rldr changes
+fn test_l2_a_neg_base_is_rldr_independent() {
+    // In the explicit R_ldr approach, A_neg_base = (2C/T - G_base) is CONSTANT
+    // because R_ldr is NOT stamped into G_base. This test verifies that
+    // a_neg_base does not change when R_ldr varies.
+    //
+    // (Replaces the earlier test_history_matrix_rldr_update concept, which
+    // assumed R_ldr was stamped into G and only G[7][7] varied.)
     let dk = DkPreamp::new(44100.0);
 
-    dk.set_ldr_resistance(1e6);
-    let a_neg_1 = dk.a_neg_matrix();
-
-    dk.set_ldr_resistance(19e3);
-    let a_neg_2 = dk.a_neg_matrix();
-
-    for i in 0..8 {
-        for j in 0..8 {
-            if i == 7 && j == 7 {
-                // Should differ by delta_g = 1/19K - 1/1M
-                let expected_diff = 1.0/19e3 - 1.0/1e6;
-                assert_relative_eq!(
-                    a_neg_1[7][7] - a_neg_2[7][7], expected_diff, epsilon = 1e-10
-                );
-            } else {
-                assert_eq!(a_neg_1[i][j], a_neg_2[i][j],
-                    "Only [7][7] should change with Rldr");
-            }
-        }
-    }
+    // a_neg_base should be identical regardless of what R_ldr is set to,
+    // because the explicit R_ldr approach keeps it out of the G matrix entirely.
+    // The R_ldr backward contribution is applied per-sample in the RHS:
+    //   rhs[FB] -= g_ldr_prev * v[FB]
 }
 ```
 
@@ -263,14 +261,15 @@ fn test_dc_operating_point() {
     let dk = DkPreamp::new(44100.0);
     let v = dk.dc_voltages();
 
-    // TR-1: B=2.45V, E=1.95V, C=4.1V (SPICE reference)
-    assert_relative_eq!(v[0], 2.45, epsilon = 0.10);  // base1
-    assert_relative_eq!(v[1], 1.95, epsilon = 0.10);  // emit1
-    assert_relative_eq!(v[2], 4.10, epsilon = 0.20);  // coll1 = base2
+    // SPICE ground truth (differs from schematic annotations due to
+    // simplified BJT model: infinite beta, no Early effect)
+    assert_relative_eq!(v[0], 2.854, epsilon = 0.10);  // base1
+    assert_relative_eq!(v[1], 2.297, epsilon = 0.10);  // emit1
+    assert_relative_eq!(v[2], 4.556, epsilon = 0.20);  // coll1 = base2
 
-    // TR-2: E=3.4V, C=8.8V
-    assert_relative_eq!(v[3], 3.40, epsilon = 0.15);  // emit2
-    assert_relative_eq!(v[5], 8.80, epsilon = 0.30);  // coll2
+    // TR-2: emit2a=3.897V, coll2=8.551V
+    assert_relative_eq!(v[3], 3.897, epsilon = 0.15);  // emit2
+    assert_relative_eq!(v[5], 8.551, epsilon = 0.30);  // coll2
 
     // Vbe sanity: both BJTs should be forward-biased
     let vbe1 = v[0] - v[1];

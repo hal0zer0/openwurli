@@ -210,6 +210,9 @@ def render_synth_note(midi_note, velocity_midi, duration, output_path, preamp_be
         "--note", str(midi_note),
         "--velocity", str(velocity_midi),
         "--duration", str(duration),
+        "--no-poweramp",
+        "--speaker", "0.0",
+        "--volume", "1.0",
         "--output", str(output_path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)

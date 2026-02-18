@@ -2,13 +2,15 @@
 
 Comprehensive physical reference for Wurlitzer 200/200A reed and hammer mechanics.
 
+> **See also:** [Pickup System](pickup-system.md) (reed-to-signal transduction), [Calibration and Evaluation](calibration-and-evaluation.md) (spectral targets and test methodology)
+
 ---
 
 ## 1. Reed Construction
 
 ### 1.1 Material
 
-The reeds are made of spring steel. The exact alloy is not documented in any available Wurlitzer service manual or patent. Replacement reed suppliers (Retro Linear, Vintage Vibe) use blue-tempered spring steel strip, consistent with AISI 1095 or similar high-carbon steel (0.90-1.05% C).
+The reeds are made of spring steel. US Patent 2,919,616 (Andersen, 1960) specifies **"high grade of high carbon spring steel having a hardness of Rockwell C-50"** — consistent with AISI 1095 or similar high-carbon steel (0.90-1.05% C). Replacement reed suppliers (Retro Linear, Vintage Vibe) use blue-tempered spring steel strip. The patent also specifies the reed base material as cast bell alloy (13 parts copper, 4 parts tin), glass, porcelain, or high-carbon steel of Rockwell C-50, requiring "inherently low vibration viscosity" to minimize energy loss at the clamping point.
 
 **Material properties for AISI 1095 blue-tempered spring steel:**
 
@@ -376,6 +378,8 @@ A_n / A_1 = omega_1 / omega_n = f_1 / f_n = 1 / (f_n/f_1)
 
 This scaling is consistent with the observation from multiple sources that "only the first few modes of vibration have significantly large values, and the higher order vibration modes can be ignored" for struck cantilever beams.
 
+> **Deployed code uses OBM-calibrated values:** `[1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. The theoretical 1/omega predictions above are 20-37 dB too hot compared to real Wurlitzer 200A recordings (OldBassMan data). Real Wurlitzer reeds have solder tip mass and non-uniform geometry that suppress upper modes far below ideal Euler-Bernoulli theory. The "bark" character comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental frequency, NOT from physical mode 2 at 6.3x the fundamental. The theoretical values are retained here for reference.
+
 Source: [MEMS 431 Lab](https://classes.engineering.wustl.edu/mems431_lab/lab6.html), modal analysis theory
 
 ### 3.3 Effect of Tip Mass on Modal Participation
@@ -391,17 +395,17 @@ For mu > 0, the 1/omega_n scaling becomes approximately 1/omega_n^(1+delta) wher
 
 **Comparison of mode amplitudes (bass register):**
 
-| Mode | Current model | Physical 1/omega | Ratio (model/physical) |
-|------|-------------|-----------------|----------------------|
-| 1 (fund) | 0.350 | 0.350 (reference) | 1.0x |
-| 2 | 0.100 | 0.056 | 1.8x |
-| 3 | 0.030 | 0.020 | 1.5x |
-| 4 | 0.015 | 0.010 | 1.5x |
-| 5 | 0.010 | 0.006 | 1.7x |
-| 6 | 0.006 | 0.004 | 1.5x |
-| 7 | 0.004 | 0.003 | 1.3x |
+| Mode | Deployed (OBM-calibrated) | Theoretical 1/omega | Ratio (deployed/theoretical) |
+|------|--------------------------|---------------------|------------------------------|
+| 1 (fund) | 1.000 | 1.000 (reference) | 1.0x |
+| 2 | 0.010 | 0.160 | 0.063x (-24 dB) |
+| 3 | 0.0035 | 0.057 | 0.061x (-24 dB) |
+| 4 | 0.0018 | 0.029 | 0.062x (-24 dB) |
+| 5 | 0.0011 | 0.018 | 0.061x (-24 dB) |
+| 6 | 0.0007 | 0.012 | 0.058x (-25 dB) |
+| 7 | 0.0005 | 0.0084 | 0.060x (-24 dB) |
 
-The current model (which already uses approximate 1/omega scaling after the R41 correction) is within 2x of the physical prediction. The slight elevation of upper modes is defensible as compensation for the dwell filter attenuation. This is a major improvement over the R40 values which had modes 1+ elevated 20x above physical.
+The deployed code uses OBM-calibrated amplitudes that are 20-37 dB below the theoretical 1/omega prediction. This dramatic reduction was validated against OldBassMan Wurlitzer 200A recordings. Real Wurlitzer reeds (with solder tip mass and non-uniform geometry) suppress upper modes far below ideal cantilever beam theory. The spectral centroid ratio improved from 4.89x (1/omega values) to 1.42x (OBM target: 1.14x). Bark comes from the pickup's 1/(1-y) nonlinearity, not from physical mode energy.
 
 ---
 
@@ -443,7 +447,21 @@ The Wurlitzer hammer strikes a steel cantilever reed, not a tensioned string. Th
 - **Shorter contact times** than piano (stiffer target = faster rebound)
 - **Steeper force profile** (less felt compression needed before the reed pushes back)
 
-**Estimated Wurlitzer contact durations:**
+**Miessner patent specification (US 2,932,231, 1960):** Hammer contact duration is **"three fourths to one cycle of vibration at its fundamental frequency."** This is register-dependent:
+
+| Note | Fundamental | 1 cycle | Patent range (0.75-1.0 cycles) |
+|------|------------|---------|-------------------------------|
+| A1 (55 Hz) | 55 Hz | 18.2 ms | 13.6-18.2 ms |
+| C3 (131 Hz) | 131 Hz | 7.6 ms | 5.7-7.6 ms |
+| C4 (262 Hz) | 262 Hz | 3.8 ms | 2.9-3.8 ms |
+| C5 (523 Hz) | 523 Hz | 1.9 ms | 1.4-1.9 ms |
+| C7 (2093 Hz) | 2093 Hz | 0.48 ms | 0.36-0.48 ms |
+
+**Hammer material (US 2,932,231):** "Neoprene foam rubber pad, 1/8 to 1/4 inch thick," cemented to a wooden member. Contact surface length: **"between 10% and 30% of the reed length"** (i.e., a broad spatial footprint that acts as a spatial low-pass filter on mode excitation). Contact width: "at least as wide as the reed."
+
+The spatial contact length is significant: a contact region spanning 10-30% of the reed acts as a sinc-like filter in mode space, suppressing modes whose half-wavelength at the contact point is shorter than the contact length. This provides an additional mechanism for upper mode suppression beyond the temporal dwell filter.
+
+**Estimated Wurlitzer contact durations (from Askenfelt adaptation):**
 ```
 t_dwell = 0.5 ms (ff) to 3 ms (pp)
 t_dwell_mf ~ 1.0-1.5 ms
@@ -592,20 +610,32 @@ The hammer strikes the reed near but not at the very tip. The exact striking pos
 - Striking at a mode's node produces zero excitation of that mode
 - For a cantilever, ALL modes have their maximum at the tip
 
-The hammer likely strikes at approximately 80-95% of the reed's vibrating length from the clamped end (i.e., near the tip). This would slightly reduce higher mode excitation compared to a tip impulse, because higher modes have their LAST antinode slightly inward from the tip.
+**Patent specification (US 2,919,616, Andersen, 1960):** Hammer strikes at **"0.25L to 0.35L from its fixed end"**, where 0.35L corresponds to the nodal point of partial IV and 0.25L to the nodal point of partial V. This places the strike at 65-75% of the reed's vibrating length from the tip — significantly closer to the clamp than the "80-95% from clamp" estimated from visual inspection.
+
+**Patent specification (US 2,942,512, Miessner, 1960):** Hammer strikes at "approximately the mid-reed nodal point for the third partial (almost precisely at longitudinal mid-point)."
+
+These two patents give different strike positions (0.25-0.35L vs ~0.50L), suggesting the strike point varied across production eras or was a deliberate voicing choice.
 
 The effect of striking position x_h on initial amplitude of mode n:
 ```
 A_n(x_h) = phi_n(x_h) / omega_n
 ```
 
-For x_h = 0.9*L (90% position):
+For x_h = 0.30*L (patent spec, 30% from fixed end):
+- Mode 1: phi_1(0.3L) / phi_1(L) ~ 0.21 (significant reduction vs tip)
+- Mode 2: phi_2(0.3L) / phi_2(L) ~ 0.46 (more than halved)
+- Mode 3: phi_3(0.3L) / phi_3(L) ~ 0.65 (near mode 3's antinode)
+- Mode 4: phi_4(0.3L) / phi_4(L) ~ 0.05 (near node — almost zero)
+
+For x_h = 0.9*L (near-tip estimate):
 - Mode 1: phi_1(0.9L) / phi_1(L) ~ 0.97 (negligible reduction)
 - Mode 2: phi_2(0.9L) / phi_2(L) ~ 0.85 (15% reduction)
 - Mode 3: phi_3(0.9L) / phi_3(L) ~ 0.60 (40% reduction)
 - Mode 4: phi_4(0.9L) / phi_4(L) ~ 0.40 (60% reduction)
 
-**This further reduces upper mode content** beyond the 1/omega_n scaling, making the fundamental even more dominant.
+**Key difference:** The patent's 0.25-0.35L strike position produces a very different mode excitation pattern than a near-tip strike. Mode 4 is nearly zeroed, mode 1 is significantly reduced, and mode 3 is relatively enhanced. These strike-position effects are implicitly captured in the OBM-calibrated `BASE_MODE_AMPLITUDES`, so the code does not need an explicit strike position parameter — but the patent specs provide the physical explanation for why upper modes are so suppressed.
+
+> **Implementation note:** Strike position is not modeled as a separate parameter. Its effect is absorbed into the OBM-calibrated base mode amplitudes `[1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`.
 
 ---
 
@@ -644,19 +674,19 @@ decay_rate_n / decay_rate_1 = f_n / f_1
 
 For mode 2 at f2/f1 = 6.3: mode 2 decays 6.3x faster than mode 1.
 
-**Current model comparison:** The current model uses decay_scale = [1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]. If we assume constant Q, the physical prediction is decay_scale = 1/mode_ratio:
+**Deployed model:** The code uses a power-law decay model: `decay_rate_n = base_rate * (f_n / f_1)^1.5` where `MODE_DECAY_EXPONENT = 1.5`. A bass floor of `MIN_DECAY_RATE = 3.0 dB/s` prevents infinite sustain on the lowest notes. This produces much faster upper-mode decay than the old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` that was analyzed below.
 
-| Mode | Mode ratio | Physical 1/ratio | Current model | Ratio |
-|------|-----------|-----------------|---------------|-------|
+**Historical analysis (old fixed array vs constant-Q prediction):**
+
+| Mode | Mode ratio | Physical 1/ratio | Old fixed array | Ratio |
+|------|-----------|-----------------|-----------------|-------|
 | 1 | 1.0 | 1.000 | 1.000 | 1.0x |
 | 2 | 6.3 | 0.159 | 0.550 | 3.5x too slow |
 | 3 | 17.9 | 0.056 | 0.300 | 5.4x too slow |
 | 4 | 35.4 | 0.028 | 0.180 | 6.4x too slow |
 | 5 | 58.7 | 0.017 | 0.100 | 5.9x too slow |
 
-**FINDING:** The current model's higher modes decay 3-6x TOO SLOWLY compared to what constant-Q internal damping predicts. This means upper modes persist much longer than physics dictates, which would explain the "decay too slow" issue noted in the R40 metrics.
-
-However, pure 1/ratio scaling may be too aggressive -- mounting losses can partially equalize decay rates across modes (see Section 5.4).
+The power-law model (p=1.5) produces intermediate decay scaling: for C4 with f2/f1 = 6.3, mode 2 decays 6.3^1.5 = 15.8x faster than the fundamental. This is between the old fixed array (1.8x) and pure constant-Q (6.3x), accounting for mounting losses that partially equalize decay rates across modes (see Section 5.4).
 
 ### 5.3 Air Damping (Radiation Losses)
 
@@ -813,9 +843,7 @@ For constant Q: `decay_scale[n] = f_1 / f_n = 1 / mode_ratio[n]`
 
 The "recommended" column adds a floor from mounting losses (modes can't decay infinitely fast because mounting dissipation provides a minimum decay time independent of frequency). This produces the "bright attack darkening to sine-like tail" character universally described for the Wurlitzer.
 
-**Comparison with current model [1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]:** Current model is 2-4x too slow for modes 2-4. The recommended values would produce significantly faster upper mode decay, which should help with the "decay too slow" issue.
-
-> **Modeling concern:** The current model's decay_scale values may be 3-6x too slow for upper modes. For constant Q, decay rate scales linearly with frequency: T_mode_n / T_mode_1 = f_1 / f_n. Current values (mode 2: 0.55, mode 3: 0.30, mode 4: 0.18) are significantly slower than the physically correct values (mode 2: ~0.20, mode 3: ~0.08, mode 4: ~0.05). Faster upper-mode decay produces the characteristic "bright attack darkening to sine-like tail" timbre. Evaluate during implementation.
+> **Superseded by power-law model:** The fixed recommended values above and the old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` were replaced by the power-law decay model: `decay_rate_n = base_rate * (f_n/f_1)^1.5` with `MODE_DECAY_EXPONENT = 1.5` and `MIN_DECAY_RATE = 3.0 dB/s`. See Section 5.2 for details. The power-law model produces fast upper-mode decay (e.g., mode 2 at C4 decays 15.8x faster than the fundamental) while naturally adapting to each note's frequency ratios.
 
 ---
 
@@ -859,39 +887,39 @@ The dominant nonlinearity in the Wurlitzer is the preamp, not the reed vibration
 
 ### 7.1 Dwell Filter
 
-**STATUS: Current Gaussian (sigma=2.5) is too aggressive.**
+**STATUS: RESOLVED.** Code uses Gaussian with sigma=8 per Section 4.3.4 recommendation. The previous sigma=2.5 was too aggressive (modes 3+ nearly zeroed at mf).
 
-| Issue | Evidence | Recommendation |
-|-------|----------|----------------|
-| Too much mode attenuation | Modes 3+ nearly zeroed at mf | Increase sigma to 8+ or switch to half-sine |
-| Forced mode amp compensation | R40 needed 20x elevation | Return to physical 1/omega amplitudes with gentler filter |
-| Nulls (sinc, old model) | Rectangular impulse physically wrong for felt | Use half-sine or wide Gaussian (no nulls) |
+| Issue | Evidence | Resolution |
+|-------|----------|------------|
+| Too much mode attenuation | Modes 3+ nearly zeroed at mf | Sigma increased to 8 (gentle rolloff) |
+| Forced mode amp compensation | R40 needed 20x elevation | OBM-calibrated amplitudes with gentler filter |
+| Nulls (sinc, old model) | Rectangular impulse physically wrong for felt | Wide Gaussian (no nulls) |
 
 ### 7.2 Decay Rates
 
-**STATUS: Higher modes decay too slowly.**
+**STATUS: RESOLVED.** Power-law decay model (`decay_rate_n = base_rate * (f_n/f_1)^1.5`) implemented with `MODE_DECAY_EXPONENT = 1.5` and `MIN_DECAY_RATE = 3.0 dB/s`. The old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` was replaced.
 
-| Issue | Evidence | Recommendation |
-|-------|----------|----------------|
-| Mode 2 decay_scale = 0.55 | Physical: 0.16-0.20 | Reduce to ~0.20 |
-| Mode 3 decay_scale = 0.30 | Physical: 0.056-0.08 | Reduce to ~0.08 |
-| Overall decay too slow | Calibration: 6.2 dB/s at D4 | Adjust baseDecay to match Q~1100 |
+| Issue | Evidence | Resolution |
+|-------|----------|------------|
+| Mode 2 decay_scale = 0.55 | Physical: 0.16-0.20 | Power-law: mode 2 decays 15.8x faster (at C4) |
+| Mode 3 decay_scale = 0.30 | Physical: 0.056-0.08 | Power-law: mode 3 decays 69.5x faster (at C4) |
+| Overall decay too slow | Calibration: 6.2 dB/s at D4 | Bass floor 3.0 dB/s prevents infinite sustain |
 
 ### 7.3 Mode Ratios
 
-**STATUS: Current values are within acceptable range but could be refined.**
+**STATUS: Dynamically computed.** The code computes mode ratios from `tip_mass_ratio(midi)` via eigenvalue interpolation of the cantilever-with-tip-mass characteristic equation, rather than using fixed per-register values. The fixed values below are approximate references only.
 
-| Issue | Evidence | Recommendation |
-|-------|----------|----------------|
-| Bass f2/f1 = 6.3 | Physical estimate: 6.5-7.5 (mu=0.05-0.15) | Increase slightly to ~6.7 |
-| Mid f2/f1 = 6.8 | Physical estimate: ~6.27-6.7 (mu=0-0.05) | Decrease to ~6.4 |
-| Treble f2/f1 = 6.3 | Physical estimate: ~6.27-6.5 (mu=0-0.03) | Acceptable, perhaps 6.3-6.4 |
+| Register | Reference f2/f1 | Computed from | Notes |
+|----------|----------------|---------------|-------|
+| Bass (MIDI 33-45) | ~6.5-7.5 | mu=0.05-0.15 | Heaviest solder, most deviation from bare beam |
+| Mid (MIDI 46-65) | ~6.27-6.7 | mu=0.00-0.05 | Near bare beam, minimal solder |
+| Treble (MIDI 66-96) | ~6.27-6.5 | mu=0.00-0.03 | Near bare beam, ground taper dominates |
 
 ### 7.4 Mode Amplitudes
 
-**STATUS: Current values are close to physical after R41 correction.**
+**STATUS: Dramatically recalibrated to OBM values (20-37 dB reduction from theory).**
 
-The current 1/omega-like scaling (bass modes: 0.35, 0.10, 0.030...) is within 2x of the pure 1/omega prediction. This is acceptable, especially since the dwell filter provides additional physical attenuation. No major change needed, but amplitudes should be verified after correcting the dwell filter (Section 7.1).
+The old 1/omega-like scaling (bass modes: 0.35, 0.10, 0.030...) was 20-37 dB too hot compared to real Wurlitzer 200A recordings. Deployed OBM-calibrated values: `[1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. Bark comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental, NOT from physical mode 2 at 6.3x the fundamental. See Section 3.2 and Section 3.4 for details.
 
 ### 7.5 Attack Transient
 

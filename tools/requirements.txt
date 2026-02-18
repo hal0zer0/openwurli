@@ -6,12 +6,17 @@ numpy>=1.26
 scipy>=1.12
 soundfile>=0.12
 
-# Audio analysis (tools/recording_analyzer.py, tools/wurli_compare.py)
+# Audio analysis (tools/recording_analyzer.py)
 librosa>=0.10
 
 # Schematic preprocessing (tools/schematic_preprocess.py)
 opencv-python>=4.8
 
+# PDF rendering for schematic tiles (tools/schematic_preprocess.py render) — optional
+# PyMuPDF>=1.23
+
+# OCR for schematic text detection (tools/schematic_preprocess.py ocr) — optional
+# easyocr>=1.7
+
 # ML pipeline (ml/train_mlp.py) — optional, only needed for MLP training
 # torch>=2.0
-# scikit-learn>=1.4
