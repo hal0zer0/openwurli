@@ -1,6 +1,6 @@
-/// Shared filter primitives for the Wurlitzer 200A signal chain.
-///
-/// All filters: `new(freq, sample_rate)`, `process(sample) -> sample`, `reset()`.
+//! Shared filter primitives for the Wurlitzer 200A signal chain.
+//!
+//! All filters: `new(freq, sample_rate)`, `process(sample) -> sample`, `reset()`.
 
 use std::f64::consts::PI;
 
@@ -54,12 +54,18 @@ impl OnePoleLpf {
         let dt = 1.0 / sample_rate;
         let rc = 1.0 / (2.0 * PI * cutoff_hz);
         let alpha = dt / (rc + dt);
-        Self { alpha, dt, prev_y: 0.0 }
+        Self {
+            alpha,
+            dt,
+            prev_y: 0.0,
+        }
     }
 
     /// Save filter state for predictor-corrector feedback.
     pub fn save_state(&self) -> LpfState {
-        LpfState { prev_y: self.prev_y }
+        LpfState {
+            prev_y: self.prev_y,
+        }
     }
 
     /// Restore previously saved filter state.
@@ -110,7 +116,11 @@ pub struct TptLpfState {
 impl TptLpf {
     pub fn new(cutoff_hz: f64, sample_rate: f64) -> Self {
         let g = (PI * cutoff_hz / sample_rate).tan();
-        Self { g, s: 0.0, sample_rate }
+        Self {
+            g,
+            s: 0.0,
+            sample_rate,
+        }
     }
 
     pub fn process(&mut self, x: f64) -> f64 {
@@ -384,7 +394,10 @@ mod tests {
         for _ in 0..n {
             output = lpf.process(1.0);
         }
-        assert!((output - 1.0).abs() < 1e-6, "TptLpf DC gain should be 1.0, got {output}");
+        assert!(
+            (output - 1.0).abs() < 1e-6,
+            "TptLpf DC gain should be 1.0, got {output}"
+        );
     }
 
     #[test]
@@ -443,11 +456,7 @@ mod tests {
 
     /// Measure steady-state phase shift of a filter at a given frequency.
     /// Uses DFT correlation with sin input; returns phase in degrees (negative = lag).
-    fn measure_filter_phase(
-        process: &mut dyn FnMut(f64) -> f64,
-        freq: f64,
-        sr: f64,
-    ) -> f64 {
+    fn measure_filter_phase(process: &mut dyn FnMut(f64) -> f64, freq: f64, sr: f64) -> f64 {
         let n_settle = (sr * 0.2) as usize;
         let n_measure = (sr * 0.1) as usize;
 
@@ -513,7 +522,9 @@ mod tests {
             }
         }
 
-        assert!(peak_center > peak_low * 3.0,
-            "BPF center ({peak_center}) should be much louder than off-center ({peak_low})");
+        assert!(
+            peak_center > peak_low * 3.0,
+            "BPF center ({peak_center}) should be much louder than off-center ({peak_low})"
+        );
     }
 }

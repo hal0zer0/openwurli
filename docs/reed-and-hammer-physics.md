@@ -1,6 +1,6 @@
 # Reed and Hammer Physics: Wurlitzer 200/200A
 
-Comprehensive physical reference for AI agent consumption.
+Comprehensive physical reference for Wurlitzer 200/200A reed and hammer mechanics.
 
 ---
 

@@ -1,9 +1,10 @@
-/// Deterministic per-note variation — hash-based pseudo-random offsets.
-///
-/// Each physical reed on a real Wurlitzer has slightly different tuning,
-/// solder mass, and mounting characteristics. This module provides fixed
-/// per-note offsets so note 60 always sounds the same, but differs
-/// slightly from note 61.
+//! Deterministic per-note variation -- hash-based pseudo-random offsets.
+//!
+//! Each physical reed on a real Wurlitzer has slightly different tuning,
+//! solder mass, and mounting characteristics. This module provides fixed
+//! per-note offsets so note 60 always sounds the same, but differs
+//! slightly from note 61.
+#![allow(clippy::needless_range_loop)]
 
 use crate::tables::NUM_MODES;
 
@@ -56,7 +57,10 @@ mod tests {
     fn test_detune_range() {
         for midi in 33..=96 {
             let d = freq_detune(midi);
-            assert!(d > 0.99 && d < 1.01, "detune out of range for MIDI {midi}: {d}");
+            assert!(
+                d > 0.99 && d < 1.01,
+                "detune out of range for MIDI {midi}: {d}"
+            );
         }
     }
 
@@ -65,7 +69,10 @@ mod tests {
         for midi in 33..=96 {
             let offsets = mode_amplitude_offsets(midi);
             for (i, &o) in offsets.iter().enumerate() {
-                assert!(o > 0.90 && o < 1.10, "amplitude offset out of range for MIDI {midi} mode {i}: {o}");
+                assert!(
+                    o > 0.90 && o < 1.10,
+                    "amplitude offset out of range for MIDI {midi} mode {i}: {o}"
+                );
             }
         }
     }

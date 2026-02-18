@@ -2,7 +2,7 @@
 
 ## Purpose and Scope
 
-This document provides concrete, source-attributed calibration data and evaluation criteria for building a physically accurate Wurlitzer 200A electric piano synthesizer. It is designed for AI agent consumption: every value has an uncertainty range, every claim has a source, and every metric has an assessment of whether it actually correlates with perceptual quality.
+This document provides concrete, source-attributed calibration data and evaluation criteria for building a physically accurate Wurlitzer 200A electric piano synthesizer. Every value has an uncertainty range, every claim has a source, and every metric has an assessment of whether it actually correlates with perceptual quality.
 
 CRITICAL CONTEXT: A previous iteration of this project achieved good FFT-derived metrics (H2>H3 compliance, decay rates within range, spectral centroid targets met) but sounded terrible to human listeners. This document addresses why that happened and how to prevent it.
 
@@ -420,7 +420,7 @@ This happened in Round 40 of this project. Root cause analysis:
 
 | Source | Type | Quality | Location | Use For |
 |--------|------|---------|----------|---------|
-| OldBassMan 200A (Freesound 5726) | 13 isolated notes | 48kHz/24bit, Lundahl+tube chain | `/home/homeuser/dev/mlwurli/input/5726__oldbassman__wurlitzer-200a/` | Harmonic ratios, decay rates, spectral evolution. PRIMARY calibration source. |
+| OldBassMan 200A (Freesound 5726) | 13 isolated notes | 48kHz/24bit, Lundahl+tube chain | [Freesound #5726](https://freesound.org/people/oldbassman/packs/91/) | Harmonic ratios, decay rates, spectral evolution. PRIMARY calibration source. |
 | Unplugged 200A (Pianobook) | 3 dynamic layers x 2 RR | 48kHz/24bit stereo | Pianobook free download | Multi-velocity comparison, attack character |
 | VReeds (Acoustic Samples) | Multi-velocity DI + speaker | Commercial | acousticsamples.net | DI recording reference (no recording chain coloration) |
 | PM-200 (Puremagnetik) | Hi-res multi-velocity | Commercial | puremagnetik.com | Detailed velocity layering reference |

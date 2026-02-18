@@ -1,6 +1,6 @@
 # Wurlitzer 200A Reed-Bar Preamp — Complete Circuit Reference
 
-Comprehensive technical reference for implementing a digital model of the Wurlitzer 200A reed-bar preamplifier. Covers verified component values (from direct reading of BustedGear 200A schematic at 900 DPI), DC bias analysis, AC signal analysis, harmonic generation mechanisms, tremolo integration, and modeling recommendations. Intended for AI agent consumption.
+Comprehensive technical reference for implementing a digital model of the Wurlitzer 200A reed-bar preamplifier. Covers verified component values (from direct reading of BustedGear 200A schematic at 900 DPI), DC bias analysis, AC signal analysis, harmonic generation mechanisms, tremolo integration, and modeling recommendations.
 
 ---
 
@@ -1038,13 +1038,13 @@ Key lessons from previous modeling attempts:
 ### Related Documents in This Project
 
 14. **Pickup System** — signal levels reaching the preamp, electrostatic analysis
-    - `/home/homeuser/dev/openwurli/docs/pickup-system.md`
+    - `docs/pickup-system.md`
 
 15. **Output Stage** — power amplifier, tremolo feedback discovery, speaker model
-    - `/home/homeuser/dev/openwurli/docs/output-stage.md`
+    - `docs/output-stage.md`
 
 16. **Signal Chain Architecture** — overall signal flow, parameter values
-    - `/home/homeuser/dev/openwurli/docs/signal-chain-architecture.md`
+    - `docs/signal-chain-architecture.md`
 
 ---
 

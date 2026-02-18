@@ -52,10 +52,7 @@ impl Default for OpenWurliParams {
             tremolo_depth: FloatParam::new(
                 "Tremolo Depth",
                 0.5,
-                FloatRange::Linear {
-                    min: 0.0,
-                    max: 1.0,
-                },
+                FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(50.0))
             .with_unit(" %")
@@ -65,10 +62,7 @@ impl Default for OpenWurliParams {
             speaker_character: FloatParam::new(
                 "Speaker Character",
                 1.0,
-                FloatRange::Linear {
-                    min: 0.0,
-                    max: 1.0,
-                },
+                FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(50.0))
             .with_unit(" %")

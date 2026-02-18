@@ -6,8 +6,8 @@ use openwurli_dsp::oversampler::Oversampler;
 use openwurli_dsp::power_amp::PowerAmp;
 use openwurli_dsp::preamp::PreampModel;
 use openwurli_dsp::speaker::Speaker;
-use openwurli_dsp::tremolo::Tremolo;
 use openwurli_dsp::tables;
+use openwurli_dsp::tremolo::Tremolo;
 use openwurli_dsp::voice::Voice;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -233,19 +233,20 @@ impl OpenWurli {
         }
 
         // Downsample back to base rate
-        self.oversampler
-            .downsample_2x(&self.up_buf[..len * 2], &mut self.out_buf[offset..offset + len]);
+        self.oversampler.downsample_2x(
+            &self.up_buf[..len * 2],
+            &mut self.out_buf[offset..offset + len],
+        );
     }
 
     fn cleanup_voices(&mut self) {
         for slot in &mut self.voices {
-            if slot.state != VoiceState::Free {
-                if let Some(ref voice) = slot.voice {
-                    if voice.is_silent() {
-                        slot.state = VoiceState::Free;
-                        slot.voice = None;
-                    }
-                }
+            if slot.state != VoiceState::Free
+                && let Some(ref voice) = slot.voice
+                && voice.is_silent()
+            {
+                slot.state = VoiceState::Free;
+                slot.voice = None;
             }
         }
     }
@@ -254,7 +255,7 @@ impl OpenWurli {
 impl Plugin for OpenWurli {
     const NAME: &'static str = "OpenWurli";
     const VENDOR: &'static str = "OpenWurli";
-    const URL: &'static str = "";
+    const URL: &'static str = "https://github.com/hal0zer0/openwurli";
     const EMAIL: &'static str = "";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -331,9 +332,11 @@ impl Plugin for OpenWurli {
     ) -> ProcessStatus {
         let num_samples = buffer.samples();
 
-        // Update tremolo params (per-buffer is fine; LFO is slow)
-        let trem_rate = self.params.tremolo_rate.smoothed.next() as f64;
-        let trem_depth = self.params.tremolo_depth.smoothed.next() as f64;
+        // Update tremolo params (per-buffer is fine; LFO is slow).
+        // Use .value() not .smoothed.next() — next() advances one sample per call,
+        // but we call once per buffer, so smoothing would take buffer_size * 50ms.
+        let trem_rate = self.params.tremolo_rate.value() as f64;
+        let trem_depth = self.params.tremolo_depth.value() as f64;
         self.tremolo.set_rate(trem_rate, self.os_sample_rate);
         self.tremolo.set_depth(trem_depth);
 
@@ -388,7 +391,7 @@ impl Plugin for OpenWurli {
         // Signal chain: preamp -> volume pot -> power amp (gain + crossover + clip) -> speaker
         // Matches real 200A topology: volume pot sits between preamp and power amp.
         // Power amp has internal voltage gain (VAS/driver stages).
-        let speaker_char = self.params.speaker_character.smoothed.next() as f64;
+        let speaker_char = self.params.speaker_character.value() as f64;
         self.speaker.set_character(speaker_char);
 
         for (i, mut channel_samples) in buffer.iter_samples().enumerate() {
@@ -414,8 +417,10 @@ impl ClapPlugin for OpenWurli {
     const CLAP_ID: &'static str = "com.openwurli.wurlitzer-200a";
     const CLAP_DESCRIPTION: Option<&'static str> =
         Some("Wurlitzer 200A electric piano — analog circuit simulation");
-    const CLAP_MANUAL_URL: Option<&'static str> = None;
-    const CLAP_SUPPORT_URL: Option<&'static str> = None;
+    const CLAP_MANUAL_URL: Option<&'static str> =
+        Some("https://github.com/hal0zer0/openwurli/tree/main/docs");
+    const CLAP_SUPPORT_URL: Option<&'static str> =
+        Some("https://github.com/hal0zer0/openwurli/issues");
     const CLAP_FEATURES: &'static [ClapFeature] = &[
         ClapFeature::Instrument,
         ClapFeature::Synthesizer,

@@ -1,7 +1,8 @@
-/// Per-note parameter tables for Wurlitzer 200A reed modal synthesis.
-///
-/// Derived from Euler-Bernoulli beam theory with tip mass (docs/reed-and-hammer-physics.md).
-/// Range: MIDI 33 (A1) to MIDI 96 (C7) — 64 reeds.
+//! Per-note parameter tables for Wurlitzer 200A reed modal synthesis.
+//!
+//! Derived from Euler-Bernoulli beam theory with tip mass (docs/reed-and-hammer-physics.md).
+//! Range: MIDI 33 (A1) to MIDI 96 (C7) -- 64 reeds.
+#![allow(clippy::needless_range_loop)]
 
 pub const NUM_MODES: usize = 7;
 pub const MIDI_LO: u8 = 33;
@@ -24,7 +25,8 @@ pub const MIDI_HI: u8 = 96;
 /// The real 200A's "bark" comes primarily from the pickup's 1/(1-y)
 /// nonlinearity generating H2 at 2×fundamental, NOT from physical mode 2
 /// oscillation at ~6.3×fundamental.
-pub const BASE_MODE_AMPLITUDES: [f64; NUM_MODES] = [1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005];
+pub const BASE_MODE_AMPLITUDES: [f64; NUM_MODES] =
+    [1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005];
 
 /// MIDI note number to fundamental frequency (Hz), A440 tuning.
 pub fn midi_to_freq(midi: u8) -> f64 {
@@ -82,14 +84,38 @@ fn eigenvalues(mu: f64) -> [f64; NUM_MODES] {
     }
 
     let table = [
-        EigRow { mu: 0.00, betas: [1.8751, 4.6941, 7.8548, 10.9955, 14.1372, 17.2788, 20.4204] },
-        EigRow { mu: 0.01, betas: [1.8584, 4.6849, 7.8504, 10.9930, 14.1356, 17.2776, 20.4195] },
-        EigRow { mu: 0.05, betas: [1.7920, 4.6477, 7.8316, 10.9830, 14.1288, 17.2726, 20.4158] },
-        EigRow { mu: 0.10, betas: [1.7227, 4.6024, 7.8077, 10.9700, 14.1198, 17.2660, 20.4110] },
-        EigRow { mu: 0.15, betas: [1.6625, 4.5618, 7.7859, 10.9580, 14.1114, 17.2598, 20.4065] },
-        EigRow { mu: 0.20, betas: [1.6097, 4.5254, 7.7659, 10.9470, 14.1036, 17.2540, 20.4023] },
-        EigRow { mu: 0.30, betas: [1.5201, 4.4620, 7.7310, 10.9280, 14.0894, 17.2434, 20.3946] },
-        EigRow { mu: 0.50, betas: [1.3853, 4.3601, 7.6745, 10.8970, 14.0650, 17.2252, 20.3814] },
+        EigRow {
+            mu: 0.00,
+            betas: [1.8751, 4.6941, 7.8548, 10.9955, 14.1372, 17.2788, 20.4204],
+        },
+        EigRow {
+            mu: 0.01,
+            betas: [1.8584, 4.6849, 7.8504, 10.9930, 14.1356, 17.2776, 20.4195],
+        },
+        EigRow {
+            mu: 0.05,
+            betas: [1.7920, 4.6477, 7.8316, 10.9830, 14.1288, 17.2726, 20.4158],
+        },
+        EigRow {
+            mu: 0.10,
+            betas: [1.7227, 4.6024, 7.8077, 10.9700, 14.1198, 17.2660, 20.4110],
+        },
+        EigRow {
+            mu: 0.15,
+            betas: [1.6625, 4.5618, 7.7859, 10.9580, 14.1114, 17.2598, 20.4065],
+        },
+        EigRow {
+            mu: 0.20,
+            betas: [1.6097, 4.5254, 7.7659, 10.9470, 14.1036, 17.2540, 20.4023],
+        },
+        EigRow {
+            mu: 0.30,
+            betas: [1.5201, 4.4620, 7.7310, 10.9280, 14.0894, 17.2434, 20.3946],
+        },
+        EigRow {
+            mu: 0.50,
+            betas: [1.3853, 4.3601, 7.6745, 10.8970, 14.0650, 17.2252, 20.3814],
+        },
     ];
 
     let mu_clamped = mu.clamp(0.0, 0.50);
@@ -669,14 +695,19 @@ mod tests {
         assert!(
             threshold < 0.15,
             "Worst-case risk at MIDI {} is {:.4} — threshold {:.4} seems too high, investigate",
-            worst_midi, worst_risk, threshold
+            worst_midi,
+            worst_risk,
+            threshold
         );
         for midi in MIDI_LO..=MIDI_HI {
             let report = intermod_risk(midi);
             assert!(
                 report.max_risk < threshold,
                 "MIDI {} ({:.1} Hz): max_risk = {:.4} exceeds {:.4}",
-                midi, report.fundamental_hz, report.max_risk, threshold
+                midi,
+                report.fundamental_hz,
+                report.max_risk,
+                threshold
             );
         }
     }
@@ -687,15 +718,25 @@ mod tests {
         let report = intermod_risk(33);
         let m2 = &report.products[0]; // mode 2 is first in products vec
         assert_eq!(m2.mode, 2);
-        assert!((m2.mode_ratio - 7.13).abs() < 0.1, "mode 2 ratio = {}", m2.mode_ratio);
+        assert!(
+            (m2.mode_ratio - 7.13).abs() < 0.1,
+            "mode 2 ratio = {}",
+            m2.mode_ratio
+        );
         assert_eq!(m2.nearest_integer, 7);
         // Beat frequency = fractional_offset * fundamental_hz
         // A1 = 55 Hz, offset ~0.13, beat ~7.2 Hz
-        assert!(m2.beat_hz > 3.0 && m2.beat_hz < 12.0,
-            "A1 mode 2 beat_hz = {}", m2.beat_hz);
+        assert!(
+            m2.beat_hz > 3.0 && m2.beat_hz < 12.0,
+            "A1 mode 2 beat_hz = {}",
+            m2.beat_hz
+        );
         // Should be in the high perceptual weight zone (5-10 Hz)
-        assert!(m2.perceptual_weight > 0.8,
-            "A1 mode 2 perceptual_weight = {}", m2.perceptual_weight);
+        assert!(
+            m2.perceptual_weight > 0.8,
+            "A1 mode 2 perceptual_weight = {}",
+            m2.perceptual_weight
+        );
     }
 
     #[test]
@@ -789,14 +830,16 @@ mod tests {
                 assert!(
                     kappa[i] <= kappa[0] + 1e-6,
                     "MIDI {midi}: kappa[{i}]={:.4} > kappa[0]={:.4}",
-                    kappa[i], kappa[0]
+                    kappa[i],
+                    kappa[0]
                 );
             }
             // Mode 2 is less than mode 1 (first spatial attenuation step)
             assert!(
                 kappa[1] < kappa[0],
                 "MIDI {midi}: kappa[1]={:.4} >= kappa[0]={:.4}",
-                kappa[1], kappa[0]
+                kappa[1],
+                kappa[0]
             );
         }
     }
@@ -805,8 +848,8 @@ mod tests {
     fn test_coupling_register_variation() {
         // Treble reeds (shorter, larger ell/L) should have more suppression
         // than bass reeds (longer, smaller ell/L) for the same mode
-        let mu_bass = tip_mass_ratio(33);  // A1 — longest reed
-        let mu_treb = tip_mass_ratio(96);  // C7 — shortest reed
+        let mu_bass = tip_mass_ratio(33); // A1 — longest reed
+        let mu_treb = tip_mass_ratio(96); // C7 — shortest reed
         let kappa_bass = spatial_coupling_coefficients(mu_bass, reed_length_mm(33));
         let kappa_treb = spatial_coupling_coefficients(mu_treb, reed_length_mm(96));
 
@@ -816,7 +859,9 @@ mod tests {
             assert!(
                 kappa_treb[i] < kappa_bass[i],
                 "Mode {}: treble kappa {:.4} should be < bass kappa {:.4}",
-                i + 1, kappa_treb[i], kappa_bass[i]
+                i + 1,
+                kappa_treb[i],
+                kappa_bass[i]
             );
         }
     }
@@ -867,24 +912,36 @@ mod tests {
         let (_, t53) = reed_blank_dims(53); // reed 21: mid-transition
         let (_, t58) = reed_blank_dims(58); // reed 26: pure mid
 
-        assert!((t48 - 0.020 * 25.4).abs() < 0.01, "MIDI 48 should be pure bass");
-        assert!((t58 - 0.031 * 25.4).abs() < 0.01, "MIDI 58 should be pure mid");
+        assert!(
+            (t48 - 0.020 * 25.4).abs() < 0.01,
+            "MIDI 48 should be pure bass"
+        );
+        assert!(
+            (t58 - 0.031 * 25.4).abs() < 0.01,
+            "MIDI 58 should be pure mid"
+        );
         // Mid-transition should be between
-        assert!(t53 > t48 + 0.05 && t53 < t58 - 0.05,
-            "MIDI 53 thickness ({t53:.3}) should be between {t48:.3} and {t58:.3}");
+        assert!(
+            t53 > t48 + 0.05 && t53 < t58 - 0.05,
+            "MIDI 53 thickness ({t53:.3}) should be between {t48:.3} and {t58:.3}"
+        );
     }
 
     #[test]
     fn test_compliance_bass_greater_than_treble() {
         // Bass reeds (long, thin) have much higher compliance than treble (short, thick)
-        let c_bass = reed_compliance(33);  // A1
-        let c_mid = reed_compliance(60);   // C4
-        let c_treb = reed_compliance(96);  // C7
+        let c_bass = reed_compliance(33); // A1
+        let c_mid = reed_compliance(60); // C4
+        let c_treb = reed_compliance(96); // C7
 
-        assert!(c_bass > c_mid * 5.0,
-            "Bass compliance ({c_bass:.0}) should be >5x mid ({c_mid:.0})");
-        assert!(c_mid > c_treb * 2.0,
-            "Mid compliance ({c_mid:.0}) should be >2x treble ({c_treb:.0})");
+        assert!(
+            c_bass > c_mid * 5.0,
+            "Bass compliance ({c_bass:.0}) should be >5x mid ({c_mid:.0})"
+        );
+        assert!(
+            c_mid > c_treb * 2.0,
+            "Mid compliance ({c_mid:.0}) should be >2x treble ({c_treb:.0})"
+        );
     }
 
     #[test]
@@ -895,16 +952,24 @@ mod tests {
         let ds_60 = pickup_displacement_scale(60); // C4
         let ds_96 = pickup_displacement_scale(96); // C7
 
-        assert!(ds_33 > ds_60, "A1 ({ds_33:.3}) should have more bark than C4 ({ds_60:.3})");
-        assert!(ds_60 > ds_96, "C4 ({ds_60:.3}) should have more bark than C7 ({ds_96:.3})");
+        assert!(
+            ds_33 > ds_60,
+            "A1 ({ds_33:.3}) should have more bark than C4 ({ds_60:.3})"
+        );
+        assert!(
+            ds_60 > ds_96,
+            "C4 ({ds_60:.3}) should have more bark than C7 ({ds_96:.3})"
+        );
     }
 
     #[test]
     fn test_displacement_scale_c4_calibration() {
         // C4 is the reference point — should be exactly DS_AT_C4
         let ds = pickup_displacement_scale(60);
-        assert!((ds - DS_AT_C4).abs() < 0.001,
-            "C4 displacement scale = {ds:.4}, expected {DS_AT_C4}");
+        assert!(
+            (ds - DS_AT_C4).abs() < 0.001,
+            "C4 displacement scale = {ds:.4}, expected {DS_AT_C4}"
+        );
     }
 
     #[test]
@@ -913,10 +978,19 @@ mod tests {
         let ds_bass = pickup_displacement_scale(33);
         let ds_treb = pickup_displacement_scale(96);
 
-        assert!(ds_bass > 0.50, "Bass ds ({ds_bass:.3}) should give strong bark");
-        assert!(ds_treb < 0.35, "Treble ds ({ds_treb:.3}) should be nearly clean");
+        assert!(
+            ds_bass > 0.50,
+            "Bass ds ({ds_bass:.3}) should give strong bark"
+        );
+        assert!(
+            ds_treb < 0.35,
+            "Treble ds ({ds_treb:.3}) should be nearly clean"
+        );
         // Ratio should be at least 2.5:1 (bass is barkier, but clamp compresses range)
-        assert!(ds_bass / ds_treb > 2.5,
-            "Bass/treble ratio = {:.1}x, expected >2.5x", ds_bass / ds_treb);
+        assert!(
+            ds_bass / ds_treb > 2.5,
+            "Bass/treble ratio = {:.1}x, expected >2.5x",
+            ds_bass / ds_treb
+        );
     }
 }

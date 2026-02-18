@@ -1,11 +1,11 @@
-/// Hammer model: Gaussian dwell filter + attack noise burst.
-///
-/// The dwell filter is a one-shot spectral shaping applied at note-on.
-/// It models the finite contact duration of the felt hammer on the reed,
-/// which acts as a low-pass filter on the initial mode excitation.
-///
-/// The attack noise is an exponentially decaying bandpass-filtered noise burst
-/// that models the mechanical impact transient.
+//! Hammer model: Gaussian dwell filter + attack noise burst.
+//!
+//! The dwell filter is a one-shot spectral shaping applied at note-on.
+//! It models the finite contact duration of the felt hammer on the reed,
+//! which acts as a low-pass filter on the initial mode excitation.
+//!
+//! The attack noise is an exponentially decaying bandpass-filtered noise burst
+//! that models the mechanical impact transient.
 
 use crate::filters::Biquad;
 use crate::tables::NUM_MODES;
@@ -139,7 +139,10 @@ impl AttackNoise {
     }
 
     fn next_noise(&mut self) -> f64 {
-        self.rng_state = self.rng_state.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng_state = self
+            .rng_state
+            .wrapping_mul(1664525)
+            .wrapping_add(1013904223);
         (self.rng_state as i32 as f64) / (i32::MAX as f64)
     }
 }
@@ -188,19 +191,34 @@ mod tests {
     #[test]
     fn test_onset_ramp_register_dependent() {
         // Bass reeds should have longer onset than treble reeds
-        let bass = onset_ramp_time(1.0, 65.0);   // C2 ff
-        let mid = onset_ramp_time(1.0, 262.0);    // C4 ff
+        let bass = onset_ramp_time(1.0, 65.0); // C2 ff
+        let mid = onset_ramp_time(1.0, 262.0); // C4 ff
         let treble = onset_ramp_time(1.0, 1047.0); // C6 ff
 
-        assert!(bass > mid, "bass onset ({bass:.4}) should exceed mid ({mid:.4})");
-        assert!(mid > treble, "mid onset ({mid:.4}) should exceed treble ({treble:.4})");
+        assert!(
+            bass > mid,
+            "bass onset ({bass:.4}) should exceed mid ({mid:.4})"
+        );
+        assert!(
+            mid > treble,
+            "mid onset ({mid:.4}) should exceed treble ({treble:.4})"
+        );
 
         // C2 ff: 2 periods of 65 Hz = 30.8ms (no longer clamped by 60ms ceiling)
-        assert!((bass - 2.0 / 65.0).abs() < 0.001, "C2 ff should be ~30.8ms, got {bass:.4}");
+        assert!(
+            (bass - 2.0 / 65.0).abs() < 0.001,
+            "C2 ff should be ~30.8ms, got {bass:.4}"
+        );
         // Treble should hit the 2ms floor (2 periods of 1047 Hz = 1.9ms)
-        assert!((treble - 0.002).abs() < 1e-6, "C6 ff should clamp to 2ms, got {treble:.6}");
+        assert!(
+            (treble - 0.002).abs() < 1e-6,
+            "C6 ff should clamp to 2ms, got {treble:.6}"
+        );
         // C4 ff: 2/262 = 7.6ms (unclamped)
-        assert!((mid - 2.0 / 262.0).abs() < 0.001, "C4 ff should be ~7.6ms, got {mid:.4}");
+        assert!(
+            (mid - 2.0 / 262.0).abs() < 0.001,
+            "C4 ff should be ~7.6ms, got {mid:.4}"
+        );
     }
 
     #[test]
@@ -216,5 +234,4 @@ mod tests {
         assert!((ff - expected_ff).abs() < 0.001);
         assert!((pp - expected_pp).abs() < 0.001);
     }
-
 }

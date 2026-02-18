@@ -1,6 +1,6 @@
 # Signal Chain Architecture: Wurlitzer 200A Physical Model
 
-Complete specification for a physically-accurate Wurlitzer 200A electric piano plugin using modal synthesis, Ebers-Moll preamp modeling, and per-note ML correction. Designed for AI agent consumption: every processing stage is fully specified with formulas, parameter values, and implementation guidance.
+Complete specification for a physically-accurate Wurlitzer 200A electric piano plugin using modal synthesis, Ebers-Moll preamp modeling, and per-note ML correction. Every processing stage is fully specified with formulas, parameter values, and implementation guidance.
 
 ---
 

@@ -1,7 +1,10 @@
 [package]
 name = "xtask"
 version = "0.1.0"
-edition = "2021"
+edition = "2021" # nih_plug_xtask requires 2021
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 
 [dependencies]
 nih_plug_xtask = { git = "https://github.com/robbert-vdh/nih-plug.git" }

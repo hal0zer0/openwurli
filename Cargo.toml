@@ -10,3 +10,6 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/hal0zer0/openwurli"
+authors = ["hal0zer0"]

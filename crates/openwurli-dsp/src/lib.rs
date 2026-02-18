@@ -1,10 +1,11 @@
-/// OpenWurli DSP library — Wurlitzer 200A signal chain modules.
-///
-/// Pure DSP math with no audio framework dependencies.
+//! OpenWurli DSP library — Wurlitzer 200A signal chain modules.
+//!
+//! Pure DSP math with no audio framework dependencies.
 
 // Reed/voice synthesis (from reed-renderer)
 pub mod filters;
 pub mod hammer;
+pub mod mlp_correction;
 pub mod pickup;
 pub mod reed;
 pub mod tables;

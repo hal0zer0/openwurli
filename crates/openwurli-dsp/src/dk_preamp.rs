@@ -1,17 +1,18 @@
-/// DK (Discretization-Kernel) preamp — full coupled 2-stage BJT circuit solver.
-///
-/// Solves the complete Wurlitzer 200A preamp as an 8-node MNA system with
-/// trapezoidal discretization and Newton-Raphson on the 2×2 nonlinear kernel.
-///
-/// Key advantage over EbersMollPreamp: C-3/C-4 Miller capacitors are modeled
-/// as coupled state variables, giving correct bandwidth (~15.5 kHz independent
-/// of R_ldr) and gain-bandwidth scaling (GBW ∝ gain, not constant).
-///
-/// Input coupling: The series Cin (0.022µF) + R1 (22K) is modeled as a bilinear
-/// companion element. This correctly blocks DC (preserving the R2/R3 bias point)
-/// while loading the base at audio frequencies with the proper R1 impedance.
-///
-/// See docs/dk-preamp-derivation.md for the full mathematical derivation.
+//! DK (Discretization-Kernel) preamp — full coupled 2-stage BJT circuit solver.
+//!
+//! Solves the complete Wurlitzer 200A preamp as an 8-node MNA system with
+//! trapezoidal discretization and Newton-Raphson on the 2×2 nonlinear kernel.
+//!
+//! Key advantage over EbersMollPreamp: C-3/C-4 Miller capacitors are modeled
+//! as coupled state variables, giving correct bandwidth (~15.5 kHz independent
+//! of R_ldr) and gain-bandwidth scaling (GBW ∝ gain, not constant).
+//!
+//! Input coupling: The series Cin (0.022µF) + R1 (22K) is modeled as a bilinear
+//! companion element. This correctly blocks DC (preserving the R2/R3 bias point)
+//! while loading the base at audio frequencies with the proper R1 impedance.
+//!
+//! See docs/dk-preamp-derivation.md for the full mathematical derivation.
+#![allow(clippy::needless_range_loop)]
 
 use crate::filters::Biquad;
 use crate::preamp::PreampModel;
@@ -21,27 +22,27 @@ use crate::preamp::PreampModel;
 const VCC: f64 = 15.0;
 
 // Resistors (ohms)
-const R1: f64 = 22_000.0;      // Input to base1 (in series with Cin)
-const R2: f64 = 2_000_000.0;   // base1 to Vcc (bias)
-const R3: f64 = 470_000.0;     // base1 to GND (bias)
-const RE1: f64 = 33_000.0;     // emit1 to GND
-const RC1: f64 = 150_000.0;    // coll1 to Vcc
-const RE2A: f64 = 270.0;       // emit2 to emit2b
-const RE2B: f64 = 820.0;       // emit2b to GND
-const RC2: f64 = 1_800.0;      // coll2 to Vcc
-const R9: f64 = 6_800.0;       // coll2 to out
-const R10: f64 = 56_000.0;     // out to fb
+const R1: f64 = 22_000.0; // Input to base1 (in series with Cin)
+const R2: f64 = 2_000_000.0; // base1 to Vcc (bias)
+const R3: f64 = 470_000.0; // base1 to GND (bias)
+const RE1: f64 = 33_000.0; // emit1 to GND
+const RC1: f64 = 150_000.0; // coll1 to Vcc
+const RE2A: f64 = 270.0; // emit2 to emit2b
+const RE2B: f64 = 820.0; // emit2b to GND
+const RC2: f64 = 1_800.0; // coll2 to Vcc
+const R9: f64 = 6_800.0; // coll2 to out
+const R10: f64 = 56_000.0; // out to fb
 
 // Capacitors (farads)
-const CIN: f64 = 0.022e-6;     // Input coupling cap (in series with R1)
-const C3: f64 = 100.0e-12;     // Miller, Stage 1 (coll1 ↔ base1)
-const C4: f64 = 100.0e-12;     // Miller, Stage 2 (coll2 ↔ coll1)
-const CE1: f64 = 4.7e-6;       // Feedback coupling (emit1 ↔ fb)
-const CE2: f64 = 22.0e-6;      // Stage 2 emitter bypass (emit2 ↔ emit2b)
+const CIN: f64 = 0.022e-6; // Input coupling cap (in series with R1)
+const C3: f64 = 100.0e-12; // Miller, Stage 1 (coll1 ↔ base1)
+const C4: f64 = 100.0e-12; // Miller, Stage 2 (coll2 ↔ coll1)
+const CE1: f64 = 4.7e-6; // Feedback coupling (emit1 ↔ fb)
+const CE2: f64 = 22.0e-6; // Stage 2 emitter bypass (emit2 ↔ emit2b)
 
 // BJT (2N5089, forward-active)
-const IS: f64 = 3.03e-14;      // Saturation current
-const VT: f64 = 0.026;         // Thermal voltage (25°C)
+const IS: f64 = 3.03e-14; // Saturation current
+const VT: f64 = 0.026; // Thermal voltage (25°C)
 const IS_OVER_VT: f64 = IS / VT;
 
 // Max Vbe clamp — prevents exp overflow while allowing full operating range.
@@ -65,8 +66,12 @@ const N: usize = 8; // number of nodes
 type Mat8 = [[f64; N]; N];
 type Vec8 = [f64; N];
 
-fn mat8_zero() -> Mat8 { [[0.0; N]; N] }
-fn vec8_zero() -> Vec8 { [0.0; N] }
+fn mat8_zero() -> Mat8 {
+    [[0.0; N]; N]
+}
+fn vec8_zero() -> Vec8 {
+    [0.0; N]
+}
 
 /// Matrix-vector multiply: y = A * x
 fn mat_vec_mul(a: &Mat8, x: &Vec8) -> Vec8 {
@@ -184,22 +189,22 @@ pub struct DkPreamp {
     // via a scalar SM correction on v_FB, preserving the Ce1 charge state.
 
     // ── Fixed matrices (never change after construction) ──
-    s_base: Mat8,           // inv(A_base) where A_base = 2C/T + G_base (no R_ldr)
-    a_neg_base: Mat8,       // 2C/T - G_base (no R_ldr)
-    k: [[f64; 2]; 2],      // DK kernel = N_v * S_base * N_i (R_ldr-independent)
-    two_w: Vec8,            // 2 * w
+    s_base: Mat8,     // inv(A_base) where A_base = 2C/T + G_base (no R_ldr)
+    a_neg_base: Mat8, // 2C/T - G_base (no R_ldr)
+    k: [[f64; 2]; 2], // DK kernel = N_v * S_base * N_i (R_ldr-independent)
+    two_w: Vec8,      // 2 * w
 
     // ── SM projection vectors for R_ldr ──
-    s_fb_col: Vec8,         // S_base[:,FB] — column FB of S_base
+    s_fb_col: Vec8, // S_base[:,FB] — column FB of S_base
     #[cfg_attr(not(test), allow(dead_code))]
-    s_fb_row: Vec8,         // S_base[FB,:] — row FB of S_base (used in tests)
-    s_fb_fb: f64,           // S_base[FB][FB] — SM denominator scalar
-    nv_sfb: [f64; 2],       // N_v * s_fb_col: NL voltage extraction at FB col
-    sfb_ni: [f64; 2],       // s_fb_row * N_i: NL current injection at FB row
+    s_fb_row: Vec8, // S_base[FB,:] — row FB of S_base (used in tests)
+    s_fb_fb: f64,   // S_base[FB][FB] — SM denominator scalar
+    nv_sfb: [f64; 2], // N_v * s_fb_col: NL voltage extraction at FB col
+    sfb_ni: [f64; 2], // s_fb_row * N_i: NL current injection at FB row
 
     // ── DC operating point ──
-    v_dc: Vec8,             // DC node voltages at current R_ldr
-    g_dc_base: Mat8,        // G_dc without R_ldr or g_cin (for DC solve)
+    v_dc: Vec8,      // DC node voltages at current R_ldr
+    g_dc_base: Mat8, // G_dc without R_ldr or g_cin (for DC solve)
 
     // ── Cin-R1 companion ──
     g_cin: f64,
@@ -209,14 +214,14 @@ pub struct DkPreamp {
     cin_rhs_prev: f64,
 
     // ── State ──
-    v: Vec8,                // Absolute node voltages
-    i_nl: [f64; 2],        // Absolute NL currents
-    v_nl: [f64; 2],        // Full Vbe (for NR warm start)
+    v: Vec8,        // Absolute node voltages
+    i_nl: [f64; 2], // Absolute NL currents
+    v_nl: [f64; 2], // Full Vbe (for NR warm start)
 
     // ── R_ldr tracking ──
     r_ldr: f64,
-    g_ldr: f64,             // 1/r_ldr (current conductance)
-    g_ldr_prev: f64,        // g_ldr from previous timestep
+    g_ldr: f64,      // 1/r_ldr (current conductance)
+    g_ldr_prev: f64, // g_ldr from previous timestep
 
     // ── Output coupling (4th-order Bessel subsonic HPF) ──
     //
@@ -237,9 +242,9 @@ pub struct DkPreamp {
     // was boosted +3.7 dB above steady state for the first 2-3 cycles.
     // The Bessel filter's max Q=0.81 eliminates this ringing while still
     // providing -23 dB at 22 Hz (ample for tremolo subsonic suppression).
-    v_out_dc_init: f64,                  // Constant DC from initial solve
-    dc_hpf_1: Biquad,                   // 4th-order Bessel section 1
-    dc_hpf_2: Biquad,                   // 4th-order Bessel section 2
+    v_out_dc_init: f64, // Constant DC from initial solve
+    dc_hpf_1: Biquad,   // 4th-order Bessel section 1
+    dc_hpf_2: Biquad,   // 4th-order Bessel section 2
 }
 
 impl DkPreamp {
@@ -299,25 +304,24 @@ impl DkPreamp {
         let mut s_fb_col = vec8_zero();
         let mut s_fb_row = vec8_zero();
         for i in 0..N {
-            s_fb_col[i] = s_base[i][FB];   // column FB
-            s_fb_row[i] = s_base[FB][i];    // row FB
+            s_fb_col[i] = s_base[i][FB]; // column FB
+            s_fb_row[i] = s_base[FB][i]; // row FB
         }
         let s_fb_fb = s_base[FB][FB];
 
         // Pre-compute NL extraction/injection vectors for K correction
         let nv_sfb = [
-            s_fb_col[BASE1] - s_fb_col[EMIT1],   // N_v[0,:] . s_fb_col
-            s_fb_col[COLL1] - s_fb_col[EMIT2],    // N_v[1,:] . s_fb_col
+            s_fb_col[BASE1] - s_fb_col[EMIT1], // N_v[0,:] . s_fb_col
+            s_fb_col[COLL1] - s_fb_col[EMIT2], // N_v[1,:] . s_fb_col
         ];
         let sfb_ni = [
-            s_fb_row[EMIT1] - s_fb_row[COLL1],    // s_fb_row . N_i[:,0]
-            s_fb_row[EMIT2] - s_fb_row[COLL2],    // s_fb_row . N_i[:,1]
+            s_fb_row[EMIT1] - s_fb_row[COLL1], // s_fb_row . N_i[:,0]
+            s_fb_row[EMIT2] - s_fb_row[COLL2], // s_fb_row . N_i[:,1]
         ];
 
         // ── DC solve at initial R_ldr ──
         let r_ldr_init = 1_000_000.0;
-        let (_, v_nl_dc, v_dc, _) =
-            Self::full_dc_solve(&g_dc_base, &w, r_ldr_init);
+        let (_, v_nl_dc, v_dc, _) = Self::full_dc_solve(&g_dc_base, &w, r_ldr_init);
 
         // ── 4th-order Bessel HPF for output coupling ──
         // Two cascaded biquad sections. Cutoff 40 Hz chosen to suppress
@@ -365,9 +369,7 @@ impl DkPreamp {
 
     /// Full DC solve: find quiescent operating point at a given R_ldr.
     /// Returns (i_nl_dc, v_nl_dc, v_dc, dc_rhs).
-    fn full_dc_solve(g_dc_base: &Mat8, w: &Vec8, r_ldr: f64)
-        -> ([f64; 2], [f64; 2], Vec8, Vec8)
-    {
+    fn full_dc_solve(g_dc_base: &Mat8, w: &Vec8, r_ldr: f64) -> ([f64; 2], [f64; 2], Vec8, Vec8) {
         let mut g_full = *g_dc_base;
         g_full[FB][FB] += 1.0 / r_ldr;
         let s_dc = mat_inverse(&g_full);
@@ -383,7 +385,9 @@ impl DkPreamp {
                 v_nl[0] - p_dc[0] - k_dc[0][0] * ic[0] - k_dc[0][1] * ic[1],
                 v_nl[1] - p_dc[1] - k_dc[1][0] * ic[0] - k_dc[1][1] * ic[1],
             ];
-            if f[0].abs() < 1e-12 && f[1].abs() < 1e-12 { break; }
+            if f[0].abs() < 1e-12 && f[1].abs() < 1e-12 {
+                break;
+            }
 
             let j00 = 1.0 - k_dc[0][0] * gm[0];
             let j01 = -k_dc[0][1] * gm[1];
@@ -417,7 +421,6 @@ impl DkPreamp {
         }
         w
     }
-
 }
 
 /// Compute K = N_v * S * N_i from an 8x8 matrix S.
@@ -485,10 +488,7 @@ impl PreampModel for DkPreamp {
         }
 
         // 4. Predicted NL voltages
-        let p = [
-            v_pred[BASE1] - v_pred[EMIT1],
-            v_pred[COLL1] - v_pred[EMIT2],
-        ];
+        let p = [v_pred[BASE1] - v_pred[EMIT1], v_pred[COLL1] - v_pred[EMIT2]];
 
         // 5. NR solve on 2x2 system with R_ldr-corrected K:
         //    K_eff = K_base - sm_k * nv_sfb * sfb_ni^T
@@ -577,8 +577,7 @@ impl PreampModel for DkPreamp {
 
         // Full DC solve at current R_ldr
         let w = self.two_w_half();
-        let (i_nl_dc, v_nl_dc, v_dc, _) =
-            Self::full_dc_solve(&self.g_dc_base, &w, self.r_ldr);
+        let (i_nl_dc, v_nl_dc, v_dc, _) = Self::full_dc_solve(&self.g_dc_base, &w, self.r_ldr);
 
         self.v_dc = v_dc;
         self.v = v_dc;
@@ -697,20 +696,30 @@ mod tests {
 
     type C64 = (f64, f64);
 
-    fn c_add(a: C64, b: C64) -> C64 { (a.0 + b.0, a.1 + b.1) }
-    fn c_sub(a: C64, b: C64) -> C64 { (a.0 - b.0, a.1 - b.1) }
-    fn c_mul(a: C64, b: C64) -> C64 { (a.0*b.0 - a.1*b.1, a.0*b.1 + a.1*b.0) }
-    fn c_div(a: C64, b: C64) -> C64 {
-        let d = b.0*b.0 + b.1*b.1;
-        ((a.0*b.0 + a.1*b.1) / d, (a.1*b.0 - a.0*b.1) / d)
+    fn c_add(a: C64, b: C64) -> C64 {
+        (a.0 + b.0, a.1 + b.1)
     }
-    fn c_abs(a: C64) -> f64 { (a.0*a.0 + a.1*a.1).sqrt() }
+    fn c_sub(a: C64, b: C64) -> C64 {
+        (a.0 - b.0, a.1 - b.1)
+    }
+    fn c_mul(a: C64, b: C64) -> C64 {
+        (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+    }
+    fn c_div(a: C64, b: C64) -> C64 {
+        let d = b.0 * b.0 + b.1 * b.1;
+        ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+    }
+    fn c_abs(a: C64) -> f64 {
+        (a.0 * a.0 + a.1 * a.1).sqrt()
+    }
 
     /// Solve complex 8×8 system A*x = b via Gauss-Jordan with partial pivoting.
     fn complex_solve(a: &[[C64; N]; N], b: &[C64; N]) -> [C64; N] {
         let mut aug = [[(0.0, 0.0); N + 1]; N];
         for i in 0..N {
-            for j in 0..N { aug[i][j] = a[i][j]; }
+            for j in 0..N {
+                aug[i][j] = a[i][j];
+            }
             aug[i][N] = b[i];
         }
 
@@ -719,12 +728,17 @@ mod tests {
             let mut max_row = col;
             for row in (col + 1)..N {
                 let abs = c_abs(aug[row][col]);
-                if abs > max_abs { max_abs = abs; max_row = row; }
+                if abs > max_abs {
+                    max_abs = abs;
+                    max_row = row;
+                }
             }
             aug.swap(col, max_row);
 
             let pivot = aug[col][col];
-            for j in 0..(N + 1) { aug[col][j] = c_div(aug[col][j], pivot); }
+            for j in 0..(N + 1) {
+                aug[col][j] = c_div(aug[col][j], pivot);
+            }
 
             for row in 0..N {
                 if row != col {
@@ -738,7 +752,9 @@ mod tests {
         }
 
         let mut x = [(0.0, 0.0); N];
-        for i in 0..N { x[i] = aug[i][N]; }
+        for i in 0..N {
+            x[i] = aug[i][N];
+        }
         x
     }
 
@@ -773,10 +789,7 @@ mod tests {
         let mut a_cpx = [[(0.0, 0.0); N]; N];
         for i in 0..N {
             for j in 0..N {
-                a_cpx[i][j] = c_add(
-                    c_mul(jw, (c_mat[i][j], 0.0)),
-                    (g_lin[i][j], 0.0),
-                );
+                a_cpx[i][j] = c_add(c_mul(jw, (c_mat[i][j], 0.0)), (g_lin[i][j], 0.0));
             }
         }
         a_cpx[BASE1][BASE1] = c_add(a_cpx[BASE1][BASE1], y_cin);
@@ -797,7 +810,11 @@ mod tests {
         let mut hi: f64 = 200_000.0;
         for _ in 0..60 {
             let mid = (lo * hi).sqrt();
-            if small_signal_gain_db(gm1, gm2, r_ldr, mid) > target { lo = mid; } else { hi = mid; }
+            if small_signal_gain_db(gm1, gm2, r_ldr, mid) > target {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
         }
         (lo * hi).sqrt()
     }
@@ -836,23 +853,28 @@ mod tests {
         //   out=8.496, fb=8.045
         assert!(
             (v[BASE1] - 2.854).abs() < 0.1,
-            "TR-1 base: {:.3}V, want ~2.854V", v[BASE1]
+            "TR-1 base: {:.3}V, want ~2.854V",
+            v[BASE1]
         );
         assert!(
             (v[EMIT1] - 2.297).abs() < 0.1,
-            "TR-1 emitter: {:.3}V, want ~2.297V", v[EMIT1]
+            "TR-1 emitter: {:.3}V, want ~2.297V",
+            v[EMIT1]
         );
         assert!(
             (v[COLL1] - 4.556).abs() < 0.5,
-            "TR-1 collector: {:.3}V, want ~4.556V", v[COLL1]
+            "TR-1 collector: {:.3}V, want ~4.556V",
+            v[COLL1]
         );
         assert!(
             (v[EMIT2] - 3.897).abs() < 0.5,
-            "TR-2 emitter: {:.3}V, want ~3.897V", v[EMIT2]
+            "TR-2 emitter: {:.3}V, want ~3.897V",
+            v[EMIT2]
         );
         assert!(
             (v[COLL2] - 8.551).abs() < 1.0,
-            "TR-2 collector: {:.3}V, want ~8.551V", v[COLL2]
+            "TR-2 collector: {:.3}V, want ~8.551V",
+            v[COLL2]
         );
 
         let vbe1 = v[BASE1] - v[EMIT1];
@@ -1032,36 +1054,68 @@ mod tests {
         let eps = 1e-12;
 
         // Node 0 (base1): R2 to Vcc + R3 to GND
-        assert!((g[BASE1][BASE1] - (1.0/R2 + 1.0/R3)).abs() < eps,
-            "G[0][0] = {:.6e}, want {:.6e}", g[BASE1][BASE1], 1.0/R2 + 1.0/R3);
+        assert!(
+            (g[BASE1][BASE1] - (1.0 / R2 + 1.0 / R3)).abs() < eps,
+            "G[0][0] = {:.6e}, want {:.6e}",
+            g[BASE1][BASE1],
+            1.0 / R2 + 1.0 / R3
+        );
 
         // Node 1 (emit1): Re1 to GND
-        assert!((g[EMIT1][EMIT1] - 1.0/RE1).abs() < eps,
-            "G[1][1] = {:.6e}, want {:.6e}", g[EMIT1][EMIT1], 1.0/RE1);
+        assert!(
+            (g[EMIT1][EMIT1] - 1.0 / RE1).abs() < eps,
+            "G[1][1] = {:.6e}, want {:.6e}",
+            g[EMIT1][EMIT1],
+            1.0 / RE1
+        );
 
         // Node 2 (coll1): Rc1 to Vcc
-        assert!((g[COLL1][COLL1] - 1.0/RC1).abs() < eps,
-            "G[2][2] = {:.6e}, want {:.6e}", g[COLL1][COLL1], 1.0/RC1);
+        assert!(
+            (g[COLL1][COLL1] - 1.0 / RC1).abs() < eps,
+            "G[2][2] = {:.6e}, want {:.6e}",
+            g[COLL1][COLL1],
+            1.0 / RC1
+        );
 
         // Node 3 (emit2): Re2a to emit2b
-        assert!((g[EMIT2][EMIT2] - 1.0/RE2A).abs() < eps,
-            "G[3][3] = {:.6e}, want {:.6e}", g[EMIT2][EMIT2], 1.0/RE2A);
+        assert!(
+            (g[EMIT2][EMIT2] - 1.0 / RE2A).abs() < eps,
+            "G[3][3] = {:.6e}, want {:.6e}",
+            g[EMIT2][EMIT2],
+            1.0 / RE2A
+        );
 
         // Node 4 (emit2b): Re2a from emit2 + Re2b to GND
-        assert!((g[EMIT2B][EMIT2B] - (1.0/RE2A + 1.0/RE2B)).abs() < eps,
-            "G[4][4] = {:.6e}, want {:.6e}", g[EMIT2B][EMIT2B], 1.0/RE2A + 1.0/RE2B);
+        assert!(
+            (g[EMIT2B][EMIT2B] - (1.0 / RE2A + 1.0 / RE2B)).abs() < eps,
+            "G[4][4] = {:.6e}, want {:.6e}",
+            g[EMIT2B][EMIT2B],
+            1.0 / RE2A + 1.0 / RE2B
+        );
 
         // Node 5 (coll2): Rc2 to Vcc + R9 to out
-        assert!((g[COLL2][COLL2] - (1.0/RC2 + 1.0/R9)).abs() < eps,
-            "G[5][5] = {:.6e}, want {:.6e}", g[COLL2][COLL2], 1.0/RC2 + 1.0/R9);
+        assert!(
+            (g[COLL2][COLL2] - (1.0 / RC2 + 1.0 / R9)).abs() < eps,
+            "G[5][5] = {:.6e}, want {:.6e}",
+            g[COLL2][COLL2],
+            1.0 / RC2 + 1.0 / R9
+        );
 
         // Node 6 (out): R9 from coll2 + R10 to fb
-        assert!((g[OUT][OUT] - (1.0/R9 + 1.0/R10)).abs() < eps,
-            "G[6][6] = {:.6e}, want {:.6e}", g[OUT][OUT], 1.0/R9 + 1.0/R10);
+        assert!(
+            (g[OUT][OUT] - (1.0 / R9 + 1.0 / R10)).abs() < eps,
+            "G[6][6] = {:.6e}, want {:.6e}",
+            g[OUT][OUT],
+            1.0 / R9 + 1.0 / R10
+        );
 
         // Node 7 (fb): R10 from out (no R_ldr yet)
-        assert!((g[FB][FB] - 1.0/R10).abs() < eps,
-            "G[7][7] = {:.6e}, want {:.6e}", g[FB][FB], 1.0/R10);
+        assert!(
+            (g[FB][FB] - 1.0 / R10).abs() < eps,
+            "G[7][7] = {:.6e}, want {:.6e}",
+            g[FB][FB],
+            1.0 / R10
+        );
     }
 
     #[test]
@@ -1070,29 +1124,41 @@ mod tests {
         let eps = 1e-12;
 
         // Re2a (270Ω) between emit2 (3) and emit2b (4)
-        assert!((g[EMIT2][EMIT2B] - (-1.0/RE2A)).abs() < eps);
-        assert!((g[EMIT2B][EMIT2] - (-1.0/RE2A)).abs() < eps);
+        assert!((g[EMIT2][EMIT2B] - (-1.0 / RE2A)).abs() < eps);
+        assert!((g[EMIT2B][EMIT2] - (-1.0 / RE2A)).abs() < eps);
 
         // R9 (6.8K) between coll2 (5) and out (6)
-        assert!((g[COLL2][OUT] - (-1.0/R9)).abs() < eps);
-        assert!((g[OUT][COLL2] - (-1.0/R9)).abs() < eps);
+        assert!((g[COLL2][OUT] - (-1.0 / R9)).abs() < eps);
+        assert!((g[OUT][COLL2] - (-1.0 / R9)).abs() < eps);
 
         // R10 (56K) between out (6) and fb (7)
-        assert!((g[OUT][FB] - (-1.0/R10)).abs() < eps);
-        assert!((g[FB][OUT] - (-1.0/R10)).abs() < eps);
+        assert!((g[OUT][FB] - (-1.0 / R10)).abs() < eps);
+        assert!((g[FB][OUT] - (-1.0 / R10)).abs() < eps);
 
         // All other off-diagonals must be zero
         let connected = [
-            (EMIT2, EMIT2B), (EMIT2B, EMIT2),
-            (COLL2, OUT), (OUT, COLL2),
-            (OUT, FB), (FB, OUT),
+            (EMIT2, EMIT2B),
+            (EMIT2B, EMIT2),
+            (COLL2, OUT),
+            (OUT, COLL2),
+            (OUT, FB),
+            (FB, OUT),
         ];
         for i in 0..N {
             for j in 0..N {
-                if i == j { continue; }
-                if connected.contains(&(i, j)) { continue; }
-                assert!(g[i][j].abs() < eps,
-                    "G[{}][{}] = {:.2e}, should be zero", i, j, g[i][j]);
+                if i == j {
+                    continue;
+                }
+                if connected.contains(&(i, j)) {
+                    continue;
+                }
+                assert!(
+                    g[i][j].abs() < eps,
+                    "G[{}][{}] = {:.2e}, should be zero",
+                    i,
+                    j,
+                    g[i][j]
+                );
             }
         }
     }
@@ -1105,11 +1171,17 @@ mod tests {
         // Diagonal entries
         assert!((c[BASE1][BASE1] - C3).abs() < eps, "C[0][0]");
         assert!((c[EMIT1][EMIT1] - CE1).abs() < eps, "C[1][1]");
-        assert!((c[COLL1][COLL1] - (C3 + C4)).abs() < eps, "C[2][2] should have C3+C4");
+        assert!(
+            (c[COLL1][COLL1] - (C3 + C4)).abs() < eps,
+            "C[2][2] should have C3+C4"
+        );
         assert!((c[EMIT2][EMIT2] - CE2).abs() < eps, "C[3][3]");
         assert!((c[EMIT2B][EMIT2B] - CE2).abs() < eps, "C[4][4]");
         assert!((c[COLL2][COLL2] - C4).abs() < eps, "C[5][5]");
-        assert!(c[OUT][OUT].abs() < eps, "C[6][6] should be zero (no cap at OUT)");
+        assert!(
+            c[OUT][OUT].abs() < eps,
+            "C[6][6] should be zero (no cap at OUT)"
+        );
         assert!((c[FB][FB] - CE1).abs() < eps, "C[7][7]");
 
         // Off-diagonal entries (caps create negative off-diags)
@@ -1128,9 +1200,16 @@ mod tests {
         let c = build_c_matrix();
         for i in 0..N {
             for j in 0..N {
-                assert!((c[i][j] - c[j][i]).abs() < 1e-20,
+                assert!(
+                    (c[i][j] - c[j][i]).abs() < 1e-20,
                     "C not symmetric: C[{}][{}]={:.2e} != C[{}][{}]={:.2e}",
-                    i, j, c[i][j], j, i, c[j][i]);
+                    i,
+                    j,
+                    c[i][j],
+                    j,
+                    i,
+                    c[j][i]
+                );
             }
         }
     }
@@ -1146,7 +1225,9 @@ mod tests {
 
         // All other entries zero
         for i in 0..N {
-            if i == BASE1 || i == COLL1 || i == COLL2 { continue; }
+            if i == BASE1 || i == COLL1 || i == COLL2 {
+                continue;
+            }
             assert!(w[i].abs() < eps, "w[{}] = {:.2e}, should be zero", i, w[i]);
         }
     }
@@ -1178,8 +1259,14 @@ mod tests {
         for i in 0..N {
             for j in 0..N {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!((product[i][j] - expected).abs() < 1e-8,
-                    "S_base*A_base[{}][{}] = {:.2e}, want {:.1}", i, j, product[i][j], expected);
+                assert!(
+                    (product[i][j] - expected).abs() < 1e-8,
+                    "S_base*A_base[{}][{}] = {:.2e}, want {:.1}",
+                    i,
+                    j,
+                    product[i][j],
+                    expected
+                );
             }
         }
     }
@@ -1222,9 +1309,12 @@ mod tests {
                 for j in 0..N {
                     let err = (s_sm[i][j] - s_expected[i][j]).abs();
                     let scale = s_expected[i][j].abs().max(1e-12);
-                    assert!(err < 1e-6 * scale + 1e-12,
+                    assert!(
+                        err < 1e-6 * scale + 1e-12,
                         "SM S_eff at R_ldr={r_ldr:.0}: [{i}][{j}] sm={:.6e}, bf={:.6e}",
-                        s_sm[i][j], s_expected[i][j]);
+                        s_sm[i][j],
+                        s_expected[i][j]
+                    );
                 }
             }
         }
@@ -1239,9 +1329,14 @@ mod tests {
 
         for i in 0..2 {
             for j in 0..2 {
-                assert!((preamp.k[i][j] - k_full[i][j]).abs() < 1e-10,
+                assert!(
+                    (preamp.k[i][j] - k_full[i][j]).abs() < 1e-10,
                     "K[{}][{}] mismatch: stored={:.6e}, computed={:.6e}",
-                    i, j, preamp.k[i][j], k_full[i][j]);
+                    i,
+                    j,
+                    preamp.k[i][j],
+                    k_full[i][j]
+                );
             }
         }
     }
@@ -1275,19 +1370,26 @@ mod tests {
             let g_ldr = 1.0 / r_ldr;
             let sm_k = g_ldr / (1.0 + preamp.s_fb_fb * g_ldr);
             let k_sm = [
-                [preamp.k[0][0] - sm_k * preamp.nv_sfb[0] * preamp.sfb_ni[0],
-                 preamp.k[0][1] - sm_k * preamp.nv_sfb[0] * preamp.sfb_ni[1]],
-                [preamp.k[1][0] - sm_k * preamp.nv_sfb[1] * preamp.sfb_ni[0],
-                 preamp.k[1][1] - sm_k * preamp.nv_sfb[1] * preamp.sfb_ni[1]],
+                [
+                    preamp.k[0][0] - sm_k * preamp.nv_sfb[0] * preamp.sfb_ni[0],
+                    preamp.k[0][1] - sm_k * preamp.nv_sfb[0] * preamp.sfb_ni[1],
+                ],
+                [
+                    preamp.k[1][0] - sm_k * preamp.nv_sfb[1] * preamp.sfb_ni[0],
+                    preamp.k[1][1] - sm_k * preamp.nv_sfb[1] * preamp.sfb_ni[1],
+                ],
             ];
 
             for i in 0..2 {
                 for j in 0..2 {
                     let err = (k_sm[i][j] - k_bf[i][j]).abs();
                     let scale = k_bf[i][j].abs().max(1e-6);
-                    assert!(err < 1e-6 * scale,
+                    assert!(
+                        err < 1e-6 * scale,
                         "K_eff[{i}][{j}] at R_ldr={r_ldr:.0}: sm={:.6e}, bf={:.6e}, err={err:.2e}",
-                        k_sm[i][j], k_bf[i][j]);
+                        k_sm[i][j],
+                        k_bf[i][j]
+                    );
                 }
             }
         }
@@ -1315,9 +1417,14 @@ mod tests {
 
         for i in 0..N {
             for j in 0..N {
-                assert!((preamp.a_neg_base[i][j] - a_neg_expected[i][j]).abs() < 1e-12,
+                assert!(
+                    (preamp.a_neg_base[i][j] - a_neg_expected[i][j]).abs() < 1e-12,
                     "a_neg_base[{}][{}]: got={:.6e}, want={:.6e}",
-                    i, j, preamp.a_neg_base[i][j], a_neg_expected[i][j]);
+                    i,
+                    j,
+                    preamp.a_neg_base[i][j],
+                    a_neg_expected[i][j]
+                );
             }
         }
     }
@@ -1334,12 +1441,27 @@ mod tests {
         let v_192k = DkPreamp::new(192000.0).v_dc;
 
         for i in 0..N {
-            assert!((v_44k[i] - v_88k[i]).abs() < 1e-6,
-                "DC v[{}] differs: 44.1k={:.6}, 88.2k={:.6}", i, v_44k[i], v_88k[i]);
-            assert!((v_44k[i] - v_96k[i]).abs() < 1e-6,
-                "DC v[{}] differs: 44.1k={:.6}, 96k={:.6}", i, v_44k[i], v_96k[i]);
-            assert!((v_44k[i] - v_192k[i]).abs() < 1e-6,
-                "DC v[{}] differs: 44.1k={:.6}, 192k={:.6}", i, v_44k[i], v_192k[i]);
+            assert!(
+                (v_44k[i] - v_88k[i]).abs() < 1e-6,
+                "DC v[{}] differs: 44.1k={:.6}, 88.2k={:.6}",
+                i,
+                v_44k[i],
+                v_88k[i]
+            );
+            assert!(
+                (v_44k[i] - v_96k[i]).abs() < 1e-6,
+                "DC v[{}] differs: 44.1k={:.6}, 96k={:.6}",
+                i,
+                v_44k[i],
+                v_96k[i]
+            );
+            assert!(
+                (v_44k[i] - v_192k[i]).abs() < 1e-6,
+                "DC v[{}] differs: 44.1k={:.6}, 192k={:.6}",
+                i,
+                v_44k[i],
+                v_192k[i]
+            );
         }
     }
 
@@ -1358,8 +1480,10 @@ mod tests {
         let (gm1, gm2) = gm_from_preamp(&preamp);
 
         let gain = small_signal_gain_db(gm1, gm2, 1_000_000.0, 1000.0);
-        assert!(gain > 3.0 && gain < 12.0,
-            "SS gain @ 1kHz (no trem) = {gain:.1} dB, want ~6 dB");
+        assert!(
+            gain > 3.0 && gain < 12.0,
+            "SS gain @ 1kHz (no trem) = {gain:.1} dB, want ~6 dB"
+        );
     }
 
     #[test]
@@ -1368,8 +1492,10 @@ mod tests {
         let (gm1, gm2) = gm_from_preamp(&preamp);
 
         let gain = small_signal_gain_db(gm1, gm2, 19_000.0, 1000.0);
-        assert!(gain > 8.0 && gain < 18.0,
-            "SS gain @ 1kHz (trem bright) = {gain:.1} dB, want ~12 dB");
+        assert!(
+            gain > 8.0 && gain < 18.0,
+            "SS gain @ 1kHz (trem bright) = {gain:.1} dB, want ~12 dB"
+        );
     }
 
     #[test]
@@ -1381,8 +1507,10 @@ mod tests {
         let gain_hi = small_signal_gain_db(gm1, gm2, 19_000.0, 1000.0);
         let range = gain_hi - gain_lo;
 
-        assert!(range > 3.0 && range < 10.0,
-            "Tremolo range = {range:.1} dB, want ~6 dB");
+        assert!(
+            range > 3.0 && range < 10.0,
+            "Tremolo range = {range:.1} dB, want ~6 dB"
+        );
     }
 
     #[test]
@@ -1393,12 +1521,16 @@ mod tests {
         let (gm1, gm2) = gm_from_preamp(&preamp);
 
         let bw_no_trem = find_bandwidth(gm1, gm2, 1_000_000.0);
-        assert!(bw_no_trem > 8_000.0,
-            "BW (no trem) = {bw_no_trem:.0} Hz, want > 8 kHz");
+        assert!(
+            bw_no_trem > 8_000.0,
+            "BW (no trem) = {bw_no_trem:.0} Hz, want > 8 kHz"
+        );
 
         let bw_trem = find_bandwidth(gm1, gm2, 19_000.0);
-        assert!(bw_trem > 8_000.0,
-            "BW (trem bright) = {bw_trem:.0} Hz, want > 8 kHz (decoupled gives ~5.2 kHz)");
+        assert!(
+            bw_trem > 8_000.0,
+            "BW (trem bright) = {bw_trem:.0} Hz, want > 8 kHz (decoupled gives ~5.2 kHz)"
+        );
     }
 
     #[test]
@@ -1410,9 +1542,11 @@ mod tests {
         let bw_19k = find_bandwidth(gm1, gm2, 19_000.0);
 
         let ratio = (bw_1m - bw_19k).abs() / bw_1m;
-        assert!(ratio < 0.25,
+        assert!(
+            ratio < 0.25,
             "BW should not depend on Rldr: 1M={bw_1m:.0} Hz, 19K={bw_19k:.0} Hz ({:.0}% diff)",
-            ratio * 100.0);
+            ratio * 100.0
+        );
     }
 
     #[test]
@@ -1428,8 +1562,10 @@ mod tests {
         let bw_19k = find_bandwidth(gm1, gm2, 19_000.0);
         let gbw_19k = gain_19k * bw_19k;
 
-        assert!(gbw_19k > gbw_1m * 1.2,
-            "GBW should scale with gain: 1M={gbw_1m:.0}, 19K={gbw_19k:.0}");
+        assert!(
+            gbw_19k > gbw_1m * 1.2,
+            "GBW should scale with gain: 1M={gbw_1m:.0}, 19K={gbw_19k:.0}"
+        );
     }
 
     #[test]
@@ -1442,12 +1578,16 @@ mod tests {
         let gain_10k = small_signal_gain_db(gm1, gm2, 1_000_000.0, 10000.0);
 
         // Midband relatively flat (100 Hz to 1 kHz within 3 dB)
-        assert!((gain_100 - gain_1k).abs() < 3.0,
-            "100Hz={gain_100:.1} dB vs 1kHz={gain_1k:.1} dB, want < 3 dB diff");
+        assert!(
+            (gain_100 - gain_1k).abs() < 3.0,
+            "100Hz={gain_100:.1} dB vs 1kHz={gain_1k:.1} dB, want < 3 dB diff"
+        );
 
         // 10 kHz near midband (within 4 dB for ~15 kHz BW)
-        assert!((gain_10k - gain_1k).abs() < 4.0,
-            "10kHz={gain_10k:.1} dB vs 1kHz={gain_1k:.1} dB, want < 4 dB diff");
+        assert!(
+            (gain_10k - gain_1k).abs() < 4.0,
+            "10kHz={gain_10k:.1} dB vs 1kHz={gain_1k:.1} dB, want < 4 dB diff"
+        );
     }
 
     #[test]
@@ -1461,8 +1601,11 @@ mod tests {
         for &freq in &[100.0, 1000.0, 5000.0, 10000.0] {
             let g1 = small_signal_gain_db(gm1_a, gm2_a, 1_000_000.0, freq);
             let g2 = small_signal_gain_db(gm1_b, gm2_b, 1_000_000.0, freq);
-            assert!((g1 - g2).abs() < 0.01,
-                "SS gain at {} Hz depends on fs: 44.1k={g1:.3}, 192k={g2:.3}", freq);
+            assert!(
+                (g1 - g2).abs() < 0.01,
+                "SS gain at {} Hz depends on fs: 44.1k={g1:.3}, 192k={g2:.3}",
+                freq
+            );
         }
     }
 
@@ -1504,16 +1647,20 @@ mod tests {
         // ~4.3V (correct physics). The 4th-order Bessel HPF (40 Hz)
         // removes this subsonic swing.
         eprintln!("Max output after R_ldr step: {max_output:.3}V");
-        assert!(max_output < 10.0,
-            "Output after R_ldr step unexpectedly large: {max_output:.3}V (want < 10.0V)");
+        assert!(
+            max_output < 10.0,
+            "Output after R_ldr step unexpectedly large: {max_output:.3}V (want < 10.0V)"
+        );
 
         // After settling (2s), output should be near zero (no input)
         for _ in 0..((sr * 2.0) as usize) {
             preamp.process_sample(0.0);
         }
         let settled_output = preamp.process_sample(0.0).abs();
-        assert!(settled_output < 0.01,
-            "Output should settle to ~0 with no input: {settled_output:.6}V");
+        assert!(
+            settled_output < 0.01,
+            "Output should settle to ~0 with no input: {settled_output:.6}V"
+        );
     }
 
     /// Dynamic tremolo modulation: verify audio-band gain matches static expectation.
@@ -1536,8 +1683,10 @@ mod tests {
         let gain_50k = measure_gain(&mut preamp, 1000.0, 0.001, sr);
 
         let static_range_db = 20.0 * (gain_50k / gain_1m).log10();
-        eprintln!("Static gain: R_ldr=1M -> {:.3}x, R_ldr=50K -> {:.3}x, range = {:.1} dB",
-            gain_1m, gain_50k, static_range_db);
+        eprintln!(
+            "Static gain: R_ldr=1M -> {:.3}x, R_ldr=50K -> {:.3}x, range = {:.1} dB",
+            gain_1m, gain_50k, static_range_db
+        );
 
         // Dynamic R_ldr oscillation at 5.5 Hz while feeding 1 kHz sine.
         let mut preamp = DkPreamp::new(sr);
@@ -1604,34 +1753,43 @@ mod tests {
         let mut gains_at_max_rldr = Vec::new();
         let mut gains_at_min_rldr = Vec::new();
 
-        for cycle in 1..n_cycles {  // skip first cycle
+        for cycle in 1..n_cycles {
+            // skip first cycle
             // R_ldr max at quarter period
             let center_max = cycle * period_samples + period_samples / 4;
             let start = center_max.saturating_sub(window_len / 2);
-            if start + window_len > outputs.len() { break; }
+            if start + window_len > outputs.len() {
+                break;
+            }
             let amp_at_max = dft_amplitude(&outputs[start..start + window_len], freq, sr);
             gains_at_max_rldr.push(amp_at_max / amp);
 
             // R_ldr min at three-quarter period
             let center_min = cycle * period_samples + 3 * period_samples / 4;
             let start = center_min.saturating_sub(window_len / 2);
-            if start + window_len > outputs.len() { break; }
+            if start + window_len > outputs.len() {
+                break;
+            }
             let amp_at_min = dft_amplitude(&outputs[start..start + window_len], freq, sr);
             gains_at_min_rldr.push(amp_at_min / amp);
         }
 
         // Average gains across cycles
-        let avg_gain_max_rldr = gains_at_max_rldr.iter().sum::<f64>()
-            / gains_at_max_rldr.len() as f64;
-        let avg_gain_min_rldr = gains_at_min_rldr.iter().sum::<f64>()
-            / gains_at_min_rldr.len() as f64;
+        let avg_gain_max_rldr =
+            gains_at_max_rldr.iter().sum::<f64>() / gains_at_max_rldr.len() as f64;
+        let avg_gain_min_rldr =
+            gains_at_min_rldr.iter().sum::<f64>() / gains_at_min_rldr.len() as f64;
 
         let dynamic_range_db = 20.0 * (avg_gain_min_rldr / avg_gain_max_rldr).log10();
 
-        eprintln!("Dynamic 1kHz gain: R_ldr=1M -> {:.3}x, R_ldr=50K -> {:.3}x, range = {:.1} dB",
-            avg_gain_max_rldr, avg_gain_min_rldr, dynamic_range_db);
-        eprintln!("  Static:          R_ldr=1M -> {:.3}x, R_ldr=50K -> {:.3}x, range = {:.1} dB",
-            gain_1m, gain_50k, static_range_db);
+        eprintln!(
+            "Dynamic 1kHz gain: R_ldr=1M -> {:.3}x, R_ldr=50K -> {:.3}x, range = {:.1} dB",
+            avg_gain_max_rldr, avg_gain_min_rldr, dynamic_range_db
+        );
+        eprintln!(
+            "  Static:          R_ldr=1M -> {:.3}x, R_ldr=50K -> {:.3}x, range = {:.1} dB",
+            gain_1m, gain_50k, static_range_db
+        );
         eprintln!("  ({} cycles measured)", gains_at_max_rldr.len());
 
         // Dynamic gain modulation should be close to static range (2.8 dB).
@@ -1696,8 +1854,10 @@ mod tests {
 
         // After 5s settling (2 tau), COLL2 should be converging toward fresh
         let delta_coll2 = (stepped.v[COLL2] - fresh.v[COLL2]).abs();
-        assert!(delta_coll2 < 1.0,
-            "After 5s settling, COLL2 delta={delta_coll2:.3}V (want < 1V)");
+        assert!(
+            delta_coll2 < 1.0,
+            "After 5s settling, COLL2 delta={delta_coll2:.3}V (want < 1V)"
+        );
     }
 
     /// Verify Sherman-Morrison S_eff matches brute-force matrix inverse.
@@ -1738,7 +1898,9 @@ mod tests {
             }
         }
 
-        assert!(max_err < 1e-7,
-            "SM vs brute-force S_eff max error: {max_err:.2e} (want < 1e-7)");
+        assert!(
+            max_err < 1e-7,
+            "SM vs brute-force S_eff max error: {max_err:.2e} (want < 1e-7)"
+        );
     }
 }
