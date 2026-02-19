@@ -632,7 +632,9 @@ fn cmd_bark_audit(args: &[String]) {
     // Summary
     println!("Legend:");
     println!("  Reed pk   = peak reed displacement (model units)");
-    println!("  y_peak    = physical displacement fraction (y = reed_pk * DS), DS = per-note from tables");
+    println!(
+        "  y_peak    = physical displacement fraction (y = reed_pk * DS), DS = per-note from tables"
+    );
     println!("  NL H2/H1  = H2/H1 after 1/(1-y) nonlinearity, before HPF");
     println!("  NL pk(mV) = peak signal after nonlinearity (millivolts)");
     println!("  HPF H2/H1 = H2/H1 after pickup RC HPF at {PICKUP_HPF_HZ} Hz");
@@ -891,18 +893,30 @@ fn parse_csv_list<T: std::str::FromStr>(args: &[String], flag: &str, default: &s
 
 fn peak_db(signal: &[f64]) -> f64 {
     let peak = signal.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-    if peak > 0.0 { 20.0 * peak.log10() } else { -120.0 }
+    if peak > 0.0 {
+        20.0 * peak.log10()
+    } else {
+        -120.0
+    }
 }
 
 fn rms_db(signal: &[f64]) -> f64 {
     let mean_sq = signal.iter().map(|x| x * x).sum::<f64>() / signal.len() as f64;
-    if mean_sq > 0.0 { 10.0 * mean_sq.log10() } else { -120.0 }
+    if mean_sq > 0.0 {
+        10.0 * mean_sq.log10()
+    } else {
+        -120.0
+    }
 }
 
 fn h2_h1_ratio_db(signal: &[f64], fundamental_hz: f64, sr: f64) -> f64 {
     let h1 = dft_magnitude(signal, fundamental_hz, sr);
     let h2 = dft_magnitude(signal, 2.0 * fundamental_hz, sr);
-    if h1 > 1e-15 { 20.0 * (h2 / h1).log10() } else { -120.0 }
+    if h1 > 1e-15 {
+        20.0 * (h2 / h1).log10()
+    } else {
+        -120.0
+    }
 }
 
 // ─── Calibrate subcommand ──────────────────────────────────────────────────
@@ -976,7 +990,7 @@ fn run_calibrate(
 
     let duration = 0.5;
     let measure_start = (0.100 * BASE_SR) as usize; // 100ms
-    let measure_end = (0.400 * BASE_SR) as usize;   // 400ms
+    let measure_end = (0.400 * BASE_SR) as usize; // 400ms
 
     let mut rows = Vec::new();
 
@@ -1082,7 +1096,11 @@ fn run_calibrate(
 
             // ── Derived metrics ──
             let proxy = 20.0 * out_scale.log10();
-            let trim = if cfg.zero_trim { 0.0 } else { tables::register_trim_db(note) };
+            let trim = if cfg.zero_trim {
+                0.0
+            } else {
+                tables::register_trim_db(note)
+            };
             let proxy_error = t3_rm - cfg.target_db; // how far from target
             let tanh_compression = t4_pk - t5_pk;
 
@@ -1169,11 +1187,8 @@ fn write_calibrate_csv(path: &str, rows: &[CalibrateRow]) {
 fn cmd_sensitivity(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,54,60,66,72,78,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
-    let ds_values: Vec<f64> = parse_csv_list(
-        args,
-        "--ds-range",
-        "0.50,0.55,0.60,0.65,0.70,0.75,0.80",
-    );
+    let ds_values: Vec<f64> =
+        parse_csv_list(args, "--ds-range", "0.50,0.55,0.60,0.65,0.70,0.75,0.80");
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let scale_mode_raw = parse_flag_str(args, "--scale-mode", "track");
@@ -1231,5 +1246,9 @@ fn cmd_sensitivity(args: &[String]) {
     }
 
     write_calibrate_csv(output_path, &all_rows);
-    eprintln!("Sensitivity: {} total rows → {}", all_rows.len(), output_path);
+    eprintln!(
+        "Sensitivity: {} total rows → {}",
+        all_rows.len(),
+        output_path
+    );
 }

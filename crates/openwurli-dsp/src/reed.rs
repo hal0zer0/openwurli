@@ -58,6 +58,7 @@ impl ModalReed {
     /// - `velocity`: 0.0 (pp) to 1.0 (ff), controls onset ramp shape
     /// - `sample_rate`: audio sample rate in Hz
     /// - `jitter_seed`: RNG seed for per-mode frequency jitter (decorrelates voices)
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         fundamental_hz: f64,
         mode_ratios: &[f64; NUM_MODES],

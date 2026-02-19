@@ -60,7 +60,6 @@ const FB: usize = 7;
 
 const N: usize = 8; // number of nodes
 
-
 // ── 8×8 matrix type aliases ─────────────────────────────────────────────────
 
 type Mat8 = [[f64; N]; N];
@@ -410,7 +409,6 @@ impl DkPreamp {
         }
         w
     }
-
 }
 
 /// Compute K = N_v * S * N_i from an 8x8 matrix S.
@@ -438,11 +436,21 @@ fn compute_k(s: &Mat8) -> [[f64; 2]; 2] {
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn dk_step(
-    a_neg_base: &Mat8, two_w: &Vec8, s_base: &Mat8,
-    s_fb_col: &Vec8, s_fb_fb: f64, g_ldr: f64, g_ldr_prev: f64,
-    k: &[[f64; 2]; 2], nv_sfb: &[f64; 2], sfb_ni: &[f64; 2],
-    g_cin: f64, gc_1pc: f64, c_cin: f64,
-    state: &mut DkState, input: f64,
+    a_neg_base: &Mat8,
+    two_w: &Vec8,
+    s_base: &Mat8,
+    s_fb_col: &Vec8,
+    s_fb_fb: f64,
+    g_ldr: f64,
+    g_ldr_prev: f64,
+    k: &[[f64; 2]; 2],
+    nv_sfb: &[f64; 2],
+    sfb_ni: &[f64; 2],
+    g_cin: f64,
+    gc_1pc: f64,
+    c_cin: f64,
+    state: &mut DkState,
+    input: f64,
 ) -> f64 {
     // 1. History: rhs = A_neg_base * v[n] + sources
     let mut rhs = mat_vec_mul(a_neg_base, &state.v);
@@ -542,20 +550,40 @@ impl PreampModel for DkPreamp {
         // Field-level borrow splitting: config fields (&self.xxx) are immutable,
         // state field (&mut self.main) is mutable — different fields, no conflict.
         let main_out = dk_step(
-            &self.a_neg_base, &self.two_w, &self.s_base,
-            &self.s_fb_col, self.s_fb_fb, self.g_ldr, self.g_ldr_prev,
-            &self.k, &self.nv_sfb, &self.sfb_ni,
-            self.g_cin, self.gc_1pc, self.c_cin,
-            &mut self.main, input,
+            &self.a_neg_base,
+            &self.two_w,
+            &self.s_base,
+            &self.s_fb_col,
+            self.s_fb_fb,
+            self.g_ldr,
+            self.g_ldr_prev,
+            &self.k,
+            &self.nv_sfb,
+            &self.sfb_ni,
+            self.g_cin,
+            self.gc_1pc,
+            self.c_cin,
+            &mut self.main,
+            input,
         );
 
         // Run shadow solver with zero input — produces pure pump
         let pump = dk_step(
-            &self.a_neg_base, &self.two_w, &self.s_base,
-            &self.s_fb_col, self.s_fb_fb, self.g_ldr, self.g_ldr_prev,
-            &self.k, &self.nv_sfb, &self.sfb_ni,
-            self.g_cin, self.gc_1pc, self.c_cin,
-            &mut self.shadow, 0.0,
+            &self.a_neg_base,
+            &self.two_w,
+            &self.s_base,
+            &self.s_fb_col,
+            self.s_fb_fb,
+            self.g_ldr,
+            self.g_ldr_prev,
+            &self.k,
+            &self.nv_sfb,
+            &self.sfb_ni,
+            self.g_cin,
+            self.gc_1pc,
+            self.c_cin,
+            &mut self.shadow,
+            0.0,
         );
 
         // Update shared R_ldr tracking (after both steps used g_ldr_prev)

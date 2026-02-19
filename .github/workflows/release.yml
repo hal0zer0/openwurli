@@ -45,8 +45,10 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p ${{ matrix.archive }}
-          cp target/bundled/openwurli.clap ${{ matrix.archive }}/ 2>/dev/null || true
-          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/ 2>/dev/null || true
+          ls -la target/bundled/ || echo "WARNING: target/bundled/ not found"
+          cp target/bundled/openwurli.clap ${{ matrix.archive }}/ || echo "WARNING: no .clap found"
+          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/ || echo "WARNING: no .vst3 found"
+          ls -la ${{ matrix.archive }}/
           tar czf ${{ matrix.archive }}.tar.gz ${{ matrix.archive }}
 
       - name: Package (Windows)
@@ -54,17 +56,25 @@ jobs:
         shell: bash
         run: |
           mkdir -p ${{ matrix.archive }}
-          cp target/bundled/openwurli.clap ${{ matrix.archive }}/ 2>/dev/null || true
-          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/ 2>/dev/null || true
+          ls -la target/bundled/ || echo "WARNING: target/bundled/ not found"
+          cp target/bundled/openwurli.clap ${{ matrix.archive }}/ || echo "WARNING: no .clap found"
+          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/ || echo "WARNING: no .vst3 found"
+          ls -la ${{ matrix.archive }}/
           7z a ${{ matrix.archive }}.zip ${{ matrix.archive }}
 
-      - name: Upload artifact
+      - name: Upload artifact (Unix)
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.archive }}
-          path: |
-            ${{ matrix.archive }}.tar.gz
-            ${{ matrix.archive }}.zip
+          path: ${{ matrix.archive }}.tar.gz
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}.zip
 
   universal-macos:
     name: Universal macOS binary
@@ -83,30 +93,59 @@ jobs:
 
       - name: Extract archives
         run: |
+          echo "=== x64 artifact contents ==="
+          ls -la x64/
           cd x64 && tar xzf *.tar.gz && cd ..
+          echo "=== arm64 artifact contents ==="
+          ls -la arm64/
           cd arm64 && tar xzf *.tar.gz && cd ..
+
+      - name: Verify binaries exist
+        run: |
+          echo "=== x64 extracted ==="
+          ls -laR x64/openwurli-macos-x64/ || true
+          echo "=== arm64 extracted ==="
+          ls -laR arm64/openwurli-macos-arm64/ || true
+          # Verify at least one format exists
+          test -f x64/openwurli-macos-x64/openwurli.clap || \
+            test -d x64/openwurli-macos-x64/openwurli.vst3
 
       - name: Create universal CLAP
         run: |
           mkdir -p openwurli-macos-universal
-          lipo -create \
-            x64/openwurli-macos-x64/openwurli.clap \
-            arm64/openwurli-macos-arm64/openwurli.clap \
-            -output openwurli-macos-universal/openwurli.clap
+          if [ -f x64/openwurli-macos-x64/openwurli.clap ] && \
+             [ -f arm64/openwurli-macos-arm64/openwurli.clap ]; then
+            lipo -create \
+              x64/openwurli-macos-x64/openwurli.clap \
+              arm64/openwurli-macos-arm64/openwurli.clap \
+              -output openwurli-macos-universal/openwurli.clap
+            echo "Created universal CLAP"
+          else
+            echo "WARNING: CLAP binaries not found, skipping universal CLAP"
+          fi
 
       - name: Create universal VST3
         run: |
-          cp -r arm64/openwurli-macos-arm64/openwurli.vst3 openwurli-macos-universal/openwurli.vst3
-          # Replace the binary inside the VST3 bundle with a universal one
-          VST3_BIN=$(find openwurli-macos-universal/openwurli.vst3 -name 'openwurli' -type f | head -1)
-          X64_BIN=$(find x64/openwurli-macos-x64/openwurli.vst3 -name 'openwurli' -type f | head -1)
-          if [ -n "$VST3_BIN" ] && [ -n "$X64_BIN" ]; then
-            lipo -create "$X64_BIN" "$VST3_BIN" -output "${VST3_BIN}.universal"
-            mv "${VST3_BIN}.universal" "$VST3_BIN"
+          if [ -d arm64/openwurli-macos-arm64/openwurli.vst3 ]; then
+            cp -r arm64/openwurli-macos-arm64/openwurli.vst3 openwurli-macos-universal/openwurli.vst3
+            # Replace the binary inside the VST3 bundle with a universal one
+            VST3_BIN=$(find openwurli-macos-universal/openwurli.vst3 -name 'openwurli' -type f | head -1)
+            X64_BIN=$(find x64/openwurli-macos-x64/openwurli.vst3 -name 'openwurli' -type f | head -1)
+            if [ -n "$VST3_BIN" ] && [ -n "$X64_BIN" ]; then
+              lipo -create "$X64_BIN" "$VST3_BIN" -output "${VST3_BIN}.universal"
+              mv "${VST3_BIN}.universal" "$VST3_BIN"
+              echo "Created universal VST3"
+            else
+              echo "WARNING: VST3 binaries not found inside bundle"
+            fi
+          else
+            echo "WARNING: VST3 bundle not found, skipping universal VST3"
           fi
 
       - name: Package
-        run: tar czf openwurli-macos-universal.tar.gz openwurli-macos-universal
+        run: |
+          ls -la openwurli-macos-universal/
+          tar czf openwurli-macos-universal.tar.gz openwurli-macos-universal
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -129,6 +168,8 @@ jobs:
         run: |
           mkdir release
           find artifacts -name '*.tar.gz' -o -name '*.zip' | xargs -I{} cp {} release/
+          echo "=== Release assets ==="
+          ls -la release/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
