@@ -600,13 +600,11 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
         register_trim_db(midi)
     };
 
-    // Velocity-dependent trim blend: at mf (v=64, norm=0.504, blend=0.254)
-    // the register trim is heavily reduced — bass gets louder at mf (trim is
-    // negative for bass). At ff (v=127, blend=1.0) the full trim applies,
-    // preserving the v=127 calibration.
-    // Physical basis: bark energy (H2 from 1/(1-y)) scales as displacement²
-    // ∝ velocity², so trim correction should also scale quadratically.
-    let vel_blend = velocity_norm * velocity_norm;
+    // Velocity-dependent trim blend: at mf (v=80, norm=0.63, blend=0.546)
+    // the register trim is partially applied. At ff (v=127, blend=1.0)
+    // the full trim applies, preserving the v=127 calibration.
+    // Exponent 1.3 gives ~4 dB spread at mf (was 6.0 dB with ^2.0).
+    let vel_blend = velocity_norm.powf(1.3);
     let effective_trim = trim * vel_blend;
 
     f64::powf(
@@ -632,12 +630,12 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
 pub fn velocity_exponent(midi: u8) -> f64 {
     let m = midi as f64;
     // Bell curve centered at MIDI 62 (D4, mid-register sweet spot)
-    // Peak exponent 2.2 (expanded dynamics)
-    // Edges (A1, C7) at 1.4 (moderate dynamics)
+    // Peak exponent 1.7 (expanded dynamics)
+    // Edges (A1, C7) at 1.3 (moderate dynamics)
     let center = 62.0;
     let sigma = 15.0; // Gradual compression onset across keyboard
-    let min_exp = 1.4;
-    let max_exp = 2.2;
+    let min_exp = 1.3;
+    let max_exp = 1.7;
     let t = f64::exp(-0.5 * ((m - center) / sigma).powi(2));
     min_exp + t * (max_exp - min_exp)
 }

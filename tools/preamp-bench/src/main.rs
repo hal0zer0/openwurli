@@ -457,7 +457,7 @@ fn cmd_render(args: &[String]) {
     } else {
         println!("  LDR:       {r_ldr:.0} Ω (static)");
     }
-    println!("  Volume:    {volume:.3} (PA gain: 8.0x, headroom: 2.5x)");
+    println!("  Volume:    {volume:.3} (PA gain: 69x, headroom: 22V)");
     println!("  Speaker:   {speaker_char:.1}");
     if let Some(ds) = disp_scale {
         println!("  Disp scale: {ds:.3}");
@@ -536,7 +536,7 @@ fn cmd_bark_audit(args: &[String]) {
             let dwell = dwell_attenuation(velocity, detuned, &params.mode_ratios);
             let amp_offsets = variation::mode_amplitude_offsets(note);
             let vel_exp = tables::velocity_exponent(note);
-            let vel_scale = velocity.powf(vel_exp);
+            let vel_scale = tables::velocity_scurve(velocity).powf(vel_exp);
             let _out_scale = tables::output_scale(note, velocity); // post-pickup only
 
             let mut amplitudes = [0.0f64; NUM_MODES];
