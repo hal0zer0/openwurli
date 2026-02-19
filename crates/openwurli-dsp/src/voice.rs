@@ -11,23 +11,7 @@ use crate::reed::ModalReed;
 use crate::tables::{self, NUM_MODES};
 use crate::variation;
 
-/// Sigmoid velocity shaping — creates a bark onset threshold around mf.
-///
-/// Physical basis: felt hammer stiffness is progressive — soft at low force,
-/// stiff at high force (Giordano & Milne 1998). Creates a natural S-curve in
-/// the force→displacement transfer: pp barely moves the reed, mf reaches the
-/// linear region, ff saturates the displacement.
-///
-/// k=3.0 gives a gentle S: pp displacement reduced ~40%, mf nearly unchanged,
-/// ff unchanged. This creates the characteristic "bark appears at mf" threshold
-/// that experienced Wurlitzer players notice.
-fn velocity_scurve(velocity: f64) -> f64 {
-    let k = 5.0;
-    let s = 1.0 / (1.0 + (-k * (velocity - 0.5)).exp());
-    let s0 = 1.0 / (1.0 + (k * 0.5).exp());
-    let s1 = 1.0 / (1.0 + (-k * 0.5).exp());
-    (s - s0) / (s1 - s0)
-}
+// velocity_scurve is in tables.rs (shared with output_scale's velocity-aware proxy)
 
 pub struct Voice {
     reed: ModalReed,
@@ -65,7 +49,7 @@ impl Voice {
         // dynamic range scaling.
         // output_scale is applied POST-pickup to decouple volume from nonlinearity.
         let vel_exp = tables::velocity_exponent(midi_note);
-        let vel_scale = velocity_scurve(velocity).powf(vel_exp);
+        let vel_scale = tables::velocity_scurve(velocity).powf(vel_exp);
         for a in &mut amplitudes {
             *a *= vel_scale;
         }
@@ -128,7 +112,7 @@ impl Voice {
 
         // Post-pickup gain: technician voicing (gap adjustment) affects volume
         // without changing the nonlinear displacement fraction y.
-        let post_pickup_gain = tables::output_scale(midi_note);
+        let post_pickup_gain = tables::output_scale(midi_note, velocity);
 
         Self {
             reed,
