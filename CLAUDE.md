@@ -62,6 +62,12 @@ cargo run -p preamp-bench -- harmonics --freq 440
 cargo run -p preamp-bench -- tremolo-sweep
 cargo run -p preamp-bench -- render --note 60 --velocity 100 --duration 2.0 --output /tmp/test.wav
 
+# Calibration & sensitivity sweep
+cargo run -p preamp-bench -- calibrate --notes 36,48,60,72,84 --velocities 40,80,127
+cargo run -p preamp-bench -- calibrate --zero-trim --output /tmp/calibrate.csv
+cargo run -p preamp-bench -- sensitivity --ds-range 0.60,0.70,0.80 --output /tmp/sensitivity.csv
+python tools/analyze_calibration.py /tmp/sensitivity.csv
+
 # Reed renderer (standalone WAV output)
 cargo run -p reed-renderer -- -n 60 -v 100 -d 1.0 -o /tmp/reed.wav
 
@@ -96,7 +102,8 @@ crates/
       params.rs                     # Parameter definitions (Volume, Gain, Tremolo, Speaker)
 tools/
   reed-renderer/                    # Standalone reed → WAV renderer
-  preamp-bench/                     # Preamp DSP validation CLI (gain, sweep, harmonics, render)
+  preamp-bench/                     # Preamp DSP validation CLI (gain, sweep, harmonics, render, calibrate, sensitivity)
+  analyze_calibration.py            # CSV analysis for calibrate/sensitivity output
 xtask/                              # nih-plug bundler (cargo xtask bundle)
 docs/                               # Research: schematics, circuit analysis, DSP specs
 spice/                              # ngspice netlists and testbenches
