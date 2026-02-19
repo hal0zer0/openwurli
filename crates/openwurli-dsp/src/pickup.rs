@@ -38,8 +38,8 @@ const SENSITIVITY: f64 = 1.8375;
 /// This constant converts to the physical ratio y = x/d_0 where d_0 is the
 /// rest gap between reed tip and pickup plate.
 ///
-/// Calibrated so mid-register forte (C4, vel 127) achieves y_peak ≈ 0.44,
-/// producing ~22% H2/H1 after HPF — solid Wurlitzer bark.
+/// At C4 vel=127 (ff), y_peak ≈ 0.55, producing ~49% H2/H1 after HPF.
+/// At C4 vel=80 (mf), y_peak ≈ 0.20, producing ~16% H2/H1 after HPF.
 /// Value chosen by ear from a sweep of 0.15–0.75, constrained by research
 /// on the physical reed-to-pickup gap (estimated 0.3–1.5 mm, Pfeifle 2017).
 /// At 0.35 the sound was too clean ("wooden, like tuned wood blocks") —

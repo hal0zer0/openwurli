@@ -107,7 +107,7 @@ impl Default for OpenWurli {
 }
 
 impl OpenWurli {
-    fn note_on(&mut self, note: u8, velocity: f32) {
+    fn note_on(&mut self, note: u8, velocity: f32, mlp_enabled: bool) {
         let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
         let slot_idx = self.allocate_voice();
         let slot = &mut self.voices[slot_idx];
@@ -129,6 +129,7 @@ impl OpenWurli {
             velocity as f64,
             self.sample_rate,
             noise_seed,
+            mlp_enabled,
         ));
         slot.state = VoiceState::Held;
         slot.midi_note = note;
@@ -343,6 +344,7 @@ impl Plugin for OpenWurli {
         // Event-splitting process loop: split at each MIDI event for sample-accuracy
         let mut next_event = context.next_event();
         let mut block_start: usize = 0;
+        let mlp_on = self.params.mlp_enabled.value();
 
         while block_start < num_samples {
             // Process all events at or before current position
@@ -351,7 +353,7 @@ impl Plugin for OpenWurli {
                     Some(ref event) if (event.timing() as usize) <= block_start => {
                         match event {
                             NoteEvent::NoteOn { note, velocity, .. } => {
-                                self.note_on(*note, *velocity);
+                                self.note_on(*note, *velocity, mlp_on);
                             }
                             NoteEvent::NoteOff { note, .. } => {
                                 self.note_off(*note);
@@ -381,7 +383,7 @@ impl Plugin for OpenWurli {
         // Drain any remaining events
         while let Some(event) = next_event {
             match event {
-                NoteEvent::NoteOn { note, velocity, .. } => self.note_on(note, velocity),
+                NoteEvent::NoteOn { note, velocity, .. } => self.note_on(note, velocity, mlp_on),
                 NoteEvent::NoteOff { note, .. } => self.note_off(note),
                 _ => {}
             }

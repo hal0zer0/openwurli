@@ -1,17 +1,16 @@
-"""Train MLP for per-note parameter corrections.
+"""Train MLP v2 for per-note parameter corrections.
 
-Architecture: Input(2) -> Linear(H) -> ReLU -> Linear(H) -> ReLU -> Linear(22)
+Architecture: Input(2) -> Linear(H) -> ReLU -> Linear(H) -> ReLU -> Linear(11)
 Trained with masked Huber loss weighted by isolation tier.
 
-Target vector (22 dims):
-  [0:7]   amp_offsets  H2-H8 (dB, positive = model too quiet)
-  [7:14]  freq_offsets H2-H8 (cents)
-  [14:21] decay_offsets H2-H8 (ratio)
-  [21]    d0_correction
+v2 target vector (11 dims):
+  [0:5]   freq_offsets H2-H6 (cents)
+  [5:10]  decay_offsets H2-H6 (ratio, >1 = model decays too fast)
+  [10]    ds_correction (displacement scale multiplier from H2/H1 ratio)
 
 Usage:
     python train_mlp.py
-    python train_mlp.py --epochs 2000 --lr 1e-3 --hidden 64
+    python train_mlp.py --epochs 2000 --lr 1e-3 --hidden 8
     python train_mlp.py --export ml_data/model_weights.json
 """
 
@@ -24,10 +23,16 @@ import torch
 import torch.nn as nn
 
 
-class WurliMLP(nn.Module):
-    """Small MLP for per-note parameter corrections."""
+N_FREQ = 5
+N_DECAY = 5
+N_OUTPUTS = N_FREQ + N_DECAY + 1  # 11
+DS_IDX = N_FREQ + N_DECAY          # 10
 
-    def __init__(self, n_inputs=2, n_hidden=32, n_outputs=22):
+
+class WurliMLP(nn.Module):
+    """Small MLP for per-note parameter corrections (v2)."""
+
+    def __init__(self, n_inputs=2, n_hidden=8, n_outputs=N_OUTPUTS):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_inputs, n_hidden),
@@ -55,7 +60,7 @@ def masked_huber_loss(pred, target, mask, weights, delta=5.0):
     loss = loss * mask.float()
 
     # Weight by isolation tier (per-observation)
-    # weights shape: (N,), need to broadcast to (N, 22)
+    # weights shape: (N,), need to broadcast to (N, n_targets)
     loss = loss * weights.unsqueeze(1)
 
     # Normalize by number of valid entries
@@ -77,17 +82,19 @@ def load_data(data_path, no_split=False):
     mask = d['mask']        # (N, 22) bool
     weights = d['weights']  # (N,)
 
+    n_targets = targets.shape[1]
+
     # Clip extreme decay outliers (>20x ratio is certainly noise)
-    decay_slice = slice(14, 21)
+    decay_slice = slice(N_FREQ, N_FREQ + N_DECAY)
     targets[:, decay_slice] = np.clip(targets[:, decay_slice], -20.0, 20.0)
 
-    # Clip extreme d0_corr
-    targets[:, 21] = np.clip(targets[:, 21], 0.01, 20.0)
+    # Clip ds_correction to [0.5, 2.0] (broader than runtime [0.7, 1.5] to let training explore)
+    targets[:, DS_IDX] = np.clip(targets[:, DS_IDX], 0.5, 2.0)
 
     # Per-target standardization (mean/std from valid entries only)
-    target_means = np.zeros(22)
-    target_stds = np.ones(22)
-    for i in range(22):
+    target_means = np.zeros(n_targets)
+    target_stds = np.ones(n_targets)
+    for i in range(n_targets):
         valid = mask[:, i]
         if valid.sum() > 1:
             target_means[i] = targets[valid, i].mean()
@@ -189,16 +196,15 @@ def evaluate(model, val_data, target_means, target_stds):
     pred = pred_norm * stds_t + means_t
     actual = val_targets_norm * stds_t + means_t
 
-    names = ([f'amp_H{h}' for h in range(2, 9)] +
-             [f'freq_H{h}' for h in range(2, 9)] +
-             [f'decay_H{h}' for h in range(2, 9)] +
-             ['d0_corr'])
+    names = ([f'freq_H{h}' for h in range(2, 2 + N_FREQ)] +
+             [f'decay_H{h}' for h in range(2, 2 + N_DECAY)] +
+             ['ds_corr'])
 
     print("\n  Per-target validation error (original units):")
     print(f"  {'Target':>12} {'N_val':>5} {'MAE':>8} {'RMSE':>8} {'Unit'}")
     print(f"  {'-'*45}")
 
-    units = ['dB'] * 7 + ['cents'] * 7 + ['ratio'] * 7 + ['']
+    units = ['cents'] * N_FREQ + ['ratio'] * N_DECAY + ['']
     for i, (name, unit) in enumerate(zip(names, units)):
         valid = val_mask[:, i]
         if valid.sum() == 0:
@@ -234,10 +240,11 @@ def export_weights(model, target_means, target_stds, hidden_size, output_path):
             'activation': act,
         })
 
+    output_size = len(layers[-1]["bias"])
     export = {
         'architecture': 'MLP',
         'input_size': 2,
-        'output_size': 22,
+        'output_size': output_size,
         'hidden_size': hidden_size,
         'layers': layers,
         'target_means': target_means.tolist(),
@@ -261,7 +268,7 @@ def main():
                         help="Training data path")
     parser.add_argument("--epochs", type=int, default=2000)
     parser.add_argument("--lr", type=float, default=3e-3)
-    parser.add_argument("--hidden", type=int, default=32)
+    parser.add_argument("--hidden", type=int, default=8)
     parser.add_argument("--patience", type=int, default=150)
     parser.add_argument("--huber-delta", type=float, default=5.0,
                         help="Huber loss delta (switch from quadratic to linear)")
@@ -286,7 +293,7 @@ def main():
     print(f"  Train mask coverage: {train_data[2].float().mean():.1%}")
     print(f"  Val mask coverage: {val_data[2].float().mean():.1%}")
 
-    model = WurliMLP(n_inputs=2, n_hidden=args.hidden, n_outputs=22)
+    model = WurliMLP(n_inputs=2, n_hidden=args.hidden, n_outputs=N_OUTPUTS)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"\nModel: {n_params} parameters (hidden={args.hidden})")
     print(f"Training: epochs={args.epochs}, lr={args.lr}, patience={args.patience}, "

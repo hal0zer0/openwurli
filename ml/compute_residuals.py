@@ -1,21 +1,25 @@
 """Compute residuals (real - model) and assemble training dataset.
 
-22 MLP output targets per observation:
-- amp_offsets[7]:   real_H_dB - model_H_dB per harmonic H2-H8 (dB). H1 excluded (it's the reference).
-- freq_offsets[7]:  1200 * log2(real_freq / model_freq) per harmonic (cents)
-- decay_offsets[7]: real_decay / model_decay ratio per harmonic window (H1 at 7 time windows -> simplified to 1 overall)
-- d0_correction:    derived from H2 discrepancy
+v2 target layout — 11 MLP outputs per observation:
+- freq_offsets[5]:  1200 * log2(real_freq / model_freq) for H2-H6 (cents)
+- decay_offsets[5]: real_decay / model_decay ratio for H2-H6
+- ds_correction:    displacement scale multiplier derived from H2/H1 ratio
+
+v1→v2 changes:
+- REMOVED amp_offsets (harmonic-vs-mode domain mismatch, see memory/mlp-v2-plan.md)
+- FIXED ds_correction sign bug (v1 used 2^(-delta/6) which INVERTED the correction)
+- REDUCED from 22 to 11 outputs (5 freq + 5 decay + 1 ds)
+- ds_correction now targets H2/H1 RATIO specifically, not H2 amplitude
 
 SNR-based masking filters out noise-contaminated harmonics:
 - Inter-harmonic noise measured at (h+0.5)*f0
 - Harmonics with SNR < threshold are masked (NaN)
 - Anomalous patterns (H_{n+1} > H_n) are flagged and masked
-- H4-H8 amplitude targets always masked (below OBM noise floor)
 
 Output: ml_data/training_data.npz containing:
 - inputs (N, 2): [midi_note_normalized, velocity_normalized]
-- targets (N, 22): correction values
-- mask (N, 22): True where target is valid
+- targets (N, 11): correction values
+- mask (N, 11): True where target is valid
 - weights (N,): isolation_score (gold=1.0, silver=0.6, bronze=0.3)
 
 Usage:
@@ -33,21 +37,23 @@ from render_model_notes import bucket_velocity
 from goertzel_utils import load_audio, extract_harmonics_fft
 
 N_HARMONICS = 8
-# Target vector layout (22 values):
-#   [0:7]   amp_offsets  for H2-H8 (H1 is reference, always 0)
-#   [7:14]  freq_offsets for H2-H8 in cents
-#   [14:21] decay proxy offsets for H2-H8 (from sustain vs early_sustain ratio)
-#   [21]    d0_correction derived from H2
+# v2 target vector layout (11 values):
+#   [0:5]   freq_offsets for H2-H6 in cents
+#   [5:10]  decay_offsets for H2-H6 (ratio, >1 = model decays too fast)
+#   [10]    ds_correction from H2/H1 ratio (multiplier for displacement_scale)
+N_FREQ = 5
+N_DECAY = 5
+N_TARGETS = N_FREQ + N_DECAY + 1  # 11
+DS_IDX = N_FREQ + N_DECAY          # index 10
 
-N_TARGETS = 22
 TIER_WEIGHTS = {"gold": 1.0, "silver": 0.6, "bronze": 0.3}
 
 # SNR threshold for masking (dB) — harmonics below this are unreliable
 SNR_THRESHOLD_DB = 10.0
 
-# Maximum reliable harmonic index for amplitude targets (0-indexed into H2-H8)
-# H2 (index 0) and H3 (index 1) are potentially reliable; H4-H8 (indices 2-6) always masked
-MAX_RELIABLE_AMP_HARMONIC = 2  # Only H2 and H3 amplitude targets
+# Maximum reliable harmonic index (0-indexed into H2-H6 target space)
+# H2 (idx 0) and H3 (idx 1) are potentially reliable; H4-H6 (idx 2-4) always masked
+MAX_RELIABLE_HARMONIC = 2  # Only H2 and H3 targets
 
 
 def measure_interharmonic_snr(audio, sr, f0, onset_s, n_harmonics=8,
@@ -142,9 +148,9 @@ def detect_anomalous_harmonics(real_dB):
 
 
 def compute_note_residual(real_feat, model_feat, snr_db=None):
-    """Compute residual vector for one note observation.
+    """Compute v2 residual vector for one note observation.
 
-    Returns (targets_22, mask_22) where targets has NaN for invalid entries.
+    Returns (targets_11, mask_11) where targets has NaN for invalid entries.
     """
     targets = np.full(N_TARGETS, np.nan)
     mask = np.zeros(N_TARGETS, dtype=bool)
@@ -166,50 +172,33 @@ def compute_note_residual(real_feat, model_feat, snr_db=None):
     # Detect anomalous harmonic patterns in the recording
     anomalous = detect_anomalous_harmonics(real_dB)
 
-    # Amplitude offsets: H2-H8 (indices 1-7 in harmonic arrays)
-    for h in range(7):  # H2 through H8
-        h_idx = h + 1  # index into harmonic arrays
+    # v2: NO amplitude offsets — removed due to harmonic-vs-mode domain mismatch.
 
-        if real_dB[h_idx] is None or model_dB[h_idx] is None:
-            continue
-
-        # Filter 1: Always mask H4-H8 amplitude targets (below OBM noise floor)
-        if h >= MAX_RELIABLE_AMP_HARMONIC:
-            continue
-
-        # Filter 2: SNR-based masking
-        if snr_db is not None and h_idx < len(snr_db):
-            if np.isnan(snr_db[h_idx]) or snr_db[h_idx] < SNR_THRESHOLD_DB:
-                continue
-
-        # Filter 3: Anomalous pattern detection
-        if h in anomalous:
-            continue
-
-        targets[h] = real_dB[h_idx] - model_dB[h_idx]
-        mask[h] = True
-
-    # Frequency offsets: H2-H8 in cents (less sensitive to noise — keep more)
-    for h in range(7):
-        h_idx = h + 1
+    # Frequency offsets: H2-H6 in cents (5 values at indices 0-4)
+    for h in range(N_FREQ):  # H2 through H6
+        h_idx = h + 1  # index into harmonic arrays (1=H2, 2=H3, ...)
 
         if (real_freqs[h_idx] is None or model_freqs[h_idx] is None
                 or real_freqs[h_idx] <= 0 or model_freqs[h_idx] <= 0):
             continue
 
-        # Only mask freq targets for H4+ (same noise floor concern)
-        if h >= MAX_RELIABLE_AMP_HARMONIC:
+        # Mask H4+ (below OBM noise floor)
+        if h >= MAX_RELIABLE_HARMONIC:
             continue
 
-        # Also mask if amplitude is anomalous (freq measurement unreliable if amp is noise)
+        # SNR-based masking (freq unreliable if harmonic is noise)
         if snr_db is not None and h_idx < len(snr_db):
             if np.isnan(snr_db[h_idx]) or snr_db[h_idx] < SNR_THRESHOLD_DB:
                 continue
 
-        targets[7 + h] = 1200.0 * math.log2(real_freqs[h_idx] / model_freqs[h_idx])
-        mask[7 + h] = True
+        # Anomalous pattern detection
+        if h in anomalous:
+            continue
 
-    # Decay proxy: ratio of sustain/early_sustain amplitude for H2 and H3 only
+        targets[h] = 1200.0 * math.log2(real_freqs[h_idx] / model_freqs[h_idx])
+        mask[h] = True
+
+    # Decay proxy: ratio of sustain/early_sustain amplitude for H2-H6 (5 values at indices 5-9)
     real_early = real_feat["windows"].get("early_sustain")
     real_sus = real_feat["windows"].get("sustain")
     model_early = model_feat["windows"].get("early_sustain")
@@ -217,7 +206,7 @@ def compute_note_residual(real_feat, model_feat, snr_db=None):
 
     if (real_early is not None and real_sus is not None
             and model_early is not None and model_sus is not None):
-        for h in range(min(MAX_RELIABLE_AMP_HARMONIC, 7)):
+        for h in range(min(MAX_RELIABLE_HARMONIC, N_DECAY)):
             h_idx = h + 1
             re = real_early["amps_linear"][h_idx]
             rs = real_sus["amps_linear"][h_idx]
@@ -226,7 +215,6 @@ def compute_note_residual(real_feat, model_feat, snr_db=None):
             if (re is not None and rs is not None and me is not None and ms is not None
                     and re > 1e-12 and rs > 1e-12 and me > 1e-12 and ms > 1e-12):
 
-                # Check SNR for decay target too
                 if snr_db is not None and h_idx < len(snr_db):
                     if np.isnan(snr_db[h_idx]) or snr_db[h_idx] < SNR_THRESHOLD_DB:
                         continue
@@ -236,16 +224,26 @@ def compute_note_residual(real_feat, model_feat, snr_db=None):
 
                 real_ratio = rs / re    # <1 means decaying
                 model_ratio = ms / me
-                targets[14 + h] = real_ratio / model_ratio  # >1 means model decays too fast
-                mask[14 + h] = True
+                targets[N_FREQ + h] = real_ratio / model_ratio  # >1 means model decays too fast
+                mask[N_FREQ + h] = True
 
-    # d0_correction: derived from H2 amplitude discrepancy
-    # delta_H2 = real_H2_dB - model_H2_dB (positive = model too quiet)
-    # Correction: 2^(-delta_H2 / 6) -- empirically scaled
-    if mask[0]:  # H2 amp offset is valid
-        delta_H2 = targets[0]
-        targets[21] = 2.0 ** (-delta_H2 / 6.0)
-        mask[21] = True
+    # ds_correction: derived from H2/H1 RATIO discrepancy
+    # real_dB and model_dB are already relative to H1, so index 1 = H2/H1 ratio in dB.
+    # delta > 0 means real has stronger H2/H1 → model needs more bark → increase displacement.
+    # H2/H1 ≈ proportional to y_peak, so Δ(H2/H1_dB) ≈ 20*log10(ds2/ds1) ≈ 6*log2(ds2/ds1).
+    # Therefore ds_correction = 2^(delta/6).
+    # (v1 had 2^(-delta/6) — SIGN BUG that inverted the correction direction.)
+    h2_idx = 1  # H2 in the harmonic array
+    if (real_dB[h2_idx] is not None and model_dB[h2_idx] is not None):
+        # Check H2 SNR
+        h2_snr_ok = True
+        if snr_db is not None and h2_idx < len(snr_db):
+            if np.isnan(snr_db[h2_idx]) or snr_db[h2_idx] < SNR_THRESHOLD_DB:
+                h2_snr_ok = False
+        if 0 not in anomalous and h2_snr_ok:
+            delta_h2_ratio = real_dB[h2_idx] - model_dB[h2_idx]
+            targets[DS_IDX] = 2.0 ** (delta_h2_ratio / 6.0)
+            mask[DS_IDX] = True
 
     return targets, mask
 
@@ -301,11 +299,10 @@ def assemble_dataset(real_features, model_features, snr_cache=None):
     filter_stats = {
         'total_notes': 0,
         'matched': 0,
-        'h2_valid': 0,
-        'h3_valid': 0,
-        'h3_snr_filtered': 0,
-        'h3_anomaly_filtered': 0,
-        'h4plus_masked': 0,
+        'h2_freq_valid': 0,
+        'h3_freq_valid': 0,
+        'h2_decay_valid': 0,
+        'ds_valid': 0,
     }
 
     for real_feat in real_features:
@@ -330,9 +327,13 @@ def assemble_dataset(real_features, model_features, snr_cache=None):
 
         # Track filtering stats
         if mask_vec[0]:
-            filter_stats['h2_valid'] += 1
+            filter_stats['h2_freq_valid'] += 1
         if mask_vec[1]:
-            filter_stats['h3_valid'] += 1
+            filter_stats['h3_freq_valid'] += 1
+        if mask_vec[N_FREQ]:
+            filter_stats['h2_decay_valid'] += 1
+        if mask_vec[DS_IDX]:
+            filter_stats['ds_valid'] += 1
 
         # Skip if no valid targets at all
         if not np.any(mask_vec):
@@ -371,9 +372,11 @@ def print_dataset_summary(inputs, targets, mask, weights, note_ids, filter_stats
     print(f"\n  SNR Filtering Summary:")
     print(f"    Total notes examined:  {filter_stats['total_notes']}")
     print(f"    Model-matched:         {filter_stats['matched']}")
-    print(f"    H2 targets valid:      {filter_stats['h2_valid']}/{filter_stats['matched']}")
-    print(f"    H3 targets valid:      {filter_stats['h3_valid']}/{filter_stats['matched']}")
-    print(f"    H4-H8 amp targets:     ALL MASKED (below noise floor)")
+    print(f"    H2 freq valid:         {filter_stats['h2_freq_valid']}/{filter_stats['matched']}")
+    print(f"    H3 freq valid:         {filter_stats['h3_freq_valid']}/{filter_stats['matched']}")
+    print(f"    H2 decay valid:        {filter_stats['h2_decay_valid']}/{filter_stats['matched']}")
+    print(f"    ds_correction valid:   {filter_stats['ds_valid']}/{filter_stats['matched']}")
+    print(f"    H4-H6 targets:         masked (below OBM noise floor)")
 
     # MIDI range
     midi_vals = inputs[:, 0] * (108 - 21) + 21
@@ -393,10 +396,9 @@ def print_dataset_summary(inputs, targets, mask, weights, note_ids, filter_stats
 
     # Target coverage per dimension
     target_names = (
-        [f"amp_H{h+2}" for h in range(7)] +
-        [f"freq_H{h+2}" for h in range(7)] +
-        [f"decay_H{h+2}" for h in range(7)] +
-        ["d0_corr"]
+        [f"freq_H{h+2}" for h in range(N_FREQ)] +
+        [f"decay_H{h+2}" for h in range(N_DECAY)] +
+        ["ds_corr"]
     )
     print("\n  Target coverage:")
     for i, name in enumerate(target_names):
@@ -417,9 +419,11 @@ def print_dataset_summary(inputs, targets, mask, weights, note_ids, filter_stats
             if "obm_" not in nid:
                 continue
             midi = int(inputs[i, 0] * (108 - 21) + 21)
-            h2_str = f"{targets[i,0]:+.1f} dB" if mask[i,0] else "MASKED"
-            h3_str = f"{targets[i,1]:+.1f} dB" if mask[i,1] else "MASKED"
-            print(f"    {nid:>12} (MIDI {midi:>2}): H2={h2_str:>12}  H3={h3_str:>12}")
+            freq_str = f"{targets[i,0]:+.1f} ¢" if mask[i,0] else "MASKED"
+            decay_str = f"{targets[i,N_FREQ]:.2f}" if mask[i,N_FREQ] else "MASKED"
+            ds_str = f"{targets[i,DS_IDX]:.3f}" if mask[i,DS_IDX] else "MASKED"
+            print(f"    {nid:>12} (MIDI {midi:>2}): "
+                  f"freq_H2={freq_str:>10}  decay_H2={decay_str:>8}  ds={ds_str:>8}")
 
 
 def main():

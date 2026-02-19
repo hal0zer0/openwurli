@@ -18,6 +18,10 @@ pub struct OpenWurliParams {
     /// Speaker cabinet character: 0 = bypass (flat), 1 = authentic (HPF+LPF).
     #[id = "speaker"]
     pub speaker_character: FloatParam,
+
+    /// MLP per-note corrections: on = apply learned corrections, off = raw physics only.
+    #[id = "mlp"]
+    pub mlp_enabled: BoolParam,
 }
 
 impl Default for OpenWurliParams {
@@ -68,6 +72,8 @@ impl Default for OpenWurliParams {
             .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_string_to_value(formatters::s2v_f32_percentage()),
+
+            mlp_enabled: BoolParam::new("MLP Corrections", true),
         }
     }
 }
