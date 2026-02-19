@@ -241,18 +241,18 @@ pub fn reed_compliance(midi: u8) -> f64 {
 ///
 /// Calibrated against OBM + polyphonic Wurlitzer 200A recordings.
 /// H2/H1 comparison (high-isolation notes, n=19) showed synth H2 was
-/// -6.4 dB low at DS=0.42 ("sleepy Wurli"). Raised to 0.70 (+67%).
+/// -6.4 dB low at DS=0.42 ("sleepy Wurli"). Raised to 0.85 (+102%).
 ///
 /// Approximate values across keyboard:
-///   A1 (MIDI 33): 0.80  (clamped — heavy bass bark/growl)
-///   D3 (MIDI 50): 0.80  (clamped — solid bark)
-///   C4 (MIDI 60): 0.70  (strong bark, reference)
-///   D5 (MIDI 74): 0.45  (moderate bark)
-///   D6 (MIDI 86): 0.35  (lighter)
-///   C7 (MIDI 96): 0.25  (clean, bell-like)
-const DS_AT_C4: f64 = 0.70;
+///   A1 (MIDI 33): 0.85  (clamped — heavy bass bark/growl)
+///   D3 (MIDI 50): 0.85  (clamped — solid bark)
+///   C4 (MIDI 60): 0.85  (strong bark, reference)
+///   D5 (MIDI 74): 0.55  (moderate bark)
+///   D6 (MIDI 86): 0.42  (lighter)
+///   C7 (MIDI 96): 0.30  (clean, bell-like)
+const DS_AT_C4: f64 = 0.85;
 const DS_EXPONENT: f64 = 0.65;
-const DS_CLAMP: (f64, f64) = (0.02, 0.80);
+const DS_CLAMP: (f64, f64) = (0.02, 0.85);
 
 /// Runtime-overridable calibration parameters.
 /// All fields default to the current hardcoded constants.
@@ -517,23 +517,22 @@ pub fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
 /// Linear interpolation between anchor points; clamped outside range.
 pub fn register_trim_db(midi: u8) -> f64 {
     // Calibrated from zero-trim full-chain (t5_rms) renders at v=127 (2026-02-19).
-    // Reference: C4 = -22.0 dBFS. Trim = target - actual t5_rms.
-    // Measured via: preamp-bench sensitivity --zero-trim (DS=0.70, 13 notes × 3 vel)
-    // Previous anchors were ~2× too large (calibrated from different metric).
+    // Reference: C4 = -23.0 dBFS. Trim = target - actual t5_rms.
+    // Measured via: preamp-bench sensitivity --zero-trim (DS=0.85, 13 notes × 3 vel)
     const ANCHORS: [(f64, f64); 13] = [
-        (36.0, -1.7), // C2:  -20.4 → -22.0
-        (40.0, -0.8), // E2:  -21.2 → -22.0
-        (44.0, -2.3), // G#2: -19.8 → -22.0
-        (48.0, -0.7), // C3:  -21.3 → -22.0
-        (52.0, -0.3), // E3:  -21.8 → -22.0
-        (56.0, -0.8), // G#3: -21.3 → -22.0
-        (60.0, 0.0),  // C4:  -22.0 (reference)
-        (64.0, 1.1),  // E4:  -23.1 → -22.0
-        (68.0, 1.7),  // G#4: -23.8 → -22.0
-        (72.0, 1.0),  // C5:  -23.1 → -22.0
-        (76.0, 2.9),  // E5:  -24.9 → -22.0
-        (80.0, 3.7),  // G#5: -25.7 → -22.0
-        (84.0, 5.1),  // C6:  -27.2 → -22.0
+        (36.0, -4.9), // C2:  -18.1 → -23.0
+        (40.0, -3.6), // E2:  -19.4 → -23.0
+        (44.0, -5.0), // G#2: -18.0 → -23.0
+        (48.0, -3.0), // C3:  -20.0 → -23.0
+        (52.0, -2.4), // E3:  -20.6 → -23.0
+        (56.0, -3.1), // G#3: -19.9 → -23.0
+        (60.0, 0.0),  // C4:  -23.0 (reference)
+        (64.0, 0.1),  // E4:  -23.1 → -23.0
+        (68.0, 0.1),  // G#4: -23.1 → -23.0
+        (72.0, -1.3), // C5:  -21.7 → -23.0
+        (76.0, 0.5),  // E5:  -23.5 → -23.0
+        (80.0, 1.1),  // G#5: -24.1 → -23.0
+        (84.0, 2.4),  // C6:  -25.4 → -23.0
     ];
 
     let m = midi as f64;
@@ -1185,13 +1184,14 @@ mod tests {
     fn test_displacement_scale_monotone_decreasing() {
         // Displacement scale should generally decrease from bass to treble
         // (more compliance → more deflection → more bark)
+        // Bass notes may clamp at DS_CLAMP upper bound, so use >= for bass vs mid.
         let ds_33 = pickup_displacement_scale(33); // A1
         let ds_60 = pickup_displacement_scale(60); // C4
         let ds_96 = pickup_displacement_scale(96); // C7
 
         assert!(
-            ds_33 > ds_60,
-            "A1 ({ds_33:.3}) should have more bark than C4 ({ds_60:.3})"
+            ds_33 >= ds_60,
+            "A1 ({ds_33:.3}) should have >= bark than C4 ({ds_60:.3})"
         );
         assert!(
             ds_60 > ds_96,
