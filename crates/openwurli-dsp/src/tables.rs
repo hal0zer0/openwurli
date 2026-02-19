@@ -529,14 +529,18 @@ fn register_trim_db(midi: u8) -> f64 {
 ///
 /// Applied POST-pickup to decouple volume from nonlinear displacement.
 /// Three layers of correction:
-///   1. Multi-harmonic physics proxy — models 1/(1-y) harmonics through HPF
+///   1. Velocity-aware multi-harmonic proxy — models 1/(1-y) harmonics through
+///      HPF at the ACTUAL displacement for this velocity, not just peak.
+///      At ff, bass gets harmonic energy that passes the 2312 Hz HPF.
+///      At pp, the nonlinearity is nearly linear — bass loses that harmonic
+///      boost. The proxy accounts for this automatically.
 ///   2. Voicing slope — gentle treble roll for preamp BW and harmonic content
 ///   3. Empirical register trim — calibrated from Tier 3 renders at v=127
 ///
 /// Tuning knobs:
 ///   TARGET_DB — absolute level
 ///   VOICING_SLOPE — treble balance (dB/semi above C4)
-pub fn output_scale(midi: u8) -> f64 {
+pub fn output_scale(midi: u8, velocity_norm: f64) -> f64 {
     const TARGET_DB: f64 = -13.0;
     const VOICING_SLOPE: f64 = -0.04; // dB/semi above C4
     const HPF_FC: f64 = 2312.0;
@@ -544,14 +548,33 @@ pub fn output_scale(midi: u8) -> f64 {
     let ds = pickup_displacement_scale(midi);
     let f0 = midi_to_freq(midi);
 
-    let rms = pickup_rms_proxy(ds, f0, HPF_FC);
-    let rms_ref = pickup_rms_proxy(DS_AT_C4, midi_to_freq(60), HPF_FC);
+    // Velocity-aware proxy: compute at the actual displacement that the pickup
+    // sees at this velocity. vel_scale reduces reed amplitude, which reduces
+    // the input to the 1/(1-y) nonlinearity, which changes the harmonic content
+    // that passes the HPF. At ff (vel_scale=1.0) this equals the old behavior.
+    let scurve_v = velocity_scurve(velocity_norm);
+    let vel_scale = scurve_v.powf(velocity_exponent(midi));
+    let vel_scale_c4 = scurve_v.powf(velocity_exponent(60));
+    let effective_ds = (ds * vel_scale).max(1e-6);
+    let effective_ds_ref = (DS_AT_C4 * vel_scale_c4).max(1e-6);
+
+    let rms = pickup_rms_proxy(effective_ds, f0, HPF_FC);
+    let rms_ref = pickup_rms_proxy(effective_ds_ref, midi_to_freq(60), HPF_FC);
 
     let flat_db = -20.0 * (rms / rms_ref).log10();
     let voicing_db = VOICING_SLOPE * (midi as f64 - 60.0).max(0.0);
     let trim = register_trim_db(midi);
 
-    f64::powf(10.0, (TARGET_DB + flat_db + voicing_db + trim) / 20.0)
+    // Velocity-dependent trim blend: at mf (v=64, norm=0.504, blend=0.254)
+    // the register trim is heavily reduced — bass gets louder at mf (trim is
+    // negative for bass). At ff (v=127, blend=1.0) the full trim applies,
+    // preserving the v=127 calibration.
+    // Physical basis: bark energy (H2 from 1/(1-y)) scales as displacement²
+    // ∝ velocity², so trim correction should also scale quadratically.
+    let vel_blend = velocity_norm * velocity_norm;
+    let effective_trim = trim * vel_blend;
+
+    f64::powf(10.0, (TARGET_DB + flat_db + voicing_db + effective_trim) / 20.0)
 }
 
 /// Register-dependent velocity exponent for dynamic expression.
@@ -567,18 +590,32 @@ pub fn output_scale(midi: u8) -> f64 {
 ///
 /// sigma=15: the compression onset is gradual across the keyboard —
 /// the hammer-reed stiffness ratio changes smoothly, not abruptly.
-/// Gives ~20+ dB mid-register range, ~12-15 dB at extremes.
+/// Gives ~18-22 dB mid-register range, ~10-12 dB at extremes.
 pub fn velocity_exponent(midi: u8) -> f64 {
     let m = midi as f64;
     // Bell curve centered at MIDI 62 (D4, mid-register sweet spot)
-    // Peak exponent 1.4 (expanded dynamics)
-    // Edges (A1, C7) at 0.75 (compressed dynamics)
+    // Peak exponent 2.2 (expanded dynamics)
+    // Edges (A1, C7) at 1.4 (moderate dynamics)
     let center = 62.0;
     let sigma = 15.0; // Gradual compression onset across keyboard
-    let min_exp = 0.75;
-    let max_exp = 1.4;
+    let min_exp = 1.4;
+    let max_exp = 2.2;
     let t = f64::exp(-0.5 * ((m - center) / sigma).powi(2));
     min_exp + t * (max_exp - min_exp)
+}
+
+/// Sigmoid velocity shaping — models neoprene foam pad compression curve.
+///
+/// k=1.5 gives a mild S: pp slightly compressed, mf and ff nearly linear.
+/// Neoprene foam pads (Miessner US 2,932,231) have a more linear compression
+/// curve than piano felt. Used by both voice.rs (reed amplitude scaling) and
+/// output_scale (velocity-aware pickup RMS proxy).
+pub fn velocity_scurve(velocity: f64) -> f64 {
+    let k = 1.5;
+    let s = 1.0 / (1.0 + (-k * (velocity - 0.5)).exp());
+    let s0 = 1.0 / (1.0 + (k * 0.5).exp());
+    let s1 = 1.0 / (1.0 + (-k * 0.5).exp());
+    (s - s0) / (s1 - s0)
 }
 
 /// Bass mode amplitude taper — SUPERSEDED by hammer_spatial_coupling.

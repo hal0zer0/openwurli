@@ -1,56 +1,35 @@
-//! Wurlitzer 200A speaker cabinet model -- Hammerstein nonlinearity + HPF/LPF.
-//!
-//! The 200A uses two 4"x8" oval ceramic-magnet speakers in an open-backed
-//! ABS plastic lid. This produces:
-//!   - Bass rolloff: cone resonance + open-baffle dipole + radiation impedance
-//!     → combined ~-30 dB/oct below 100 Hz (three cascaded HPF sections)
-//!   - Treble rolloff: cone breakup (~7-8 kHz)
-//!   - Cone nonlinearity: Kms hardening (odd harmonics) + BL asymmetry
-//!     (even harmonics). Modeled as a direct memoryless polynomial -- harmonics
-//!     are phase-coherent with the input signal by construction.
-//!   - Thermal voice coil compression: slow power-dependent gain reduction (~5s tau)
-//!
-//! Architecture: static polynomial waveshaper -> linear filters (3×HPF + LPF).
-//! This is a textbook Hammerstein model. The polynomial is memoryless (no
-//! internal filters), so generated harmonics maintain natural phase relationships
-//! with the fundamental and with any existing harmonics from upstream stages.
-//!
-//! "Speaker Character" parameter blends from bypass (flat, linear) to authentic
-//! (full nonlinearity + HPF + LPF). At character=0.0 all nonlinearity
-//! coefficients are zero -- pure linear passthrough.
+/// Wurlitzer 200A speaker cabinet model — Hammerstein nonlinearity + HPF/LPF.
+///
+/// The 200A uses two 4"x8" oval ceramic-magnet speakers in an open-backed
+/// ABS plastic lid. This produces:
+///   - Bass rolloff: open-baffle cancellation + speaker resonance (~85-100 Hz)
+///   - Treble rolloff: cone breakup (~7-8 kHz)
+///   - Cone nonlinearity: Kms hardening (odd harmonics) + BL asymmetry
+///     (even harmonics). Modeled as a direct memoryless polynomial — harmonics
+///     are phase-coherent with the input signal by construction.
+///   - Thermal voice coil compression: slow power-dependent gain reduction (~5s τ)
+///
+/// Architecture: static polynomial waveshaper → linear filters (HPF + LPF).
+/// This is a textbook Hammerstein model. The polynomial is memoryless (no
+/// internal filters), so generated harmonics maintain natural phase relationships
+/// with the fundamental and with any existing harmonics from upstream stages.
+///
+/// "Speaker Character" parameter blends from bypass (flat, linear) to authentic
+/// (full nonlinearity + HPF + LPF). At character=0.0 all nonlinearity
+/// coefficients are zero — pure linear passthrough.
 
 use crate::filters::Biquad;
 
-/// HPF1 cutoff at fully authentic position (cone resonance + mechanical rolloff).
-/// 4x8" oval ceramic-magnet drivers have Fs of 120-180 Hz. 150 Hz is typical
-/// for a small oval with ceramic magnet.
-const HPF1_AUTHENTIC_HZ: f64 = 150.0;
-/// HPF1 Q (slightly underdamped for speaker resonance bump).
-const HPF1_Q: f64 = 0.75;
-/// HPF2 cutoff at fully authentic position (open-baffle dipole cancellation).
-/// Baffle step for ~24" ABS lid: f = c/(π·w) ≈ 180 Hz. Dipole cancellation
-/// onset about 1 octave below → ~100 Hz with 6 dB/oct slope.
-const HPF2_AUTHENTIC_HZ: f64 = 100.0;
-/// HPF2 Q (Butterworth — smooth transition, no peak).
-const HPF2_Q: f64 = 0.707;
-/// HPF3 cutoff at fully authentic position (radiation impedance rolloff).
-/// Small cone's acoustic radiation resistance ∝ f² below ka=1 transition.
-/// For a 4x8" effective piston radius ~5cm: f = c/(2π·a) ≈ 1090 Hz.
-/// Below this the radiation impedance falls, but the rolloff is gradual;
-/// 70 Hz captures the regime where radiation loss dominates cone resonance.
-const HPF3_AUTHENTIC_HZ: f64 = 70.0;
-/// HPF3 Q (overdamped — gradual radiation rolloff).
-const HPF3_Q: f64 = 0.5;
+/// HPF cutoff at fully authentic position.
+const HPF_AUTHENTIC_HZ: f64 = 95.0;
+/// HPF Q (slightly underdamped for speaker resonance bump).
+const HPF_Q: f64 = 0.75;
 /// LPF cutoff at fully authentic position.
 const LPF_AUTHENTIC_HZ: f64 = 7500.0;
 /// LPF Q (Butterworth).
 const LPF_Q: f64 = 0.707;
-/// HPF1 cutoff at bypass position (effectively transparent).
-const HPF1_BYPASS_HZ: f64 = 20.0;
-/// HPF2 cutoff at bypass position (effectively transparent).
-const HPF2_BYPASS_HZ: f64 = 10.0;
-/// HPF3 cutoff at bypass position (effectively transparent).
-const HPF3_BYPASS_HZ: f64 = 5.0;
+/// HPF cutoff at bypass position (effectively transparent).
+const HPF_BYPASS_HZ: f64 = 20.0;
 /// LPF cutoff at bypass position (effectively transparent).
 const LPF_BYPASS_HZ: f64 = 20000.0;
 
@@ -58,9 +37,7 @@ const LPF_BYPASS_HZ: f64 = 20000.0;
 const THERMAL_TAU: f64 = 5.0;
 
 pub struct Speaker {
-    hpf1: Biquad,
-    hpf2: Biquad,
-    hpf3: Biquad,
+    hpf: Biquad,
     lpf: Biquad,
     character: f64,
     sample_rate: f64,
@@ -75,9 +52,7 @@ pub struct Speaker {
 impl Speaker {
     pub fn new(sample_rate: f64) -> Self {
         let mut s = Self {
-            hpf1: Biquad::highpass(HPF1_AUTHENTIC_HZ, HPF1_Q, sample_rate),
-            hpf2: Biquad::highpass(HPF2_AUTHENTIC_HZ, HPF2_Q, sample_rate),
-            hpf3: Biquad::highpass(HPF3_AUTHENTIC_HZ, HPF3_Q, sample_rate),
+            hpf: Biquad::highpass(HPF_AUTHENTIC_HZ, HPF_Q, sample_rate),
             lpf: Biquad::lowpass(LPF_AUTHENTIC_HZ, LPF_Q, sample_rate),
             character: 1.0,
             sample_rate,
@@ -103,18 +78,14 @@ impl Speaker {
     fn update_coefficients(&mut self) {
         let c = self.character;
         // Logarithmic interpolation of cutoff frequencies
-        let hpf1_hz = HPF1_BYPASS_HZ * (HPF1_AUTHENTIC_HZ / HPF1_BYPASS_HZ).powf(c);
-        let hpf2_hz = HPF2_BYPASS_HZ * (HPF2_AUTHENTIC_HZ / HPF2_BYPASS_HZ).powf(c);
-        let hpf3_hz = HPF3_BYPASS_HZ * (HPF3_AUTHENTIC_HZ / HPF3_BYPASS_HZ).powf(c);
+        let hpf_hz = HPF_BYPASS_HZ * (HPF_AUTHENTIC_HZ / HPF_BYPASS_HZ).powf(c);
         let lpf_hz = LPF_BYPASS_HZ * (LPF_AUTHENTIC_HZ / LPF_BYPASS_HZ).powf(c);
-        self.hpf1.set_highpass(hpf1_hz, HPF1_Q, self.sample_rate);
-        self.hpf2.set_highpass(hpf2_hz, HPF2_Q, self.sample_rate);
-        self.hpf3.set_highpass(hpf3_hz, HPF3_Q, self.sample_rate);
+        self.hpf.set_highpass(hpf_hz, HPF_Q, self.sample_rate);
         self.lpf.set_lowpass(lpf_hz, LPF_Q, self.sample_rate);
 
         // Polynomial coefficients — all zero at character=0
-        self.a2 = 0.2 * c; // BL asymmetry (even harmonics)
-        self.a3 = 0.6 * c; // Kms hardening (odd harmonics)
+        self.a2 = 0.2 * c;  // BL asymmetry (even harmonics)
+        self.a3 = 0.6 * c;  // Kms hardening (odd harmonics)
         self.thermal_coeff = 2.0 * c;
     }
 
@@ -140,17 +111,13 @@ impl Speaker {
         self.thermal_state += (power - self.thermal_state) * self.thermal_alpha;
         let thermal_gain = 1.0 / (1.0 + self.thermal_coeff * self.thermal_state.sqrt());
 
-        // 4. Linear filters: 3 cascaded HPFs (cone + dipole + radiation) + LPF
-        let filtered = self.hpf1.process(limited * thermal_gain);
-        let filtered = self.hpf2.process(filtered);
-        let filtered = self.hpf3.process(filtered);
+        // 4. Linear filters (HPF + LPF)
+        let filtered = self.hpf.process(limited * thermal_gain);
         self.lpf.process(filtered)
     }
 
     pub fn reset(&mut self) {
-        self.hpf1.reset();
-        self.hpf2.reset();
-        self.hpf3.reset();
+        self.hpf.reset();
         self.lpf.reset();
         self.thermal_state = 0.0;
     }
@@ -185,10 +152,7 @@ mod tests {
         let bass = measure_response(&mut speaker, 50.0, sr);
 
         let atten_db = 20.0 * (bass / mid).log10();
-        assert!(
-            atten_db < -6.0,
-            "50Hz should be attenuated: {atten_db:.1} dB"
-        );
+        assert!(atten_db < -6.0, "50Hz should be attenuated: {atten_db:.1} dB");
     }
 
     #[test]
@@ -201,10 +165,7 @@ mod tests {
         let treble = measure_response(&mut speaker, 15000.0, sr);
 
         let atten_db = 20.0 * (treble / mid).log10();
-        assert!(
-            atten_db < -6.0,
-            "15kHz should be attenuated: {atten_db:.1} dB"
-        );
+        assert!(atten_db < -6.0, "15kHz should be attenuated: {atten_db:.1} dB");
     }
 
     #[test]
@@ -220,14 +181,8 @@ mod tests {
         // All should be within 1 dB of each other
         let ratio_low = (20.0 * (low / mid).log10()).abs();
         let ratio_high = (20.0 * (high / mid).log10()).abs();
-        assert!(
-            ratio_low < 1.0,
-            "Bypass should be flat at 100Hz: {ratio_low:.1} dB"
-        );
-        assert!(
-            ratio_high < 1.0,
-            "Bypass should be flat at 10kHz: {ratio_high:.1} dB"
-        );
+        assert!(ratio_low < 1.0, "Bypass should be flat at 100Hz: {ratio_low:.1} dB");
+        assert!(ratio_high < 1.0, "Bypass should be flat at 10kHz: {ratio_high:.1} dB");
     }
 
     #[test]
@@ -252,19 +207,10 @@ mod tests {
         let h3_mag = dft_magnitude(&samples[analysis_start..], 3.0 * freq, sr);
 
         let thd = (h2_mag * h2_mag + h3_mag * h3_mag).sqrt() / fundamental_mag;
-        assert!(
-            thd > 0.005,
-            "Speaker should generate measurable THD: {thd:.4}"
-        );
+        assert!(thd > 0.005, "Speaker should generate measurable THD: {thd:.4}");
         // Both even and odd harmonics should be present
-        assert!(
-            h2_mag > 0.0001,
-            "Should have H2 (BL asymmetry): {h2_mag:.6}"
-        );
-        assert!(
-            h3_mag > 0.0001,
-            "Should have H3 (Kms hardening): {h3_mag:.6}"
-        );
+        assert!(h2_mag > 0.0001, "Should have H2 (BL asymmetry): {h2_mag:.6}");
+        assert!(h3_mag > 0.0001, "Should have H3 (Kms hardening): {h3_mag:.6}");
     }
 
     #[test]
@@ -275,10 +221,8 @@ mod tests {
         let thd_loud = measure_thd(200.0, 0.8, sr);
         let thd_quiet = measure_thd(200.0, 0.2, sr);
 
-        assert!(
-            thd_loud > thd_quiet * 1.2,
-            "Loud THD ({thd_loud:.4}) should exceed quiet THD ({thd_quiet:.4}) (tanh Xmax limits growth)"
-        );
+        assert!(thd_loud > thd_quiet * 1.2,
+            "Loud THD ({thd_loud:.4}) should exceed quiet THD ({thd_quiet:.4}) (tanh Xmax limits growth)");
     }
 
     #[test]
@@ -308,10 +252,8 @@ mod tests {
         }
 
         let compression_db = 20.0 * (late_peak / early_peak).log10();
-        assert!(
-            compression_db < -0.3,
-            "Thermal compression should reduce level: {compression_db:.2} dB"
-        );
+        assert!(compression_db < -0.3,
+            "Thermal compression should reduce level: {compression_db:.2} dB");
     }
 
     fn measure_thd(freq: f64, amplitude: f64, sr: f64) -> f64 {

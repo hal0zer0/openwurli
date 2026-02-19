@@ -531,7 +531,7 @@ fn cmd_bark_audit(args: &[String]) {
             let amp_offsets = variation::mode_amplitude_offsets(note);
             let vel_exp = tables::velocity_exponent(note);
             let vel_scale = velocity.powf(vel_exp);
-            let _out_scale = tables::output_scale(note); // post-pickup only
+            let _out_scale = tables::output_scale(note, velocity); // post-pickup only
 
             let mut amplitudes = [0.0f64; NUM_MODES];
             for i in 0..NUM_MODES {

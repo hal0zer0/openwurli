@@ -37,13 +37,14 @@ pub fn dwell_time(velocity: f64, fundamental_hz: f64) -> f64 {
 ///   - D4 (294 Hz): 50% at cycle 1, 90% at cycle 2
 ///   - D6 (1175 Hz): near-instant (full by cycle 0-1)
 ///
-/// Formula: 2 periods at ff, 4.5 at pp, clamped to [2ms, 60ms].
-/// Softer hammer contact = longer force profile = gentler reed onset
-/// (felt compression is progressive, Giordano & Milne 1998).
+/// Formula: 2.0 periods at ff, 4.0 at pp, clamped to [2ms, 30ms].
+/// Matches OBM cycle-by-cycle data: 90% by cycle 2 across all registers.
+/// Longer than previous (1.5+1.5, 20ms) to reduce bass overshoot
+/// (3.47x → ~2.0-2.5x) by giving modal interference more time to average.
 pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64) -> f64 {
     let period_s = 1.0 / fundamental_hz;
-    let periods = 2.0 + 2.5 * (1.0 - velocity);
-    (periods * period_s).clamp(0.002, 0.060)
+    let periods = 2.0 + 2.0 * (1.0 - velocity);
+    (periods * period_s).clamp(0.002, 0.030)
 }
 
 /// Compute per-mode attenuation from the Gaussian dwell filter.
@@ -101,17 +102,16 @@ impl AttackNoise {
     /// - `sample_rate`: audio sample rate
     /// - `seed`: RNG seed (derive from note + counter to decorrelate simultaneous notes)
     pub fn new(velocity: f64, fundamental_hz: f64, sample_rate: f64, seed: u32) -> Self {
-        let noise_amp = 0.015 * velocity * velocity;
+        let noise_amp = 0.025 * velocity * velocity;
         let tau = 0.003;
         let decay_per_sample = (-1.0 / (tau * sample_rate)).exp();
         let duration_samples = (0.015 * sample_rate) as u32;
 
-        // Center frequency tracks the note: 4× fundamental, clamped to
-        // 200–2000 Hz. This keeps the noise in the harmonic neighborhood
-        // so it blends with the reed tone instead of sounding like a
-        // disconnected "poof" (the old fixed 1 kHz was 15 harmonics above
-        // C2's 65 Hz fundamental).
-        let center = (fundamental_hz * 4.0).clamp(200.0, 2000.0);
+        // Center frequency tracks the note: 5× fundamental, clamped to
+        // 200–2000 Hz. Higher multiplier adds more "thwack" to the attack.
+        // Keeps the noise in the harmonic neighborhood so it blends with
+        // the reed tone instead of sounding like a disconnected "poof".
+        let center = (fundamental_hz * 5.0).clamp(200.0, 2000.0);
 
         Self {
             amplitude: noise_amp,
@@ -211,17 +211,17 @@ mod tests {
             "mid onset ({mid:.4}) should exceed treble ({treble:.4})"
         );
 
-        // C2 ff: 2 periods of 65 Hz = 30.8ms (no longer clamped by 60ms ceiling)
+        // C2 ff: 2.0 periods of 65 Hz = 30.8ms, clamped to 30ms ceiling
         assert!(
-            (bass - 2.0 / 65.0).abs() < 0.001,
-            "C2 ff should be ~30.8ms, got {bass:.4}"
+            (bass - 0.030).abs() < 0.001,
+            "C2 ff should be 30ms (clamped), got {bass:.4}"
         );
-        // Treble should hit the 2ms floor (2 periods of 1047 Hz = 1.9ms)
+        // Treble should hit the 2ms floor (2.0 periods of 1047 Hz = 1.9ms)
         assert!(
             (treble - 0.002).abs() < 1e-6,
             "C6 ff should clamp to 2ms, got {treble:.6}"
         );
-        // C4 ff: 2/262 = 7.6ms (unclamped)
+        // C4 ff: 2.0/262 = 7.6ms (unclamped)
         assert!(
             (mid - 2.0 / 262.0).abs() < 0.001,
             "C4 ff should be ~7.6ms, got {mid:.4}"
@@ -235,9 +235,9 @@ mod tests {
         let pp = onset_ramp_time(0.0, 262.0);
 
         assert!(pp > ff, "pp onset ({pp:.4}) should exceed ff ({ff:.4})");
-        // ff = 2 periods, pp = 4.5 periods
+        // ff = 2.0 periods, pp = 4.0 periods
         let expected_ff = 2.0 / 262.0;
-        let expected_pp = 4.5 / 262.0;
+        let expected_pp = 4.0 / 262.0;
         assert!((ff - expected_ff).abs() < 0.001);
         assert!((pp - expected_pp).abs() < 0.001);
     }
