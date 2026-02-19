@@ -1101,9 +1101,19 @@ This is the most complex and sonically important stage. Component values and top
 4. Dynamic range verification (pp vs ff: target 20-30 dB)
 5. Polyphonic chord test (compression, intermodulation)
 
-### Phase 8: ML Correction (Deployed, Experimental)
+### Phase 8: ML Correction (Partially Disabled, Needs Retrain)
 
-Per-note MLP corrections are deployed. Architecture: 2 inputs (pitch, velocity) -> 8 hidden -> 8 hidden -> 22 outputs (amp/freq/decay offsets). 294 parameters total, runs at note-on only (<10 us inference time, zero per-sample cost).
+Per-note MLP corrections run at note-on. Architecture: 2 inputs (pitch, velocity) -> 8 hidden -> 8 hidden -> 22 outputs. 294 parameters, <10 us inference, zero per-sample cost.
+
+**v1 status (Feb 2026):** Two of four output groups disabled due to harmonic-vs-mode domain mismatch:
+- **DISABLED: amp_offsets_db** — MLP targets integer harmonics (H2 at 2xf0) but corrections are applied to physical modes at inharmonic ratios (mode 2 at 6.267xf0). Was undoing the plink fix and boosting mode 2 by +5.6 to +10.7 dB.
+- **DISABLED: ds_correction** — MLP learned 0.50 across MIDI 66-78, halving displacement and suppressing pickup bark by 3-6 dB.
+- **ACTIVE: freq_offsets_cents** — per-note mode frequency tuning (correct domain).
+- **ACTIVE: decay_offsets** — per-note mode decay adjustment (correct domain).
+
+Plugin has BoolParam "MLP Corrections" (id="mlp") for real-time A/B testing. Currently sounds better with MLP OFF due to the disabled corrections leaving only minor freq/decay adjustments active.
+
+**v2 plan:** Retrain with reduced outputs (freq + decay + H2/H1-ratio-based ds_correction). See `memory/mlp-v2-plan.md`.
 
 1. Training data: 9 OBM gold-tier notes (MIDI 65-97, vel=80), SNR-filtered
 2. Weights baked into `mlp_weights.rs` (no external files needed)

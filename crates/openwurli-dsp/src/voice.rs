@@ -29,7 +29,13 @@ impl Voice {
     /// - `velocity`: 0.0 (pp) to 1.0 (ff)
     /// - `sample_rate`: audio sample rate
     /// - `noise_seed`: RNG seed for attack noise (decorrelates simultaneous notes)
-    pub fn note_on(midi_note: u8, velocity: f64, sample_rate: f64, noise_seed: u32) -> Self {
+    pub fn note_on(
+        midi_note: u8,
+        velocity: f64,
+        sample_rate: f64,
+        noise_seed: u32,
+        mlp_enabled: bool,
+    ) -> Self {
         let params = tables::note_params(midi_note);
 
         let detuned_fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
@@ -54,45 +60,30 @@ impl Voice {
             *a *= vel_scale;
         }
 
-        // MLP per-note corrections (zero per-sample cost — runs once at note-on).
-        // Adjusts mode amplitudes, frequencies, decay rates, and displacement scale
+        // MLP v2 per-note corrections (zero per-sample cost — runs once at note-on).
+        // Adjusts mode frequencies, decay rates, and pickup displacement scale
         // based on learned residuals vs OBM recordings.
-        let corrections = MlpCorrections::infer(midi_note, velocity);
+        let corrections = if mlp_enabled {
+            MlpCorrections::infer(midi_note, velocity)
+        } else {
+            MlpCorrections::identity()
+        };
 
-        // Apply amplitude corrections to modes 1-6 (mode 0 = fundamental, never corrected)
-        for m in 1..NUM_MODES {
-            let db = if m < 6 {
-                corrections.amp_offsets_db[m - 1]
-            } else {
-                // Mode 6: average H7 and H8 corrections
-                (corrections.amp_offsets_db[5] + corrections.amp_offsets_db[6]) / 2.0
-            };
-            amplitudes[m] *= f64::powf(10.0, db / 20.0);
-        }
-
-        // Apply frequency corrections to mode ratios
+        // Apply frequency corrections to modes 1-5 (mode 0 = fundamental, never corrected)
         let mut corrected_ratios = params.mode_ratios;
-        for m in 1..NUM_MODES {
-            let cents = if m < 6 {
-                corrections.freq_offsets_cents[m - 1]
-            } else {
-                (corrections.freq_offsets_cents[5] + corrections.freq_offsets_cents[6]) / 2.0
-            };
+        for m in 1..NUM_MODES.min(6) {
+            let cents = corrections.freq_offsets_cents[m - 1];
             corrected_ratios[m] *= f64::powf(2.0, cents / 1200.0);
         }
 
-        // Apply decay corrections
+        // Apply decay corrections to modes 1-5
         let mut corrected_decay = params.mode_decay_rates;
-        for m in 1..NUM_MODES {
-            let ratio = if m < 6 {
-                corrections.decay_offsets[m - 1]
-            } else {
-                (corrections.decay_offsets[5] + corrections.decay_offsets[6]) / 2.0
-            };
+        for m in 1..NUM_MODES.min(6) {
+            let ratio = corrections.decay_offsets[m - 1];
             corrected_decay[m] /= ratio;
         }
 
-        // Apply displacement scale correction
+        // Apply displacement scale correction (from H2/H1 ratio matching)
         let corrected_ds = tables::pickup_displacement_scale(midi_note) * corrections.ds_correction;
 
         let reed = ModalReed::new(
@@ -186,7 +177,7 @@ impl Voice {
         displacement_scale: Option<f64>,
     ) -> Vec<f64> {
         let noise_seed = (midi_note as u32).wrapping_mul(2654435761);
-        let mut voice = Voice::note_on(midi_note, velocity, sample_rate, noise_seed);
+        let mut voice = Voice::note_on(midi_note, velocity, sample_rate, noise_seed, true);
         if let Some(scale) = displacement_scale {
             voice.set_displacement_scale(scale);
         }

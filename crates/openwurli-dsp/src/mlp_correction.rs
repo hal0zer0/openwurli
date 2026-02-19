@@ -1,8 +1,13 @@
-//! Per-note MLP parameter corrections.
+//! Per-note MLP v2 parameter corrections.
 //!
-//! A tiny neural network (2→8→8→22) runs ONCE at note-on to produce
-//! per-note corrections to mode amplitudes, frequencies, decay rates,
-//! and pickup displacement scale. Zero per-sample CPU cost.
+//! A tiny neural network (2→8→8→11) runs ONCE at note-on to produce
+//! per-note corrections to mode frequencies, decay rates, and pickup
+//! displacement scale. Zero per-sample CPU cost.
+//!
+//! v2 changes from v1:
+//! - REMOVED amp_offsets (harmonic-vs-mode domain mismatch)
+//! - FIXED ds_correction sign bug (v1 inverted the correction direction)
+//! - REDUCED outputs: 22→11 (5 freq + 5 decay + 1 ds)
 //!
 //! Trained on OBM recordings vs model output. See `ml/` for the
 //! Python training pipeline.
@@ -15,7 +20,10 @@ use mlp_weights::*;
 
 const MIDI_MIN: f64 = 21.0;
 const MIDI_MAX: f64 = 108.0;
-const N_OUTPUTS: usize = 22;
+const N_OUTPUTS: usize = 11;
+const N_FREQ: usize = 5;
+const N_DECAY: usize = 5;
+const DS_IDX: usize = 10;
 
 /// Training data MIDI range. Outside this, corrections fade to identity.
 const TRAIN_MIDI_LO: f64 = 65.0;
@@ -28,13 +36,11 @@ pub const ENABLE_MLP: bool = true;
 
 /// Corrections produced by the MLP at note-on.
 pub struct MlpCorrections {
-    /// Amplitude offsets for H2-H8, in dB (positive = model too quiet).
-    pub amp_offsets_db: [f64; 7],
-    /// Frequency offsets for H2-H8, in cents.
-    pub freq_offsets_cents: [f64; 7],
-    /// Decay ratio offsets for H2-H8 (>1 = model decays too fast).
-    pub decay_offsets: [f64; 7],
-    /// Displacement scale multiplier (1.0 = no change).
+    /// Frequency offsets for H2-H6, in cents. Applied to modes 1-5.
+    pub freq_offsets_cents: [f64; N_FREQ],
+    /// Decay ratio offsets for H2-H6 (>1 = model decays too fast). Applied to modes 1-5.
+    pub decay_offsets: [f64; N_DECAY],
+    /// Displacement scale multiplier (1.0 = no change). Derived from H2/H1 ratio.
     pub ds_correction: f64,
 }
 
@@ -42,9 +48,8 @@ impl MlpCorrections {
     /// Identity corrections (no change to any parameter).
     pub fn identity() -> Self {
         Self {
-            amp_offsets_db: [0.0; 7],
-            freq_offsets_cents: [0.0; 7],
-            decay_offsets: [1.0; 7],
+            freq_offsets_cents: [0.0; N_FREQ],
+            decay_offsets: [1.0; N_DECAY],
             ds_correction: 1.0,
         }
     }
@@ -108,24 +113,24 @@ impl MlpCorrections {
             raw[i] = sum * TARGET_STDS[i] + TARGET_MEANS[i];
         }
 
-        // Unpack, clamp, and apply fade toward identity outside training range
-        let mut amp_offsets_db = [0.0f64; 7];
-        let mut freq_offsets_cents = [0.0f64; 7];
-        let mut decay_offsets = [1.0f64; 7];
+        // Unpack: [0:5] = freq, [5:10] = decay, [10] = ds
+        let mut freq_offsets_cents = [0.0f64; N_FREQ];
+        let mut decay_offsets = [1.0f64; N_DECAY];
 
-        for h in 0..7 {
-            // Fade: amp/freq offsets → 0.0, decay → 1.0
-            amp_offsets_db[h] = (raw[h] * fade).clamp(-40.0, 40.0);
-            freq_offsets_cents[h] = (raw[7 + h] * fade).clamp(-100.0, 100.0);
-            let raw_decay = raw[14 + h].clamp(0.3, 3.0);
+        for h in 0..N_FREQ {
+            freq_offsets_cents[h] = (raw[h] * fade).clamp(-100.0, 100.0);
+        }
+        for h in 0..N_DECAY {
+            let raw_decay = raw[N_FREQ + h].clamp(0.3, 3.0);
             decay_offsets[h] = 1.0 + (raw_decay - 1.0) * fade;
         }
 
-        let raw_ds = raw[21].clamp(0.5, 2.5);
+        // ds_correction: displacement scale multiplier from H2/H1 ratio.
+        // Clamped to [0.7, 1.5] to prevent bark suppression (v1 learned 0.50).
+        let raw_ds = raw[DS_IDX].clamp(0.7, 1.5);
         let ds_correction = 1.0 + (raw_ds - 1.0) * fade;
 
         Self {
-            amp_offsets_db,
             freq_offsets_cents,
             decay_offsets,
             ds_correction,
@@ -140,9 +145,10 @@ mod tests {
     #[test]
     fn test_identity_is_neutral() {
         let c = MlpCorrections::identity();
-        for i in 0..7 {
-            assert_eq!(c.amp_offsets_db[i], 0.0);
+        for i in 0..N_FREQ {
             assert_eq!(c.freq_offsets_cents[i], 0.0);
+        }
+        for i in 0..N_DECAY {
             assert_eq!(c.decay_offsets[i], 1.0);
         }
         assert_eq!(c.ds_correction, 1.0);
@@ -151,9 +157,9 @@ mod tests {
     #[test]
     fn test_infer_produces_corrections() {
         let c = MlpCorrections::infer(60, 0.8);
-        // MLP should produce non-trivial corrections for at least some targets
-        let has_correction = c.amp_offsets_db.iter().any(|&x| x.abs() > 0.01)
-            || c.freq_offsets_cents.iter().any(|&x| x.abs() > 0.01);
+        let has_correction = c.freq_offsets_cents.iter().any(|&x| x.abs() > 0.01)
+            || c.decay_offsets.iter().any(|&x| (x - 1.0).abs() > 0.01)
+            || (c.ds_correction - 1.0).abs() > 0.01;
         assert!(has_correction, "MLP should produce non-trivial corrections");
     }
 
@@ -161,7 +167,11 @@ mod tests {
     fn test_different_notes_differ() {
         let c40 = MlpCorrections::infer(40, 0.8);
         let c80 = MlpCorrections::infer(80, 0.8);
-        let differ = (0..7).any(|i| (c40.amp_offsets_db[i] - c80.amp_offsets_db[i]).abs() > 0.001);
+        let differ = (0..N_FREQ).any(|i| {
+            (c40.freq_offsets_cents[i] - c80.freq_offsets_cents[i]).abs() > 0.001
+        }) || (0..N_DECAY).any(|i| {
+            (c40.decay_offsets[i] - c80.decay_offsets[i]).abs() > 0.001
+        });
         assert!(differ, "different notes should get different corrections");
     }
 
@@ -170,18 +180,23 @@ mod tests {
         for midi in [33, 48, 60, 72, 84, 96] {
             for vel in [0.2, 0.5, 0.8, 1.0] {
                 let c = MlpCorrections::infer(midi, vel);
-                for i in 0..7 {
-                    assert!(c.amp_offsets_db[i].abs() <= 40.0, "amp clamp violated");
+                for i in 0..N_FREQ {
                     assert!(
                         c.freq_offsets_cents[i].abs() <= 100.0,
                         "freq clamp violated"
                     );
+                }
+                for i in 0..N_DECAY {
                     assert!(
                         (0.3..=3.0).contains(&c.decay_offsets[i]),
                         "decay clamp violated"
                     );
                 }
-                assert!((0.5..=2.5).contains(&c.ds_correction), "ds clamp violated");
+                assert!(
+                    (0.7..=1.5).contains(&c.ds_correction),
+                    "ds clamp violated: {}",
+                    c.ds_correction
+                );
             }
         }
     }
