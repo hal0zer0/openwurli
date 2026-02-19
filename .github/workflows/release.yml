@@ -66,9 +66,57 @@ jobs:
             ${{ matrix.archive }}.tar.gz
             ${{ matrix.archive }}.zip
 
+  universal-macos:
+    name: Universal macOS binary
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: openwurli-macos-x64
+          path: x64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: openwurli-macos-arm64
+          path: arm64
+
+      - name: Extract archives
+        run: |
+          cd x64 && tar xzf *.tar.gz && cd ..
+          cd arm64 && tar xzf *.tar.gz && cd ..
+
+      - name: Create universal CLAP
+        run: |
+          mkdir -p openwurli-macos-universal
+          lipo -create \
+            x64/openwurli-macos-x64/openwurli.clap \
+            arm64/openwurli-macos-arm64/openwurli.clap \
+            -output openwurli-macos-universal/openwurli.clap
+
+      - name: Create universal VST3
+        run: |
+          cp -r arm64/openwurli-macos-arm64/openwurli.vst3 openwurli-macos-universal/openwurli.vst3
+          # Replace the binary inside the VST3 bundle with a universal one
+          VST3_BIN=$(find openwurli-macos-universal/openwurli.vst3 -name 'openwurli' -type f | head -1)
+          X64_BIN=$(find x64/openwurli-macos-x64/openwurli.vst3 -name 'openwurli' -type f | head -1)
+          if [ -n "$VST3_BIN" ] && [ -n "$X64_BIN" ]; then
+            lipo -create "$X64_BIN" "$VST3_BIN" -output "${VST3_BIN}.universal"
+            mv "${VST3_BIN}.universal" "$VST3_BIN"
+          fi
+
+      - name: Package
+        run: tar czf openwurli-macos-universal.tar.gz openwurli-macos-universal
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwurli-macos-universal
+          path: openwurli-macos-universal.tar.gz
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, universal-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write

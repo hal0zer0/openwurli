@@ -251,12 +251,43 @@ pub fn reed_compliance(midi: u8) -> f64 {
 ///   D6 (MIDI 86): 0.35  (lighter)
 ///   C7 (MIDI 96): 0.25  (clean, bell-like)
 const DS_AT_C4: f64 = 0.70;
+const DS_EXPONENT: f64 = 0.65;
+const DS_CLAMP: (f64, f64) = (0.02, 0.80);
+
+/// Runtime-overridable calibration parameters.
+/// All fields default to the current hardcoded constants.
+#[derive(Debug, Clone)]
+pub struct CalibrationConfig {
+    pub ds_at_c4: f64,
+    pub ds_exponent: f64,
+    pub ds_clamp: (f64, f64),
+    pub target_db: f64,
+    pub voicing_slope: f64,
+    pub zero_trim: bool,
+}
+
+impl Default for CalibrationConfig {
+    fn default() -> Self {
+        Self {
+            ds_at_c4: DS_AT_C4,
+            ds_exponent: DS_EXPONENT,
+            ds_clamp: DS_CLAMP,
+            target_db: -13.0,
+            voicing_slope: -0.04,
+            zero_trim: false,
+        }
+    }
+}
 
 pub fn pickup_displacement_scale(midi: u8) -> f64 {
+    pickup_displacement_scale_with_config(midi, &CalibrationConfig::default())
+}
+
+pub fn pickup_displacement_scale_with_config(midi: u8, cfg: &CalibrationConfig) -> f64 {
     let c = reed_compliance(midi);
     let c_ref = reed_compliance(60); // C4 reference
-    let ds = DS_AT_C4 * (c / c_ref).powf(0.65);
-    ds.clamp(0.02, 0.80)
+    let ds = cfg.ds_at_c4 * (c / c_ref).powf(cfg.ds_exponent);
+    ds.clamp(cfg.ds_clamp.0, cfg.ds_clamp.1)
 }
 
 /// Cantilever beam mode shape phi_n(xi) with tip mass.
@@ -457,7 +488,7 @@ pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES]
 /// used the peak of y/(1-y) instead of Fourier coefficients and ignored H2-H8 energy.
 /// The peak/c₁ ratio varies from 1.7 (ds=0.50) to 2.4 (ds=0.80), systematically
 /// over-estimating bass by ~2 dB.
-fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
+pub fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
     if ds < 1e-10 {
         return 0.0;
     }
@@ -484,27 +515,25 @@ fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
 ///
 /// Positive = boost (note too quiet), negative = cut (note too loud).
 /// Linear interpolation between anchor points; clamped outside range.
-fn register_trim_db(midi: u8) -> f64 {
-    // Calibrated from zero-trim Tier 3 renders at v=127 (2026-02-18).
-    // Physics: 200A reed thickness + register-dependent dwell (Miessner).
-    // hammer_spatial_coupling removed (double-counted OBM amplitudes).
-    // Calibrated from zero-trim Tier 3 renders at v=127 (2026-02-18).
-    // Physics: 200A reed thickness + register-dependent dwell (Miessner).
-    // hammer_spatial_coupling removed (double-counted OBM amplitudes).
+pub fn register_trim_db(midi: u8) -> f64 {
+    // Calibrated from zero-trim full-chain (t5_rms) renders at v=127 (2026-02-19).
+    // Reference: C4 = -22.0 dBFS. Trim = target - actual t5_rms.
+    // Measured via: preamp-bench sensitivity --zero-trim (DS=0.70, 13 notes × 3 vel)
+    // Previous anchors were ~2× too large (calibrated from different metric).
     const ANCHORS: [(f64, f64); 13] = [
-        (36.0, -7.7),   // C2:  -8.9 → -16.6
-        (40.0, -7.6),   // E2:  -9.0 → -16.6
-        (44.0, -9.9),   // G#2: -6.7 → -16.6
-        (48.0, -7.0),   // C3:  -9.6 → -16.6
-        (52.0, -9.0),   // E3:  -7.6 → -16.6
-        (56.0, -5.4),   // G#3: -11.2 → -16.6
-        (60.0, 0.0),    // C4:  -16.6 (reference)
-        (64.0, 4.5),    // E4:  -21.1 → -16.6
-        (68.0, 5.4),    // G#4: -22.0 → -16.6
-        (72.0, 3.8),    // C5:  -20.4 → -16.6
-        (76.0, 4.7),    // E5:  -21.3 → -16.6
-        (80.0, -1.0),   // G#5: -15.6 → -16.6
-        (84.0, -5.5),   // C6:  -11.1 → -16.6
+        (36.0, -1.7),   // C2:  -20.4 → -22.0
+        (40.0, -0.8),   // E2:  -21.2 → -22.0
+        (44.0, -2.3),   // G#2: -19.8 → -22.0
+        (48.0, -0.7),   // C3:  -21.3 → -22.0
+        (52.0, -0.3),   // E3:  -21.8 → -22.0
+        (56.0, -0.8),   // G#3: -21.3 → -22.0
+        (60.0, 0.0),    // C4:  -22.0 (reference)
+        (64.0, 1.1),    // E4:  -23.1 → -22.0
+        (68.0, 1.7),    // G#4: -23.8 → -22.0
+        (72.0, 1.0),    // C5:  -23.1 → -22.0
+        (76.0, 2.9),    // E5:  -24.9 → -22.0
+        (80.0, 3.7),    // G#5: -25.7 → -22.0
+        (84.0, 5.1),    // C6:  -27.2 → -22.0
     ];
 
     let m = midi as f64;
@@ -541,11 +570,13 @@ fn register_trim_db(midi: u8) -> f64 {
 ///   TARGET_DB — absolute level
 ///   VOICING_SLOPE — treble balance (dB/semi above C4)
 pub fn output_scale(midi: u8, velocity_norm: f64) -> f64 {
-    const TARGET_DB: f64 = -13.0;
-    const VOICING_SLOPE: f64 = -0.04; // dB/semi above C4
+    output_scale_with_config(midi, velocity_norm, &CalibrationConfig::default())
+}
+
+pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationConfig) -> f64 {
     const HPF_FC: f64 = 2312.0;
 
-    let ds = pickup_displacement_scale(midi);
+    let ds = pickup_displacement_scale_with_config(midi, cfg);
     let f0 = midi_to_freq(midi);
 
     // Velocity-aware proxy: compute at the actual displacement that the pickup
@@ -556,14 +587,14 @@ pub fn output_scale(midi: u8, velocity_norm: f64) -> f64 {
     let vel_scale = scurve_v.powf(velocity_exponent(midi));
     let vel_scale_c4 = scurve_v.powf(velocity_exponent(60));
     let effective_ds = (ds * vel_scale).max(1e-6);
-    let effective_ds_ref = (DS_AT_C4 * vel_scale_c4).max(1e-6);
+    let effective_ds_ref = (cfg.ds_at_c4 * vel_scale_c4).max(1e-6);
 
     let rms = pickup_rms_proxy(effective_ds, f0, HPF_FC);
     let rms_ref = pickup_rms_proxy(effective_ds_ref, midi_to_freq(60), HPF_FC);
 
     let flat_db = -20.0 * (rms / rms_ref).log10();
-    let voicing_db = VOICING_SLOPE * (midi as f64 - 60.0).max(0.0);
-    let trim = register_trim_db(midi);
+    let voicing_db = cfg.voicing_slope * (midi as f64 - 60.0).max(0.0);
+    let trim = if cfg.zero_trim { 0.0 } else { register_trim_db(midi) };
 
     // Velocity-dependent trim blend: at mf (v=64, norm=0.504, blend=0.254)
     // the register trim is heavily reduced — bass gets louder at mf (trim is
@@ -574,7 +605,7 @@ pub fn output_scale(midi: u8, velocity_norm: f64) -> f64 {
     let vel_blend = velocity_norm * velocity_norm;
     let effective_trim = trim * vel_blend;
 
-    f64::powf(10.0, (TARGET_DB + flat_db + voicing_db + effective_trim) / 20.0)
+    f64::powf(10.0, (cfg.target_db + flat_db + voicing_db + effective_trim) / 20.0)
 }
 
 /// Register-dependent velocity exponent for dynamic expression.

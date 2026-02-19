@@ -19,10 +19,12 @@ use openwurli_dsp::power_amp::PowerAmp;
 use openwurli_dsp::preamp::{EbersMollPreamp, PreampModel};
 use openwurli_dsp::reed::ModalReed;
 use openwurli_dsp::speaker::Speaker;
-use openwurli_dsp::tables::{self, NUM_MODES};
+use openwurli_dsp::tables::{self, CalibrationConfig, NUM_MODES};
 use openwurli_dsp::tremolo::Tremolo;
 use openwurli_dsp::variation;
 use openwurli_dsp::voice::Voice;
+
+use std::io::Write;
 
 const BASE_SR: f64 = 44100.0;
 const OVERSAMPLED_SR: f64 = BASE_SR * 2.0;
@@ -42,6 +44,8 @@ fn main() {
         "render" => cmd_render(&args[2..]),
         "bark-audit" => cmd_bark_audit(&args[2..]),
         "intermod-audit" => cmd_intermod_audit(&args[2..]),
+        "calibrate" => cmd_calibrate(&args[2..]),
+        "sensitivity" => cmd_sensitivity(&args[2..]),
         _ => {
             eprintln!("Unknown subcommand: {}", args[1]);
             print_usage();
@@ -60,6 +64,8 @@ fn print_usage() {
     eprintln!("  render          Reed -> preamp -> WAV output");
     eprintln!("  bark-audit      Measure H2/H1 at each signal chain stage");
     eprintln!("  intermod-audit  Detect inharmonic intermodulation beating risk");
+    eprintln!("  calibrate       Measure gain chain at 5 tap points → CSV");
+    eprintln!("  sensitivity     Multi-DS grid sweep → CSV");
     eprintln!();
     eprintln!("Global options:");
     eprintln!("  --model MODEL   Preamp model: dk (default), ebers-moll");
@@ -874,4 +880,356 @@ fn dft_magnitude(signal: &[f64], freq: f64, sr: f64) -> f64 {
         im -= s * phase.sin();
     }
     2.0 * ((re / n).powi(2) + (im / n).powi(2)).sqrt()
+}
+
+// ─── Signal measurement helpers ────────────────────────────────────────────
+
+fn parse_csv_list<T: std::str::FromStr>(args: &[String], flag: &str, default: &str) -> Vec<T> {
+    let s = parse_flag_str(args, flag, default);
+    s.split(',').filter_map(|v| v.trim().parse().ok()).collect()
+}
+
+fn peak_db(signal: &[f64]) -> f64 {
+    let peak = signal.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+    if peak > 0.0 { 20.0 * peak.log10() } else { -120.0 }
+}
+
+fn rms_db(signal: &[f64]) -> f64 {
+    let mean_sq = signal.iter().map(|x| x * x).sum::<f64>() / signal.len() as f64;
+    if mean_sq > 0.0 { 10.0 * mean_sq.log10() } else { -120.0 }
+}
+
+fn h2_h1_ratio_db(signal: &[f64], fundamental_hz: f64, sr: f64) -> f64 {
+    let h1 = dft_magnitude(signal, fundamental_hz, sr);
+    let h2 = dft_magnitude(signal, 2.0 * fundamental_hz, sr);
+    if h1 > 1e-15 { 20.0 * (h2 / h1).log10() } else { -120.0 }
+}
+
+// ─── Calibrate subcommand ──────────────────────────────────────────────────
+
+/// Single-config measurement at 5 tap points across the signal chain.
+fn cmd_calibrate(args: &[String]) {
+    let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,40,44,48,52,56,60,64,68,72,76,80,84");
+    let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
+    let ds_at_c4 = parse_flag(args, "--ds-at-c4", 0.70);
+    let volume = parse_flag(args, "--volume", 0.40);
+    let speaker_char = parse_flag(args, "--speaker", 1.0);
+    let zero_trim = args.contains(&"--zero-trim".to_string());
+    let mlp = args.contains(&"--mlp".to_string());
+    let output_path = parse_flag_str(args, "--output", "/tmp/calibrate.csv");
+
+    let cfg = CalibrationConfig {
+        ds_at_c4,
+        zero_trim,
+        ..CalibrationConfig::default()
+    };
+
+    let rows = run_calibrate(&notes, &velocities, &cfg, volume, speaker_char, mlp, args);
+
+    write_calibrate_csv(output_path, &rows);
+    eprintln!(
+        "Calibrate: {} notes × {} velocities = {} rows → {}",
+        notes.len(),
+        velocities.len(),
+        rows.len(),
+        output_path
+    );
+}
+
+#[derive(Clone)]
+struct CalibrateRow {
+    midi: u8,
+    velocity: u8,
+    ds_at_c4: f64,
+    ds_actual: f64,
+    y_peak: f64,
+    t2_peak_db: f64,
+    t2_rms_db: f64,
+    t2_h2_h1_db: f64,
+    t3_peak_db: f64,
+    t3_rms_db: f64,
+    t4_peak_db: f64,
+    t4_rms_db: f64,
+    t4_h2_h1_db: f64,
+    t5_peak_db: f64,
+    t5_rms_db: f64,
+    t5_h2_h1_db: f64,
+    proxy_db: f64,
+    trim_db: f64,
+    proxy_error_db: f64,
+    tanh_compression_db: f64,
+}
+
+fn run_calibrate(
+    notes: &[u8],
+    velocities: &[u8],
+    cfg: &CalibrationConfig,
+    volume: f64,
+    speaker_char: f64,
+    _mlp: bool,
+    args: &[String],
+) -> Vec<CalibrateRow> {
+    // Pickup constants (same as bark-audit)
+    const SENSITIVITY: f64 = 1.8375;
+    const MAX_Y: f64 = 0.90;
+    const PICKUP_HPF_HZ: f64 = 2312.0;
+
+    let duration = 0.5;
+    let measure_start = (0.100 * BASE_SR) as usize; // 100ms
+    let measure_end = (0.400 * BASE_SR) as usize;   // 400ms
+
+    let mut rows = Vec::new();
+
+    for &note in notes {
+        let params = tables::note_params(note);
+        let freq = params.fundamental_hz;
+        let ds_actual = tables::pickup_displacement_scale_with_config(note, cfg);
+
+        for &vel_byte in velocities {
+            let velocity = vel_byte as f64 / 127.0;
+
+            // ── T1: Raw reed ──
+            // Construct reed exactly as bark-audit does
+            let detuned = params.fundamental_hz * variation::freq_detune(note);
+            let dwell = dwell_attenuation(velocity, detuned, &params.mode_ratios);
+            let amp_offsets = variation::mode_amplitude_offsets(note);
+            let vel_exp = tables::velocity_exponent(note);
+            let vel_scale = tables::velocity_scurve(velocity).powf(vel_exp);
+
+            let mut amplitudes = [0.0f64; NUM_MODES];
+            for i in 0..NUM_MODES {
+                amplitudes[i] = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i] * vel_scale;
+            }
+
+            let mut reed = ModalReed::new(
+                detuned,
+                &params.mode_ratios,
+                &amplitudes,
+                &params.mode_decay_rates,
+                0.0,
+                velocity,
+                BASE_SR,
+                (note as u32).wrapping_mul(2654435761),
+            );
+
+            let n_samples = (duration * BASE_SR) as usize;
+            let mut reed_buf = vec![0.0f64; n_samples];
+            reed.render(&mut reed_buf);
+
+            let reed_peak = reed_buf[measure_start..measure_end]
+                .iter()
+                .map(|x| x.abs())
+                .fold(0.0f64, f64::max);
+            let y_peak = reed_peak * ds_actual;
+
+            // ── T2: After pickup nonlinearity + HPF ──
+            let mut nl_buf = reed_buf.clone();
+            for s in &mut nl_buf {
+                let y = (*s * ds_actual).clamp(-MAX_Y, MAX_Y);
+                *s = (y / (1.0 - y)) * SENSITIVITY;
+            }
+            let mut hpf = OnePoleHpf::new(PICKUP_HPF_HZ, BASE_SR);
+            let mut t2_buf = nl_buf.clone();
+            for s in &mut t2_buf {
+                *s = hpf.process(*s);
+            }
+            let t2_window = &t2_buf[measure_start..measure_end];
+            let t2_pk = peak_db(t2_window);
+            let t2_rm = rms_db(t2_window);
+            let t2_h2 = h2_h1_ratio_db(t2_window, freq, BASE_SR);
+
+            // ── T3: After output_scale ──
+            let out_scale = tables::output_scale_with_config(note, velocity, cfg);
+            let t3_buf: Vec<f64> = t2_buf.iter().map(|s| s * out_scale).collect();
+            let t3_window = &t3_buf[measure_start..measure_end];
+            let t3_pk = peak_db(t3_window);
+            let t3_rm = rms_db(t3_window);
+
+            // ── T4: After preamp (oversampled) ──
+            let mut preamp = create_preamp(args);
+            preamp.set_ldr_resistance(1_000_000.0);
+            let mut os = Oversampler::new();
+
+            let mut t4_buf = vec![0.0f64; n_samples];
+            for i in 0..n_samples {
+                let mut up = [0.0f64; 2];
+                os.upsample_2x(&[t3_buf[i]], &mut up);
+                let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
+                let mut down = [0.0f64; 1];
+                os.downsample_2x(&processed, &mut down);
+                t4_buf[i] = down[0];
+            }
+            let t4_window = &t4_buf[measure_start..measure_end];
+            let t4_pk = peak_db(t4_window);
+            let t4_rm = rms_db(t4_window);
+            let t4_h2 = h2_h1_ratio_db(t4_window, freq, BASE_SR);
+
+            // ── T5: After volume + power amp + speaker ──
+            let mut power_amp = PowerAmp::new();
+            let mut speaker = Speaker::new(BASE_SR);
+            speaker.set_character(speaker_char);
+
+            let mut t5_buf = vec![0.0f64; n_samples];
+            for i in 0..n_samples {
+                let attenuated = t4_buf[i] * volume;
+                let amplified = power_amp.process(attenuated);
+                t5_buf[i] = speaker.process(amplified);
+            }
+            let t5_window = &t5_buf[measure_start..measure_end];
+            let t5_pk = peak_db(t5_window);
+            let t5_rm = rms_db(t5_window);
+            let t5_h2 = h2_h1_ratio_db(t5_window, freq, BASE_SR);
+
+            // ── Derived metrics ──
+            let proxy = 20.0 * out_scale.log10();
+            let trim = if cfg.zero_trim { 0.0 } else { tables::register_trim_db(note) };
+            let proxy_error = t3_rm - cfg.target_db; // how far from target
+            let tanh_compression = t4_pk - t5_pk;
+
+            rows.push(CalibrateRow {
+                midi: note,
+                velocity: vel_byte,
+                ds_at_c4: cfg.ds_at_c4,
+                ds_actual,
+                y_peak,
+                t2_peak_db: t2_pk,
+                t2_rms_db: t2_rm,
+                t2_h2_h1_db: t2_h2,
+                t3_peak_db: t3_pk,
+                t3_rms_db: t3_rm,
+                t4_peak_db: t4_pk,
+                t4_rms_db: t4_rm,
+                t4_h2_h1_db: t4_h2,
+                t5_peak_db: t5_pk,
+                t5_rms_db: t5_rm,
+                t5_h2_h1_db: t5_h2,
+                proxy_db: proxy,
+                trim_db: trim,
+                proxy_error_db: proxy_error,
+                tanh_compression_db: tanh_compression,
+            });
+
+            eprint!(".");
+        }
+    }
+    eprintln!();
+    rows
+}
+
+fn write_calibrate_csv(path: &str, rows: &[CalibrateRow]) {
+    let mut f = std::fs::File::create(path).expect("Failed to create CSV");
+    writeln!(
+        f,
+        "midi,note_name,velocity,ds_at_c4,ds_actual,y_peak,\
+         t2_peak_db,t2_rms_db,t2_h2_h1_db,\
+         t3_peak_db,t3_rms_db,\
+         t4_peak_db,t4_rms_db,t4_h2_h1_db,\
+         t5_peak_db,t5_rms_db,t5_h2_h1_db,\
+         proxy_db,trim_db,proxy_error_db,tanh_compression_db"
+    )
+    .unwrap();
+    for r in rows {
+        writeln!(
+            f,
+            "{},{},{},{:.4},{:.4},{:.4},\
+             {:.2},{:.2},{:.2},\
+             {:.2},{:.2},\
+             {:.2},{:.2},{:.2},\
+             {:.2},{:.2},{:.2},\
+             {:.2},{:.2},{:.2},{:.2}",
+            r.midi,
+            midi_note_name(r.midi),
+            r.velocity,
+            r.ds_at_c4,
+            r.ds_actual,
+            r.y_peak,
+            r.t2_peak_db,
+            r.t2_rms_db,
+            r.t2_h2_h1_db,
+            r.t3_peak_db,
+            r.t3_rms_db,
+            r.t4_peak_db,
+            r.t4_rms_db,
+            r.t4_h2_h1_db,
+            r.t5_peak_db,
+            r.t5_rms_db,
+            r.t5_h2_h1_db,
+            r.proxy_db,
+            r.trim_db,
+            r.proxy_error_db,
+            r.tanh_compression_db,
+        )
+        .unwrap();
+    }
+}
+
+// ─── Sensitivity subcommand ────────────────────────────────────────────────
+
+/// Multi-DS grid sweep: run calibrate at each DS_AT_C4 value.
+fn cmd_sensitivity(args: &[String]) {
+    let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,54,60,66,72,78,84");
+    let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
+    let ds_values: Vec<f64> = parse_csv_list(
+        args,
+        "--ds-range",
+        "0.50,0.55,0.60,0.65,0.70,0.75,0.80",
+    );
+    let volume = parse_flag(args, "--volume", 0.40);
+    let speaker_char = parse_flag(args, "--speaker", 1.0);
+    let scale_mode_raw = parse_flag_str(args, "--scale-mode", "track");
+    // Honor --zero-trim as shorthand for --scale-mode zero-trim
+    let scale_mode = if args.contains(&"--zero-trim".to_string()) {
+        "zero-trim"
+    } else {
+        scale_mode_raw
+    };
+    let mlp = args.contains(&"--mlp".to_string());
+    let output_path = parse_flag_str(args, "--output", "/tmp/sensitivity.csv");
+
+    let total = ds_values.len() * notes.len() * velocities.len();
+    eprintln!(
+        "Sensitivity: {} DS × {} notes × {} vel = {} renders",
+        ds_values.len(),
+        notes.len(),
+        velocities.len(),
+        total
+    );
+
+    let mut all_rows = Vec::new();
+
+    for &ds in &ds_values {
+        let cfg = match scale_mode {
+            // "freeze" = output_scale at original DS=0.70, pickup at test DS.
+            // Since run_calibrate uses cfg for both, freeze just keeps original.
+            // The ds_at_c4 column reports the sweep value for plotting.
+            "freeze" => CalibrationConfig {
+                ds_at_c4: 0.70,
+                zero_trim: false,
+                ..CalibrationConfig::default()
+            },
+            "zero-trim" => CalibrationConfig {
+                ds_at_c4: ds,
+                zero_trim: true,
+                ..CalibrationConfig::default()
+            },
+            // "track" (default): override DS, keep trim
+            _ => CalibrationConfig {
+                ds_at_c4: ds,
+                zero_trim: false,
+                ..CalibrationConfig::default()
+            },
+        };
+
+        let mut rows = run_calibrate(&notes, &velocities, &cfg, volume, speaker_char, mlp, args);
+
+        // Stamp the ds_at_c4 column to the sweep value for analysis
+        for r in &mut rows {
+            r.ds_at_c4 = ds;
+        }
+
+        all_rows.extend(rows);
+    }
+
+    write_calibrate_csv(output_path, &all_rows);
+    eprintln!("Sensitivity: {} total rows → {}", all_rows.len(), output_path);
 }
