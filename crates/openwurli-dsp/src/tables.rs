@@ -521,19 +521,19 @@ pub fn register_trim_db(midi: u8) -> f64 {
     // Measured via: preamp-bench sensitivity --zero-trim (DS=0.70, 13 notes × 3 vel)
     // Previous anchors were ~2× too large (calibrated from different metric).
     const ANCHORS: [(f64, f64); 13] = [
-        (36.0, -1.7),   // C2:  -20.4 → -22.0
-        (40.0, -0.8),   // E2:  -21.2 → -22.0
-        (44.0, -2.3),   // G#2: -19.8 → -22.0
-        (48.0, -0.7),   // C3:  -21.3 → -22.0
-        (52.0, -0.3),   // E3:  -21.8 → -22.0
-        (56.0, -0.8),   // G#3: -21.3 → -22.0
-        (60.0, 0.0),    // C4:  -22.0 (reference)
-        (64.0, 1.1),    // E4:  -23.1 → -22.0
-        (68.0, 1.7),    // G#4: -23.8 → -22.0
-        (72.0, 1.0),    // C5:  -23.1 → -22.0
-        (76.0, 2.9),    // E5:  -24.9 → -22.0
-        (80.0, 3.7),    // G#5: -25.7 → -22.0
-        (84.0, 5.1),    // C6:  -27.2 → -22.0
+        (36.0, -1.7), // C2:  -20.4 → -22.0
+        (40.0, -0.8), // E2:  -21.2 → -22.0
+        (44.0, -2.3), // G#2: -19.8 → -22.0
+        (48.0, -0.7), // C3:  -21.3 → -22.0
+        (52.0, -0.3), // E3:  -21.8 → -22.0
+        (56.0, -0.8), // G#3: -21.3 → -22.0
+        (60.0, 0.0),  // C4:  -22.0 (reference)
+        (64.0, 1.1),  // E4:  -23.1 → -22.0
+        (68.0, 1.7),  // G#4: -23.8 → -22.0
+        (72.0, 1.0),  // C5:  -23.1 → -22.0
+        (76.0, 2.9),  // E5:  -24.9 → -22.0
+        (80.0, 3.7),  // G#5: -25.7 → -22.0
+        (84.0, 5.1),  // C6:  -27.2 → -22.0
     ];
 
     let m = midi as f64;
@@ -594,7 +594,11 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
 
     let flat_db = -20.0 * (rms / rms_ref).log10();
     let voicing_db = cfg.voicing_slope * (midi as f64 - 60.0).max(0.0);
-    let trim = if cfg.zero_trim { 0.0 } else { register_trim_db(midi) };
+    let trim = if cfg.zero_trim {
+        0.0
+    } else {
+        register_trim_db(midi)
+    };
 
     // Velocity-dependent trim blend: at mf (v=64, norm=0.504, blend=0.254)
     // the register trim is heavily reduced — bass gets louder at mf (trim is
@@ -605,7 +609,10 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
     let vel_blend = velocity_norm * velocity_norm;
     let effective_trim = trim * vel_blend;
 
-    f64::powf(10.0, (cfg.target_db + flat_db + voicing_db + effective_trim) / 20.0)
+    f64::powf(
+        10.0,
+        (cfg.target_db + flat_db + voicing_db + effective_trim) / 20.0,
+    )
 }
 
 /// Register-dependent velocity exponent for dynamic expression.
@@ -777,8 +784,7 @@ pub fn intermod_risk(midi: u8) -> IntermodReport {
         let nearest = ratio.round() as u32;
         let fractional_offset = (ratio - nearest as f64).abs();
         let beat_hz = fractional_offset * fundamental_hz;
-        let effective_amplitude =
-            BASE_MODE_AMPLITUDES[i] * coupling[i] * dwell[i];
+        let effective_amplitude = BASE_MODE_AMPLITUDES[i] * coupling[i] * dwell[i];
         let weight = perceptual_beat_weight(beat_hz);
         let risk = effective_amplitude * weight;
 

@@ -17,7 +17,6 @@
 /// "Speaker Character" parameter blends from bypass (flat, linear) to authentic
 /// (full nonlinearity + HPF + LPF). At character=0.0 all nonlinearity
 /// coefficients are zero — pure linear passthrough.
-
 use crate::filters::Biquad;
 
 /// HPF cutoff at fully authentic position.
@@ -84,8 +83,8 @@ impl Speaker {
         self.lpf.set_lowpass(lpf_hz, LPF_Q, self.sample_rate);
 
         // Polynomial coefficients — all zero at character=0
-        self.a2 = 0.2 * c;  // BL asymmetry (even harmonics)
-        self.a3 = 0.6 * c;  // Kms hardening (odd harmonics)
+        self.a2 = 0.2 * c; // BL asymmetry (even harmonics)
+        self.a3 = 0.6 * c; // Kms hardening (odd harmonics)
         self.thermal_coeff = 2.0 * c;
     }
 
@@ -152,7 +151,10 @@ mod tests {
         let bass = measure_response(&mut speaker, 50.0, sr);
 
         let atten_db = 20.0 * (bass / mid).log10();
-        assert!(atten_db < -6.0, "50Hz should be attenuated: {atten_db:.1} dB");
+        assert!(
+            atten_db < -6.0,
+            "50Hz should be attenuated: {atten_db:.1} dB"
+        );
     }
 
     #[test]
@@ -165,7 +167,10 @@ mod tests {
         let treble = measure_response(&mut speaker, 15000.0, sr);
 
         let atten_db = 20.0 * (treble / mid).log10();
-        assert!(atten_db < -6.0, "15kHz should be attenuated: {atten_db:.1} dB");
+        assert!(
+            atten_db < -6.0,
+            "15kHz should be attenuated: {atten_db:.1} dB"
+        );
     }
 
     #[test]
@@ -181,8 +186,14 @@ mod tests {
         // All should be within 1 dB of each other
         let ratio_low = (20.0 * (low / mid).log10()).abs();
         let ratio_high = (20.0 * (high / mid).log10()).abs();
-        assert!(ratio_low < 1.0, "Bypass should be flat at 100Hz: {ratio_low:.1} dB");
-        assert!(ratio_high < 1.0, "Bypass should be flat at 10kHz: {ratio_high:.1} dB");
+        assert!(
+            ratio_low < 1.0,
+            "Bypass should be flat at 100Hz: {ratio_low:.1} dB"
+        );
+        assert!(
+            ratio_high < 1.0,
+            "Bypass should be flat at 10kHz: {ratio_high:.1} dB"
+        );
     }
 
     #[test]
@@ -207,10 +218,19 @@ mod tests {
         let h3_mag = dft_magnitude(&samples[analysis_start..], 3.0 * freq, sr);
 
         let thd = (h2_mag * h2_mag + h3_mag * h3_mag).sqrt() / fundamental_mag;
-        assert!(thd > 0.005, "Speaker should generate measurable THD: {thd:.4}");
+        assert!(
+            thd > 0.005,
+            "Speaker should generate measurable THD: {thd:.4}"
+        );
         // Both even and odd harmonics should be present
-        assert!(h2_mag > 0.0001, "Should have H2 (BL asymmetry): {h2_mag:.6}");
-        assert!(h3_mag > 0.0001, "Should have H3 (Kms hardening): {h3_mag:.6}");
+        assert!(
+            h2_mag > 0.0001,
+            "Should have H2 (BL asymmetry): {h2_mag:.6}"
+        );
+        assert!(
+            h3_mag > 0.0001,
+            "Should have H3 (Kms hardening): {h3_mag:.6}"
+        );
     }
 
     #[test]
@@ -221,8 +241,10 @@ mod tests {
         let thd_loud = measure_thd(200.0, 0.8, sr);
         let thd_quiet = measure_thd(200.0, 0.2, sr);
 
-        assert!(thd_loud > thd_quiet * 1.2,
-            "Loud THD ({thd_loud:.4}) should exceed quiet THD ({thd_quiet:.4}) (tanh Xmax limits growth)");
+        assert!(
+            thd_loud > thd_quiet * 1.2,
+            "Loud THD ({thd_loud:.4}) should exceed quiet THD ({thd_quiet:.4}) (tanh Xmax limits growth)"
+        );
     }
 
     #[test]
@@ -252,8 +274,10 @@ mod tests {
         }
 
         let compression_db = 20.0 * (late_peak / early_peak).log10();
-        assert!(compression_db < -0.3,
-            "Thermal compression should reduce level: {compression_db:.2} dB");
+        assert!(
+            compression_db < -0.3,
+            "Thermal compression should reduce level: {compression_db:.2} dB"
+        );
     }
 
     fn measure_thd(freq: f64, amplitude: f64, sr: f64) -> f64 {

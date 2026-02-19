@@ -167,11 +167,9 @@ mod tests {
     fn test_different_notes_differ() {
         let c40 = MlpCorrections::infer(40, 0.8);
         let c80 = MlpCorrections::infer(80, 0.8);
-        let differ = (0..N_FREQ).any(|i| {
-            (c40.freq_offsets_cents[i] - c80.freq_offsets_cents[i]).abs() > 0.001
-        }) || (0..N_DECAY).any(|i| {
-            (c40.decay_offsets[i] - c80.decay_offsets[i]).abs() > 0.001
-        });
+        let differ = (0..N_FREQ)
+            .any(|i| (c40.freq_offsets_cents[i] - c80.freq_offsets_cents[i]).abs() > 0.001)
+            || (0..N_DECAY).any(|i| (c40.decay_offsets[i] - c80.decay_offsets[i]).abs() > 0.001);
         assert!(differ, "different notes should get different corrections");
     }
 
