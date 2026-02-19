@@ -29,7 +29,7 @@ impl Default for OpenWurliParams {
         Self {
             volume: FloatParam::new(
                 "Volume",
-                0.40,
+                0.63,
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 1.0,

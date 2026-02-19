@@ -90,17 +90,18 @@ impl Speaker {
 
     pub fn process(&mut self, input: f64) -> f64 {
         // 1. Static polynomial waveshaper (memoryless — phase-coherent harmonics)
-        //    y = x + a2·x² + a3·x³
+        //    y = (x + a2·x² + a3·x³) / (1 + a2 + a3)
+        //    Normalization ensures y(±1) = ±1 (unity gain at full scale),
+        //    preserving harmonic generation ratios without boosting peak levels.
         //    x² → H2, H4 (BL asymmetry, even harmonics)
         //    x³ → H3, H5 (Kms hardening, odd harmonics) + fundamental compression
         let x2 = input * input;
         let x3 = x2 * input;
-        let shaped = input + self.a2 * x2 + self.a3 * x3;
+        let shaped = (input + self.a2 * x2 + self.a3 * x3) / (1.0 + self.a2 + self.a3);
 
         // 2. Cone excursion limit (Xmax soft stop)
         //    Real speaker cones have physical excursion limits where the spider
-        //    and surround stiffen rapidly. The polynomial is unbounded (1.0 input
-        //    → 1.8 output at full character); tanh models the soft mechanical stop.
+        //    and surround stiffen rapidly. tanh models the soft mechanical stop.
         //    At normal levels (|shaped| < 0.5): <8% compression (inaudible).
         //    At ff chords (|shaped| > 1.0): graceful saturation to ±1.0.
         let limited = shaped.tanh();

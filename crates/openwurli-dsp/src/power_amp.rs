@@ -8,33 +8,33 @@
 //! become audible.
 //!
 //! Signal flow inside the power amp model:
-//!   input -> voltage gain (VAS/driver) -> crossover dead zone -> rail clip -> output
+//!   input -> voltage gain (VAS/driver) -> crossover dead zone -> tanh soft-clip -> output
 //!
-//! The voltage gain of 8.0 represents the closed-loop gain of the power amp
-//! with R-31 (15K) negative feedback. This gain was previously applied
-//! externally as "preamp_gain" -- but it physically belongs here. Moving it
-//! into the power amp means the crossover distortion and rail clipping
-//! interact correctly with the actual signal level (post-volume pot).
+//! The voltage gain is 1 + R31/R30 = 1 + 15K/220Ω = 69x (37 dB), set by
+//! the R-31 negative feedback network. HEADROOM matches the real ±24V rails
+//! minus ~2V Vce_sat = ±22V. The effective gain ratio (69/22 = 3.136) is
+//! nearly identical to the previous simplified model (8/2.5 = 3.2), so
+//! output levels shift by only -0.17 dB. But crossover distortion now
+//! operates at the correct absolute signal level.
 //!
-//! Crossover width of 0.003 models a typical lightly-aged instrument (~5-7 mA
-//! bias vs factory 10 mA). Applied to the amplified signal, this creates
-//! subtle odd-harmonic grit that becomes audible at low volume settings.
+//! Crossover width of 0.026 models a typical lightly-aged instrument (~5-7 mA
+//! bias vs factory 10 mA). This is the same physical ~26mV dead zone as
+//! before (0.003 × 8 = 0.024 ≈ 0.026 × 1.0 after rescaling), just expressed
+//! in the correct voltage domain.
 
-/// Power amp voltage gain from VAS/driver stages (closed-loop with R-31 feedback).
-const VOLTAGE_GAIN: f64 = 8.0;
+/// Power amp voltage gain: 1 + R31/R30 = 1 + 15K/220Ω = 69x (37 dB).
+const VOLTAGE_GAIN: f64 = 69.0;
 
-/// Headroom factor matching the real ±24V power amp rails.
+/// Rail headroom: ±24V supply minus ~2V Vce_sat = ±22V effective swing.
 ///
-/// The real circuit has ±24V rails (headroom ratio ~3:1 over max signal at
-/// full volume). PA output is normalized to ±1.0 by dividing by HEADROOM
-/// after clipping.
-const HEADROOM: f64 = 2.5;
+/// PA output is normalized to ±1.0 by dividing by HEADROOM after clipping.
+const HEADROOM: f64 = 22.0;
 
 pub struct PowerAmp {
     /// VAS/driver voltage gain.
     voltage_gain: f64,
     /// Dead zone half-width (crossover distortion, in amplified signal units).
-    /// Factory-fresh: ~0.0005. Lightly aged (typical): 0.003. Worn: 0.005-0.01.
+    /// Factory-fresh: ~0.004. Lightly aged (typical): 0.026. Worn: 0.04-0.09.
     crossover_width: f64,
     /// Symmetric rail clipping limit (amplified signal units, NOT normalized).
     rail_limit: f64,
@@ -44,7 +44,7 @@ impl PowerAmp {
     pub fn new() -> Self {
         Self {
             voltage_gain: VOLTAGE_GAIN,
-            crossover_width: 0.003,
+            crossover_width: 0.026,
             rail_limit: HEADROOM,
         }
     }
@@ -63,8 +63,12 @@ impl PowerAmp {
             amplified
         };
 
-        // Hard clip at rails, then normalize to ±1.0 for DAC
-        out.clamp(-self.rail_limit, self.rail_limit) / self.rail_limit
+        // Soft-clip at rails: tanh models gradual transistor saturation.
+        // Real Class AB output transistors compress smoothly into saturation —
+        // waveform peaks round off rather than flat-topping.
+        // For small signals: tanh(x) ≈ x (linear region preserved).
+        // At rail voltage: tanh(1.0) = 0.762 → ~2.4 dB compression.
+        (out / self.rail_limit).tanh()
     }
 
     pub fn reset(&mut self) {
@@ -86,19 +90,21 @@ mod tests {
     fn test_gain_applied() {
         let mut pa = PowerAmp::new();
         // Input well above crossover threshold, below rail clip
-        let input = 0.05; // 0.05 * 8 = 0.40 (below HEADROOM, above crossover)
+        // 0.005 * 69 = 0.345 (below HEADROOM=22, above crossover=0.026)
+        // normalized = 0.345/22 = 0.01568 → tanh(0.01568) ≈ 0.01568 (deep linear region)
+        let input = 0.005;
         let output = pa.process(input);
-        let expected = input * VOLTAGE_GAIN / HEADROOM;
+        let expected = (input * VOLTAGE_GAIN / HEADROOM).tanh();
         assert!(
             (output - expected).abs() < 1e-10,
-            "Should apply gain + normalize: expected {expected}, got {output}"
+            "Should apply gain + tanh soft-clip: expected {expected}, got {output}"
         );
     }
 
     #[test]
     fn test_crossover_distortion() {
         let mut pa = PowerAmp::new();
-        // Tiny input: 0.0001 * 8 = 0.0008, which is inside dead zone (0.003)
+        // Tiny input: 0.0001 * 69 = 0.0069, which is inside dead zone (0.026)
         let input = 0.0001;
         let output = pa.process(input);
         let clean = input * VOLTAGE_GAIN / HEADROOM;
@@ -111,16 +117,17 @@ mod tests {
     #[test]
     fn test_rail_clipping() {
         let mut pa = PowerAmp::new();
-        // 5.0 * 8 = 40.0, far above rail_limit of 2.5
+        // 5.0 * 69 = 345.0, far above rail_limit of 22.0
+        // tanh(345/22) ≈ 1.0 (asymptotic, never exact)
         let output = pa.process(5.0);
         assert!(
-            (output - 1.0).abs() < 1e-10,
-            "Should clip and normalize to 1.0"
+            output > 0.999 && output < 1.0,
+            "Should soft-clip near 1.0: got {output}"
         );
         let output_neg = pa.process(-5.0);
         assert!(
-            (output_neg + 1.0).abs() < 1e-10,
-            "Should clip and normalize to -1.0"
+            output_neg < -0.999 && output_neg > -1.0,
+            "Should soft-clip near -1.0: got {output_neg}"
         );
     }
 
@@ -140,7 +147,7 @@ mod tests {
         let mut pa = PowerAmp::new();
         let sr = 44100.0;
         let freq = 440.0;
-        // After 8x gain, amplitude = 0.008 → close to crossover width of 0.003
+        // After 69x gain, amplitude = 0.069 → close to crossover width of 0.026
         let amplitude = 0.001;
 
         let n = (sr * 0.2) as usize;

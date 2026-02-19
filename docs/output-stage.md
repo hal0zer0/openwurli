@@ -417,18 +417,30 @@ The current implementation (`speaker.rs`) uses a Hammerstein architecture: stati
 **Linear filters:**
 
 ```
-HPF1: 2nd-order highpass at 150 Hz, Q = 0.75  (cone resonance Fs)
-HPF2: 2nd-order highpass at 100 Hz, Q = 0.707 (open-baffle dipole cancellation)
-HPF3: 2nd-order highpass at 70 Hz,  Q = 0.5   (radiation impedance rolloff)
-LPF:  2nd-order lowpass at 7500 Hz, Q = 0.707 (Butterworth)
+HPF: 2nd-order highpass at 95 Hz, Q = 0.75   (combined cone resonance + open-baffle rolloff)
+LPF: 2nd-order lowpass at 7500 Hz, Q = 0.707 (Butterworth, cone breakup + voice coil inductance)
 ```
 
+> **Note:** An earlier design (documented below in §5.4.1) specified three cascaded HPFs at 150/100/70 Hz to separately model cone resonance, dipole cancellation, and radiation impedance. The implementation simplified this to a single HPF at 95 Hz, which provides adequate bass rolloff (~12 dB/oct, ~3-4 dB down at C2 fundamental of 65 Hz) without the over-aggressive filtering of the three-HPF cascade.
+
 **Nonlinear features:**
-- **Hammerstein polynomial waveshaper:** `y = x + a2*x^2 + a3*x^3` where a2 = 0.2 (BL force factor asymmetry, generates even harmonics) and a3 = 0.6 (Kms suspension hardening, generates odd harmonics). Coefficients scale with the Speaker Character parameter.
+- **Normalized Hammerstein polynomial waveshaper:** `y = (x + a2*x^2 + a3*x^3) / (1 + a2 + a3)` where a2 = 0.2 (BL force factor asymmetry, generates even harmonics) and a3 = 0.6 (Kms suspension hardening, generates odd harmonics). Coefficients scale with the Speaker Character parameter. The normalization by `(1 + a2 + a3)` ensures `y(±1) = ±1`, preserving harmonic generation ratios without boosting peak levels.
 - **Cone excursion limiting (Xmax):** `tanh()` soft saturation after the polynomial, modeling the physical excursion limits of the spider and surround. At normal levels (|x| < 0.5): < 8% compression. At ff chords (|x| > 1.0): graceful saturation.
 - **Thermal voice coil compression:** Slow envelope follower (tau = 5.0 s) reduces gain under sustained loud signal, modeling the increase in voice coil DC resistance as the coil heats up.
 
-**Speaker Character parameter:** Blends from bypass (0.0: flat, linear passthrough) to authentic (1.0: full nonlinearity + HPF + LPF). Filter cutoffs interpolate logarithmically between bypass positions (HPF1: 20 Hz, HPF2: 10 Hz, HPF3: 5 Hz, LPF: 20 kHz) and authentic positions.
+**Speaker Character parameter:** Blends from bypass (0.0: flat, linear passthrough) to authentic (1.0: full nonlinearity + HPF + LPF). Filter cutoffs interpolate logarithmically between bypass positions (HPF: 20 Hz, LPF: 20 kHz) and authentic positions.
+
+#### 5.4.1 Original Three-HPF Design (Not Implemented)
+
+The following design was proposed to separately model each physical mechanism but was simplified to the single-HPF approach above:
+
+```
+HPF1: 2nd-order highpass at 150 Hz, Q = 0.75  (cone resonance Fs)
+HPF2: 2nd-order highpass at 100 Hz, Q = 0.707 (open-baffle dipole cancellation)
+HPF3: 2nd-order highpass at 70 Hz,  Q = 0.5   (radiation impedance rolloff)
+```
+
+This cascade produced ~30 dB/oct rolloff below 70 Hz, which proved too aggressive for the 200A's bass character. The combined effect removed too much fundamental energy from bass notes (C2-C3), making the low end thin.
 
 ---
 
@@ -491,31 +503,37 @@ R_series = 18K + 50K * (1 - depth)
 
 **Status: IMPLEMENTED** in `power_amp.rs`.
 
-The power amp is modeled as a fixed-gain stage with crossover distortion and symmetric rail clipping, operating on normalized signal levels:
+The power amp is modeled as a fixed-gain stage with crossover distortion and tanh soft-clipping, operating on normalized signal levels:
 
 ```rust
 // power_amp.rs — signal flow
-let amplified = input * VOLTAGE_GAIN;            // VOLTAGE_GAIN = 8.0 (fixed)
+let amplified = input * VOLTAGE_GAIN;            // VOLTAGE_GAIN = 69.0
 
 // Crossover dead zone: Hermite smoothstep (C1 continuous)
-if abs(amplified) < crossover_width {             // crossover_width = 0.003
+if abs(amplified) < crossover_width {             // crossover_width = 0.026
     let ratio = abs / crossover_width;
     let smooth = ratio * ratio * (3.0 - 2.0 * ratio);  // Hermite smoothstep
     output = sign(amplified) * abs * smooth;
 }
 
-// Hard clip at HEADROOM = 2.5, normalize to +/-1.0
-output = clamp(output, -HEADROOM, HEADROOM) / HEADROOM;
+// Soft-clip at rails: tanh models gradual transistor saturation
+// Real output transistors compress smoothly, not brick-wall
+output = tanh(output / HEADROOM);                // HEADROOM = 22.0
 ```
 
 **Key parameters:**
 
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| VOLTAGE_GAIN | 8.0 | Closed-loop gain with R-31 (15K) feedback |
-| crossover_width | 0.003 | Models lightly-aged instrument (~5-7 mA bias vs factory 10 mA) |
-| HEADROOM | 2.5 | Normalized signal units; maps to real +/-24V rails with ~3:1 headroom ratio |
+| Parameter | Value | Derivation |
+|-----------|-------|------------|
+| VOLTAGE_GAIN | 69.0 | 1 + R31/R30 = 1 + 15K/220Ω = 69x (37 dB) |
+| crossover_width | 0.026 | ~26mV physical dead zone (same as old 0.003 × 8/2.5, rescaled to new voltage domain) |
+| HEADROOM | 22.0 | ±24V rails − 2V Vce_sat = ±22V effective swing |
 | Smoothstep formula | ratio^2 * (3 - 2*ratio) | Hermite, C1 continuous at the boundary |
+| Soft-clip | tanh(out / HEADROOM) | Models gradual transistor saturation (Yeh, Abel, Smith 2007) |
+
+**Effective gain ratio:** 69/22 = 3.136x, nearly identical to the previous 8/2.5 = 3.2x (delta: −0.17 dB). Output levels are preserved by the `tanh()` normalization, but the crossover distortion now operates at the correct absolute signal level.
+
+The tanh soft-clip replaces the previous `.clamp()` hard clip. At moderate levels (< 50% of rail), deviation from linear is < 0.25 dB. At full rail voltage, tanh(1.0) = 0.762 provides ~2.4 dB of compression. This prevents the flat-topped waveforms that were producing 0.0 dBFS digital clipping at C4/C5 v=127.
 
 The crossover distortion produces odd harmonics that become audible at low volume settings where the signal amplitude is comparable to the dead zone width. At moderate to high volumes, the crossover is imperceptible.
 

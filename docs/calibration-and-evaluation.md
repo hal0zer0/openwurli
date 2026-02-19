@@ -903,3 +903,39 @@ For agent reference when selecting evaluation metrics:
 | Spectral convergence | Moderate | Low | Training objective | Same as above |
 | MUSHRA listening test | Ground truth | Very high (requires humans) | Final quality assessment | Expensive; needs 15+ listeners |
 | KAD (Kernel Audio Distance) | Better alignment with perception than FAD | Medium | Emerging alternative to FAD | Very new (2024), less validated |
+
+## Appendix D: OBM A/B Comparison Results (Feb 2026)
+
+Systematic comparison of 13 clean OBM single notes (Freesound Pack 5726, MIDI 50-98) against synthesized notes at matching pitch/velocity, using `wurli_compare.py --tier3`.
+
+### Tier Selection
+
+OBM recordings pass through the full real 200A chain (preamp → power amp → speaker → room → mic). Synth renders must match: **always use `--tier3`** (full chain with power amp, speaker, volume 0.40). Tier 2 renders (no power amp, no speaker) produce 39% inflated harmonic distance.
+
+### Key Results
+
+| Metric | Tier 2 | Tier 3 |
+|--------|--------|--------|
+| Mean harmonic distance | 55.2 dB | **33.8 dB** |
+| Median | 44.0 dB | **28.4 dB** |
+| Best match | 24.7 dB (A4) | **11.6 dB (F4)** |
+
+Best matches (octave 3-4): F4=11.6 dB, A4=14.8 dB, A3=15.4 dB. Upper register (octave 6-7) inflated by room resonance artifacts in OBM recordings (see anomalous notes below).
+
+### Anomalous OBM Notes
+
+5 of 13 notes have harmonic content inconsistent with a single vibrating reed. These should be **excluded from automatic calibration** and weighted down in perceptual evaluation:
+
+- **D6 (MIDI 86)**: H6 = +5.6 dB above H1 (ratio 1.91x). Room resonance at ~7 kHz.
+- **D7 (MIDI 98)**: H6 = +13.1 dB above H1 (ratio 4.50x). Room resonance.
+- **A6 (MIDI 93)**: Flat harmonic tail -6.8 to -16.2 dB across H2-H10. Noise floor, not instrument.
+- **D5 (MIDI 74)**: H5/H6 at -10.5/-12.5 dB but H2 at -23.1 dB. Resonance artifact.
+- **D4 (MIDI 62)**: H2 nearly absent at -53.7 dB. Possible dead spot or very light strike.
+
+### Actionable Findings
+
+1. **Decay rate 2-3x too fast in bass (octaves 3-4)**: Power law `3.0*(midi/48)^4.5` matches octaves 5-6 but overshoots bass. A3: model 6.9 dB/s vs real 3.2 dB/s (2.2x). Room reverb inflates OBM sustain by ~1-2 dB/s, so true deficit is ~1.5-2x.
+
+2. **H2/H1 too clean by 5-8 dB at mid-register**: A4 shows -8.2 dB real vs -16.1 dB synth (7.9 dB deficit). Confirms the MLP ds_correction saturation finding. Fix: increase DS_AT_C4 from 0.70 to ~0.85-0.90, then recalibrate trim and retrain MLP.
+
+3. **Speaker LPF possibly too gentle for upper register**: Real treble centroids at 0.44-0.48x of f0 suggest the 4"x8" ceramic speakers roll off well below 7500 Hz. Caveat: partly mic/room coloration. Needs DI recording to confirm.

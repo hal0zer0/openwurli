@@ -202,7 +202,8 @@ def select_best_notes(all_notes, top_per_pitch=3, specific_notes=None):
 # OpenWurli rendering
 # ---------------------------------------------------------------------------
 
-def render_synth_note(midi_note, velocity_midi, duration, output_path, preamp_bench="preamp-bench"):
+def render_synth_note(midi_note, velocity_midi, duration, output_path,
+                      preamp_bench="preamp-bench", tier3=False):
     """Render a note via preamp-bench and return the path."""
     cmd = [
         "cargo", "run", "-p", preamp_bench, "--release", "--",
@@ -210,11 +211,14 @@ def render_synth_note(midi_note, velocity_midi, duration, output_path, preamp_be
         "--note", str(midi_note),
         "--velocity", str(velocity_midi),
         "--duration", str(duration),
-        "--no-poweramp",
-        "--speaker", "0.0",
-        "--volume", "1.0",
-        "--output", str(output_path),
     ]
+    if tier3:
+        # Tier 3: full chain (power amp + speaker + volume)
+        cmd += ["--volume", "0.40", "--speaker", "1.0"]
+    else:
+        # Tier 2: voice model only (no power amp, no speaker)
+        cmd += ["--no-poweramp", "--speaker", "0.0", "--volume", "1.0"]
+    cmd += ["--output", str(output_path)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         print(f"  WARN: render failed for MIDI {midi_note}: {result.stderr[:200]}",
@@ -452,6 +456,8 @@ def main():
                         help="Just print extraction summary, no rendering")
     parser.add_argument("--velocity", type=int, default=None,
                         help="Override synth velocity (default: estimate from extraction)")
+    parser.add_argument("--tier3", action="store_true",
+                        help="Render with full chain (power amp + speaker + volume) instead of Tier 2")
 
     args = parser.parse_args()
 
@@ -526,7 +532,8 @@ def main():
 
             # Render synth
             duration = max(0.5, note_info["duration"])
-            synth_path = render_synth_note(midi, vel_midi, duration, synth_dst)
+            synth_path = render_synth_note(midi, vel_midi, duration, synth_dst,
+                                          tier3=args.tier3)
             if not synth_path:
                 print(" RENDER FAILED")
                 continue

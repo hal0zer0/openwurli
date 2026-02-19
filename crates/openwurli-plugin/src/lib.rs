@@ -398,8 +398,8 @@ impl Plugin for OpenWurli {
 
         for (i, mut channel_samples) in buffer.iter_samples().enumerate() {
             let volume = self.params.volume.smoothed.next() as f64;
-            // Volume pot attenuates before power amp (3K audio taper in real circuit)
-            let attenuated = self.out_buf[i] * volume;
+            // Volume pot attenuates before power amp (3K audio taper: vol² approximation)
+            let attenuated = self.out_buf[i] * volume * volume;
             // Power amp: VAS gain → crossover distortion → rail clip
             let amplified = self.power_amp.process(attenuated);
             let shaped = self.speaker.process(amplified);

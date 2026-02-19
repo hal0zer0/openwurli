@@ -46,6 +46,7 @@ fn main() {
         "intermod-audit" => cmd_intermod_audit(&args[2..]),
         "calibrate" => cmd_calibrate(&args[2..]),
         "sensitivity" => cmd_sensitivity(&args[2..]),
+        "centroid-track" => cmd_centroid_track(&args[2..]),
         _ => {
             eprintln!("Unknown subcommand: {}", args[1]);
             print_usage();
@@ -66,6 +67,7 @@ fn print_usage() {
     eprintln!("  intermod-audit  Detect inharmonic intermodulation beating risk");
     eprintln!("  calibrate       Measure gain chain at 5 tap points → CSV");
     eprintln!("  sensitivity     Multi-DS grid sweep → CSV");
+    eprintln!("  centroid-track  Spectral centroid tracking over time");
     eprintln!();
     eprintln!("Global options:");
     eprintln!("  --model MODEL   Preamp model: dk (default), ebers-moll");
@@ -1251,4 +1253,226 @@ fn cmd_sensitivity(args: &[String]) {
         all_rows.len(),
         output_path
     );
+}
+
+// ─── Centroid tracking ─────────────────────────────────────────────────────
+
+/// Compute spectral centroid of a signal via brute-force DFT.
+///
+/// Sums frequency-weighted power across bins from min_freq to max_freq.
+/// Returns centroid in Hz, or 0.0 if no energy is detected.
+fn spectral_centroid(signal: &[f64], sr: f64, min_freq: f64, max_freq: f64) -> f64 {
+    let n = signal.len();
+    let freq_resolution = sr / n as f64;
+    let k_min = (min_freq / freq_resolution).ceil() as usize;
+    let k_max = ((max_freq / freq_resolution).floor() as usize).min(n / 2);
+
+    let mut weighted_sum = 0.0;
+    let mut power_sum = 0.0;
+    for k in k_min..=k_max {
+        let freq = k as f64 * freq_resolution;
+        // DFT at this bin
+        let mut re = 0.0;
+        let mut im = 0.0;
+        for (i, &s) in signal.iter().enumerate() {
+            let phase = 2.0 * PI * k as f64 * i as f64 / n as f64;
+            re += s * phase.cos();
+            im -= s * phase.sin();
+        }
+        let mag_sq = re * re + im * im;
+        weighted_sum += freq * mag_sq;
+        power_sum += mag_sq;
+    }
+    if power_sum > 0.0 {
+        weighted_sum / power_sum
+    } else {
+        0.0
+    }
+}
+
+fn cmd_centroid_track(args: &[String]) {
+    let note = parse_flag(args, "--note", 60.0) as u8;
+    let velocity = parse_flag(args, "--velocity", 100.0) as u8;
+    let duration = parse_flag(args, "--duration", 1.0);
+    let window_ms = parse_flag(args, "--window-ms", 5.0);
+    let hop_ms = parse_flag(args, "--hop-ms", 2.5);
+    let end_ms = parse_flag(args, "--end-ms", 500.0);
+    let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
+    let volume = parse_flag(args, "--volume", 0.60);
+    let speaker_char = parse_flag(args, "--speaker", 1.0);
+    let no_poweramp = args.contains(&"--no-poweramp".to_string());
+    let no_preamp = args.contains(&"--no-preamp".to_string());
+    let csv_path = parse_flag_str(args, "--csv", "");
+    let disp_scale: Option<f64> = if args.contains(&"--displacement-scale".to_string()) {
+        Some(parse_flag(args, "--displacement-scale", 0.30))
+    } else {
+        None
+    };
+
+    // Render full signal chain (reuse render infrastructure)
+    let reed_output =
+        Voice::render_note_with_scale(note, velocity as f64 / 127.0, duration, BASE_SR, disp_scale);
+
+    let n_samples = reed_output.len();
+
+    // Preamp stage
+    let preamp_output = if no_preamp {
+        reed_output.clone()
+    } else {
+        let mut preamp = create_preamp(args);
+        preamp.set_ldr_resistance(r_ldr);
+        preamp.reset();
+        let mut os = Oversampler::new();
+        let mut out = vec![0.0f64; n_samples];
+        for i in 0..n_samples {
+            let mut up = [0.0f64; 2];
+            os.upsample_2x(&[reed_output[i]], &mut up);
+            let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
+            let mut down = [0.0f64; 1];
+            os.downsample_2x(&processed, &mut down);
+            out[i] = down[0];
+        }
+        out
+    };
+
+    // Output stage
+    let mut power_amp = PowerAmp::new();
+    let mut speaker = Speaker::new(BASE_SR);
+    speaker.set_character(speaker_char);
+
+    let mut final_output = vec![0.0f64; n_samples];
+    for i in 0..n_samples {
+        let attenuated = preamp_output[i] * volume;
+        let amplified = if no_poweramp {
+            attenuated
+        } else {
+            power_amp.process(attenuated)
+        };
+        final_output[i] = speaker.process(amplified);
+    }
+
+    // Centroid tracking with Hann-windowed frames
+    let window_samples = ((window_ms / 1000.0) * BASE_SR) as usize;
+    let hop_samples = ((hop_ms / 1000.0) * BASE_SR) as usize;
+    let end_sample = ((end_ms / 1000.0) * BASE_SR) as usize;
+
+    // Frequency range for centroid: 50 Hz to Nyquist/2
+    let min_freq = 50.0;
+    let max_freq = BASE_SR / 4.0;
+
+    // Pre-compute Hann window
+    let hann: Vec<f64> = (0..window_samples)
+        .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f64 / window_samples as f64).cos()))
+        .collect();
+
+    let note_name = midi_note_name(note);
+    println!(
+        "Centroid tracking: {} (MIDI {}) vel={}, {}ms Hann windows",
+        note_name, note, velocity, window_ms
+    );
+    if no_preamp {
+        println!("  Preamp: BYPASSED");
+    }
+    if no_poweramp {
+        println!("  Power amp: BYPASSED");
+    }
+    println!();
+    println!("  {:>10}  {:>14}", "Time (ms)", "Centroid (Hz)");
+
+    let mut csv_lines = Vec::new();
+    csv_lines.push("time_ms,centroid_hz".to_string());
+
+    let mut centroid_at_10ms = None;
+    let mut centroid_at_300ms = None;
+
+    let mut pos = 0usize;
+    while pos + window_samples <= final_output.len() && pos + window_samples / 2 <= end_sample {
+        let center_ms = (pos as f64 + window_samples as f64 / 2.0) / BASE_SR * 1000.0;
+
+        // Apply Hann window
+        let windowed: Vec<f64> = final_output[pos..pos + window_samples]
+            .iter()
+            .zip(hann.iter())
+            .map(|(&s, &w)| s * w)
+            .collect();
+
+        let centroid = spectral_centroid(&windowed, BASE_SR, min_freq, max_freq);
+
+        if centroid > 0.0 {
+            println!("  {:>10.1}  {:>14.0}", center_ms, centroid);
+            csv_lines.push(format!("{:.1},{:.1}", center_ms, centroid));
+        }
+
+        // Track key timepoints
+        if centroid_at_10ms.is_none() && center_ms >= 10.0 {
+            centroid_at_10ms = Some(centroid);
+        }
+        if centroid_at_300ms.is_none() && center_ms >= 300.0 {
+            centroid_at_300ms = Some(centroid);
+        }
+
+        pos += hop_samples;
+    }
+
+    // Summary
+    println!();
+
+    // Calibration targets by register
+    let midi = note;
+    let (attack_lo, attack_hi, sustain_lo, sustain_hi, drift_lo, drift_hi) = if midi <= 48 {
+        // Bass
+        (600.0, 1000.0, 500.0, 800.0, -200.0, -50.0)
+    } else if midi <= 72 {
+        // Mid
+        (600.0, 1200.0, 600.0, 1000.0, -240.0, -30.0)
+    } else {
+        // Treble
+        (800.0, 1600.0, 800.0, 1400.0, -250.0, -30.0)
+    };
+
+    if let Some(c10) = centroid_at_10ms {
+        let status = if c10 >= attack_lo && c10 <= attack_hi {
+            "OK"
+        } else {
+            "MISS"
+        };
+        println!(
+            "  Attack centroid (10ms):   {:>6.0} Hz   (target: {:.0}-{:.0})  {}",
+            c10, attack_lo, attack_hi, status
+        );
+    } else {
+        println!("  Attack centroid (10ms):   (no data — signal too short or silent)");
+    }
+
+    if let Some(c300) = centroid_at_300ms {
+        let status = if c300 >= sustain_lo && c300 <= sustain_hi {
+            "OK"
+        } else {
+            "MISS"
+        };
+        println!(
+            "  Sustain centroid (300ms): {:>6.0} Hz   (target: {:.0}-{:.0})  {}",
+            c300, sustain_lo, sustain_hi, status
+        );
+    } else {
+        println!("  Sustain centroid (300ms): (no data — signal too short)");
+    }
+
+    if let (Some(c10), Some(c300)) = (centroid_at_10ms, centroid_at_300ms) {
+        let drift = c300 - c10;
+        let status = if drift >= drift_lo && drift <= drift_hi {
+            "OK"
+        } else {
+            "MISS"
+        };
+        println!(
+            "  Drift:                   {:>+6.0} Hz   (target: {:.0} to {:.0}) {}",
+            drift, drift_lo, drift_hi, status
+        );
+    }
+
+    if !csv_path.is_empty() {
+        std::fs::write(csv_path, csv_lines.join("\n") + "\n").expect("Failed to write CSV");
+        println!("\n  CSV written to {csv_path}");
+    }
 }
