@@ -15,7 +15,7 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-step() { echo -e "\n${BOLD}[$1/6]${RESET} $2"; }
+step() { echo -e "\n${BOLD}[$1/7]${RESET} $2"; }
 pass() { echo -e "  ${GREEN}PASS${RESET} $1"; }
 fail() { echo -e "  ${RED}FAIL${RESET} $1"; exit 1; }
 warn() { echo -e "  ${YELLOW}WARN${RESET} $1"; }
@@ -47,9 +47,24 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
 fi
 pass "Clean tree, tag $TAG is available"
 
+# ── Changelog ─────────────────────────────────────────────────────────────────
+
+step 2 "Checking CHANGELOG.md"
+if grep -q "^## \[${VERSION}\]" CHANGELOG.md; then
+    pass "CHANGELOG.md has a [${VERSION}] section"
+else
+    fail "CHANGELOG.md is missing a [${VERSION}] section. Add release notes before releasing."
+fi
+# Check that [Unreleased] link points to the new tag
+if grep -q "compare/${TAG}\.\.\.HEAD" CHANGELOG.md; then
+    pass "[Unreleased] link updated"
+else
+    warn "[Unreleased] compare link should reference ${TAG} (currently doesn't)"
+fi
+
 # ── Formatting ────────────────────────────────────────────────────────────────
 
-step 2 "cargo fmt --check"
+step 3 "cargo fmt --check"
 if cargo fmt --check 2>&1; then
     pass "Formatting OK"
 else
@@ -58,7 +73,7 @@ fi
 
 # ── Clippy ────────────────────────────────────────────────────────────────────
 
-step 3 "cargo clippy --workspace -- -D warnings"
+step 4 "cargo clippy --workspace -- -D warnings"
 if cargo clippy --workspace -- -D warnings 2>&1; then
     pass "No clippy warnings"
 else
@@ -67,7 +82,7 @@ fi
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-step 4 "cargo test --workspace"
+step 5 "cargo test --workspace"
 if cargo test --workspace 2>&1; then
     pass "All tests pass"
 else
@@ -76,7 +91,7 @@ fi
 
 # ── Bundle ────────────────────────────────────────────────────────────────────
 
-step 5 "cargo xtask bundle openwurli --release"
+step 6 "cargo xtask bundle openwurli --release"
 if cargo xtask bundle openwurli --release 2>&1; then
     pass "Plugin bundled"
     cp target/bundled/openwurli.clap ~/.clap/
@@ -88,7 +103,7 @@ fi
 
 # ── Tag + Push ────────────────────────────────────────────────────────────────
 
-step 6 "Tag and push"
+step 7 "Tag and push"
 if $DRY_RUN; then
     warn "Dry run — skipping tag and push"
     echo -e "\n${GREEN}${BOLD}All checks passed.${RESET} Run without --dry-run to release."
