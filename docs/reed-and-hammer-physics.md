@@ -49,6 +49,8 @@ The 200A increased the thickness of middle and treble reeds:
 - Both the head (screw mounting area) and tongue were thicker
 - Result: "smoother, rounder, mellower tone" vs 200's "long dwell, sharp attack"
 
+**200A thickness values used in the code:** Bass reeds use 0.026", mid/treble reeds use 0.034", with smooth interpolation between the two across reeds 16-26. These values inform the beam compliance calculation in `tables.rs:pickup_displacement_scale()`.
+
 Source: [Vintage Vibe Case Study](https://www.vintagevibe.com/blogs/news/wurlitzer-electric-piano-reeds-case-study)
 
 #### Pickup Slot Dimensions (140B, similar geometry to 200)
@@ -301,6 +303,8 @@ Ratio: f_target / f_bare determines the required eigenvalue lambda_1, from which
 | 53 | 85 | C#6 | 31.8 | 0.787 | 2.49 | ~534 | 1108.7 | 0.25-0.40 | 8.5-10.0 |
 | 64 | 96 | C7 | 25.4 | 0.787 | 2.49 | ~837 | 2093 | 0.30-0.50 | 9.0-10.5 |
 
+> **Note:** These are raw theoretical estimates for **uniform beams**. The 200A uses ground/tapered blanks for treble reeds (blanks 3-5), so actual treble mu values are much lower than the table suggests (approximately 0.00-0.03). See **Section 7.3** for the implemented/reconciled tip mass ratios used in the code, which account for taper geometry.
+
 **IMPORTANT FINDING:** The mid-register reeds (around reed 20-30) have f_bare BELOW f_target. This means the solder is NOT needed for pitch-lowering in this region -- the bare beam is already close to or below target pitch. In this register, solder is minimal (near-zero mu) and serves fine-tuning only. The treble reeds, however, have f_bare well BELOW target, meaning they need the grinding/thinning process AND short length to achieve high pitch. The solder in treble is also minimal.
 
 **The bass reeds need the most solder** (highest mu), and the relationship between mu and register is NOT monotonic -- it depends on the interplay of reed length, thickness, and target pitch. This is a critical distinction from the existing model which assumes a smooth bass-to-treble mu gradient.
@@ -378,7 +382,7 @@ A_n / A_1 = omega_1 / omega_n = f_1 / f_n = 1 / (f_n/f_1)
 
 This scaling is consistent with the observation from multiple sources that "only the first few modes of vibration have significantly large values, and the higher order vibration modes can be ignored" for struck cantilever beams.
 
-> **Deployed code uses OBM-calibrated values:** `[1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. The theoretical 1/omega predictions above are 20-37 dB too hot compared to real Wurlitzer 200A recordings (OldBassMan data). Real Wurlitzer reeds have solder tip mass and non-uniform geometry that suppress upper modes far below ideal Euler-Bernoulli theory. The "bark" character comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental frequency, NOT from physical mode 2 at 6.3x the fundamental. The theoretical values are retained here for reference.
+> **Deployed code uses OBM-calibrated values:** `[1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. The theoretical 1/omega predictions above are 20-37 dB too hot compared to real Wurlitzer 200A recordings (OldBassMan data). Real Wurlitzer reeds have solder tip mass and non-uniform geometry that suppress upper modes far below ideal Euler-Bernoulli theory. The "bark" character comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental frequency, NOT from physical mode 2 at 6.3x the fundamental. The theoretical values are retained here for reference.
 
 Source: [MEMS 431 Lab](https://classes.engineering.wustl.edu/mems431_lab/lab6.html), modal analysis theory
 
@@ -398,14 +402,14 @@ For mu > 0, the 1/omega_n scaling becomes approximately 1/omega_n^(1+delta) wher
 | Mode | Deployed (OBM-calibrated) | Theoretical 1/omega | Ratio (deployed/theoretical) |
 |------|--------------------------|---------------------|------------------------------|
 | 1 (fund) | 1.000 | 1.000 (reference) | 1.0x |
-| 2 | 0.010 | 0.160 | 0.063x (-24 dB) |
+| 2 | 0.005 | 0.160 | 0.031x (-30 dB) |
 | 3 | 0.0035 | 0.057 | 0.061x (-24 dB) |
 | 4 | 0.0018 | 0.029 | 0.062x (-24 dB) |
 | 5 | 0.0011 | 0.018 | 0.061x (-24 dB) |
 | 6 | 0.0007 | 0.012 | 0.058x (-25 dB) |
 | 7 | 0.0005 | 0.0084 | 0.060x (-24 dB) |
 
-The deployed code uses OBM-calibrated amplitudes that are 20-37 dB below the theoretical 1/omega prediction. This dramatic reduction was validated against OldBassMan Wurlitzer 200A recordings. Real Wurlitzer reeds (with solder tip mass and non-uniform geometry) suppress upper modes far below ideal cantilever beam theory. The spectral centroid ratio improved from 4.89x (1/omega values) to 1.42x (OBM target: 1.14x). Bark comes from the pickup's 1/(1-y) nonlinearity, not from physical mode energy.
+The deployed code uses OBM-calibrated amplitudes that are 24-37 dB below the theoretical 1/omega prediction. This dramatic reduction was validated against OldBassMan Wurlitzer 200A recordings. Real Wurlitzer reeds (with solder tip mass and non-uniform geometry) suppress upper modes far below ideal cantilever beam theory. The spectral centroid ratio improved from 4.89x (1/omega values) to 1.42x (OBM target: 1.14x). Bark comes from the pickup's 1/(1-y) nonlinearity, not from physical mode energy.
 
 ---
 
@@ -467,12 +471,13 @@ t_dwell = 0.5 ms (ff) to 3 ms (pp)
 t_dwell_mf ~ 1.0-1.5 ms
 ```
 
-The model's current formula `t_dwell = 0.001 + 0.003 * (1 - vel)` gives:
-- ff (vel=1.0): 1.0 ms
-- mf (vel=0.5): 2.5 ms
-- pp (vel=0.1): 3.7 ms
-
-This is reasonable but may overestimate the pp contact time for a stiff reed target. **Consider `t_dwell = 0.0005 + 0.002 * (1 - vel)` for a stiffer reed model.**
+The model implements the Miessner patent formula (US 2,932,231):
+```
+cycles = 0.75 + 0.25 * (1 - velocity)    // 0.75 cycles at ff, 1.0 at pp
+t_dwell = (cycles / f0).clamp(0.0003, 0.020)
+```
+This is register-dependent: bass notes get longer dwell times (e.g., A1 ff: 13.6ms)
+while treble notes get shorter (e.g., C6 ff: 0.72ms).
 
 ### 4.3 Force Profile Shape
 
@@ -635,7 +640,7 @@ For x_h = 0.9*L (near-tip estimate):
 
 **Key difference:** The patent's 0.25-0.35L strike position produces a very different mode excitation pattern than a near-tip strike. Mode 4 is nearly zeroed, mode 1 is significantly reduced, and mode 3 is relatively enhanced. These strike-position effects are implicitly captured in the OBM-calibrated `BASE_MODE_AMPLITUDES`, so the code does not need an explicit strike position parameter — but the patent specs provide the physical explanation for why upper modes are so suppressed.
 
-> **Implementation note:** Strike position is not modeled as a separate parameter. Its effect is absorbed into the OBM-calibrated base mode amplitudes `[1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`.
+> **Implementation note:** Strike position is not modeled as a separate parameter. Its effect is absorbed into the OBM-calibrated base mode amplitudes `[1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`.
 
 ---
 
@@ -919,7 +924,7 @@ The dominant nonlinearity in the Wurlitzer is the preamp, not the reed vibration
 
 **STATUS: Dramatically recalibrated to OBM values (20-37 dB reduction from theory).**
 
-The old 1/omega-like scaling (bass modes: 0.35, 0.10, 0.030...) was 20-37 dB too hot compared to real Wurlitzer 200A recordings. Deployed OBM-calibrated values: `[1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. Bark comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental, NOT from physical mode 2 at 6.3x the fundamental. See Section 3.2 and Section 3.4 for details.
+The old 1/omega-like scaling (bass modes: 0.35, 0.10, 0.030...) was 24-37 dB too hot compared to real Wurlitzer 200A recordings. Deployed OBM-calibrated values: `[1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. Bark comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental, NOT from physical mode 2 at 6.3x the fundamental. See Section 3.2 and Section 3.4 for details.
 
 ### 7.5 Attack Transient
 

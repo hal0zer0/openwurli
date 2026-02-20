@@ -848,7 +848,7 @@ The distortion character changes through the tremolo cycle: at the gain peak (LD
 |-----------|-------|
 | Transistors | TR-3, TR-4 (2N2924, part 142083-2) |
 | Topology | Twin-T (parallel-T) oscillator (notch filter feedback) |
-| Frequency | approximately 6 Hz (service manual); measured 5.3-7 Hz |
+| Frequency | 5.63 Hz (calculated from twin-T RC values); approximately 6 Hz (service manual); measured 5.3-7 Hz |
 | Waveform | Approximately sinusoidal (mild distortion from twin-T topology, est. THD 3-10%) |
 | Depth control | Front panel vibrato pot (50K) |
 
@@ -885,7 +885,7 @@ The voice holds a swappable `PreampModel` implementation. A/B testing compares t
 Model the complete circuit as an 8-node Modified Nodal Analysis (MNA) system using the Discretization-Kernel (DK) method. Trapezoidal discretization with a precomputed system inverse reduces the per-sample nonlinear solve to a 2x2 Newton-Raphson iteration on Vbe1/Vbe2. Implemented as `DkPreamp` in `dk_preamp.rs`. See [DK Preamp Derivation](dk-preamp-derivation.md) for the full math.
 
 **Pros:** Most accurate harmonic content, correct frequency-dependent gain (captures nested C-3/C-4 Miller loop), proper bias-shift dynamics, explicit R_ldr handling via Sherman-Morrison
-**Cons:** Requires solving two coupled implicit equations per sample (Newton-Raphson iteration); ~420 FLOPs/sample
+**Cons:** Requires solving two coupled implicit equations per sample (Newton-Raphson iteration); ~900 FLOPs/sample (two dk_step calls: main + shadow)
 **Role:** Shipping implementation. Correctly models the ~15.5 kHz bandwidth that is independent of R_ldr (see Section 5.5.1).
 
 #### Approach 2: Simplified Ebers-Moll with Feedback Caps — LEGACY REFERENCE
@@ -952,7 +952,7 @@ For a perceptually accurate Wurlitzer 200A preamp model, the minimum implementat
 5. **Closed-loop bandwidth** — preamp-only target ~15.5 kHz (nearly constant with R_ldr). Full-chain BW is ~11.8 kHz no-trem / ~9.7 kHz trem-bright due to input network Miller loading. See Section 5.5.1 for nested-loop analysis.
 6. **Direct coupling** to Stage 2 (can be instantaneous coupling for simplicity)
 7. **Stage 2** with Av = 2.2, nearly symmetric soft-clip (satLimit = 6.2V, cutoffLimit = 5.3V)
-8. **Output coupling**: 4th-order Bessel HPF at 40 Hz (Q values 0.5219 and 0.8055), chosen over Butterworth to eliminate bass onset ringing ("plink"). Provides -23 dB rejection at 22 Hz.
+8. **Output coupling**: 4th-order Bessel HPF at 40 Hz (Q values 0.5219 and 0.8055) was designed but never implemented. The DK preamp uses shadow subtraction instead (two dk_step calls per sample — main with audio, shadow with zero input, same R_ldr — difference cancels tremolo pump at all frequencies with zero bass loss). See [DK Preamp Derivation](dk-preamp-derivation.md) Section 14.
 9. **R-9 series output** (6.8K) — provides output impedance for volume pot interaction
 
 ### 8.5 Enhanced Model (for Future Implementation)
@@ -960,7 +960,7 @@ For a perceptually accurate Wurlitzer 200A preamp model, the minimum implementat
 Add to the minimum model:
 
 10. **DC bias-shift dynamics**: Track Stage 1's average collector voltage (10-100 ms time constant); feed this to Stage 2's operating point. This produces the "sag" compression and "bloom" heard at ff polyphonic.
-11. **Tremolo as emitter feedback modulation**: Modulate the LDR path impedance (which controls how much R-10 feedback reaches TR-1's emitter via Ce1), rather than applying tremolo as a post-preamp volume multiplier.
+11. **Tremolo as emitter feedback modulation**: IMPLEMENTED in the DK preamp. R_ldr directly modulates the MNA system via per-sample Sherman-Morrison update (see [DK Preamp Derivation](dk-preamp-derivation.md) Section 11). The LDR path impedance controls how much R-10 feedback reaches TR-1's emitter via Ce1, producing timbral modulation rather than simple volume modulation.
 13. **WDF or coupled NR solver**: Solve both stages simultaneously to capture the inter-stage coupling dynamics.
 
 ---
@@ -1109,10 +1109,10 @@ R_1 = 22K (series from reed bar)
 R_2 = 2 MEG (to +15V; see Note 1 on discrepancy)
 R_3 = 470K (to ground)
 
-// Output coupling: 4th-order Bessel HPF at 40 Hz (Q=0.5219, Q=0.8055)
-// Chosen over Butterworth to eliminate bass onset ringing ("plink").
-// Provides -23 dB rejection at 22 Hz.
-f_output_hpf = 40 Hz (Bessel, 4th order)
+// Output coupling: 4th-order Bessel HPF at 40 Hz was designed but never deployed.
+// DK preamp uses shadow subtraction (main − shadow dk_step) instead —
+// cancels tremolo pump at all frequencies with zero bass loss.
+// Pump level after subtraction: < −120 dBFS.
 
 // Overall closed-loop (emitter feedback via R-10/Ce1)
 total_closed_loop_gain_no_trem = 6.0 dB (2.0x) [Rldr_path = 1M]

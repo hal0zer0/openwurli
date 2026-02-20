@@ -11,14 +11,14 @@ speaker saturation.
 
 | Parameter | Location | Current | Role |
 |-----------|----------|---------|------|
-| DS_AT_C4 | tables.rs:253 | 0.85 | Pickup displacement anchor at C4 |
-| DS clamp | tables.rs:259 | [0.02, 0.85] | Physical limit on displacement |
-| DS exponent | tables.rs:258 | 0.65 | Compliance-to-displacement curve shape |
-| TARGET_DB | tables.rs:544 | -13.0 | Absolute output level target |
-| VOICING_SLOPE | tables.rs:545 | -0.04 | Treble roll-off (dB/semitone above C4) |
-| Register trim | tables.rs:494-508 | 13 anchors | Per-note empirical correction |
+| `DS_AT_C4` | tables.rs | 0.85 | Pickup displacement anchor at C4 |
+| `DS_CLAMP` | tables.rs | [0.02, 0.85] | Physical limit on displacement |
+| `DS_EXPONENT` | tables.rs | 0.65 | Compliance-to-displacement curve shape |
+| `TARGET_DB` | tables.rs | -13.0 | Absolute output level target |
+| `VOICING_SLOPE` | tables.rs | -0.04 | Treble roll-off (dB/semitone above C4) |
+| Register trim `ANCHORS` | tables.rs | 13 anchors | Per-note empirical correction |
 | Speaker Xmax | speaker.rs | tanh(polynomial) | Cone excursion limiting |
-| Volume default | params.rs | 0.40 | Audio-taper attenuator |
+| Volume default | params.rs | 0.63 | Audio-taper attenuator |
 
 ## Known Interaction Chains
 
@@ -79,6 +79,8 @@ Renders each (note, velocity) pair and measures at 5 tap points in the signal ch
 | T4  | After preamp | Oversampled DK preamp |
 | T5  | After volume + PA + speaker | Full Tier 3 chain |
 
+> **Note:** T1 (raw reed displacement) is computed internally but is **not** included as `t1_*` columns in the CSV output. Only T2-T5 appear as CSV columns. The reed peak is captured as `y_peak` (reed_peak × ds_actual).
+
 Metrics per tap: `peak_db`, `rms_db`, `h2_h1_db` (where applicable).
 Measurement window: 100-400ms of a 500ms render.
 
@@ -110,7 +112,7 @@ Scale modes:
 - `zero-trim`: Override DS + zero trim → "what's the natural imbalance?"
 - `freeze`: Original DS=0.85 + current trim → "raw level change from DS alone"
 
-Grid: 7 DS × 8 notes × 3 velocities = 168 renders. ~90 seconds.
+Grid: 8 DS × 8 notes × 3 velocities = 192 renders. ~90 seconds.
 
 ### Analysis: `tools/analyze_calibration.py`
 

@@ -99,7 +99,7 @@ Ic = Is * (exp(Vbe / Vt) - 1)
 
 Is = 3.03e-14 A (2N5089), Vt = 0.026V (thermal voltage at 25°C).
 
-Beta = 1434 → base current = Ic/1434 = 0.07% of Ic → negligible.
+Beta = 1434 is the SPICE model value (BF parameter for 2N5089). The code uses beta = infinity (no base current), which is appropriate since base current is < 0.07% of Ic and negligible. The N_i matrix stamps only collector current into emitter and collector nodes; no base current is injected.
 
 ### N_v matrix (2×8) — extracts Vbe from node voltages
 
@@ -179,6 +179,8 @@ Define:
 The `-g_cin·V0[n-1]` in A_neg and the `+cin_rhs[n-1]` in the source together
 form the trapezoidal average of the companion element. Omitting g_cin from
 A_neg would break the trapezoidal symmetry.
+
+**Note on trapezoidal nonlinear terms:** The `N_i·(i_NL[n] + i_NL[n-1])` term above is the raw trapezoidal equation before DK reduction. After reduction, the RHS contains only `i_NL[n-1]` (the known history term), while `i_NL[n]` is solved implicitly via the Newton-Raphson loop on the 2x2 DK kernel (Section 10).
 
 Per-sample:
 ```
@@ -296,7 +298,9 @@ G · v_dc = N_i · i_NL(N_v · v_dc) + w
 Solve with NR on the full 8D system (one-time cost at init):
 1. Start from estimated quiescent point (TR-1: B=2.45V, E=1.95V, C=4.1V, etc.)
 2. Iterate: `v_dc_new = inv(G - N_i · J_NL · N_v) · (N_i · [i_NL - J_NL · v_NL] + w)`
-3. Converge to `< 1e-12` residual (typically 5–8 iterations)
+3. Converge to `< 1e-12` residual (typically 5–8 iterations, up to 100 maximum). NR steps are clamped to 2*Vt (52 mV) per iteration for convergence safety — prevents the exponential BJT model from causing NR overshoot when far from the solution.
+
+**Note:** The Vb discrepancy between schematic annotations (2.45V) and MNA solve results (~2.80V) is discussed in [preamp-circuit.md Section 4.3](preamp-circuit.md#43-stage-1-tr-1-operating-point-derivation). This does NOT affect gain, Miller pole, or clipping calculations.
 
 Or use the same DK reduction: at DC, `S_dc = inv(G)`, `K_dc = N_v · S_dc · N_i`, and solve the 2×2 system `v_NL = p_dc + K_dc · i_NL(v_NL)` with `p_dc = N_v · S_dc · w`.
 
@@ -323,6 +327,8 @@ gm_eff = gm_raw · sech²(Ic_raw / Ic_max)     // = gm_raw · (1 - tanh²(...))
 **Critical (if implemented):** NR Jacobian must use `gm_eff`, not raw `gm`. Using raw gm with clipped Ic causes NR overshoot near saturation.
 
 ## 14. Per-Sample Algorithm
+
+`DkPreamp` implements the `PreampModel` trait (defined in `preamp.rs`), which provides `process_sample()`, `set_ldr_resistance()`, and `reset()`. This trait-based design allows A/B comparison with the legacy `EbersMollPreamp` implementation.
 
 ```
 function process_sample(Vin):
@@ -362,11 +368,25 @@ function process_sample(Vin):
     dv_cin = Vin - v[0]
     J_cin = -g_cin·(1+c_cin)·dv_cin - c_cin·J_cin
 
-    // 7. Output: v[6] (output node), filtered through 4th-order Bessel HPF at 40 Hz
-    //    (Q=0.5219, Q=0.8055) — chosen over Butterworth to eliminate bass onset ringing.
-    //    Provides -23 dB at 22 Hz.
-    return bessel_hpf(v[6] - v_out_dc)
+    // 7. Return output: The outer process_sample() method runs dk_step() twice
+    //    (main with audio input, shadow with zero input) and returns:
+    //      output = main_output − shadow_output
+    //    This shadow subtraction cancels tremolo pump artifacts without any HPF.
+    return v[6]
 ```
+
+**Note:** `dk_step` returns the raw output voltage `v[6]` without DC subtraction. DC removal (and tremolo pump cancellation) is handled by shadow preamp subtraction in the outer `process_sample()` method — see below.
+
+### Shadow Preamp Subtraction
+
+The DkPreamp maintains two solver states: `main` (processes audio) and `shadow`
+(processes zero input with the same R_ldr modulation). The shadow output is pure
+tremolo pump artifact — the Ce1 transient dynamics create a ~4.5V peak-to-peak
+pump signal even with zero audio input. Subtracting shadow from main cancels the
+pump at all frequencies with zero bass loss, replacing the previously-designed
+Bessel HPF that was never deployed.
+
+Pump level after subtraction: < −120 dBFS.
 
 ## 15. Computational Cost
 
@@ -378,6 +398,8 @@ function process_sample(Vin):
 | NR iteration (×3 avg) | 3×40 = 120 | per sample |
 | S · N_i · i_nl (8×2 · 2) | 30 | per sample |
 | Sherman-Morrison (explicit R_ldr) | ~30 | per sample (scalar ops) |
-| **Total** | **~450** | per sample |
+| **Total** | **~450** | per dk_step call |
 
-At 88.2 kHz (2x oversampled): ~37 MFLOP/s. Negligible on modern CPUs.
+~900 FLOPs per sample (2x dk_step: main path with audio input + shadow path with zero input for tremolo pump cancellation).
+
+At 88.2 kHz (2x oversampled): ~79 MFLOP/s. Negligible on modern CPUs.

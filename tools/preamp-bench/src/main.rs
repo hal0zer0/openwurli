@@ -47,6 +47,8 @@ fn main() {
         "calibrate" => cmd_calibrate(&args[2..]),
         "sensitivity" => cmd_sensitivity(&args[2..]),
         "centroid-track" => cmd_centroid_track(&args[2..]),
+        "render-poly" => cmd_render_poly(&args[2..]),
+        "render-midi" => cmd_render_midi(&args[2..]),
         _ => {
             eprintln!("Unknown subcommand: {}", args[1]);
             print_usage();
@@ -68,6 +70,8 @@ fn print_usage() {
     eprintln!("  calibrate       Measure gain chain at 5 tap points → CSV");
     eprintln!("  sensitivity     Multi-DS grid sweep → CSV");
     eprintln!("  centroid-track  Spectral centroid tracking over time");
+    eprintln!("  render-poly     Render multiple simultaneous notes through shared chain");
+    eprintln!("  render-midi     Render a MIDI file through the full signal chain");
     eprintln!();
     eprintln!("Global options:");
     eprintln!("  --model MODEL   Preamp model: dk (default), ebers-moll");
@@ -927,7 +931,7 @@ fn h2_h1_ratio_db(signal: &[f64], fundamental_hz: f64, sr: f64) -> f64 {
 fn cmd_calibrate(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,40,44,48,52,56,60,64,68,72,76,80,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
-    let ds_at_c4 = parse_flag(args, "--ds-at-c4", 0.70);
+    let ds_at_c4 = parse_flag(args, "--ds-at-c4", 0.85);
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let zero_trim = args.contains(&"--zero-trim".to_string());
@@ -1190,7 +1194,7 @@ fn cmd_sensitivity(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,54,60,66,72,78,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
     let ds_values: Vec<f64> =
-        parse_csv_list(args, "--ds-range", "0.50,0.55,0.60,0.65,0.70,0.75,0.80");
+        parse_csv_list(args, "--ds-range", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85");
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let scale_mode_raw = parse_flag_str(args, "--scale-mode", "track");
@@ -1216,11 +1220,11 @@ fn cmd_sensitivity(args: &[String]) {
 
     for &ds in &ds_values {
         let cfg = match scale_mode {
-            // "freeze" = output_scale at original DS=0.70, pickup at test DS.
+            // "freeze" = output_scale at original DS=0.85, pickup at test DS.
             // Since run_calibrate uses cfg for both, freeze just keeps original.
             // The ds_at_c4 column reports the sweep value for plotting.
             "freeze" => CalibrationConfig {
-                ds_at_c4: 0.70,
+                ds_at_c4: 0.85,
                 zero_trim: false,
                 ..CalibrationConfig::default()
             },
@@ -1253,6 +1257,614 @@ fn cmd_sensitivity(args: &[String]) {
         all_rows.len(),
         output_path
     );
+}
+
+// ─── Polyphonic render ────────────────────────────────────────────────────
+
+/// Render multiple simultaneous notes through the shared signal chain.
+///
+/// Usage:
+///   preamp-bench render-poly --notes 38,62,66 --velocities 45,40,40 --duration 3.0
+///
+/// Voices are summed before the preamp (matching the plugin architecture),
+/// so intermodulation from the shared nonlinear chain is captured.
+fn cmd_render_poly(args: &[String]) {
+    let notes: Vec<u8> = parse_csv_list(args, "--notes", "38,59,62,66");
+    let velocities_raw: Vec<u8> = parse_csv_list(args, "--velocities", "45,40,40,40");
+    let duration = parse_flag(args, "--duration", 3.0);
+    let volume = parse_flag(args, "--volume", 0.60);
+    let speaker_char = parse_flag(args, "--speaker", 1.0);
+    let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
+    let no_poweramp = args.contains(&"--no-poweramp".to_string());
+    let normalize = args.contains(&"--normalize".to_string());
+    let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render_poly.wav");
+
+    // Pad velocities to match notes if needed
+    let velocities: Vec<u8> = notes
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            if i < velocities_raw.len() {
+                velocities_raw[i]
+            } else {
+                *velocities_raw.last().unwrap_or(&80)
+            }
+        })
+        .collect();
+
+    let n_samples = (duration * BASE_SR) as usize;
+
+    // Render each voice independently (reed → pickup → output_scale)
+    eprintln!(
+        "Rendering {} voices, {:.1}s @ {:.0} Hz...",
+        notes.len(),
+        duration,
+        BASE_SR
+    );
+
+    let mut sum_buf = vec![0.0f64; n_samples];
+    let mut individual_bufs: Vec<Vec<f64>> = Vec::new();
+
+    for (i, (&note, &vel)) in notes.iter().zip(velocities.iter()).enumerate() {
+        let velocity = vel as f64 / 127.0;
+        let noise_seed = (note as u32)
+            .wrapping_mul(2654435761)
+            .wrapping_add(i as u32);
+        let mut voice = Voice::note_on(note, velocity, BASE_SR, noise_seed, true);
+
+        let mut voice_buf = vec![0.0f64; n_samples];
+        let chunk_size = 1024;
+        let mut offset = 0;
+        while offset < n_samples {
+            let end = (offset + chunk_size).min(n_samples);
+            voice.render(&mut voice_buf[offset..end]);
+            offset = end;
+        }
+
+        // Sum into mix
+        for j in 0..n_samples {
+            sum_buf[j] += voice_buf[j];
+        }
+
+        individual_bufs.push(voice_buf);
+        eprint!("  Voice {}: {} vel={}\n", i, midi_note_name(note), vel);
+    }
+
+    // Process through oversampled preamp (shared — this is where intermod happens)
+    eprint!("Processing through preamp...");
+    let mut preamp = create_preamp(args);
+    preamp.set_ldr_resistance(r_ldr);
+    preamp.reset();
+    let mut os = Oversampler::new();
+
+    let mut preamp_output = vec![0.0f64; n_samples];
+    for i in 0..n_samples {
+        let mut up = [0.0f64; 2];
+        os.upsample_2x(&[sum_buf[i]], &mut up);
+        let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
+        let mut down = [0.0f64; 1];
+        os.downsample_2x(&processed, &mut down);
+        preamp_output[i] = down[0];
+    }
+    eprintln!(" done");
+
+    // Output stage: volume → power amp → speaker
+    let mut power_amp = PowerAmp::new();
+    let mut speaker = Speaker::new(BASE_SR);
+    speaker.set_character(speaker_char);
+
+    let mut final_output = vec![0.0f64; n_samples];
+    for i in 0..n_samples {
+        let attenuated = preamp_output[i] * volume * volume; // audio taper
+        let amplified = if no_poweramp {
+            attenuated
+        } else {
+            power_amp.process(attenuated)
+        };
+        final_output[i] = speaker.process(amplified);
+    }
+
+    // Also render each voice through its OWN separate chain for comparison
+    let mut separate_sum = vec![0.0f64; n_samples];
+    for voice_buf in &individual_bufs {
+        let mut sep_preamp = create_preamp(args);
+        sep_preamp.set_ldr_resistance(r_ldr);
+        sep_preamp.reset();
+        let mut sep_os = Oversampler::new();
+        let mut sep_pa = PowerAmp::new();
+        let mut sep_spk = Speaker::new(BASE_SR);
+        sep_spk.set_character(speaker_char);
+
+        for i in 0..n_samples {
+            let mut up = [0.0f64; 2];
+            sep_os.upsample_2x(&[voice_buf[i]], &mut up);
+            let processed = [
+                sep_preamp.process_sample(up[0]),
+                sep_preamp.process_sample(up[1]),
+            ];
+            let mut down = [0.0f64; 1];
+            sep_os.downsample_2x(&processed, &mut down);
+            let attenuated = down[0] * volume * volume;
+            let amplified = if no_poweramp {
+                attenuated
+            } else {
+                sep_pa.process(attenuated)
+            };
+            separate_sum[i] += sep_spk.process(amplified);
+        }
+    }
+
+    // Compute the intermod residual: shared_chain - sum_of_separate
+    let mut residual = vec![0.0f64; n_samples];
+    for i in 0..n_samples {
+        residual[i] = final_output[i] - separate_sum[i];
+    }
+
+    // Measurements
+    let measure_start = (0.2 * BASE_SR) as usize;
+    let measure_end = (2.0 * BASE_SR).min(n_samples as f64) as usize;
+    let window = &final_output[measure_start..measure_end];
+    let sep_window = &separate_sum[measure_start..measure_end];
+    let res_window = &residual[measure_start..measure_end];
+
+    let poly_peak = peak_db(window);
+    let sep_peak = peak_db(sep_window);
+    let res_peak = peak_db(res_window);
+    let poly_rms = rms_db(window);
+    let sep_rms = rms_db(sep_window);
+    let res_rms = rms_db(res_window);
+
+    // Peak and write WAV files
+    let peak = final_output
+        .iter()
+        .map(|x| x.abs())
+        .fold(0.0f64, f64::max);
+    let peak_dbfs = if peak > 0.0 {
+        20.0 * peak.log10()
+    } else {
+        -120.0
+    };
+
+    let scale = if normalize {
+        if peak > 0.7 {
+            0.7 / peak
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
+
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: BASE_SR as u32,
+        bits_per_sample: 24,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let max_val = (1 << 23) - 1;
+
+    // Write main poly output
+    {
+        let mut writer =
+            hound::WavWriter::create(output_path, spec).expect("Failed to create WAV");
+        for sample in &final_output {
+            let scaled = (sample * scale * max_val as f64).round() as i32;
+            writer
+                .write_sample(scaled.clamp(-max_val, max_val))
+                .unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    // Write residual
+    let residual_path = output_path.replace(".wav", "_residual.wav");
+    {
+        let res_peak_abs = residual.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+        let res_scale = if res_peak_abs > 1e-10 {
+            0.5 / res_peak_abs
+        } else {
+            1.0
+        };
+        let mut writer =
+            hound::WavWriter::create(&residual_path, spec).expect("Failed to create residual WAV");
+        for sample in &residual {
+            let scaled = (sample * res_scale * max_val as f64).round() as i32;
+            writer
+                .write_sample(scaled.clamp(-max_val, max_val))
+                .unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    // Report
+    println!("Polyphonic render complete");
+    println!(
+        "  Notes:     {:?}",
+        notes
+            .iter()
+            .map(|&n| format!("{} ({})", midi_note_name(n), n))
+            .collect::<Vec<_>>()
+    );
+    println!("  Velocities: {:?}", velocities);
+    println!("  Duration:  {duration:.1}s");
+    println!("  Volume:    {volume:.3} (audio taper: {:.3})", volume * volume);
+    println!("  Speaker:   {speaker_char:.1}");
+    println!("  Peak:      {peak_dbfs:.1} dBFS");
+    println!();
+    println!("  === INTERMOD ANALYSIS (0.2-2.0s window) ===");
+    println!("  Shared chain (poly):  peak={poly_peak:.1} dBFS  rms={poly_rms:.1} dBFS");
+    println!("  Separate chains (sum): peak={sep_peak:.1} dBFS  rms={sep_rms:.1} dBFS");
+    println!(
+        "  Residual (intermod):  peak={res_peak:.1} dBFS  rms={res_rms:.1} dBFS"
+    );
+    println!(
+        "  Intermod ratio:       {:.1} dB below signal",
+        poly_rms - res_rms
+    );
+    println!();
+
+    let verdict = if (poly_rms - res_rms) > 60.0 {
+        "CLEAN — intermod negligible"
+    } else if (poly_rms - res_rms) > 40.0 {
+        "OK — intermod present but likely inaudible"
+    } else if (poly_rms - res_rms) > 20.0 {
+        "MARGINAL — intermod may be audible on revealing systems"
+    } else {
+        "DIRTY — intermod clearly audible"
+    };
+    println!("  Verdict: {verdict}");
+    println!();
+    println!("  Output:    {output_path}");
+    println!("  Residual:  {residual_path} (normalized for listening)");
+}
+
+// ─── MIDI file render ─────────────────────────────────────────────────────
+
+/// Render a MIDI file through the full polyphonic signal chain.
+///
+/// Replicates the plugin's exact voice management and signal routing:
+///   voices (reed → pickup) → sum → oversampled preamp → volume → power amp → speaker
+///
+/// Usage:
+///   preamp-bench render-midi --midi path/to/file.mid --output /tmp/output.wav
+fn cmd_render_midi(args: &[String]) {
+    let midi_path = parse_flag_str(args, "--midi", "");
+    if midi_path.is_empty() {
+        eprintln!("Usage: preamp-bench render-midi --midi <file.mid> [--output <file.wav>]");
+        eprintln!("  --volume V       Volume (default 0.60)");
+        eprintln!("  --speaker S      Speaker character 0-1 (default 1.0)");
+        eprintln!("  --no-poweramp    Bypass power amp");
+        eprintln!("  --tail T         Extra seconds after last note (default 2.0)");
+        return;
+    }
+    let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render_midi.wav");
+    let volume = parse_flag(args, "--volume", 0.60);
+    let speaker_char = parse_flag(args, "--speaker", 1.0);
+    let no_poweramp = args.contains(&"--no-poweramp".to_string());
+    let tail_seconds = parse_flag(args, "--tail", 2.0);
+
+    // Parse MIDI file
+    let midi_data = std::fs::read(midi_path).expect("Failed to read MIDI file");
+    let smf = midly::Smf::parse(&midi_data).expect("Failed to parse MIDI file");
+
+    let ticks_per_beat = match smf.header.timing {
+        midly::Timing::Metrical(tpb) => tpb.as_int() as f64,
+        _ => {
+            eprintln!("Only metrical (ticks per beat) MIDI timing is supported");
+            return;
+        }
+    };
+
+    // Collect all MIDI events with absolute time in seconds
+    #[derive(Clone)]
+    enum MidiEvt {
+        NoteOn { note: u8, velocity: u8 },
+        NoteOff { note: u8 },
+        Pedal { on: bool },
+    }
+
+    struct TimedEvent {
+        time_s: f64,
+        evt: MidiEvt,
+    }
+
+    let mut events: Vec<TimedEvent> = Vec::new();
+
+    for track in &smf.tracks {
+        let mut tempo: f64 = 500_000.0; // default 120 BPM
+        let mut time_s: f64 = 0.0;
+
+        for event in track {
+            let delta_ticks = event.delta.as_int() as u64;
+            let delta_s = (delta_ticks as f64 / ticks_per_beat) * (tempo / 1_000_000.0);
+            time_s += delta_s;
+
+            match event.kind {
+                midly::TrackEventKind::Meta(midly::MetaMessage::Tempo(t)) => {
+                    tempo = t.as_int() as f64;
+                }
+                midly::TrackEventKind::Midi { message, .. } => match message {
+                    midly::MidiMessage::NoteOn { key, vel } => {
+                        let v = vel.as_int();
+                        if v == 0 {
+                            events.push(TimedEvent {
+                                time_s,
+                                evt: MidiEvt::NoteOff {
+                                    note: key.as_int(),
+                                },
+                            });
+                        } else {
+                            events.push(TimedEvent {
+                                time_s,
+                                evt: MidiEvt::NoteOn {
+                                    note: key.as_int(),
+                                    velocity: v,
+                                },
+                            });
+                        }
+                    }
+                    midly::MidiMessage::NoteOff { key, .. } => {
+                        events.push(TimedEvent {
+                            time_s,
+                            evt: MidiEvt::NoteOff {
+                                note: key.as_int(),
+                            },
+                        });
+                    }
+                    midly::MidiMessage::Controller { controller, value } => {
+                        if controller.as_int() == 64 {
+                            events.push(TimedEvent {
+                                time_s,
+                                evt: MidiEvt::Pedal {
+                                    on: value.as_int() >= 64,
+                                },
+                            });
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+
+    // Sort by time
+    events.sort_by(|a, b| a.time_s.partial_cmp(&b.time_s).unwrap());
+
+    if events.is_empty() {
+        eprintln!("No note events found in MIDI file");
+        return;
+    }
+
+    let last_event_time = events.last().unwrap().time_s;
+    let total_duration = last_event_time + tail_seconds;
+    let total_samples = (total_duration * BASE_SR) as usize;
+
+    eprintln!(
+        "MIDI: {} events, {:.1}s + {:.1}s tail = {:.1}s total ({} samples)",
+        events.len(),
+        last_event_time,
+        tail_seconds,
+        total_duration,
+        total_samples
+    );
+
+    // Voice management (mirrors plugin architecture)
+    const MAX_VOICES: usize = 12;
+
+    struct VoiceSlot {
+        voice: Option<Voice>,
+        active: bool,
+        midi_note: u8,
+        age: u64,
+    }
+
+    let mut voices: Vec<VoiceSlot> = (0..MAX_VOICES)
+        .map(|_| VoiceSlot {
+            voice: None,
+            active: false,
+            midi_note: 0,
+            age: 0,
+        })
+        .collect();
+    let mut age_counter: u64 = 0;
+
+    let mut preamp = create_preamp(args);
+    preamp.set_ldr_resistance(1_000_000.0);
+    preamp.reset();
+    let mut os = Oversampler::new();
+    let mut power_amp = PowerAmp::new();
+    let mut speaker = Speaker::new(BASE_SR);
+    speaker.set_character(speaker_char);
+
+    let mut output = vec![0.0f64; total_samples];
+    let mut event_idx = 0;
+
+    let chunk_size = 64; // process in small chunks for sample-accurate events
+    let mut voice_buf = vec![0.0f64; chunk_size];
+    let mut sum_buf = vec![0.0f64; chunk_size];
+    let mut up_buf = vec![0.0f64; chunk_size * 2];
+
+    let mut sample_pos: usize = 0;
+    let mut peak_polyphony: usize = 0;
+    let mut note_on_count: usize = 0;
+    let mut pedal_down = false;
+    // Notes waiting for pedal release to send note_off
+    let mut pedal_held: Vec<u8> = Vec::new();
+
+    while sample_pos < total_samples {
+        let chunk_end = (sample_pos + chunk_size).min(total_samples);
+        let len = chunk_end - sample_pos;
+        let chunk_time = sample_pos as f64 / BASE_SR;
+
+        // Process MIDI events at or before this chunk
+        while event_idx < events.len() && events[event_idx].time_s <= chunk_time {
+            let evt = events[event_idx].evt.clone();
+            match evt {
+                MidiEvt::NoteOn { note, velocity } => {
+                    let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
+                    let vel = velocity as f64 / 127.0;
+                    age_counter += 1;
+                    note_on_count += 1;
+
+                    let slot_idx = voices
+                        .iter()
+                        .position(|s| !s.active)
+                        .unwrap_or_else(|| {
+                            voices
+                                .iter()
+                                .enumerate()
+                                .min_by_key(|(_, s)| s.age)
+                                .map(|(i, _)| i)
+                                .unwrap_or(0)
+                        });
+
+                    let seed = (note as u32)
+                        .wrapping_mul(2654435761)
+                        .wrapping_add(age_counter as u32);
+                    voices[slot_idx] = VoiceSlot {
+                        voice: Some(Voice::note_on(note, vel, BASE_SR, seed, true)),
+                        active: true,
+                        midi_note: note,
+                        age: age_counter,
+                    };
+                    let active = voices.iter().filter(|s| s.active).count();
+                    peak_polyphony = peak_polyphony.max(active);
+                }
+                MidiEvt::NoteOff { note } => {
+                    let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
+                    if pedal_down {
+                        // Defer note-off until pedal release
+                        pedal_held.push(note);
+                    } else {
+                        // Immediate note-off
+                        if let Some(slot) = voices
+                            .iter_mut()
+                            .filter(|s| s.active && s.midi_note == note)
+                            .min_by_key(|s| s.age)
+                        {
+                            if let Some(ref mut v) = slot.voice {
+                                v.note_off();
+                            }
+                        }
+                    }
+                }
+                MidiEvt::Pedal { on } => {
+                    if on {
+                        pedal_down = true;
+                    } else {
+                        pedal_down = false;
+                        // Release all pedal-held notes
+                        for held_note in pedal_held.drain(..) {
+                            if let Some(slot) = voices
+                                .iter_mut()
+                                .filter(|s| s.active && s.midi_note == held_note)
+                                .min_by_key(|s| s.age)
+                            {
+                                if let Some(ref mut v) = slot.voice {
+                                    v.note_off();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            event_idx += 1;
+        }
+
+        // Clean up silent voices
+        for slot in &mut voices {
+            if slot.active {
+                if let Some(ref v) = slot.voice {
+                    if v.is_silent() {
+                        slot.active = false;
+                        slot.voice = None;
+                    }
+                }
+            }
+        }
+
+        // Render all active voices → sum
+        sum_buf[..len].fill(0.0);
+        for slot in &mut voices {
+            if !slot.active {
+                continue;
+            }
+            if let Some(ref mut voice) = slot.voice {
+                voice_buf[..len].fill(0.0);
+                voice.render(&mut voice_buf[..len]);
+                for i in 0..len {
+                    sum_buf[i] += voice_buf[i];
+                }
+            }
+        }
+
+        // Oversampled preamp
+        os.upsample_2x(&sum_buf[..len], &mut up_buf[..len * 2]);
+        for s in &mut up_buf[..len * 2] {
+            *s = preamp.process_sample(*s);
+        }
+        let mut down_buf = vec![0.0f64; len];
+        os.downsample_2x(&up_buf[..len * 2], &mut down_buf);
+
+        // Output stage: volume → power amp → speaker
+        for i in 0..len {
+            let attenuated = down_buf[i] * volume * volume;
+            let amplified = if no_poweramp {
+                attenuated
+            } else {
+                power_amp.process(attenuated)
+            };
+            output[sample_pos + i] = speaker.process(amplified);
+        }
+
+        sample_pos = chunk_end;
+    }
+
+    // Peak measurement
+    let peak = output.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+    let peak_dbfs = if peak > 0.0 {
+        20.0 * peak.log10()
+    } else {
+        -120.0
+    };
+
+    if peak > 1.0 {
+        eprintln!(
+            "WARNING: Peak exceeds 0 dBFS ({peak_dbfs:.1} dBFS) — consider reducing --volume"
+        );
+    }
+
+    // Write WAV
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: BASE_SR as u32,
+        bits_per_sample: 24,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let max_val = (1 << 23) - 1;
+    let mut writer =
+        hound::WavWriter::create(output_path, spec).expect("Failed to create WAV file");
+    for sample in &output {
+        let scaled = (sample * max_val as f64).round() as i32;
+        writer
+            .write_sample(scaled.clamp(-max_val, max_val))
+            .unwrap();
+    }
+    writer.finalize().unwrap();
+
+    println!("MIDI render complete");
+    println!("  File:      {midi_path}");
+    println!("  Notes:     {note_on_count} note-ons");
+    println!("  Peak poly: {peak_polyphony} voices");
+    println!("  Duration:  {total_duration:.1}s");
+    println!("  Volume:    {volume:.3} (audio taper: {:.3})", volume * volume);
+    println!("  Speaker:   {speaker_char:.1}");
+    if no_poweramp {
+        println!("  Power amp: BYPASSED");
+    }
+    println!("  Peak:      {peak_dbfs:.1} dBFS");
+    println!("  Output:    {output_path}");
 }
 
 // ─── Centroid tracking ─────────────────────────────────────────────────────

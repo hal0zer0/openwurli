@@ -5,9 +5,9 @@
 //! nonlinear processing (BJT soft-clip generates harmonics that must not alias).
 //!
 //! Design: Regalia-Mitra allpass-based half-band IIR.
-//! ~100 dB stopband rejection with 6 coefficient pairs (12 allpass sections).
+//! ~28 dB rejection at 30 kHz with 3 coefficients per branch (6 allpass sections).
 
-/// Half-band IIR allpass coefficients for ~100 dB stopband rejection.
+/// Half-band IIR allpass coefficients (~28 dB rejection at 30 kHz).
 ///
 /// These come from published tables for elliptic half-band IIR filters
 /// decomposed into two parallel allpass branches. Each branch is a cascade

@@ -38,7 +38,7 @@ pub trait PreampModel {
     fn reset(&mut self);
 }
 
-/// Ebers-Moll preamp — the shipping candidate.
+/// Ebers-Moll preamp — legacy reference implementation (superseded by DkPreamp).
 ///
 /// Two BjtStage objects with exponential transfer functions.
 /// R-10 emitter feedback via 3-iteration zero-delay feedback (ZDF).

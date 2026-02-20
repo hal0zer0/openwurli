@@ -1,10 +1,16 @@
 # OpenWurli
 
-A physically-modeled Wurlitzer 200A electric piano plugin for CLAP and VST3 hosts.
+An *obsessively* physically-modeled Wurlitzer 200A electric piano plugin for CLAP and VST3 hosts. NOT IN ANY WAY OFFICIAL OR AFFILIATED WITH ANYONE.
 
+
+()
 ## What Is This?
 
-OpenWurli models the complete analog signal chain of a Wurlitzer 200A electric piano from first principles — no samples, no impulse responses, no curve-fitted approximations. Every stage is derived from the actual circuit schematic and validated against SPICE simulations.
+OpenWurli models the complete analog signal chain of a Wurlitzer 200A electric piano from first principles — no samples, no impulse responses, no curve-fitted approximations. Every stage is derived from the actual circuit schematic and validated against SPICE simulations. Which, by the way, was REALLY REALLY HARD. 
+
+That's probably why there are so few decent Wurlitzer style plugins out there. We learned (the hard way, after several false starts) that you cannot come close to approximating the sound of a Wurli without modeling *EVERYTHING* that makes it sound the way it does. We drew from the real 200A schematic diagram to model every resistor, every diode, even the little 4x8 ceramic cone speakers. 
+
+As far as we can tell, this is both the most accurate and best sounding open source Wurli EP plugin in existence. Though there's still room for improvement. 
 
 The signal chain:
 

@@ -11,7 +11,7 @@
 //!   - CdS photoresistors have asymmetric response: fast attack (~3ms),
 //!     slow decay (~50ms) -- the "memory" effect.
 //!   - Resistance follows approximate power law: R = R_dark * (I_led / I_ref)^(-gamma)
-//!   - R_dark ~ 1M ohm, gamma ~ 0.7 for typical CdS cells
+//!   - R_dark ~ 1M ohm, gamma = 1.1 (calibrated to OBM tremolo depth)
 
 use std::f64::consts::PI;
 

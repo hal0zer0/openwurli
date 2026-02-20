@@ -10,3 +10,4 @@ description = "Preamp DSP validation CLI — compare against SPICE reference dat
 [dependencies]
 openwurli-dsp = { path = "../../crates/openwurli-dsp" }
 hound = "3.5"
+midly = "0.5"

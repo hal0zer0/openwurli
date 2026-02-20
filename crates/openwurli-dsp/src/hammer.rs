@@ -83,7 +83,7 @@ pub fn dwell_attenuation(
 /// Attack noise generator — exponentially decaying bandpass noise.
 ///
 /// Models the mechanical impact transient of felt hammer on steel reed.
-/// Duration: ~15 ms. Center frequency tracks the note (4× fundamental,
+/// Duration: ~15 ms. Center frequency tracks the note (5× fundamental,
 /// clamped 200–2000 Hz) so the noise sits within the harmonic neighborhood
 /// rather than in a spectrally disconnected band.
 pub struct AttackNoise {

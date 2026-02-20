@@ -47,7 +47,7 @@ Keypress
   -> Electrostatic pickup (reed + shared pickup plate = variable capacitor)
      - Polarizing voltage: ~147V DC via half-wave rectifier
      - Bias network: R-2=2M, R-3=470k -> R_total = R-2||R-3 = 380k
-     - C20 shunt cap: 220 pF (see preamp-circuit.md Section 2)
+     - C20 shunt cap: 220 pF — NOTE: 206A ONLY, NOT present on the 200A
      - ALL 64 reeds share ONE common pickup plate (reed bar assembly)
      - Total system capacitance: ~240 pF at preamp input
   -> Preamp (separate PCB mounted on reed bar in 200A)
@@ -55,7 +55,7 @@ Keypress
      - Originally 2N2924, later replaced with 2N5089 (hFE >= 450)
      - +15V DC supply
      - Collector-base feedback caps C-3 = C-4 = 100 pF
-     - C20 HPF at input (~1903 Hz)
+     - Pickup RC HPF at ~2312 Hz (C20 at 1903 Hz is 206A only, NOT 200A)
      - Total gain 6.0 dB (2.0x) no tremolo / 12.1 dB (4.0x) tremolo bright
      - Output: 2-7 mV AC at volume pot
   -> Tremolo (LDR optocoupler modulates preamp emitter feedback)
@@ -106,7 +106,7 @@ MIDI note-on (key, velocity, channel, note_id)
        [A] Modal Reed Oscillator (7 modes, Euler-Bernoulli + tip mass)
        [B] Gaussian Dwell Filter (hammer contact time spectral shaping, sigma=8.0)
        [C] Attack Noise Burst (felt-on-steel impact, 2-5 ms)
-       [D] Per-Note Variation (deterministic +-0.8% freq, +-8% amp)
+       [D] Per-Note Variation (deterministic +-3 cents freq, +-8% amp)
        [E] Electrostatic Pickup (1/(1-y) capacitive nonlinearity)
      -> Sum all voices (mono)
 
@@ -118,12 +118,12 @@ MIDI note-on (key, velocity, channel, note_id)
               -> Stage 1: Miller pole ~23 Hz open-loop
               -> Direct coupling
               -> Stage 2: Miller pole ~81 kHz
-        [H] DC Block HPF (20 Hz)
+        [H] DC Block (handled internally by DK preamp)
      -> 2x Downsample (matching allpass polyphase IIR)
      [I] Volume Control (real attenuator, audio taper, between preamp and power amp)
      [K] Power Amplifier (Class AB, crossover distortion at low signal levels)
      [L] Speaker Cabinet (variable: bypass to authentic HPF 85-100 Hz + LPF 7-8 kHz)
-     [M] Output Limiter (soft saturation)
+     [M] Output (no separate limiter — handled by power amp tanh and speaker tanh Xmax)
      -> Mono to Stereo duplication
      -> float32 output buffers
 ```
@@ -135,18 +135,18 @@ MIDI note-on (key, velocity, channel, note_id)
 | Modal Oscillator | Yes (sinusoidal sum) | No (bandlimited by construction) | Base |
 | Dwell Filter | Yes (amplitude scaling at note-on) | No (runs once) | N/A |
 | Noise Burst | Yes (filtered noise, envelope) | No (broadband, no harmonics generated) | Base |
-| Pickup | NO (1/(1-y) nonlinearity, primary H2 source) | YES (dominant at normal dynamics) | Base |
+| Pickup | NO (1/(1-y) nonlinearity, primary H2 source) | No (runs at base rate; harmonics stay within audio band) | Base |
 | Voice Sum | Yes (addition) | No | Base |
 | Preamp Stage 1 | NO (exponential + asymmetric soft-clip) | YES | 2x |
 | Miller LPF 1 | Yes (1st order) | No (already at 2x) | 2x |
 | Preamp Stage 2 | NO (exponential + asymmetric soft-clip) | YES | 2x |
 | Miller LPF 2 | Yes (1st order) | No (already at 2x) | 2x |
-| DC Block | Yes (1st order HPF) | No (already at 2x) | 2x |
+| DC Block | Yes (handled internally by DK preamp) | No (already at 2x) | 2x |
 | Tremolo (in preamp feedback) | Mildly nonlinear (modulates preamp gain/distortion) | YES (inside preamp oversampled block) | 2x |
 | Volume | Yes (gain scaling) | No | Base |
 | Power Amp | Mildly nonlinear (crossover distortion) | Marginal (2x sufficient) | Base |
 | Speaker | NO (biquad filters + Hammerstein polynomial waveshaper a2=0.2/a3=0.6 + tanh Xmax limiting + thermal voice coil compression) | Marginal (low-order distortion at speaker stage) | Base |
-| Output Limiter | Mildly nonlinear (tanh/soft-clip) | No (at output, minimal aliasing concern) | Base |
+| Output Limiter | Not a separate stage (handled by power amp tanh + speaker tanh Xmax) | N/A | N/A |
 
 **Conclusion:** Only the preamp requires oversampling. 2x is sufficient because the preamp's input signal is already bandlimited by the pickup's natural bandwidth and the preamp's own Miller-effect rolloff. The preamp generates harmonics, but the highest-energy harmonics that could alias are well below Nyquist at 2x.
 
@@ -194,8 +194,8 @@ At note-off:
 ### Voice Death Detection
 
 A voice is dead and can be freed when:
-- State is `RELEASING` AND release time > 0.1s AND all mode amplitudes < 1e-4 (-80 dB)
-- OR release time > 10.0s (safety timeout)
+- All mode amplitudes < 1e-4 (-80 dB) — applies to both `HELD` and `RELEASING` voices
+- OR damper is active AND release time > 10.0s (safety timeout)
 
 ---
 
@@ -230,19 +230,19 @@ The tip-mass ratio `mu = tip_mass_ratio(midi)` varies per note (heavier solder o
 Base amplitudes (OBM-calibrated, single table for all registers, before dwell filter and velocity scaling):
 
 ```
-[1.0, 0.010, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]
+[1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]
 ```
 
 These are OBM-calibrated values derived from OldBassMan 200A recordings. The previous 1/omega_n Euler-Bernoulli values were 20-37 dB too hot vs OBM data. Real Wurlitzer reeds (solder tip mass, non-uniform geometry) suppress upper modes far below ideal beam theory. The characteristic "bark" (H2) comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental, NOT from physical mode 2 at 6.3x the fundamental.
 
 ### Velocity Scaling
 
-Velocity scaling uses a register-dependent exponent: a bell curve from 0.75 (extremes of keyboard) to 1.4 (mid-range), applied as `velMapped = velocity^exp`. This shapes the dynamic response to match the mechanical leverage differences across the keyboard.
+Velocity scaling uses a register-dependent exponent: a bell curve centered at MIDI 62 (sigma=15) from 1.3 (extremes) to 1.7 (mid-range), applied as `velMapped = velocity^exp`. This shapes the dynamic response to match the mechanical leverage differences across the keyboard.
 
-Example values at mid-range (exp ~ 1.4):
-- pp (vel=0.3): velMapped = 0.14
-- mf (vel=0.7): velMapped = 0.55
-- ff (vel=0.95): velMapped = 0.93
+Example values at mid-range (exp ~ 1.7):
+- pp (vel=0.3): velMapped = 0.09
+- mf (vel=0.7): velMapped = 0.47
+- ff (vel=0.95): velMapped = 0.91
 
 Timbral brightening at ff comes from two sources that do NOT require per-mode velocity exponents:
 1. Shorter dwell time at ff -> dwell filter passes more upper partials
@@ -253,17 +253,17 @@ Per-mode velocity exponents double-count with the dwell filter's velocity-depend
 ### Decay
 
 ```
-base_decay_dB_per_sec = 0.26 * exp(0.049 * midi)  // with 3.0 dB/s floor
-decay_rate[m] = base_decay * ratio[m]^1.5          // power-law per-mode scaling
+base_decay = 0.005 * freq^1.22  // with MIN_DECAY_RATE = 3.0 dB/s floor
+decay_rate[m] = base_decay * ratio[m]^2.0          // power-law per-mode scaling (MODE_DECAY_EXPONENT = 2.0)
 ```
 
-- Base decay rate follows an exponential curve calibrated to OldBassMan 200A recordings (see reed-and-hammer-physics.md Section 5.7)
+- Base decay rate follows a frequency power law calibrated to OldBassMan 200A recordings (see reed-and-hammer-physics.md Section 5.7)
 - The 3.0 dB/s floor prevents unrealistically long bass sustain
-- Per-mode scaling uses a `ratio^1.5` power law: higher modes (with larger frequency ratios) decay faster
+- Per-mode scaling uses a `ratio^2.0` power law (Zener damping, proportional to omega squared): higher modes (with larger frequency ratios) decay faster
 - This replaces the previous fixed decay scales array `[1.0, 0.20, 0.08, ...]` with a physics-derived power law
 - Higher modes decay faster -> timbre darkens over time (bright attack, sine-like tail)
 
-Calibration target: `decay_rate_dB_per_sec = 0.26 * exp(0.049 * MIDI)` with +/-30% tolerance.
+Calibration target: `base_decay = 0.005 * freq^1.22` with MIN_DECAY_RATE = 3.0 dB/s floor, +/-30% tolerance.
 
 ### Per-Sample Rendering
 
@@ -286,7 +286,7 @@ Reed starts at zero displacement (hammer imparts velocity, not displacement). Al
 onset_envelope(t) = 0.5 * (1 - cos(PI * t / T_onset))
 ```
 
-The onset ramp time `T_onset` is register-dependent: `(periods / f0).clamp(2ms, 60ms)`, where `periods` ranges from 2 (ff) to 3 (pp). This models reed mechanical inertia -- bass reeds take more time to reach full amplitude than treble reeds.
+The onset ramp time `T_onset` is register-dependent: `(periods / f0).clamp(2ms, 30ms)`, where `periods` ranges from 2.0 (ff) to 4.0 (pp). The envelope shape is `cosine^(1 + (1-velocity))` -- ff gets a raised cosine, pp gets Hann-squared (softer onset). This models reed mechanical inertia -- bass reeds take more time to reach full amplitude than treble reeds.
 
 ### Attack Overshoot: Let Physics Handle It
 
@@ -303,13 +303,14 @@ The hammer contact time creates a finite-duration force pulse that spectrally sh
 ### Dwell Time
 
 ```
-t_dwell = 0.0005 + 0.002 * (1.0 - velocity)
+cycles = 0.75 + 0.25 * (1 - velocity)  // Miessner patent: 3/4 to 1 cycle of f0
+t_dwell = cycles / f0                   // clamped [0.3ms, 20ms]
 ```
 
-- ff (vel ~0.95): ~0.6 ms (shorter contact, brighter)
-- mf (vel ~0.7): ~1.1 ms
-- pp (vel ~0.3): ~1.9 ms (longer contact, darker)
-- Range: 0.5-2.5 ms
+- ff (vel ~0.95): ~0.76 cycles -> short contact, brighter
+- mf (vel ~0.7): ~0.83 cycles
+- pp (vel ~0.3): ~0.93 cycles -> longer contact, darker
+- Clamped to [0.3ms, 20ms] (Miessner patent US 2,932,231)
 
 ### Force Pulse Shape: Gaussian (NOT Rectangular, NOT Half-Sine)
 
@@ -351,13 +352,13 @@ Without normalization, the dwell filter would also attenuate the fundamental, ch
 The felt-tipped hammer striking a steel reed produces a broadband impact noise that lasts 2-5 ms. This is separate from the modal vibration.
 
 ```
-noise_amp = 0.015 * vel^2
+noise_amp = 0.025 * vel^2
 noise_decay = 1/0.003  // 3 ms time constant
-noise_cutoff = (4 * f0).clamp(200, 2000)  // tracks fundamental, not velocity
+noise_cutoff = (5 * f0).clamp(200, 2000)  // tracks fundamental, not velocity
 ```
 
 - No floor or register scaling -- amplitude scales purely with velocity squared
-- Noise center frequency tracks the fundamental (4x f0), clamped to 200-2000 Hz, Q=0.7
+- Noise center frequency tracks the fundamental (5x f0), clamped to 200-2000 Hz, Q=0.7
 - LCG pseudo-random generator -> bandpass at `noise_cutoff` -> exponential decay envelope (3ms decay, 15ms duration)
 - Added to the voice signal BEFORE the pickup model
 
@@ -371,12 +372,12 @@ Real Wurlitzers have per-note personality from manufacturing tolerance: solder p
 
 ```
 // Deterministic hash seeded by note number (NOT random per strike)
-freq_variation[m] = 1.0 + hash(key, m, 0) * 0.008  // +/-0.8% on modes 1+
-amp_variation[m] = 1.0 + hash(key, m, 1) * 0.08    // +/-8% per mode
+freq_detune = 1.0 + hash(key) * 0.00173     // +/-3 cents fundamental detuning
+amp_variation[m] = 1.0 + hash(key, m) * 0.08 // +/-8% per mode
 ```
 
-- Fundamental (mode 0) stays precisely tuned (no frequency variation)
-- Upper modes get +/-0.8% frequency spread (solder mass varies slightly)
+- Fundamental IS detuned: +/-3 cents (0.00173 ratio), matching factory tuning tolerance per US Patent 2,919,616 (Andersen, 1960)
+- No per-mode frequency spread — only the fundamental is detuned (applied as a multiplier to all mode frequencies via the detuned fundamental)
 - All modes get +/-8% amplitude variation
 - Hash function must be deterministic: same note always gets same variation
 
@@ -397,41 +398,53 @@ This is a nuanced point with significant implications:
 - **Per-reed RC corner:** f_c = 1/(2*PI*287k*10pF) >> 20 kHz -> constant-charge at all audio frequencies
 - **System RC corner:** f_c = 1/(2*PI*287k*240pF) = 2312 Hz -> bass fundamentals in constant-voltage regime (R_total = R_feed||(R-1+R_bias) = 1M||402K = 287K; see pickup-system.md Section 3.7)
 
-The per-reed constant-charge approximation is a defensible engineering tradeoff because the C20 input HPF at ~1903 Hz provides similar bass rolloff to the system-level RC dynamics. The pickup model includes the full 1/(1-y) nonlinearity, which is the primary source of even-harmonic "bark" at normal dynamics (H2/H1 ~ -21 dB at mf from SPICE).
+The per-reed constant-charge approximation is a defensible engineering tradeoff because the system RC HPF at 2312 Hz provides similar bass rolloff to the system-level RC dynamics. (Note: C20 at 1903 Hz is 206A only, NOT 200A.) The pickup model includes the full 1/(1-y) nonlinearity, which is the primary source of even-harmonic "bark" at normal dynamics (H2/H1 ~ -21 dB at mf from SPICE).
 
-### Constant-Charge Pickup Model
+### 1/(1-y) Nonlinear Pickup Model
 
-In constant-charge regime, V_ac is proportional to gap displacement (linear):
+The reed-plate capacitance varies as C(y) = C_0 / (1-y), where y = x/d_0 is the normalized displacement fraction. This produces a signal voltage proportional to y/(1-y), which is the primary source of even-harmonic "bark":
 
 ```rust
-let d0 = pickup_d0 * gap_scale;  // base gap, register-scaled
-let min_gap = d0 * 0.20;         // reed can't hit plate (20% minimum)
-let gap = (d0 + signal + offset).max(min_gap);
-let pickup = gap - d0;            // = signal + offset when not clamped
-let output = signal * (1.0 - mix) + pickup * mix;  // mix=1.0 for full pickup
+// Convert reed model displacement to physical fraction y = x/d_0
+let y = (sample * displacement_scale).clamp(-MAX_Y, MAX_Y);
+
+// Nonlinear capacitance: C(y) = C_0/(1-y) → signal ∝ y/(1-y)
+// Positive y (toward plate) amplified more than negative → generates H2
+let nonlinear = y / (1.0 - y);
+
+// Scale to voltage: V = V_hv * C_0/(C_0+C_p) * y/(1-y)
+let v = nonlinear * SENSITIVITY;   // SENSITIVITY = 1.8375 V
+
+// Pickup RC highpass at 2312 Hz (R_total=287K, C=240pF)
+let output = hpf.process(v);       // OnePoleHpf at 2312 Hz
 ```
 
-The ONLY nonlinearity is the minGap clamp (reed approaching plate). In normal playing this is rarely triggered. The pickup is effectively a pass-through with a DC offset.
+The 1/(1-y) nonlinearity generates H2 that scales with displacement amplitude:
+- y=0.02 (pp): THD 1.7%, H2 = -35 dB
+- y=0.10 (mf): THD 8.7%, H2 = -21 dB
+- y=0.20 (f): THD 17.6%, H2 = -15 dB
 
-### Gap Scaling by Register
+The HPF also amplifies H2 relative to H1 (since H2 is at 2f, where the HPF has higher gain), adding ~1.9x boost to the H2/H1 ratio.
 
-Real Wurlitzer bass reeds have wider pickup gaps than treble reeds:
+### Displacement Scale
 
-| Register | Measured slot width | Ratio to mid |
-|----------|-------------------|-------------|
-| Bass (reeds 1-14) | 0.172" | 1.24x |
-| Mid (reeds 21-42) | 0.139" | 1.00x |
-| Treble (reeds 51-64) | 0.114" | 0.82x |
+The `displacement_scale` parameter converts reed model output (normalized, fundamental amplitude = 1.0) to the physical displacement fraction y = x/d_0. It is the single biggest tuning knob for bark intensity and is set per-note from `tables::pickup_displacement_scale()`:
 
-Model: `gap_scale = 2^((60 - key) / 60)` gives bass:treble ratio of ~1.74:1 (close to measured 1.51:1).
+```
+displacement_scale(midi) = DS_AT_C4 * 2^((midi - 60) * DS_EXPONENT / 12)
+// DS_AT_C4 = 0.85, DS_EXPONENT = 0.65, clamp [0.02, 0.85]
+```
+
+Bass reeds have wider gaps and larger displacements; treble reeds have tighter gaps. The exponential curve captures this register dependence.
 
 ### Parameters
 
 | Parameter | Default | Range | Purpose |
 |-----------|---------|-------|---------|
-| `pickup_d0` | 0.50 | 0.3-6.0 | Base capacitive gap |
-| `pickup_mix` | 1.0 | 0.0-1.0 | 1.0 = full constant-charge pickup |
-| `pickup_offset` | -0.10 | -0.5 to 0.5 | DC offset (asymmetry correction) |
+| `displacement_scale` | Per-note (DS_AT_C4=0.85) | 0.02-0.85 | Converts model units to physical y = x/d_0 |
+| `MAX_Y` | 0.90 | — | Safety clamp (y=1.0 is a singularity) |
+| `SENSITIVITY` | 1.8375 V | — | V_hv * C_0 / (C_0 + C_p) = 147 * 3/240 |
+| HPF corner | 2312 Hz | — | 1-pole HPF from pickup RC (R_total=287K, C=240pF) |
 
 ---
 
@@ -579,7 +592,7 @@ This can be approximated with an envelope follower on Stage 1's output that modu
 
 ### DC Block
 
-First-order HPF at 20 Hz after Stage 2. Removes residual DC from asymmetric clipping.
+Handled internally by the DK preamp's coupled MNA solver -- no separate DC block stage is needed. The DK method's circuit equations naturally account for DC operating points and coupling.
 
 ---
 
@@ -599,23 +612,28 @@ led_drive = max(0, lfo)  // half-wave rectified (LED only conducts forward)
 ### LDR Response (Asymmetric Attack/Release)
 
 ```
-if led_drive > ldr_state:
-    tau = 0.003  // 3ms attack (LED on -> resistance drops fast)
+// Exponential smoothing with asymmetric time constants
+if led_drive > ldr_envelope:
+    coeff = exp(-1 / (0.003 * sample_rate))  // 3ms attack (LED on -> resistance drops fast)
 else:
-    tau = 0.050  // 50ms release (LED off -> resistance recovers slowly)
+    coeff = exp(-1 / (0.050 * sample_rate))  // 50ms release (LED off -> resistance recovers slowly)
 
-alpha = dt / (tau + dt)
-ldr_state += alpha * (led_drive - ldr_state)
+ldr_envelope = led_drive + coeff * (ldr_envelope - led_drive)
 ```
 
 ### CdS Nonlinearity and Emitter Feedback Modulation
 
 ```
-// LDR resistance from CdS power-law response
-R_ldr = R_dark * pow(ldr_state + epsilon, -gamma)  // gamma ~ 0.7-0.9
+// LDR resistance from CdS log-interpolation response
+// Real CdS cells span ~4 decades (50 ohm fully lit to 1M ohm dark).
+// log(R) interpolates between log(R_max) and log(R_min) as drive increases,
+// with gamma controlling the knee of the response curve.
+drive = ldr_envelope.clamp(0, 1)
+log_r = log(R_max) + (log(R_min) - log(R_max)) * drive^gamma  // gamma = 1.1
+R_ldr = exp(log_r)    // R_min=50, R_max=1M
 
 // LDR path impedance: fb_junct -> Pin 1 -> 50K VIBRATO -> 18K -> LDR -> GND
-R_ldr_path = vibrato_pot * depth_setting + 18000 + R_ldr
+R_ldr_path = 18000 + 50000 * (1 - depth) + R_ldr
 
 // Emitter feedback: R-10 (56K) from output to fb_junct, Ce1 couples to emitter
 // LDR path shunts fb_junct to ground, diverting feedback away from emitter
@@ -637,6 +655,10 @@ The asymmetric attack/release creates a "choppy" effect: fast dips (3ms), slow r
 
 Because the tremolo modulates the preamp's emitter feedback (via the LDR shunt at fb_junct), it must be implemented INSIDE the preamp processing block (within the 2x oversampled domain), not as a separate post-preamp stage. The LDR state updates at the base sample rate, but the emitter feedback modulation applies per-sample at 2x rate.
 
+### Shadow Preamp Pump Cancellation
+
+R_ldr modulation at 5.63 Hz creates a ~4.5V pp pump at the preamp output via Ce1 transient dynamics (confirmed by SPICE). The pump has harmonics at 28-200+ Hz that overlap bass fundamentals -- no HPF can separate them without cutting bass. Solution: a second `DkState` ("shadow") runs in parallel with zero audio input but the same R_ldr modulation. Its output is pure pump. Subtracting the shadow output from the main output cancels all pump harmonics at every frequency. Pump level after subtraction: < -120 dBFS. CPU cost: ~60% more (the shadow DK solver converges faster with zero input).
+
 ### Parameters
 
 | Parameter | Default | Range | Notes |
@@ -655,14 +677,13 @@ In the real 200A, the 3K audio-taper volume potentiometer sits between the pream
 **Why placement matters:** At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the distortion character (more odd harmonics from the Class AB dead zone). This interaction between volume and power amp behavior is audible and contributes to the instrument's character at low volumes.
 
 ```
-// Audio taper: approximate log curve
-pot_position = user_volume_param  // 0.0 to 1.0
-audio_taper = pot_position * pot_position  // quadratic approximation of audio taper
-output = input * audio_taper
+// Audio taper: skewed range (display mapping) + squared multiplier (audio path)
+pot_position = user_volume_param  // 0.0 to 1.0 (FloatRange::Skewed, factor 2.0)
+output = input * pot_position * pot_position  // vol^2 in the audio path
 // -> feeds into power amplifier stage
 ```
 
-The `masterVolume` parameter default of 0.40 reflects the typical attenuation needed to bring the preamp's output level into a reasonable range. In the real instrument, the volume pot output is measured at 2-7 mV AC.
+The effective taper combines two stages: `FloatRange::Skewed` with factor 2.0 (which controls the DAW display/automation curve) plus the `vol * vol` squared multiplier in the audio path. The default volume of 0.63 produces an effective gain of ~0.40 (0.63^2). In the real instrument, the volume pot output is measured at 2-7 mV AC.
 
 ---
 
@@ -678,25 +699,36 @@ The real 200A has a ~18-20W quasi-complementary push-pull Class AB output stage:
 - Emitter degeneration: 0.47 ohm
 - Quiescent bias: ~10 mA
 
-### Minimal Model
+### Closed-Loop NR Feedback Solver
+
+The power amp is modeled as a closed-loop feedback amplifier solved by Newton-Raphson iteration:
 
 ```
+// Feedback parameters (from schematic: R-31=15K, R-30=220 ohm)
+A_ol = 19000          // open-loop gain
+beta = 0.01445        // feedback fraction (R-30 / (R-30 + R-31))
+loop_gain T = 275     // A_ol * beta
+closed_loop_gain = A_ol / (1 + T) ≈ 69  // 1 + R-31/R-30 = 37 dB
+
 // Crossover distortion (dead zone between NPN/PNP conduction)
-if abs(input) < crossover_width:
-    ratio = abs(input) / crossover_width
-    output = copysign(abs(input) * ratio^2, input)
-else:
-    output = input
+crossover_vt = 0.013     // thermal voltage; effective dead zone ≈ ±2*vt = ±26 mV
 
-// Rail clipping (asymmetric)
-output = soft_clip(output, +rail_limit, -rail_limit)
+// Rail clipping: tanh soft-clip (gradual saturation, not hard clamp)
+headroom = 22.0  // ±24V rails minus ~2V Vce_sat
+output = headroom * tanh(input / headroom)
 ```
 
-At mf single notes, the power amp is nearly transparent -- the preamp dominates tonal character. At ff polyphonic, the power amp's own clipping adds compression and saturation. With aging, bias drifts, increasing crossover distortion (odd harmonics from the dead zone).
+The crossover model uses a C-infinity Gaussian gain function instead of a piecewise linear dead zone:
+```
+cross_gain = q + (1 - q) * (1 - exp(-v^2 / vt^2))
+```
+where `q = QUIESCENT_GAIN = 0.1` is the residual gain at zero signal (from quiescent bias current) and `vt = 0.013` is the thermal voltage. At v=0 the gain is q (not zero -- physically realistic); at |v| >> vt the gain approaches 1.0. This smooth function avoids NR convergence issues and produces the correct odd-harmonic crossover distortion signature.
 
-### Implementation Priority
+The code models crossover/feedback behavior generically, not specific transistor parameters (the TIP35C/TIP36C reference describes the real instrument).
 
-For a first release, a simple soft-clip at the output is sufficient. The crossover distortion model adds realism for vintage/aged presets but is not essential for the core Wurlitzer sound.
+At mf single notes, the power amp is nearly transparent -- the preamp dominates tonal character. At ff polyphonic, the power amp's tanh soft-clip adds compression and gradual saturation (Yeh/Abel/Smith 2007). With aging, bias drifts, increasing crossover distortion (odd harmonics from the dead zone).
+
+Audio taper volume control: `vol^2` (quadratic, skew +2.0), default position 0.63 (effective ~0.40).
 
 ---
 
@@ -712,17 +744,21 @@ The speaker HPF/LPF are physical limitations, not design choices. Expose a "Spea
 
 Two variable-cutoff biquad filters (Direct Form II Transposed) with smoothed coefficient updates:
 
-1. **Open-baffle bass rolloff:** 2nd-order HPF at 85-100 Hz, Q=0.75
-   - Combination of speaker resonance + open baffle cancellation (~12 dB/oct)
+1. **Open-baffle bass rolloff:** Single HPF at 95 Hz, Q=0.75
+   - Physics-motivated: combination of speaker resonance + open baffle cancellation (~12 dB/oct)
    - Attenuates C2 fundamental (65 Hz) by ~5.4 dB
    - Leaves H2 (130 Hz) nearly untouched
    - Significant contributor to bass register H2/H1 balance
 
-2. **Cone breakup rolloff:** 2nd-order LPF at 7-8 kHz, Q=0.707 (Butterworth)
+2. **Cone breakup rolloff:** 2nd-order LPF at 7500 Hz, Q=0.707 (Butterworth)
    - Set above the preamp Miller LPFs to avoid stacking
    - Models speaker cone's own breakup, not preamp bandwidth
 
-At "Bypass" position: both filters disabled (flat passthrough). Intermediate positions interpolate cutoff frequencies toward their extremes (HPF → 20 Hz, LPF → 20 kHz).
+At "Bypass" position: both filters disabled (flat passthrough). Intermediate positions interpolate cutoff frequencies toward their extremes (HPF -> 20 Hz, LPF -> 20 kHz).
+
+Hammerstein nonlinearity: normalized polynomial `(x + a2*x^2 + a3*x^3) / (1 + a2 + a3)` so that y(1)=1, plus tanh Xmax limiting.
+
+Thermal voice coil compression: a slow power envelope follower (5s time constant) tracks the average input power and applies gain reduction via `thermal_gain = 1 / (1 + thermal_coeff * thermal_state.sqrt())`. This models the real speaker's voice coil heating under sustained loud passages, producing 0.5-2 dB of gradual compression.
 
 ### Coefficient Computation
 
@@ -734,13 +770,7 @@ Use the Audio EQ Cookbook (Robert Bristow-Johnson) formulas. Recompute coefficie
 
 ### Soft Limiter
 
-```
-output = tanh(input)  // or equivalent soft saturation
-```
-
-At the signal levels reaching this point (after volume control), this is effectively transparent -- providing only safety limiting against extreme transients. The tanh function at typical signal levels (< 0.5) introduces less than 0.04 dB of compression.
-
-**Note:** The volume control is a separate stage before the power amp (see Section 12), not combined with the output limiter.
+**Not implemented as a separate stage** -- limiting is handled by the power amp's tanh soft-clip (headroom=22V, see Section 13) and the speaker's tanh Xmax saturation. No additional output limiter is needed because these two stages already provide gradual saturation at the correct points in the signal chain.
 
 ### Stereo Output
 
@@ -780,7 +810,7 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 | After preamp Stage 1 | ~0.5-11 | Depends on gain/feedback |
 | After preamp Stage 2 | ~0.5-6.5 | Clipped by soft-limits |
 | After preampGain (0.7x) | ~0.35-4.5 | Into tremolo/speaker |
-| After masterVol (0.40x) | ~0.14-1.80 | Into output |
+| After masterVol (0.63, effective ~0.40x) | ~0.14-1.80 | Into power amp |
 
 ### Input Drive (Historical)
 
@@ -870,7 +900,7 @@ The plugin must support at minimum: 44100, 48000, 88200, 96000 Hz. Higher rates 
 
 At 96 kHz base rate, the 2x oversampler runs at 192 kHz. This provides even more anti-aliasing headroom. The preamp's harmonics have more room before Nyquist. No special handling needed -- just recompute filter coefficients.
 
-At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp input to ~1903+ Hz, so even H12 of a 4 kHz input (48 kHz) is below the 44.1 kHz Nyquist of the oversampled domain. Adequate.
+At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The pickup RC HPF limits the preamp input to ~2312+ Hz, so even H12 of a 4 kHz input (48 kHz) is below the 44.1 kHz Nyquist of the oversampled domain. Adequate.
 
 ---
 
@@ -880,10 +910,11 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The C20 HPF limits the preamp 
 
 | ID | Name | Module | Min | Max | Default | Purpose |
 |----|------|--------|-----|-----|---------|---------|
-| 0 | Volume | output | 0% | 100% | 40% | Audio taper attenuator between preamp and power amp |
-| 1 | Tremolo Rate | tremolo | 0.1 | 15.0 Hz | 5.63 Hz | LFO frequency |
-| 2 | Tremolo Depth | tremolo | 0% | 100% | 50% | Modulation amount |
-| 3 | Speaker Character | speaker | 0% | 100% | 100% | 0%=bypass (full range), 100%=authentic (HPF+LPF+waveshaper) |
+| "volume" | Volume | output | 0% | 100% | 63% | Audio taper attenuator between preamp and power amp |
+| "trem_rate" | Tremolo Rate | tremolo | 0.1 | 15.0 Hz | 5.63 Hz | LFO frequency |
+| "trem_depth" | Tremolo Depth | tremolo | 0% | 100% | 50% | Modulation amount |
+| "speaker" | Speaker Character | speaker | 0% | 100% | 0% | 0%=bypass (full range), 100%=authentic (HPF+LPF+waveshaper) |
+| "mlp" | MLP Corrections | dsp | off / on | — | on | Per-note ML corrections for freq/decay/displacement |
 
 All other parameters (decay rates, pickup gap, preamp component values, mode amplitudes, velocity curve, attack overshoot) are hardcoded internally based on physical circuit analysis and OBM calibration data. They are not exposed to the user.
 
@@ -902,9 +933,9 @@ All other parameters (decay rates, pickup gap, preamp component values, mode amp
 | Miller pole 1 (open-loop) | ~23 Hz | Stage 1 dominant pole (C-3=100pF, Miller-multiplied) |
 | Miller pole 2 | ~81 kHz | Stage 2 (C-4=100pF, low Miller multiplication) |
 | Full-chain bandwidth | ~11800 Hz (no trem) / ~9700 Hz (trem bright) | Preamp-only ~15.5 kHz; full chain includes speaker rolloff |
-| DC block frequency | 20 Hz | Output DC removal |
-| Speaker HPF (authentic) | 85-100 Hz, Q=0.75 | Open-baffle resonance + bass cancellation |
-| Speaker LPF (authentic) | 7000-8000 Hz, Q=0.707 | Cone breakup |
+| DC block | N/A | Handled internally by DK preamp |
+| Speaker HPF (authentic) | 95 Hz, Q=0.75 | Open-baffle resonance + bass cancellation |
+| Speaker LPF (authentic) | 7500 Hz, Q=0.707 | Cone breakup |
 | Noise decay | 1/0.003 = 333 Hz | 3ms attack noise time constant |
 | Dwell sigma^2 | 64.0 | Gaussian dwell filter width (sigma=8.0) |
 | kNumModes | 7 | Modal oscillator mode count |
@@ -1101,21 +1132,20 @@ This is the most complex and sonically important stage. Component values and top
 4. Dynamic range verification (pp vs ff: target 20-30 dB)
 5. Polyphonic chord test (compression, intermodulation)
 
-### Phase 8: ML Correction (Partially Disabled, Needs Retrain)
+### Phase 8: ML Correction (v2 Deployed)
 
-Per-note MLP corrections run at note-on. Architecture: 2 inputs (pitch, velocity) -> 8 hidden -> 8 hidden -> 22 outputs. 294 parameters, <10 us inference, zero per-sample cost.
+Per-note MLP corrections run at note-on. Architecture: 2 inputs -> 8 hidden -> 8 hidden -> 11 outputs. 195 parameters, <10 us inference, zero per-sample cost.
 
-**v1 status (Feb 2026):** Two of four output groups disabled due to harmonic-vs-mode domain mismatch:
-- **DISABLED: amp_offsets_db** — MLP targets integer harmonics (H2 at 2xf0) but corrections are applied to physical modes at inharmonic ratios (mode 2 at 6.267xf0). Was undoing the plink fix and boosting mode 2 by +5.6 to +10.7 dB.
-- **DISABLED: ds_correction** — MLP learned 0.50 across MIDI 66-78, halving displacement and suppressing pickup bark by 3-6 dB.
-- **ACTIVE: freq_offsets_cents** — per-note mode frequency tuning (correct domain).
-- **ACTIVE: decay_offsets** — per-note mode decay adjustment (correct domain).
+**v2 (deployed Feb 2026):** Retrained with reduced outputs after v1 harmonic-vs-mode domain mismatch:
+- **Outputs [0:5]: freq_offsets** — per-note mode frequency tuning (cents)
+- **Outputs [5:10]: decay_offsets** — per-note mode decay adjustment (ratio)
+- **Output [10]: ds_correction** — displacement scale correction from H2/H1 ratio. Runtime clamp [0.7, 1.5].
 
-Plugin has BoolParam "MLP Corrections" (id="mlp") for real-time A/B testing. Currently sounds better with MLP OFF due to the disabled corrections leaving only minor freq/decay adjustments active.
+Plugin has BoolParam "MLP Corrections" (id="mlp", default ON) for real-time A/B testing.
 
-**v2 plan:** Retrain with reduced outputs (freq + decay + H2/H1-ratio-based ds_correction). See `memory/mlp-v2-plan.md`.
+Results: Freq 2.2 cents MAE, ds 0.16 MAE, best loss 0.158. 8 OBM training notes (MIDI 65-97, vel=80).
 
-1. Training data: 9 OBM gold-tier notes (MIDI 65-97, vel=80), SNR-filtered
+1. Training data: 8 OBM notes (MIDI 65-97, vel=80), SNR-filtered
 2. Weights baked into `mlp_weights.rs` (no external files needed)
 3. Corrections applied at note-on via `mlp_correction.rs`
 4. Outside training range: corrections fade to identity over 12 semitones
@@ -1229,8 +1259,8 @@ CLAP requires sample-accurate event processing. The process callback must:
 
 1. Split input events by timestamp
 2. Render audio in sub-blocks between events
-3. Handle note-on, note-off, note-choke, and param-value events
-4. Emit NOTE_END events when voices die
+3. Handle note-on and note-off events (note-choke and NOTE_END are NOT yet implemented)
+4. Handle param-value events via nih-plug's smoothed parameter framework
 
 ### Parameter Threading
 

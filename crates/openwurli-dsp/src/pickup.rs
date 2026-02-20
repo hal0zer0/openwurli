@@ -67,7 +67,7 @@ impl Pickup {
         }
     }
 
-    /// Override the displacement scale (default: 0.35).
+    /// Override the displacement scale (default: 0.70).
     /// Higher = tighter gap = more nonlinearity = more bark.
     pub fn set_displacement_scale(&mut self, scale: f64) {
         self.displacement_scale = scale;

@@ -130,7 +130,7 @@ This is consistent with the EP-Forum "6 dB gain boost" measurement — tremolo b
 - Without vibrato (LDR dark, Rldr_path ≈ 1M): gain = **6.0 dB (2.0x)**
 - With vibrato at maximum depth, bright phase (Rldr_path ≈ 19K): gain = **12.1 dB (4.0x)**
 - **Modulation range: 6.1 dB** — matches EP-Forum "6 dB gain boost" measurement exactly
-- Bandwidth decreases with gain: 9.9 kHz (no trem) → 8.3 kHz (trem bright), consistent with constant GBW
+- Bandwidth decreases with gain: ~11.8 kHz (no trem) → ~9.7 kHz (trem bright). GBW is NOT constant (scales with gain) -- captured by the DK MNA solver
 - Excessive depth causes rail clipping in the power amp (distortion at high vibrato settings is a known issue)
 - Typical depth in practice: 3-6 dB of gain modulation
 
@@ -168,6 +168,8 @@ The 3K audio pot is unusually low impedance for a volume control. This has impli
 **The volume pot is between the preamp (on the reed bar) and the power amp (on the main amp board).** The wiring runs from the reed bar preamp PCB through the volume pot to the amp board input via C-8 coupling capacitor.
 
 **DECISION: Model as real attenuator, not output gain.** The volume pot must sit between preamp and power amp in the plugin signal chain, not at the output. At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the character of the distortion (more odd harmonics from the dead zone). This interaction is audible and should be preserved. Implementation: audio-taper gain curve applied between preamp output and power amp input.
+
+**Volume taper implementation:** `gain = volume^2` (quadratic approximation of audio taper). The parameter UI uses a skew factor of 2.0 for display. Default volume is 0.63, giving effective gain of approximately 0.40 (-8 dB).
 
 ---
 
@@ -277,6 +279,7 @@ TR-7 = TR-8 = Wurlitzer part #142128
 
 | Ref | Value | Function |
 |-----|-------|----------|
+| R-30 | 220 Ω | Feedback ground-side resistor (with R-31 forms voltage divider) |
 | R-31 | 15K | Output-to-input negative feedback |
 | R-32 | 1.8K | Differential pair collector load (TR-7) |
 | R-33 | 1.8K | Differential pair collector load (TR-8) |
@@ -334,7 +337,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 | Aged bias (crossover) | Significant | Odd-harmonic "grittiness" at all levels |
 | Full volume + ff chords | Significant | Hard clipping, dense saturation |
 
-**For modeling purposes:** The power amplifier can be approximated as a clean gain stage with symmetric hard-clip limits at +/-19V (or +/-21V with measured rails). Adding optional crossover distortion modeling would capture the aged-instrument character. The power amp is NOT a major tonal contributor — the Wurlitzer's characteristic bark comes primarily from the pickup's 1/(1-y) nonlinearity, with the preamp's asymmetric soft-clipping adding further coloring at high dynamics.
+**For modeling purposes:** The power amplifier is modeled as a closed-loop negative feedback amplifier. The R-31/R-30 feedback network (loop gain ≈ 275) linearizes the output at normal signal levels. Distortion becomes significant only near the ±22V supply rails. The power amp is NOT a major tonal contributor — the Wurlitzer's characteristic bark comes primarily from the pickup's 1/(1-y) nonlinearity, with the preamp's asymmetric soft-clipping adding further coloring at high dynamics.
 
 ---
 
@@ -391,7 +394,7 @@ Multiple factors contribute to the bass rolloff:
 2. **Open baffle dipole cancellation:** Below the baffle step frequency (~100-150 Hz for the ~24" ABS lid), front and rear waves partially cancel. This adds an additional ~6 dB/oct rolloff.
 3. **Combined effect:** Approximately **18 dB/octave** rolloff below ~80 Hz (speaker resonance 12 dB/oct + open baffle dipole 6 dB/oct)
 
-**Current model uses three cascaded HPF sections:**
+**Original design (not implemented) proposed three cascaded HPF sections:**
 - **HPF1** at 150 Hz, Q=0.75: Models cone resonance and mechanical rolloff (Fs). The slightly underdamped Q produces the mild resonant bump near the rolloff frequency. 150 Hz is typical for a small 4x8" oval ceramic-magnet driver.
 - **HPF2** at 100 Hz, Q=0.707: Models the open-baffle front/rear wave cancellation (dipole effect). Butterworth Q for a smooth transition with no resonant peak.
 - **HPF3** at 70 Hz, Q=0.5: Models the radiation impedance rolloff. Below ka=1 (~1090 Hz for a ~5cm effective piston radius), acoustic radiation resistance falls as f². The overdamped Q captures the gradual onset of this regime.
@@ -412,7 +415,7 @@ The HPF1 near 150 Hz naturally creates a resonant bump that can boost harmonics 
 
 ### 5.4 Current Speaker Model
 
-The current implementation (`speaker.rs`) uses a Hammerstein architecture: static polynomial waveshaper followed by linear filters.
+The current implementation (`speaker.rs`) uses a generalized Hammerstein-like architecture: static polynomial waveshaper -> tanh excursion limiter -> thermal voice coil compression -> linear filters (HPF + LPF).
 
 **Linear filters:**
 
@@ -424,7 +427,7 @@ LPF: 2nd-order lowpass at 7500 Hz, Q = 0.707 (Butterworth, cone breakup + voice 
 > **Note:** An earlier design (documented below in §5.4.1) specified three cascaded HPFs at 150/100/70 Hz to separately model cone resonance, dipole cancellation, and radiation impedance. The implementation simplified this to a single HPF at 95 Hz, which provides adequate bass rolloff (~12 dB/oct, ~3-4 dB down at C2 fundamental of 65 Hz) without the over-aggressive filtering of the three-HPF cascade.
 
 **Nonlinear features:**
-- **Normalized Hammerstein polynomial waveshaper:** `y = (x + a2*x^2 + a3*x^3) / (1 + a2 + a3)` where a2 = 0.2 (BL force factor asymmetry, generates even harmonics) and a3 = 0.6 (Kms suspension hardening, generates odd harmonics). Coefficients scale with the Speaker Character parameter. The normalization by `(1 + a2 + a3)` ensures `y(±1) = ±1`, preserving harmonic generation ratios without boosting peak levels.
+- **Normalized Hammerstein polynomial waveshaper:** `y = (x + a2*x^2 + a3*x^3) / (1 + a2 + a3)` where a2 = 0.2 (BL force factor asymmetry, generates even harmonics) and a3 = 0.6 (Kms suspension hardening, generates odd harmonics). Coefficients scale with the Speaker Character parameter. The normalization by `(1 + a2 + a3)` ensures `y(1) = 1`, preserving peak positive level. The even-order term (a2) introduces asymmetry, so `y(-1) != -1`.
 - **Cone excursion limiting (Xmax):** `tanh()` soft saturation after the polynomial, modeling the physical excursion limits of the spider and surround. At normal levels (|x| < 0.5): < 8% compression. At ff chords (|x| > 1.0): graceful saturation.
 - **Thermal voice coil compression:** Slow envelope follower (tau = 5.0 s) reduces gain under sustained loud signal, modeling the increase in voice coil DC resistance as the coil heats up.
 
@@ -483,7 +486,9 @@ This cascade produced ~30 dB/oct rolloff below 70 Hz, which proved too aggressiv
 rate = 5.63 Hz (pure sine LFO; real twin-T oscillator's mild THD not modeled)
 waveform: phase.sin(), half-wave rectified for LED drive
 
-// LDR time constants (VTL5C3-like)
+// LDR time constants (VTL5C3-like, tuned to match perceived tremolo
+// character of real 200A instruments. CdS time constants vary significantly
+// between individual devices; datasheet: 2.5 ms / 18-35 ms)
 attack_tau = 3.0 ms  (fast on)
 release_tau = 50 ms   (slow off)
 
@@ -503,39 +508,51 @@ R_series = 18K + 50K * (1 - depth)
 
 **Status: IMPLEMENTED** in `power_amp.rs`.
 
-The power amp is modeled as a fixed-gain stage with crossover distortion and tanh soft-clipping, operating on normalized signal levels:
+The power amp is modeled as a **closed-loop negative feedback amplifier** using
+a per-sample Newton-Raphson solver. This captures the linearizing effect of the
+R-31/R-30 feedback network, which reduces distortion by the loop gain factor.
 
-```rust
-// power_amp.rs — signal flow
-let amplified = input * VOLTAGE_GAIN;            // VOLTAGE_GAIN = 69.0
+**Feedback equation (solved per sample):**
 
-// Crossover dead zone: Hermite smoothstep (C1 continuous)
-if abs(amplified) < crossover_width {             // crossover_width = 0.026
-    let ratio = abs / crossover_width;
-    let smooth = ratio * ratio * (3.0 - 2.0 * ratio);  // Hermite smoothstep
-    output = sign(amplified) * abs * smooth;
-}
+    y = f(A_ol × (input − β × y))
 
-// Soft-clip at rails: tanh models gradual transistor saturation
-// Real output transistors compress smoothly, not brick-wall
-output = tanh(output / HEADROOM);                // HEADROOM = 22.0
-```
+where f() = output stage crossover + tanh rail saturation.
 
-**Key parameters:**
+**Forward path nonlinearities (inside the loop):**
 
-| Parameter | Value | Derivation |
-|-----------|-------|------------|
-| VOLTAGE_GAIN | 69.0 | 1 + R31/R30 = 1 + 15K/220Ω = 69x (37 dB) |
-| crossover_width | 0.026 | ~26mV physical dead zone (same as old 0.003 × 8/2.5, rescaled to new voltage domain) |
-| HEADROOM | 22.0 | ±24V rails − 2V Vce_sat = ±22V effective swing |
-| Smoothstep formula | ratio^2 * (3 - 2*ratio) | Hermite, C1 continuous at the boundary |
-| Soft-clip | tanh(out / HEADROOM) | Models gradual transistor saturation (Yeh, Abel, Smith 2007) |
+1. **Crossover distortion:** Gaussian dead zone with quiescent bias floor.
+   `gain(v) = q + (1−q) × (1 − exp(−v²/vt²))`
+   - At v=0: gain = q (quiescent transconductance, not zero)
+   - At |v| >> vt: gain → 1.0
 
-**Effective gain ratio:** 69/22 = 3.136x, nearly identical to the previous 8/2.5 = 3.2x (delta: −0.17 dB). Output levels are preserved by the `tanh()` normalization, but the crossover distortion now operates at the correct absolute signal level.
+2. **Rail saturation:** `rail × tanh(v_cross / rail)` — tanh models gradual
+   transistor saturation into ±22V rails.
 
-The tanh soft-clip replaces the previous `.clamp()` hard clip. At moderate levels (< 50% of rail), deviation from linear is < 0.25 dB. At full rail voltage, tanh(1.0) = 0.762 provides ~2.4 dB of compression. This prevents the flat-topped waveforms that were producing 0.0 dBFS digital clipping at C4/C5 v=127.
+**Parameters:**
 
-The crossover distortion produces odd harmonics that become audible at low volume settings where the signal amplitude is comparable to the dead zone width. At moderate to high volumes, the crossover is imperceptible.
+| Constant | Value | Derivation |
+|----------|-------|------------|
+| `OPEN_LOOP_GAIN` | 19,000 | Diff pair (68×) × VAS (300×) × output (0.95×) |
+| `FEEDBACK_BETA` | 0.01445 | R30/(R30+R31) = 220/(220+15K) |
+| `HEADROOM` | 22.0 V | ±24V supply − 2V Vce_sat |
+| `CROSSOVER_VT` | 0.013 V | Lightly aged bias (5−7 mA) |
+| `QUIESCENT_GAIN` | 0.1 | Output stage gain at zero signal |
+| `NR_MAX_ITER` | 8 | Convergence: 2−4 iterations typical |
+| `NR_TOL` | 1e-6 V | Convergence threshold |
+
+**Derived quantities:**
+
+- Closed-loop gain: A_ol/(1 + A_ol×β) = 19000/275.6 = **69×** (37 dB)
+- Loop gain T = A_ol×β = **275** at DC → THD reduced by 49 dB
+- At crossover (zero signal): T_zero = A_ol×β×q = **27.5** → 29 dB linearization
+
+The power amp output is normalized to [-1.0, +1.0] by dividing by HEADROOM (22V). The effective closed-loop gain from input to output is thus 69/22 = 3.14x.
+
+The feedback loop keeps the output tracking the input linearly until the
+output stage saturates at the ±22V rails. At moderate levels (<90% of rail),
+deviation from linear is <0.1%. This eliminates the polyphonic intermodulation
+artifacts that plagued the earlier open-loop model, where tanh compression on
+the summed signal created audible buzz on polyphonic material.
 
 ### 7.3 Speaker Model
 
@@ -544,16 +561,13 @@ The crossover distortion produces odd harmonics that become audible at low volum
 Variable speaker emulation with bypass-to-authentic range. The plugin exposes a "Speaker Character" knob that blends from bypass (flat, linear passthrough) to authentic (full Hammerstein nonlinearity + HPF + LPF).
 
 At "authentic" position (character = 1.0):
-- HPF1: 150 Hz, Q=0.75 (cone resonance Fs)
-- HPF2: 100 Hz, Q=0.707 (open-baffle dipole cancellation)
-- HPF3: 70 Hz, Q=0.5 (radiation impedance rolloff)
-- Combined ~30 dB/oct rolloff below 70 Hz
+- HPF: 95 Hz, Q=0.75 (combined cone resonance + open-baffle rolloff)
 - LPF: 7500 Hz, Q=0.707 (Butterworth)
-- Polynomial waveshaper: a2=0.2 (BL asymmetry), a3=0.6 (Kms hardening)
-- tanh Xmax limiting for cone excursion
-- Thermal voice coil compression (tau=5.0s)
+- Hammerstein polynomial: (x + 0.2x² + 0.6x³) / 1.8, normalized
+- tanh Xmax soft stop
+- Thermal voice coil compression (tau = 5.0s)
 
-At "bypass" position (character = 0.0): flat linear passthrough (HPF1 20 Hz, HPF2 10 Hz, HPF3 5 Hz, LPF 20 kHz, no nonlinearity). Intermediate positions interpolate logarithmically.
+At "bypass" position (character = 0.0): flat linear passthrough (HPF 20 Hz, LPF 20 kHz, no nonlinearity). Intermediate positions interpolate logarithmically.
 
 Possible refinements:
 - Add mild midrange presence peak (1-3 kHz) from speaker's natural response
@@ -569,7 +583,7 @@ Per-voice processing (oscillator, pickup)
   -> [Tremolo modulates emitter feedback via LDR shunt at fb_junct]
   -> Preamp (with tremolo-modulated gain via R-10/Ce1 emitter feedback)
   -> Volume control (3K pot)
-  -> Power amplifier (quasi-complementary, symmetric clip at +-19V)
+  -> Power amplifier (closed-loop negative feedback, tanh soft-clip at ±22V)
   -> Speaker model (HPF + LPF)
   -> Output
 ```

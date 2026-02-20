@@ -507,6 +507,8 @@ Using f_c = 2312 Hz:
 
 ### 5.3 C20 HPF at TR-1 Base
 
+> **Model note:** C20 (220 pF) is documented here for completeness, but it was a **206A component, NOT present on the 200A** being modeled. The C20 HPF at 1903 Hz is therefore **not implemented in the code**. Only the pickup RC HPF at 2312 Hz (Section 5.1) is active in OpenWurli's signal chain.
+
 C20 (220 pF) is a shunt capacitor to ground at the **TR-1 base node** (after the .022 uF coupling cap). It forms a high-pass filter with the bias network resistance R-2‖R-3:
 
 ```
@@ -524,6 +526,8 @@ GroupDIY's PRR states "270pFd against 380K is a bass-cut at 1,750Hz." The "380K"
 This is too high relative to the nominal 1903 Hz (or GroupDIY's ~1750 Hz claim), so r_pi should NOT be included in the C20 HPF calculation. This makes physical sense: C20 shunts to ground from the node where R-2 and R-3 are also connected, and the signal must pass through the C20/R_bias HPF before reaching the transistor's base-emitter junction. The base input impedance loads the node for the signal but does not participate in the C20-to-ground shunt path.
 
 ### 5.4 Combined Frequency Response
+
+> **Model note:** Since C20 is a 206A component not present on the 200A (see Section 5.3 note), the combined second-order response described below does **not** apply to the modeled instrument. The OpenWurli pickup uses only the single first-order pickup RC HPF at 2312 Hz.
 
 The pickup RC HPF (~2312 Hz) and C20 HPF (~1903 Hz) are in cascade, giving approximately:
 
