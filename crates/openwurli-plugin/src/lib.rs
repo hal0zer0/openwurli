@@ -438,3 +438,172 @@ impl Vst3Plugin for OpenWurli {
 
 nih_export_clap!(OpenWurli);
 nih_export_vst3!(OpenWurli);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_plugin() -> OpenWurli {
+        OpenWurli::default()
+    }
+
+    #[test]
+    fn test_plugin_instantiates() {
+        let plugin = make_plugin();
+        assert_eq!(plugin.voices.len(), MAX_VOICES);
+        assert_eq!(plugin.sample_rate, 44100.0);
+    }
+
+    #[test]
+    fn test_params_have_correct_defaults() {
+        let params = OpenWurliParams::default();
+        assert!((params.volume.default_plain_value() - 0.63).abs() < 0.01);
+        assert!((params.tremolo_rate.default_plain_value() - 5.63).abs() < 0.01);
+        assert!((params.tremolo_depth.default_plain_value() - 0.5).abs() < 0.01);
+        assert!((params.speaker_character.default_plain_value()).abs() < 0.01);
+        assert!(params.mlp_enabled.default_plain_value());
+    }
+
+    #[test]
+    fn test_note_on_allocates_voice() {
+        let mut plugin = make_plugin();
+        plugin.note_on(60, 0.8, true);
+        let active = plugin
+            .voices
+            .iter()
+            .filter(|s| s.state == VoiceState::Held)
+            .count();
+        assert_eq!(active, 1);
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .find(|s| s.state == VoiceState::Held)
+                .unwrap()
+                .midi_note,
+            60
+        );
+    }
+
+    #[test]
+    fn test_note_off_releases_voice() {
+        let mut plugin = make_plugin();
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(60);
+        let releasing = plugin
+            .voices
+            .iter()
+            .filter(|s| s.state == VoiceState::Releasing)
+            .count();
+        assert_eq!(releasing, 1);
+    }
+
+    #[test]
+    fn test_polyphony_up_to_max_voices() {
+        let mut plugin = make_plugin();
+        for note in 48..48 + MAX_VOICES as u8 {
+            plugin.note_on(note, 0.8, true);
+        }
+        let active = plugin
+            .voices
+            .iter()
+            .filter(|s| s.state == VoiceState::Held)
+            .count();
+        assert_eq!(active, MAX_VOICES);
+    }
+
+    #[test]
+    fn test_voice_stealing_when_full() {
+        let mut plugin = make_plugin();
+        // Fill all voices
+        for note in 48..48 + MAX_VOICES as u8 {
+            plugin.note_on(note, 0.8, true);
+        }
+        // One more should steal the oldest
+        plugin.note_on(96, 0.8, true);
+        let active = plugin
+            .voices
+            .iter()
+            .filter(|s| s.state == VoiceState::Held)
+            .count();
+        assert_eq!(active, MAX_VOICES);
+        // The stolen slot should have a steal_voice for crossfade
+        let stolen_slot = plugin.voices.iter().find(|s| s.midi_note == 96).unwrap();
+        assert!(stolen_slot.steal_voice.is_some());
+    }
+
+    #[test]
+    fn test_note_clamps_to_valid_range() {
+        let mut plugin = make_plugin();
+        // Notes below MIDI_LO should be clamped, not panic
+        plugin.note_on(0, 0.8, true);
+        plugin.note_on(127, 0.8, true);
+        let active = plugin
+            .voices
+            .iter()
+            .filter(|s| s.state == VoiceState::Held)
+            .count();
+        assert_eq!(active, 2);
+    }
+
+    #[test]
+    fn test_render_subblock_produces_output() {
+        let mut plugin = make_plugin();
+        plugin.note_on(60, 0.8, true);
+        let len = 256;
+        plugin.render_subblock(0, len);
+        // After a note-on, output buffer should have non-zero samples
+        let energy: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+        assert!(
+            energy > 0.0,
+            "render_subblock produced silence after note-on"
+        );
+    }
+
+    #[test]
+    fn test_reset_clears_all_voices() {
+        let mut plugin = make_plugin();
+        plugin.note_on(60, 0.8, true);
+        plugin.note_on(72, 0.8, true);
+        plugin.reset();
+        let active = plugin
+            .voices
+            .iter()
+            .filter(|s| s.state != VoiceState::Free)
+            .count();
+        assert_eq!(active, 0);
+    }
+
+    #[test]
+    fn test_render_no_notes_is_near_silent() {
+        let mut plugin = make_plugin();
+        let len = 512;
+        plugin.render_subblock(0, len);
+        let peak: f64 = plugin.out_buf[..len]
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0, f64::max);
+        // With no notes, output should be near-silent (preamp idle noise only)
+        assert!(peak < 0.01, "idle output peak {peak} too high");
+    }
+
+    #[test]
+    fn test_higher_velocity_louder() {
+        let mut plugin_soft = make_plugin();
+        let mut plugin_loud = make_plugin();
+        let len = 2048;
+
+        plugin_soft.note_on(60, 0.3, true);
+        plugin_soft.render_subblock(0, len);
+        let energy_soft: f64 = plugin_soft.out_buf[..len].iter().map(|s| s * s).sum();
+
+        plugin_loud.note_on(60, 1.0, true);
+        plugin_loud.render_subblock(0, len);
+        let energy_loud: f64 = plugin_loud.out_buf[..len].iter().map(|s| s * s).sum();
+
+        assert!(
+            energy_loud > energy_soft,
+            "ff ({energy_loud}) should be louder than pp ({energy_soft})"
+        );
+    }
+}
