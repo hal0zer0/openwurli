@@ -1193,8 +1193,11 @@ fn write_calibrate_csv(path: &str, rows: &[CalibrateRow]) {
 fn cmd_sensitivity(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,54,60,66,72,78,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
-    let ds_values: Vec<f64> =
-        parse_csv_list(args, "--ds-range", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85");
+    let ds_values: Vec<f64> = parse_csv_list(
+        args,
+        "--ds-range",
+        "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85",
+    );
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let scale_mode_raw = parse_flag_str(args, "--scale-mode", "track");
@@ -1327,7 +1330,7 @@ fn cmd_render_poly(args: &[String]) {
         }
 
         individual_bufs.push(voice_buf);
-        eprint!("  Voice {}: {} vel={}\n", i, midi_note_name(note), vel);
+        eprintln!("  Voice {}: {} vel={}", i, midi_note_name(note), vel);
     }
 
     // Process through oversampled preamp (shared — this is where intermod happens)
@@ -1415,10 +1418,7 @@ fn cmd_render_poly(args: &[String]) {
     let res_rms = rms_db(res_window);
 
     // Peak and write WAV files
-    let peak = final_output
-        .iter()
-        .map(|x| x.abs())
-        .fold(0.0f64, f64::max);
+    let peak = final_output.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
     let peak_dbfs = if peak > 0.0 {
         20.0 * peak.log10()
     } else {
@@ -1426,11 +1426,7 @@ fn cmd_render_poly(args: &[String]) {
     };
 
     let scale = if normalize {
-        if peak > 0.7 {
-            0.7 / peak
-        } else {
-            1.0
-        }
+        if peak > 0.7 { 0.7 / peak } else { 1.0 }
     } else {
         1.0
     };
@@ -1445,8 +1441,7 @@ fn cmd_render_poly(args: &[String]) {
 
     // Write main poly output
     {
-        let mut writer =
-            hound::WavWriter::create(output_path, spec).expect("Failed to create WAV");
+        let mut writer = hound::WavWriter::create(output_path, spec).expect("Failed to create WAV");
         for sample in &final_output {
             let scaled = (sample * scale * max_val as f64).round() as i32;
             writer
@@ -1487,16 +1482,17 @@ fn cmd_render_poly(args: &[String]) {
     );
     println!("  Velocities: {:?}", velocities);
     println!("  Duration:  {duration:.1}s");
-    println!("  Volume:    {volume:.3} (audio taper: {:.3})", volume * volume);
+    println!(
+        "  Volume:    {volume:.3} (audio taper: {:.3})",
+        volume * volume
+    );
     println!("  Speaker:   {speaker_char:.1}");
     println!("  Peak:      {peak_dbfs:.1} dBFS");
     println!();
     println!("  === INTERMOD ANALYSIS (0.2-2.0s window) ===");
     println!("  Shared chain (poly):  peak={poly_peak:.1} dBFS  rms={poly_rms:.1} dBFS");
     println!("  Separate chains (sum): peak={sep_peak:.1} dBFS  rms={sep_rms:.1} dBFS");
-    println!(
-        "  Residual (intermod):  peak={res_peak:.1} dBFS  rms={res_rms:.1} dBFS"
-    );
+    println!("  Residual (intermod):  peak={res_peak:.1} dBFS  rms={res_rms:.1} dBFS");
     println!(
         "  Intermod ratio:       {:.1} dB below signal",
         poly_rms - res_rms
@@ -1589,9 +1585,7 @@ fn cmd_render_midi(args: &[String]) {
                         if v == 0 {
                             events.push(TimedEvent {
                                 time_s,
-                                evt: MidiEvt::NoteOff {
-                                    note: key.as_int(),
-                                },
+                                evt: MidiEvt::NoteOff { note: key.as_int() },
                             });
                         } else {
                             events.push(TimedEvent {
@@ -1606,9 +1600,7 @@ fn cmd_render_midi(args: &[String]) {
                     midly::MidiMessage::NoteOff { key, .. } => {
                         events.push(TimedEvent {
                             time_s,
-                            evt: MidiEvt::NoteOff {
-                                note: key.as_int(),
-                            },
+                            evt: MidiEvt::NoteOff { note: key.as_int() },
                         });
                     }
                     midly::MidiMessage::Controller { controller, value } => {
@@ -1707,17 +1699,14 @@ fn cmd_render_midi(args: &[String]) {
                     age_counter += 1;
                     note_on_count += 1;
 
-                    let slot_idx = voices
-                        .iter()
-                        .position(|s| !s.active)
-                        .unwrap_or_else(|| {
-                            voices
-                                .iter()
-                                .enumerate()
-                                .min_by_key(|(_, s)| s.age)
-                                .map(|(i, _)| i)
-                                .unwrap_or(0)
-                        });
+                    let slot_idx = voices.iter().position(|s| !s.active).unwrap_or_else(|| {
+                        voices
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, s)| s.age)
+                            .map(|(i, _)| i)
+                            .unwrap_or(0)
+                    });
 
                     let seed = (note as u32)
                         .wrapping_mul(2654435761)
@@ -1742,10 +1731,9 @@ fn cmd_render_midi(args: &[String]) {
                             .iter_mut()
                             .filter(|s| s.active && s.midi_note == note)
                             .min_by_key(|s| s.age)
+                            && let Some(ref mut v) = slot.voice
                         {
-                            if let Some(ref mut v) = slot.voice {
-                                v.note_off();
-                            }
+                            v.note_off();
                         }
                     }
                 }
@@ -1760,10 +1748,9 @@ fn cmd_render_midi(args: &[String]) {
                                 .iter_mut()
                                 .filter(|s| s.active && s.midi_note == held_note)
                                 .min_by_key(|s| s.age)
+                                && let Some(ref mut v) = slot.voice
                             {
-                                if let Some(ref mut v) = slot.voice {
-                                    v.note_off();
-                                }
+                                v.note_off();
                             }
                         }
                     }
@@ -1774,13 +1761,12 @@ fn cmd_render_midi(args: &[String]) {
 
         // Clean up silent voices
         for slot in &mut voices {
-            if slot.active {
-                if let Some(ref v) = slot.voice {
-                    if v.is_silent() {
-                        slot.active = false;
-                        slot.voice = None;
-                    }
-                }
+            if slot.active
+                && let Some(ref v) = slot.voice
+                && v.is_silent()
+            {
+                slot.active = false;
+                slot.voice = None;
             }
         }
 
@@ -1858,7 +1844,10 @@ fn cmd_render_midi(args: &[String]) {
     println!("  Notes:     {note_on_count} note-ons");
     println!("  Peak poly: {peak_polyphony} voices");
     println!("  Duration:  {total_duration:.1}s");
-    println!("  Volume:    {volume:.3} (audio taper: {:.3})", volume * volume);
+    println!(
+        "  Volume:    {volume:.3} (audio taper: {:.3})",
+        volume * volume
+    );
     println!("  Speaker:   {speaker_char:.1}");
     if no_poweramp {
         println!("  Power amp: BYPASSED");
