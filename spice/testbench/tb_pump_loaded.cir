@@ -1,0 +1,42 @@
+* Wurlitzer 200A — Loaded vs Unloaded Pump Comparison
+* ===================================================
+* The volume pot (3K) loads the preamp output via R-9 (6.8K).
+* This changes the DC operating point and the pump magnitude.
+* Compare: no load, 100K load (typical DI box), 3K load (volume pot)
+
+.title Pump: Loaded vs Unloaded
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* === TEST 1: Unloaded (no volume pot, DI directly at out node) ===
+Vcc1  vcc1 0  DC 15
+Xpre1  in1 out1 vcc1 0 fb1  wurli_preamp
+Vin1  in1 0  DC 0
+Bldr1  fb1 0  I = V(fb1) / (1e6 - 981e3 * (0.5 + 0.5*sin(2*3.14159265*5.63*time)))
+Rload1  out1 0  1MEG
+
+* === TEST 2: Loaded with volume pot at 40% ===
+Vcc2  vcc2 0  DC 15
+Xpre2  in2 out2 vcc2 0 fb2  wurli_preamp
+Vin2  in2 0  DC 0
+Bldr2  fb2 0  I = V(fb2) / (1e6 - 981e3 * (0.5 + 0.5*sin(2*3.14159265*5.63*time)))
+Rpot_top2  out2  wiper2  1800
+Rpot_bot2  wiper2 0  1200
+
+* === TEST 3: Volume pot -> C-8 -> power amp ===
+Vcc3  vcc3 0  DC 15
+Xpre3  in3 out3 vcc3 0 fb3  wurli_preamp
+Vin3  in3 0  DC 0
+Bldr3  fb3 0  I = V(fb3) / (1e6 - 981e3 * (0.5 + 0.5*sin(2*3.14159265*5.63*time)))
+Rpot_top3  out3  wiper3  1800
+Rpot_bot3  wiper3 0  1200
+C8_3  wiper3  pamp_in3  4.7U
+R31_3  pamp_in3 0  15K
+
+.tran 100U 2 1.0 100U
+
+.print TRAN V(out1) V(out2) V(wiper2) V(pamp_in3)
+
+.end

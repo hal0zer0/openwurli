@@ -1,0 +1,22 @@
+* Wurlitzer 200A — Emit1 and Coll1 during tremolo pump
+* Measure just these two internal nodes during R_ldr cycling
+
+.title Pump Internal Nodes
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+Vcc  vcc 0  DC 15
+Xpre  in_sig out vcc 0 fb_junct  wurli_preamp
+Vin  in_sig 0  DC 0
+
+* Behavioral LDR: sweeps 19K to 1M at 5.63 Hz
+Bldr  fb_junct 0  I = V(fb_junct) / (1e6 - 981e3 * (0.5 + 0.5*sin(2*3.14159265*5.63*time)))
+
+.tran 100U 2 1.0 100U
+
+* Only emit1 and coll1
+.print TRAN V(Xpre.emit1) V(Xpre.coll1)
+
+.end

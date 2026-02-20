@@ -1,0 +1,40 @@
+* Wurlitzer 200A — Volume Pot DC Effect
+* ======================================
+* Compare operating points with and without volume pot.
+* Key question: does the pot change the internal DC bias?
+
+.title Pump: Pot DC Effect
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* === Without pot, R_ldr = 1M ===
+Vcc1 vcc1 0 DC 15
+Xpre1 in1 out1 vcc1 0 fb1 wurli_preamp
+Vin1 in1 0 DC 0
+Rldr1 fb1 0 1MEG
+
+* === Without pot, R_ldr = 19K ===
+Vcc2 vcc2 0 DC 15
+Xpre2 in2 out2 vcc2 0 fb2 wurli_preamp
+Vin2 in2 0 DC 0
+Rldr2 fb2 0 19K
+
+* === With pot (3K), R_ldr = 1M ===
+Vcc3 vcc3 0 DC 15
+Xpre3 in3 out3 vcc3 0 fb3 wurli_preamp
+Vin3 in3 0 DC 0
+Rldr3 fb3 0 1MEG
+Rpot3 out3 0 3K
+
+* === With pot (3K), R_ldr = 19K ===
+Vcc4 vcc4 0 DC 15
+Xpre4 in4 out4 vcc4 0 fb4 wurli_preamp
+Vin4 in4 0 DC 0
+Rldr4 fb4 0 19K
+Rpot4 out4 0 3K
+
+.OP
+
+.end

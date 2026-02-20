@@ -3,6 +3,7 @@
 
 # AI agent configuration (private dev tooling)
 CLAUDE.md
+.claude/
 
 # OS files
 .DS_Store
@@ -36,10 +37,12 @@ midi/
 # Rendered schematic tiles (large PNGs, regenerate from PDF as needed)
 schematic_tiles/
 
-# External tools (cloned repos, not part of this project)
+# External tools (cloned repos, downloaded binaries)
 netlistify/
+tools/pulse-visualizer/
 
-# Reed renderer output WAVs (regenerate with cargo run)
+# Audio output (regenerable)
+*.wav
 tools/reed-renderer/output/
 
 # Market research (untracked, not part of the project deliverables)

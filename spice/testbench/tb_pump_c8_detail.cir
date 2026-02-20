@@ -1,0 +1,38 @@
+* Wurlitzer 200A — C-8 coupling cap pump suppression detail
+* =========================================================
+* Measure exactly what C-8 does to the tremolo pump.
+* Include the volume pot (3K audio taper, assume wiper at 50% = 1.5K)
+* Signal path: out -> volume_pot -> C-8 -> R-31 (15K) || R-28 (10K) || R-29 (1K)
+
+.title C-8 Pump Suppression Detail
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+Vcc  vcc 0  DC 15
+Xpre  in_sig out vcc 0 fb_junct  wurli_preamp
+Vin  in_sig 0  DC 0
+
+* Behavioral LDR: sweeps 19K to 1M at 5.63 Hz
+Bldr  fb_junct 0  I = V(fb_junct) / (1e6 - 981e3 * (0.5 + 0.5*sin(2*3.14159265*5.63*time)))
+
+* Volume pot model (3K audio taper, wiper at ~40% = 1.2K from ground)
+* Top of pot at preamp out, wiper taps a voltage divider
+* Simplified: R_top (1.8K) and R_bottom (1.2K)
+Rpot_top  out  vol_wiper  1800
+Rpot_bot  vol_wiper 0  1200
+
+* C-8 coupling cap
+C8  vol_wiper  after_c8  4.7U
+
+* Power amp input impedance: R-28 (10K) series, then diff pair base
+* For pump analysis, approximate as R-31 (15K feedback) to ground
+* plus the diff pair's high input impedance
+R31_load  after_c8 0  15K
+
+.tran 100U 2 1.0 100U
+
+.print TRAN V(out) V(vol_wiper) V(after_c8)
+
+.end

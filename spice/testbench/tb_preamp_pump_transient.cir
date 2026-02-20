@@ -1,0 +1,60 @@
+* Wurlitzer 200A Preamp — Tremolo Pump Transient Analysis
+* ======================================================
+* Simulate tremolo R_ldr cycling and measure:
+*   V(out) — preamp output (DC-coupled, before volume pot)
+*   V(after_c8) — after C-8 coupling cap into R-31 (power amp input)
+*   V(fb_junct) — feedback junction
+*   V(emit1) — TR-1 emitter
+*
+* This shows the REAL waveform: is the DC swing blocked by C-8?
+
+.title Preamp Tremolo Pump Transient
+
+.include ../models/transistors.lib
+.include ../models/diodes.lib
+.include ../subcircuits/preamp.cir
+
+* Supply
+Vcc  vcc 0  DC 15
+
+* Instantiate preamp
+Xpre  in_sig out vcc 0 fb_junct  wurli_preamp
+
+* No audio — ground input
+Vin  in_sig 0  DC 0
+
+* === LDR modulation ===
+* Model R_ldr as a B-source resistor driven by a sine wave.
+* R_ldr swings from 19K (bright, sin=1) to 1M (dark, sin=0).
+* Use a half-wave rectified sine to model the LED/LDR response.
+*
+* LED drive: half-wave rectified sine at 5.63 Hz
+* R_ldr = R_min when LED brightest, R_max when LED off
+* Log-space interpolation: log(R) = log(R_max) - drive * (log(R_max) - log(R_min))
+*
+* Simplified: linear sweep between extremes for worst-case analysis
+* R_ldr = 19K + (1M - 19K) * 0.5 * (1 - sin(2*pi*5.63*time))
+*       = 509.5K + 490.5K * sin(2*pi*5.63*time) ... wait, need to go the right way
+*
+* For a clean analysis: just sweep between 19K and 1M with a sine at 5.63 Hz
+* drive = 0.5 + 0.5*sin(2*pi*5.63*t)  [0..1 range]
+* R_ldr = 19K when drive=1, 1M when drive=0
+* R_ldr = 1M - 981K * drive = 1M - 981K * (0.5 + 0.5*sin(2*pi*5.63*t))
+
+* Use behavioral resistor for LDR
+Bldr  fb_junct 0  I = V(fb_junct) / (1e6 - 981e3 * (0.5 + 0.5*sin(2*3.14159265*5.63*time)))
+
+* === C-8 coupling cap and power amp input ===
+* C-8 (4.7 MFD) from preamp output to power amp input
+* R-31 (15K) as feedback resistor provides the DC path (to output = 0V at DC)
+* R-28 (10K) series input resistor
+* Simplified: C-8 into R-31||R_in
+C8   out  after_c8  4.7U
+R31  after_c8 0  15K
+
+* Transient: 2 seconds, let circuit settle for 500ms
+.tran 100U 2 0 100U
+
+.print TRAN V(out) V(after_c8) V(fb_junct) V(Xpre.emit1) V(Xpre.coll1)
+
+.end
