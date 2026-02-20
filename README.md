@@ -19,8 +19,8 @@ The signal chain:
 3. **Hammer model** — Gaussian dwell filter, register-dependent onset ramp, impact noise burst
 4. **DK method preamp** — coupled 8-node Modified Nodal Analysis with Newton-Raphson solving, modeling the 200A's two-stage direct-coupled NPN amplifier
 5. **Tremolo** — LDR feedback modulation inside the preamp loop (timbral, not just volume)
-6. **Power amplifier** — Class AB with crossover distortion and rail clipping
-7. **Speaker cabinet** — variable HPF/LPF with Hammerstein polynomial nonlinearity
+6. **Power amplifier** — closed-loop negative feedback NR solver with Gaussian crossover distortion and tanh soft-clip rail saturation
+7. **Speaker cabinet** — HPF/LPF with Hammerstein polynomial nonlinearity, tanh excursion limiting, and thermal voice coil compression
 
 ## Features
 
@@ -77,10 +77,11 @@ cargo test --workspace
 
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
-| Volume | 0-100% | 40% | Attenuator between preamp and power amp (audio taper) |
+| Volume | 0-100% | 63% | Attenuator between preamp and power amp (audio taper) |
 | Tremolo Rate | 0.1-15.0 Hz | 5.63 Hz | LFO rate (stock 200A: 5.63 Hz) |
 | Tremolo Depth | 0-100% | 50% | Modulation depth (0 = off) |
-| Speaker Character | 0-100% | 100% | 0% = flat bypass, 100% = authentic cabinet response |
+| Speaker Character | 0-100% | 0% | 0% = flat bypass, 100% = authentic cabinet response |
+| MLP Corrections | off/on | on | Per-note corrections trained on real Wurlitzer recordings |
 
 ## Documentation
 
@@ -94,6 +95,7 @@ Detailed technical documentation is in [`docs/`](docs/):
 - [Pickup System](docs/pickup-system.md) — electrostatic pickup physics
 - [Reed and Hammer Physics](docs/reed-and-hammer-physics.md) — modal synthesis parameters
 - [Calibration and Evaluation](docs/calibration-and-evaluation.md) — test methodology and targets
+- [Parameter Tuning Guide](docs/parameter-tuning-guide.md) — parameter interactions and calibration workflow
 - [SPICE-Rust Mapping](docs/spice-rust-mapping.md) — SPICE-to-Rust translation reference
 - [Schematic Source](docs/SCHEMATIC_SOURCE.md) — how to obtain the Wurlitzer 200A schematic
 
