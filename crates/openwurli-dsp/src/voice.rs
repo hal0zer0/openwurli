@@ -177,7 +177,7 @@ impl Voice {
         displacement_scale: Option<f64>,
     ) -> Vec<f64> {
         let noise_seed = (midi_note as u32).wrapping_mul(2654435761);
-        let mut voice = Voice::note_on(midi_note, velocity, sample_rate, noise_seed, true);
+        let mut voice = Voice::note_on(midi_note, velocity, sample_rate, noise_seed, false);
         if let Some(scale) = displacement_scale {
             voice.set_displacement_scale(scale);
         }

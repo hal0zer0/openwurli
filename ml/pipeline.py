@@ -131,10 +131,10 @@ def stage_compute_residuals(args):
     with open(os.path.join(base_dir, "model_harmonics.json")) as f:
         model_features = json.load(f)
 
-    inputs, targets, mask, weights, note_ids = assemble_dataset(
+    inputs, targets, mask, weights, note_ids, filter_stats = assemble_dataset(
         real_features, model_features)
 
-    print_dataset_summary(inputs, targets, mask, weights, note_ids)
+    print_dataset_summary(inputs, targets, mask, weights, note_ids, filter_stats)
 
     output_dir = os.path.join(base_dir, "ml_data")
     os.makedirs(output_dir, exist_ok=True)
@@ -158,8 +158,9 @@ def stage_train(args):
     n_val = val_data[0].shape[0]
     print(f"  Train: {n_train}, Val: {n_val}")
 
-    hidden = getattr(args, 'hidden', 32)
-    model = WurliMLP(n_inputs=2, n_hidden=hidden, n_outputs=22)
+    hidden = getattr(args, 'hidden', 8)
+    from train_mlp import N_OUTPUTS
+    model = WurliMLP(n_inputs=2, n_hidden=hidden, n_outputs=N_OUTPUTS)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"\nModel: {n_params} parameters (hidden={hidden})")
 
@@ -219,7 +220,7 @@ def main():
                         help="Stop after this stage (default: 5, use 7 for full pipeline)")
     parser.add_argument("--train", action="store_true",
                         help="Run through stage 7 (train + export)")
-    parser.add_argument("--hidden", type=int, default=32,
+    parser.add_argument("--hidden", type=int, default=8,
                         help="MLP hidden layer size (for stage 6)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show what would be done without executing")

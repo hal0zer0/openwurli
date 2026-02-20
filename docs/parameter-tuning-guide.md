@@ -11,8 +11,8 @@ speaker saturation.
 
 | Parameter | Location | Current | Role |
 |-----------|----------|---------|------|
-| DS_AT_C4 | tables.rs:253 | 0.70 | Pickup displacement anchor at C4 |
-| DS clamp | tables.rs:259 | [0.02, 0.80] | Physical limit on displacement |
+| DS_AT_C4 | tables.rs:253 | 0.85 | Pickup displacement anchor at C4 |
+| DS clamp | tables.rs:259 | [0.02, 0.85] | Physical limit on displacement |
 | DS exponent | tables.rs:258 | 0.65 | Compliance-to-displacement curve shape |
 | TARGET_DB | tables.rs:544 | -13.0 | Absolute output level target |
 | VOICING_SLOPE | tables.rs:545 | -0.04 | Treble roll-off (dB/semitone above C4) |
@@ -86,7 +86,7 @@ Measurement window: 100-400ms of a 500ms render.
 cargo run -p preamp-bench -- calibrate \
     --notes 36,40,44,48,52,56,60,64,68,72,76,80,84 \
     --velocities 40,80,127 \
-    --ds-at-c4 0.70 \
+    --ds-at-c4 0.85 \
     --volume 0.40 --speaker 1.0 \
     --zero-trim \
     --output /tmp/calibrate.csv
@@ -100,7 +100,7 @@ Iterates over a range of DS_AT_C4 values, runs calibrate at each.
 cargo run -p preamp-bench -- sensitivity \
     --notes 36,48,54,60,66,72,78,84 \
     --velocities 40,80,127 \
-    --ds-range 0.50,0.55,0.60,0.65,0.70,0.75,0.80 \
+    --ds-range 0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85 \
     --scale-mode track \
     --output /tmp/sensitivity.csv
 ```
@@ -108,7 +108,7 @@ cargo run -p preamp-bench -- sensitivity \
 Scale modes:
 - `track` (default): Override DS + keep current trim → "how much trim error remains?"
 - `zero-trim`: Override DS + zero trim → "what's the natural imbalance?"
-- `freeze`: Original DS=0.70 + current trim → "raw level change from DS alone"
+- `freeze`: Original DS=0.85 + current trim → "raw level change from DS alone"
 
 Grid: 7 DS × 8 notes × 3 velocities = 168 renders. ~90 seconds.
 
@@ -151,7 +151,7 @@ Based on today's lessons, now automated via `calibrate`/`sensitivity`:
 
 2. **Find optimal DS** (sensitivity sweep)
    ```bash
-   cargo run -p preamp-bench -- sensitivity --ds-range 0.60,0.65,0.70,0.75,0.80 --zero-trim
+   cargo run -p preamp-bench -- sensitivity --ds-range 0.60,0.65,0.70,0.75,0.80,0.85 --zero-trim
    python tools/analyze_calibration.py /tmp/sensitivity.csv
    ```
    - Script reports optimal DS (minimizes register spread) + suggested trim anchors

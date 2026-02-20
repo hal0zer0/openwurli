@@ -70,19 +70,27 @@ def masked_huber_loss(pred, target, mask, weights, delta=5.0):
     return torch.tensor(0.0)
 
 
-def load_data(data_path, no_split=False):
+def load_data(data_path, no_split=False, mask_decay_h3=False):
     """Load and preprocess training data.
 
     Returns train/val split as torch tensors.
     If no_split=True (for small datasets), train=val=all data.
+    If mask_decay_h3=True, zero out the decay_H3 mask (too noisy to train on).
     """
     d = np.load(data_path)
     inputs = d['inputs']    # (N, 2) already normalized [0,1]
-    targets = d['targets']  # (N, 22)
-    mask = d['mask']        # (N, 22) bool
+    targets = d['targets']  # (N, 11)
+    mask = d['mask']        # (N, 11) bool
     weights = d['weights']  # (N,)
 
     n_targets = targets.shape[1]
+
+    # Optionally mask decay_H3 (index N_FREQ+1 = 6) — often too noisy
+    if mask_decay_h3:
+        h3_decay_idx = N_FREQ + 1  # decay_H3
+        n_masked = mask[:, h3_decay_idx].sum()
+        mask[:, h3_decay_idx] = False
+        print(f"  Masked decay_H3 (index {h3_decay_idx}): {n_masked} entries zeroed")
 
     # Clip extreme decay outliers (>20x ratio is certainly noise)
     decay_slice = slice(N_FREQ, N_FREQ + N_DECAY)
@@ -112,7 +120,7 @@ def load_data(data_path, no_split=False):
 
     n = len(inputs)
 
-    if no_split or n < 12:
+    if no_split or n < 20:
         # Small dataset: train on all data, use same data for validation monitoring
         all_idx = np.arange(n)
         print(f"  Small dataset ({n} points) — training on all data (no split)")
@@ -278,6 +286,10 @@ def main():
                         help="Random seed for reproducibility")
     parser.add_argument("--export", default="ml_data/model_weights.json",
                         help="Export path for weights JSON")
+    parser.add_argument("--no-split", action="store_true",
+                        help="Train on all data (no train/val split)")
+    parser.add_argument("--mask-decay-h3", action="store_true",
+                        help="Mask decay_H3 targets (too noisy)")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -285,7 +297,8 @@ def main():
 
     data_path = os.path.join(os.path.dirname(__file__), args.data)
     print(f"Loading data from {data_path}...")
-    train_data, val_data, target_means, target_stds = load_data(data_path)
+    train_data, val_data, target_means, target_stds = load_data(
+        data_path, no_split=args.no_split, mask_decay_h3=args.mask_decay_h3)
 
     n_train = train_data[0].shape[0]
     n_val = val_data[0].shape[0]

@@ -65,7 +65,7 @@ impl Default for OpenWurliParams {
 
             speaker_character: FloatParam::new(
                 "Speaker Character",
-                1.0,
+                0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(50.0))

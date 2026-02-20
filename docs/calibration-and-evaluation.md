@@ -287,9 +287,9 @@ The attack is the most perceptually important phase. It establishes the instrume
 
 **Per-mode decay:** Higher modes decay faster than the fundamental. The deployed code uses a power-law model:
 ```
-decay_rate_n = base_rate * (f_n / f_1) ^ 1.5
+decay_rate_n = base_rate * (f_n / f_1) ^ 2.0
 ```
-where `MODE_DECAY_EXPONENT = 1.5` and `MIN_DECAY_RATE = 3.0 dB/s` (bass floor). For C4 (f2/f1 = 6.3): mode 2 decays 6.3^1.5 = 15.7x faster than the fundamental. This is far more aggressive than the old fixed array `[1.00, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` which implied only 1.8x faster decay for mode 2. The power-law model produces the characteristic "bright attack darkening to sine-like tail" timbral evolution.
+where `MODE_DECAY_EXPONENT = 2.0` (Zener ∝ ω²) and `MIN_DECAY_RATE = 3.0 dB/s` (bass floor). The fundamental base rate uses OBM-calibrated `0.005 * f^1.22`. For C4 (f2/f1 = 6.3): mode 2 decays 6.3^2.0 = 39.7x faster than the fundamental. This is far more aggressive than the old fixed array `[1.00, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` which implied only 1.8x faster decay for mode 2. The power-law model produces the characteristic "bright attack darkening to sine-like tail" timbral evolution.
 
 ### 4.3 Timbral Darkening (Centroid Drift)
 
@@ -934,8 +934,8 @@ Best matches (octave 3-4): F4=11.6 dB, A4=14.8 dB, A3=15.4 dB. Upper register (o
 
 ### Actionable Findings
 
-1. **Decay rate 2-3x too fast in bass (octaves 3-4)**: Power law `3.0*(midi/48)^4.5` matches octaves 5-6 but overshoots bass. A3: model 6.9 dB/s vs real 3.2 dB/s (2.2x). Room reverb inflates OBM sustain by ~1-2 dB/s, so true deficit is ~1.5-2x.
+1. **Decay rate 2-3x too fast in bass (octaves 3-4)**: **DONE (2026-02-19).** Old `3.0*(midi/48)^4.5` replaced with OBM-calibrated frequency power law `0.005*f^1.22` (floored 3.0 dB/s). F#3 deficit: 1.6x→1.03x. All notes within ±30% of OBM.
 
-2. **H2/H1 too clean by 5-8 dB at mid-register**: A4 shows -8.2 dB real vs -16.1 dB synth (7.9 dB deficit). Confirms the MLP ds_correction saturation finding. Fix: increase DS_AT_C4 from 0.70 to ~0.85-0.90, then recalibrate trim and retrain MLP.
+2. **H2/H1 too clean by 5-8 dB at mid-register**: A4 shows -8.2 dB real vs -16.1 dB synth (7.9 dB deficit). Confirms the MLP ds_correction saturation finding. **DONE (2026-02-19):** DS_AT_C4 increased from 0.70 to 0.85 (+2.69 dB H2/H1 analytically), trim recalibrated. MLP retrain deferred.
 
 3. **Speaker LPF possibly too gentle for upper register**: Real treble centroids at 0.44-0.48x of f0 suggest the 4"x8" ceramic speakers roll off well below 7500 Hz. Caveat: partly mic/room coloration. Needs DI recording to confirm.

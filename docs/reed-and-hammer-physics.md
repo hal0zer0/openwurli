@@ -674,7 +674,7 @@ decay_rate_n / decay_rate_1 = f_n / f_1
 
 For mode 2 at f2/f1 = 6.3: mode 2 decays 6.3x faster than mode 1.
 
-**Deployed model:** The code uses a power-law decay model: `decay_rate_n = base_rate * (f_n / f_1)^1.5` where `MODE_DECAY_EXPONENT = 1.5`. A bass floor of `MIN_DECAY_RATE = 3.0 dB/s` prevents infinite sustain on the lowest notes. This produces much faster upper-mode decay than the old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` that was analyzed below.
+**Deployed model:** The code uses a power-law decay model: `decay_rate_n = base_rate * (f_n / f_1)^2.0` where `MODE_DECAY_EXPONENT = 2.0` (Zener thermoelastic ∝ ω²). The fundamental decay rate uses a frequency power law: `base_rate = 0.005 * f^1.22`, floored at `MIN_DECAY_RATE = 3.0 dB/s`. This produces much faster upper-mode decay than the old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` that was analyzed below.
 
 **Historical analysis (old fixed array vs constant-Q prediction):**
 
@@ -843,7 +843,7 @@ For constant Q: `decay_scale[n] = f_1 / f_n = 1 / mode_ratio[n]`
 
 The "recommended" column adds a floor from mounting losses (modes can't decay infinitely fast because mounting dissipation provides a minimum decay time independent of frequency). This produces the "bright attack darkening to sine-like tail" character universally described for the Wurlitzer.
 
-> **Superseded by power-law model:** The fixed recommended values above and the old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` were replaced by the power-law decay model: `decay_rate_n = base_rate * (f_n/f_1)^1.5` with `MODE_DECAY_EXPONENT = 1.5` and `MIN_DECAY_RATE = 3.0 dB/s`. See Section 5.2 for details. The power-law model produces fast upper-mode decay (e.g., mode 2 at C4 decays 15.8x faster than the fundamental) while naturally adapting to each note's frequency ratios.
+> **Superseded by power-law model:** The fixed recommended values above and the old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` were replaced by the power-law decay model: `decay_rate_n = base_rate * (f_n/f_1)^2.0` with `MODE_DECAY_EXPONENT = 2.0` (Zener ∝ ω²) and `MIN_DECAY_RATE = 3.0 dB/s`. The fundamental base rate uses `0.005 * f^1.22` (OBM-calibrated frequency power law). See Section 5.2 for details. The power-law model produces fast upper-mode decay (e.g., mode 2 at C4 decays ~39x faster than the fundamental) while naturally adapting to each note's frequency ratios.
 
 ---
 
@@ -897,7 +897,7 @@ The dominant nonlinearity in the Wurlitzer is the preamp, not the reed vibration
 
 ### 7.2 Decay Rates
 
-**STATUS: RESOLVED.** Power-law decay model (`decay_rate_n = base_rate * (f_n/f_1)^1.5`) implemented with `MODE_DECAY_EXPONENT = 1.5` and `MIN_DECAY_RATE = 3.0 dB/s`. The old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` was replaced.
+**STATUS: RESOLVED.** Power-law decay model (`decay_rate_n = base_rate * (f_n/f_1)^2.0`) implemented with `MODE_DECAY_EXPONENT = 2.0` (Zener ∝ ω²) and `MIN_DECAY_RATE = 3.0 dB/s`. Fundamental base rate uses OBM-calibrated `0.005 * f^1.22`. The old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` was replaced.
 
 | Issue | Evidence | Resolution |
 |-------|----------|------------|
