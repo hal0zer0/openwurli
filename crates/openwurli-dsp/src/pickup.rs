@@ -47,7 +47,7 @@ const SENSITIVITY: f64 = 1.8375;
 ///
 /// NOTE: This default is overridden per-note by tables::pickup_displacement_scale()
 /// in voice.rs. Only used if set_displacement_scale() is never called.
-const DISPLACEMENT_SCALE: f64 = 0.70;
+const DISPLACEMENT_SCALE: f64 = 0.85;
 
 /// Maximum allowed displacement fraction (safety clamp).
 /// The reed physically cannot touch the plate (y=1.0 is a singularity).
@@ -67,7 +67,7 @@ impl Pickup {
         }
     }
 
-    /// Override the displacement scale (default: 0.70).
+    /// Override the displacement scale (default: 0.85).
     /// Higher = tighter gap = more nonlinearity = more bark.
     pub fn set_displacement_scale(&mut self, scale: f64) {
         self.displacement_scale = scale;
@@ -119,8 +119,8 @@ mod tests {
         // At 10 kHz, the HPF is nearly unity gain.
         // Input: unit sine (displacement). After DISPLACEMENT_SCALE + nonlinear + SENSITIVITY + HPF,
         // output ≈ SENSITIVITY * (DISPLACEMENT_SCALE / (1 - DISPLACEMENT_SCALE)) * HPF_gain
-        // With DISPLACEMENT_SCALE = 0.70: y_peak = 0.70, y/(1-y) = 2.33
-        // Output ≈ 2.33 * 1.8375 * ~0.97 = 4.15 (peak, includes nonlinear asymmetry)
+        // With DISPLACEMENT_SCALE = 0.85: y_peak = 0.85, y/(1-y) = 5.67
+        // Output ≈ 5.67 * 1.8375 * ~0.97 = 10.1 (peak, includes nonlinear asymmetry)
         let sr = 44100.0;
         let mut pickup = Pickup::new(sr);
         let freq = 10000.0;
@@ -133,7 +133,7 @@ mod tests {
 
         let peak = buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
         assert!(peak > 1.0, "pickup output too low at 10kHz: {peak}");
-        assert!(peak < 5.5, "pickup output too high at 10kHz: {peak}");
+        assert!(peak < 12.0, "pickup output too high at 10kHz: {peak}");
     }
 
     #[test]
@@ -150,8 +150,8 @@ mod tests {
         pickup.process(&mut buf);
 
         let peak = buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        // With DISPLACEMENT_SCALE=0.70: Output ≈ 2.33 * 1.8375 * 0.043 = 0.184
-        assert!(peak < 0.25, "pickup should heavily attenuate 100Hz: {peak}");
+        // With DISPLACEMENT_SCALE=0.85: Output ≈ 5.67 * 1.8375 * 0.043 = 0.45
+        assert!(peak < 0.65, "pickup should heavily attenuate 100Hz: {peak}");
     }
 
     #[test]

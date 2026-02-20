@@ -688,13 +688,7 @@ For C4 at mf (using f_c = 2312 Hz for pickup RC):
 V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
 ```
 
-After the C20 HPF (1903 Hz) attenuates C4's 262 Hz by another factor of ~0.14:
-
-```
-V_preamp_input = 21 mV * 0.14 = ~2.9 mV
-```
-
-This is consistent with Brad Avenson's measurement of **2-7 mV AC at the volume pot output** (which is AFTER ~6 dB of preamp gain in the original 200A circuit -- SPICE-measured closed-loop gain is 2.0x/6.0 dB at 1 kHz; Avenson's "15 dB" figure was from his replacement preamp design, not the stock 200A), implying the preamp input signal is sub-millivolt to low millivolts.
+> **Note:** C20 (220 pF) is a 206A component, NOT present on the 200A. Without C20, the estimated preamp input at C4 mf is ~21 mV. Brad Avenson measured **2-7 mV AC at the volume pot output** (AFTER ~6 dB of preamp gain in the stock 200A — SPICE-measured closed-loop gain is 2.0x/6.0 dB at 1 kHz; Avenson's "15 dB" figure was from his replacement preamp design, not the stock 200A). The discrepancy between 21 mV preamp input and 2-7 mV post-gain output suggests the pickup signal estimate above is an upper bound, possibly due to smaller actual reed displacement or higher system capacitance than assumed.
 
 ---
 
@@ -981,7 +975,7 @@ The signal path is:
 
 ### Q1: Is the pickup truly in constant-charge regime at all audio frequencies?
 
-**No.** With f_c = 2312 Hz, bass fundamentals (55-260 Hz) are in the constant-voltage regime where signals are heavily attenuated. Mid-register notes (260-1000 Hz) are in the transition zone. Only treble notes above ~2-3 kHz approach constant-charge behavior. C20 (220 pF) at TR-1 base provides an independent HPF at ~1903 Hz that creates similar bass rolloff, partially masking the pickup's own RC dynamics.
+**No.** With f_c = 2312 Hz, bass fundamentals (55-260 Hz) are in the constant-voltage regime where signals are heavily attenuated. Mid-register notes (260-1000 Hz) are in the transition zone. Only treble notes above ~2-3 kHz approach constant-charge behavior. C20 (220 pF) at TR-1 base provides an independent HPF at ~1903 Hz on the 206A (NOT present on the 200A being modeled), which would create similar bass rolloff, partially masking the pickup's own RC dynamics.
 
 ### Q2: What is the actual per-reed capacitance?
 

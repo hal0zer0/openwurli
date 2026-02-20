@@ -9,10 +9,10 @@
 ///     are phase-coherent with the input signal by construction.
 ///   - Thermal voice coil compression: slow power-dependent gain reduction (~5s τ)
 ///
-/// Architecture: static polynomial waveshaper → linear filters (HPF + LPF).
-/// This is a textbook Hammerstein model. The polynomial is memoryless (no
-/// internal filters), so generated harmonics maintain natural phase relationships
-/// with the fundamental and with any existing harmonics from upstream stages.
+/// Architecture: polynomial waveshaper → tanh excursion limiter → thermal
+/// compression → linear filters (HPF + LPF). A generalized Hammerstein-like
+/// model. The polynomial is memoryless (no internal filters), so generated
+/// harmonics maintain natural phase relationships with the fundamental.
 ///
 /// "Speaker Character" parameter blends from bypass (flat, linear) to authentic
 /// (full nonlinearity + HPF + LPF). At character=0.0 all nonlinearity
@@ -91,8 +91,8 @@ impl Speaker {
     pub fn process(&mut self, input: f64) -> f64 {
         // 1. Static polynomial waveshaper (memoryless — phase-coherent harmonics)
         //    y = (x + a2·x² + a3·x³) / (1 + a2 + a3)
-        //    Normalization ensures y(±1) = ±1 (unity gain at full scale),
-        //    preserving harmonic generation ratios without boosting peak levels.
+        //    Normalization ensures y(1) = 1 (unity gain at positive full scale).
+        //    The even-order term (a2) introduces asymmetry, so y(-1) != -1.
         //    x² → H2, H4 (BL asymmetry, even harmonics)
         //    x³ → H3, H5 (Kms hardening, odd harmonics) + fundamental compression
         let x2 = input * input;

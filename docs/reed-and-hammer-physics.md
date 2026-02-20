@@ -691,7 +691,7 @@ For mode 2 at f2/f1 = 6.3: mode 2 decays 6.3x faster than mode 1.
 | 4 | 35.4 | 0.028 | 0.180 | 6.4x too slow |
 | 5 | 58.7 | 0.017 | 0.100 | 5.9x too slow |
 
-The power-law model (p=1.5) produces intermediate decay scaling: for C4 with f2/f1 = 6.3, mode 2 decays 6.3^1.5 = 15.8x faster than the fundamental. This is between the old fixed array (1.8x) and pure constant-Q (6.3x), accounting for mounting losses that partially equalize decay rates across modes (see Section 5.4).
+**Historical note:** An earlier power-law model (p=1.5) produced intermediate decay scaling: for C4 with f2/f1 = 6.3, mode 2 would decay 6.3^1.5 = 15.8x faster than the fundamental. The deployed model uses p=2.0 (see Section 5.2 above), giving 6.3^2.0 = 39.7x, which better matches the Zener-dominated loss scaling observed in OBM recordings.
 
 ### 5.3 Air Damping (Radiation Losses)
 

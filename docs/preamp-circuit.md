@@ -608,7 +608,7 @@ R_ldr=120K (the original netlist default) and R_ldr=19K respectively.
 
 **Closed-loop gain at key frequencies (SPICE-measured):**
 
-The emitter feedback (R-10 via Ce1) holds the gain at ~2.0x (6.0 dB) without tremolo. The -3 dB bandwidth is ~9.9 kHz. Above this, gain rolls off as the open-loop gain drops below the closed-loop target.
+The emitter feedback (R-10 via Ce1) holds the gain at ~2.0x (6.0 dB) without tremolo. The -3 dB bandwidth is ~11.8 kHz (full-chain; preamp-only is ~15.5 kHz). Above this, gain rolls off as the open-loop gain drops below the closed-loop target.
 
 | Frequency | Closed-Loop Gain | Closed-Loop (dB) | Notes |
 |-----------|-----------------|-------------------|-------|
@@ -617,10 +617,10 @@ The emitter feedback (R-10 via Ce1) holds the gain at ~2.0x (6.0 dB) without tre
 | 447 Hz | ~2.1 | ~6.4 | Peak gain (mild peaking) |
 | 1 kHz | 2.0 | 6.0 | SPICE reference measurement point |
 | 5 kHz | ~1.9 | ~5.6 | Still feedback-controlled |
-| 9.9 kHz | ~1.4 | ~3.0 | -3 dB point |
+| 9.9 kHz | ~1.4 | ~3.0 | -3 dB point (see Section 5.5.1 for SPICE-corrected values) |
 | 20 kHz | ~0.7 | ~-3.1 | Significant rolloff |
 
-With tremolo at bright peak (Rldr_path = 19K), gain increases to 4.0x (12.1 dB), and BW narrows to ~8.3 kHz (constant GBW product).
+With tremolo at bright peak (Rldr_path = 19K), gain increases to 4.0x (12.1 dB), and BW narrows to ~9.7 kHz. Note: GBW is NOT constant — it scales with gain (see Section 5.5.1).
 
 ### 5.7 Preamp Frequency Response
 
