@@ -37,13 +37,14 @@ pub fn dwell_time(velocity: f64, fundamental_hz: f64) -> f64 {
 ///   - D4 (294 Hz): 50% at cycle 1, 90% at cycle 2
 ///   - D6 (1175 Hz): near-instant (full by cycle 0-1)
 ///
-/// Formula: 2.0 periods at ff, 4.0 at pp, clamped to [2ms, 30ms].
-/// Matches OBM cycle-by-cycle data: 90% by cycle 2 across all registers.
-/// Longer than previous (1.5+1.5, 20ms) to reduce bass overshoot
-/// (3.47x → ~2.0-2.5x) by giving modal interference more time to average.
+/// Formula: 2.5 periods at ff, 5.0 at pp, clamped to [2ms, 30ms].
+/// The raised cosine 0.5*(1-cos(pi*t/T)) reaches 90% at 79.5% of T.
+/// With 2.5 periods at ff: 90% at 0.795 * 2.5 = cycle 1.99 ≈ cycle 2.
+/// Previous 2.0 periods reached 90% at cycle 1.6 — ~2 dB too much onset
+/// overshoot vs OBM recordings (model +2.1 dB mean excess).
 pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64) -> f64 {
     let period_s = 1.0 / fundamental_hz;
-    let periods = 2.0 + 2.0 * (1.0 - velocity);
+    let periods = 2.5 + 2.5 * (1.0 - velocity);
     (periods * period_s).clamp(0.002, 0.030)
 }
 
@@ -145,6 +146,11 @@ impl AttackNoise {
         self.remaining == 0
     }
 
+    /// Disable this noise burst (for A/B testing).
+    pub fn disable(&mut self) {
+        self.remaining = 0;
+    }
+
     fn next_noise(&mut self) -> f64 {
         self.rng_state = self
             .rng_state
@@ -211,20 +217,20 @@ mod tests {
             "mid onset ({mid:.4}) should exceed treble ({treble:.4})"
         );
 
-        // C2 ff: 2.0 periods of 65 Hz = 30.8ms, clamped to 30ms ceiling
+        // C2 ff: 2.5 periods of 65 Hz = 38.5ms, clamped to 30ms ceiling
         assert!(
             (bass - 0.030).abs() < 0.001,
             "C2 ff should be 30ms (clamped), got {bass:.4}"
         );
-        // Treble should hit the 2ms floor (2.0 periods of 1047 Hz = 1.9ms)
+        // C6 ff: 2.5 periods of 1047 Hz = 2.39ms (no longer clamped)
         assert!(
-            (treble - 0.002).abs() < 1e-6,
-            "C6 ff should clamp to 2ms, got {treble:.6}"
+            (treble - 2.5 / 1047.0).abs() < 0.0001,
+            "C6 ff should be ~2.4ms, got {treble:.6}"
         );
-        // C4 ff: 2.0/262 = 7.6ms (unclamped)
+        // C4 ff: 2.5/262 = 9.5ms (unclamped)
         assert!(
-            (mid - 2.0 / 262.0).abs() < 0.001,
-            "C4 ff should be ~7.6ms, got {mid:.4}"
+            (mid - 2.5 / 262.0).abs() < 0.001,
+            "C4 ff should be ~9.5ms, got {mid:.4}"
         );
     }
 
@@ -235,9 +241,9 @@ mod tests {
         let pp = onset_ramp_time(0.0, 262.0);
 
         assert!(pp > ff, "pp onset ({pp:.4}) should exceed ff ({ff:.4})");
-        // ff = 2.0 periods, pp = 4.0 periods
-        let expected_ff = 2.0 / 262.0;
-        let expected_pp = 4.0 / 262.0;
+        // ff = 2.5 periods, pp = 5.0 periods
+        let expected_ff = 2.5 / 262.0;
+        let expected_pp = 5.0 / 262.0;
         assert!((ff - expected_ff).abs() < 0.001);
         assert!((pp - expected_pp).abs() < 0.001);
     }

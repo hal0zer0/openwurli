@@ -229,6 +229,10 @@ pub struct DkPreamp {
     r_ldr: f64,
     g_ldr: f64,      // 1/r_ldr (current conductance)
     g_ldr_prev: f64, // g_ldr from previous timestep
+
+    // ── Shadow bypass (when tremolo depth ≈ 0, R_ldr is constant → shadow output is constant) ──
+    shadow_bypass: bool,
+    shadow_dc: f64, // Captured shadow output when transitioning to bypass
 }
 
 /// Per-instance mutable state for the DK solver.
@@ -352,6 +356,9 @@ impl DkPreamp {
             r_ldr: r_ldr_init,
             g_ldr: 1.0 / r_ldr_init,
             g_ldr_prev: 1.0 / r_ldr_init,
+
+            shadow_bypass: false,
+            shadow_dc: v_dc[OUT],
         }
     }
 
@@ -367,20 +374,20 @@ impl DkPreamp {
 
         let mut v_nl = [0.56, 0.66];
         for _iter in 0..100 {
-            let ic = [bjt_ic(v_nl[0]), bjt_ic(v_nl[1])];
-            let gm = [bjt_gm(v_nl[0]), bjt_gm(v_nl[1])];
+            let (ic0, gm0) = bjt_ic_gm(v_nl[0]);
+            let (ic1, gm1) = bjt_ic_gm(v_nl[1]);
             let f = [
-                v_nl[0] - p_dc[0] - k_dc[0][0] * ic[0] - k_dc[0][1] * ic[1],
-                v_nl[1] - p_dc[1] - k_dc[1][0] * ic[0] - k_dc[1][1] * ic[1],
+                v_nl[0] - p_dc[0] - k_dc[0][0] * ic0 - k_dc[0][1] * ic1,
+                v_nl[1] - p_dc[1] - k_dc[1][0] * ic0 - k_dc[1][1] * ic1,
             ];
             if f[0].abs() < 1e-12 && f[1].abs() < 1e-12 {
                 break;
             }
 
-            let j00 = 1.0 - k_dc[0][0] * gm[0];
-            let j01 = -k_dc[0][1] * gm[1];
-            let j10 = -k_dc[1][0] * gm[0];
-            let j11 = 1.0 - k_dc[1][1] * gm[1];
+            let j00 = 1.0 - k_dc[0][0] * gm0;
+            let j01 = -k_dc[0][1] * gm1;
+            let j10 = -k_dc[1][0] * gm0;
+            let j11 = 1.0 - k_dc[1][1] * gm1;
             let det = j00 * j11 - j01 * j10;
             let inv_det = 1.0 / det;
             let dv0 = inv_det * (j11 * f[0] - j01 * f[1]);
@@ -399,6 +406,29 @@ impl DkPreamp {
         let v_dc = mat_vec_mul(&s_dc, &dc_rhs);
 
         (ic, v_nl, v_dc, dc_rhs)
+    }
+
+    /// Enable/disable shadow preamp bypass.
+    /// When tremolo depth ≈ 0, R_ldr is constant so shadow output is constant DC.
+    /// Bypassing saves ~50% of DK solver cost.
+    pub fn set_shadow_bypass(&mut self, bypass: bool) {
+        if bypass && !self.shadow_bypass {
+            // Transitioning to bypass: capture current shadow output as constant
+            self.shadow_dc = self.shadow.v[OUT];
+            self.shadow_bypass = true;
+        } else if !bypass && self.shadow_bypass {
+            // Transitioning from bypass: re-sync shadow to current DC operating point
+            let w = self.two_w_half();
+            let (_, v_nl_dc, v_dc, _) = Self::full_dc_solve(&self.g_dc_base, &w, self.r_ldr);
+            self.shadow = DkState {
+                j_cin: self.g_cin * v_dc[BASE1],
+                cin_rhs_prev: self.g_cin * v_dc[BASE1],
+                v: v_dc,
+                i_nl: [bjt_ic(v_nl_dc[0]), bjt_ic(v_nl_dc[1])],
+                v_nl: v_nl_dc,
+            };
+            self.shadow_bypass = false;
+        }
     }
 
     /// Get w = two_w / 2 (the original DC source vector).
@@ -496,20 +526,20 @@ fn dk_step(
     let mut v_nl = state.v_nl;
 
     for _iter in 0..6 {
-        let ic = [bjt_ic(v_nl[0]), bjt_ic(v_nl[1])];
-        let gm = [bjt_gm(v_nl[0]), bjt_gm(v_nl[1])];
+        let (ic0, gm0) = bjt_ic_gm(v_nl[0]);
+        let (ic1, gm1) = bjt_ic_gm(v_nl[1]);
 
-        let f0 = v_nl[0] - p[0] - k00 * ic[0] - k01 * ic[1];
-        let f1 = v_nl[1] - p[1] - k10 * ic[0] - k11 * ic[1];
+        let f0 = v_nl[0] - p[0] - k00 * ic0 - k01 * ic1;
+        let f1 = v_nl[1] - p[1] - k10 * ic0 - k11 * ic1;
 
         if f0.abs() < 1e-9 && f1.abs() < 1e-9 {
             break;
         }
 
-        let j00 = 1.0 - k00 * gm[0];
-        let j01 = -k01 * gm[1];
-        let j10 = -k10 * gm[0];
-        let j11 = 1.0 - k11 * gm[1];
+        let j00 = 1.0 - k00 * gm0;
+        let j01 = -k01 * gm1;
+        let j10 = -k10 * gm0;
+        let j11 = 1.0 - k11 * gm1;
 
         let det = j00 * j11 - j01 * j10;
         if det.abs() < 1e-30 {
@@ -567,31 +597,46 @@ impl PreampModel for DkPreamp {
             input,
         );
 
-        // Run shadow solver with zero input — produces pure pump
-        let pump = dk_step(
-            &self.a_neg_base,
-            &self.two_w,
-            &self.s_base,
-            &self.s_fb_col,
-            self.s_fb_fb,
-            self.g_ldr,
-            self.g_ldr_prev,
-            &self.k,
-            &self.nv_sfb,
-            &self.sfb_ni,
-            self.g_cin,
-            self.gc_1pc,
-            self.c_cin,
-            &mut self.shadow,
-            0.0,
-        );
+        // Run shadow solver with zero input — produces pure pump.
+        // When shadow_bypass is active (tremolo off), R_ldr is constant so
+        // shadow output is constant DC — skip the expensive DK solve.
+        let pump = if self.shadow_bypass {
+            self.shadow_dc
+        } else {
+            dk_step(
+                &self.a_neg_base,
+                &self.two_w,
+                &self.s_base,
+                &self.s_fb_col,
+                self.s_fb_fb,
+                self.g_ldr,
+                self.g_ldr_prev,
+                &self.k,
+                &self.nv_sfb,
+                &self.sfb_ni,
+                self.g_cin,
+                self.gc_1pc,
+                self.c_cin,
+                &mut self.shadow,
+                0.0,
+            )
+        };
 
         // Update shared R_ldr tracking (after both steps used g_ldr_prev)
         self.g_ldr_prev = self.g_ldr;
 
         // Subtract pump: cancels all tremolo pump harmonics (28-200+ Hz)
         // without any frequency-domain filtering. Zero bass loss.
-        main_out - pump
+        let result = main_out - pump;
+
+        // NaN guard: if NR diverged, reset state and return silence.
+        // Branch never taken in normal operation.
+        if !result.is_finite() {
+            self.reset();
+            return 0.0;
+        }
+
+        result
     }
 
     fn set_ldr_resistance(&mut self, r_ldr_path: f64) {
@@ -621,6 +666,8 @@ impl PreampModel for DkPreamp {
         };
         self.shadow = state.clone();
         self.main = state;
+        self.shadow_dc = v_dc[OUT];
+        self.shadow_bypass = false;
     }
 }
 
@@ -654,10 +701,22 @@ fn bjt_ic(vbe: f64) -> f64 {
 }
 
 /// BJT transconductance: gm = (Is/Vt) * exp(Vbe/Vt).
+/// Only used in small-signal transfer function tests.
+#[cfg(test)]
 #[inline]
 fn bjt_gm(vbe: f64) -> f64 {
     let vbe_clamped = vbe.clamp(-1.0, VBE_MAX);
     IS_OVER_VT * (vbe_clamped / VT).exp()
+}
+
+/// BJT collector current AND transconductance from a single exp().
+/// Returns (ic, gm) = (Is*(e-1), Is/Vt*e) where e = exp(Vbe/Vt).
+/// Saves one exp() per BJT per NR iteration in the hot loop.
+#[inline]
+fn bjt_ic_gm(vbe: f64) -> (f64, f64) {
+    let vbe_clamped = vbe.clamp(-1.0, VBE_MAX);
+    let e = (vbe_clamped / VT).exp();
+    (IS * (e - 1.0), IS_OVER_VT * e)
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────

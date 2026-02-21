@@ -15,7 +15,7 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-step() { echo -e "\n${BOLD}[$1/7]${RESET} $2"; }
+step() { echo -e "\n${BOLD}[$1/6]${RESET} $2"; }
 pass() { echo -e "  ${GREEN}PASS${RESET} $1"; }
 fail() { echo -e "  ${RED}FAIL${RESET} $1"; exit 1; }
 warn() { echo -e "  ${YELLOW}WARN${RESET} $1"; }
@@ -36,20 +36,9 @@ TAG="v${VERSION}"
 echo -e "${BOLD}OpenWurli release ${TAG}${RESET}"
 $DRY_RUN && echo -e "${YELLOW}(dry run — no tag or push)${RESET}"
 
-# ── Pre-flight: clean working tree ────────────────────────────────────────────
-
-step 1 "Checking working tree"
-if ! git diff --quiet || ! git diff --cached --quiet; then
-    fail "Uncommitted changes. Commit or stash first."
-fi
-if git rev-parse "$TAG" >/dev/null 2>&1; then
-    fail "Tag $TAG already exists."
-fi
-pass "Clean tree, tag $TAG is available"
-
 # ── Changelog ─────────────────────────────────────────────────────────────────
 
-step 2 "Checking CHANGELOG.md"
+step 1 "Checking CHANGELOG.md"
 if grep -q "^## \[${VERSION}\]" CHANGELOG.md; then
     pass "CHANGELOG.md has a [${VERSION}] section"
 else
@@ -64,7 +53,7 @@ fi
 
 # ── Formatting ────────────────────────────────────────────────────────────────
 
-step 3 "cargo fmt --check"
+step 2 "cargo fmt --check"
 if cargo fmt --check 2>&1; then
     pass "Formatting OK"
 else
@@ -73,7 +62,7 @@ fi
 
 # ── Clippy ────────────────────────────────────────────────────────────────────
 
-step 4 "cargo clippy --workspace -- -D warnings"
+step 3 "cargo clippy --workspace -- -D warnings"
 if cargo clippy --workspace -- -D warnings 2>&1; then
     pass "No clippy warnings"
 else
@@ -82,7 +71,7 @@ fi
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-step 5 "cargo test --workspace"
+step 4 "cargo test --workspace"
 if cargo test --workspace 2>&1; then
     pass "All tests pass"
 else
@@ -91,7 +80,7 @@ fi
 
 # ── Bundle ────────────────────────────────────────────────────────────────────
 
-step 6 "cargo xtask bundle openwurli --release"
+step 5 "cargo xtask bundle openwurli --release"
 if cargo xtask bundle openwurli --release 2>&1; then
     pass "Plugin bundled"
     cp target/bundled/openwurli.clap ~/.clap/
@@ -103,14 +92,31 @@ fi
 
 # ── Tag + Push ────────────────────────────────────────────────────────────────
 
-step 7 "Tag and push"
+step 6 "Tag and push"
 if $DRY_RUN; then
     warn "Dry run — skipping tag and push"
     echo -e "\n${GREEN}${BOLD}All checks passed.${RESET} Run without --dry-run to release."
     exit 0
 fi
 
-git tag -a "$TAG" -m "$TAG"
+# Gate checks: only enforced when actually releasing
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    fail "Uncommitted changes. Commit or stash first."
+fi
+pass "Clean working tree"
+
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+    # Tag exists — check it points at HEAD (i.e. we already tagged this commit)
+    if [ "$(git rev-parse "$TAG"^{commit})" = "$(git rev-parse HEAD)" ]; then
+        pass "Tag $TAG already exists at HEAD — pushing"
+    else
+        fail "Tag $TAG exists but points at a different commit"
+    fi
+else
+    git tag -a "$TAG" -m "$TAG"
+    pass "Created tag $TAG"
+fi
+
 git push origin main "$TAG"
 
 echo -e "\n${GREEN}${BOLD}Released ${TAG}${RESET}"

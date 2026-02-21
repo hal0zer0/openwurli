@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.4] - 2026-02-21
+
+### Changed
+- Reed oscillator: multiplicative decay (`envelope *= decay_mult`) replaces
+  per-sample `exp(-α·n)` — saves 7 exp() calls per sample per voice
+- Reed jitter: scaled uniform noise replaces Box-Muller transform in render
+  loop — saves 3 transcendentals per mode per sample (ln + sqrt + cos).
+  OU filter ensures Gaussian-distributed output via CLT regardless.
+- DK preamp: fused `bjt_ic_gm()` computes one exp() for both collector
+  current and transconductance (was two separate exp() calls per BJT per
+  NR iteration)
+- Tremolo: cache `ln(r_min)` and `ln(r_max)` at construction instead of
+  recomputing per sample
+
+### Added
+- Shadow preamp bypass: skip shadow DK solver when tremolo depth < 0.001
+  (R_ldr is constant → shadow output is constant DC, saves ~50% preamp cost)
+- NaN guard in DK preamp: `process_sample()` checks `result.is_finite()`
+  and calls `reset()` on NR divergence to prevent permanent state corruption
 
 ### Fixed
 - Round-2 doc audit: fix stale BW numbers in preamp-circuit.md Section 5.6,
@@ -106,7 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/hal0zer0/openwurli/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/hal0zer0/openwurli/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/hal0zer0/openwurli/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/hal0zer0/openwurli/compare/v0.1.0...v0.1.1

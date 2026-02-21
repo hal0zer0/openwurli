@@ -268,14 +268,19 @@ Calibration target: `base_decay = 0.005 * freq^1.22` with MIN_DECAY_RATE = 3.0 d
 ### Per-Sample Rendering
 
 ```rust
+// Multiplicative decay: avoids per-sample exp() by precomputing decay_mult[m] = exp(-alpha/sr)
+// and maintaining a running envelope[m] *= decay_mult[m] each sample.
+// Mathematically identical to exp(-alpha*n) to ~15 decimal places.
 for each sample:
     signal = 0.0
     for each mode m:
-        envelope = amps[m] * exp(-decay_rates[m] * time)
-        // Add damper if releasing (see Section 21)
-        signal += envelope * sin(phases[m])
-        phases[m] += 2*PI * freqs[m] * dt
-        if phases[m] >= 2*PI { phases[m] -= 2*PI }
+        signal += amps[m] * envelope[m] * sin(phases[m]) * onset
+        phases[m] += 2*PI * freqs[m] * (1 + jitter_drift[m]) * dt
+    // Apply decay (multiply only — no transcendentals)
+    for each mode m:
+        envelope[m] *= decay_mult[m]
+        if damper_active && damper_ramp_done:
+            envelope[m] *= damper_mult[m]
 ```
 
 ### Phase Initialization
@@ -286,7 +291,7 @@ Reed starts at zero displacement (hammer imparts velocity, not displacement). Al
 onset_envelope(t) = 0.5 * (1 - cos(PI * t / T_onset))
 ```
 
-The onset ramp time `T_onset` is register-dependent: `(periods / f0).clamp(2ms, 30ms)`, where `periods` ranges from 2.0 (ff) to 4.0 (pp). The envelope shape is `cosine^(1 + (1-velocity))` -- ff gets a raised cosine, pp gets Hann-squared (softer onset). This models reed mechanical inertia -- bass reeds take more time to reach full amplitude than treble reeds.
+The onset ramp time `T_onset` is register-dependent: `(periods / f0).clamp(2ms, 30ms)`, where `periods` ranges from 2.5 (ff) to 5.0 (pp). The envelope shape is `cosine^(1 + (1-velocity))` -- ff gets a raised cosine, pp gets Hann-squared (softer onset). This models reed mechanical inertia -- bass reeds take more time to reach full amplitude than treble reeds. The raised cosine reaches 90% at 79.5% of T, so 2.5 periods at ff means 90% at cycle 2.0, matching OBM cycle-by-cycle analysis of the real 200A.
 
 ### Attack Overshoot: Let Physics Handle It
 
@@ -657,7 +662,9 @@ Because the tremolo modulates the preamp's emitter feedback (via the LDR shunt a
 
 ### Shadow Preamp Pump Cancellation
 
-R_ldr modulation at 5.63 Hz creates a ~4.5V pp pump at the preamp output via Ce1 transient dynamics (confirmed by SPICE). The pump has harmonics at 28-200+ Hz that overlap bass fundamentals -- no HPF can separate them without cutting bass. Solution: a second `DkState` ("shadow") runs in parallel with zero audio input but the same R_ldr modulation. Its output is pure pump. Subtracting the shadow output from the main output cancels all pump harmonics at every frequency. Pump level after subtraction: < -120 dBFS. CPU cost: ~60% more (the shadow DK solver converges faster with zero input).
+R_ldr modulation at 5.63 Hz creates a ~4.5V pp pump at the preamp output via Ce1 transient dynamics (confirmed by SPICE). The pump has harmonics at 28-200+ Hz that overlap bass fundamentals -- no HPF can separate them without cutting bass. Solution: a second `DkState` ("shadow") runs in parallel with zero audio input but the same R_ldr modulation. Its output is pure pump. Subtracting the shadow output from the main output cancels all pump harmonics at every frequency. Pump level after subtraction: < -120 dBFS.
+
+**Shadow bypass optimization:** When tremolo depth < 0.001, R_ldr is effectively constant, so the shadow output is constant DC. `DkPreamp::set_shadow_bypass(true)` captures the current shadow output as `shadow_dc` and skips the shadow DK solver entirely, saving ~50% of preamp CPU cost. On transition back to active tremolo, a `full_dc_solve()` re-syncs the shadow state.
 
 ### Parameters
 
@@ -1022,24 +1029,30 @@ When a voice is stolen:
 
 - All voice memory is pre-allocated (no `new`/`delete` in audio thread)
 - Voice rendering is the most CPU-intensive per-voice work
-- At 12 voices, each rendering 7 modes with sin() and exp() calls: ~84 trig calls per sample per voice maximum
-- Optimization: skip modes with amplitude < 1e-10
+- Multiplicative decay (`envelope *= decay_mult`) replaces per-sample `exp(-alpha*n)` — saves 7 exp/sample/voice
+- Jitter uses scaled uniform noise (1 LCG call/mode) instead of Box-Muller (2 LCG + ln + sqrt + cos per mode) — saves 3 transcendentals/mode/sample
+- BJT function fusion: `bjt_ic_gm()` computes one exp() for both ic and gm in the NR loop
+- Shadow preamp bypass: when tremolo depth < 0.001, shadow DK solver is skipped (constant DC output)
+- Tremolo ln() caching: `ln(r_min)`, `ln(r_max)` precomputed at construction
 - The oversampler and preamp run ONCE (shared), not per-voice
+- NaN guard in preamp: `result.is_finite()` check prevents permanent state corruption
 
 ### Per-Sample Budget (at 48 kHz)
 
 | Component | Operations per sample | Notes |
 |-----------|----------------------|-------|
-| 12 voices x 7 modes | ~84 sin, ~84 exp | Per-voice oscillator |
+| 12 voices x 7 modes | ~84 sin, ~84 multiply | Per-voice oscillator (multiplicative decay, no exp) |
+| Jitter (12 voices x 7 modes) | ~84 LCG + multiply | Scaled uniform, OU filter |
 | Pickup per voice | ~12 max/add | Minimal |
 | Voice sum | ~12 additions | Trivial |
 | 2x oversampler up | ~12 multiply-adds | Allpass polyphase filter |
-| Preamp (2 samples at 2x) | ~2 x (3 NR iterations x 2 stages) = 12 exp calls | Most expensive shared stage |
+| Preamp (2 samples at 2x) | ~2 x (3 NR iterations x 2 fused exp) = 12 exp calls | Most expensive shared stage |
+| Shadow preamp | ~12 exp (tremolo on) / 0 (tremolo off) | Bypass saves ~50% DK cost |
 | 2x oversampler down | ~12 multiply-adds | Allpass polyphase filter |
-| Tremolo | ~2 multiply-adds | Trivial |
+| Tremolo | ~2 multiply-adds + 1 exp + 1 powf | Cached ln values |
 | Speaker (2 biquads) | ~10 multiply-adds | Trivial |
 
-**Total: approximately 100 sin/cos + 100 exp + 200 multiply-adds per base-rate sample.** This is well within real-time budget on modern CPUs.
+**Total: approximately 84 sin + 12-24 exp + ~300 multiply-adds per base-rate sample.** Previously ~100 sin + ~100 exp before optimization.
 
 ---
 

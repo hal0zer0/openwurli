@@ -340,6 +340,7 @@ impl Plugin for OpenWurli {
         let trem_depth = self.params.tremolo_depth.value() as f64;
         self.tremolo.set_rate(trem_rate, self.os_sample_rate);
         self.tremolo.set_depth(trem_depth);
+        self.preamp.set_shadow_bypass(trem_depth < 0.001);
 
         // Event-splitting process loop: split at each MIDI event for sample-accuracy
         let mut next_event = context.next_event();

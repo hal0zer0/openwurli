@@ -341,6 +341,7 @@ fn cmd_render(args: &[String]) {
     let tremolo_depth = parse_flag(args, "--tremolo-depth", 0.0);
     let no_poweramp = args.contains(&"--no-poweramp".to_string());
     let no_preamp = args.contains(&"--no-preamp".to_string());
+    let no_attack_noise = args.contains(&"--no-attack-noise".to_string());
     let normalize = args.contains(&"--normalize".to_string());
     let disp_scale: Option<f64> = if args.contains(&"--displacement-scale".to_string()) {
         Some(parse_flag(args, "--displacement-scale", 0.30))
@@ -350,8 +351,27 @@ fn cmd_render(args: &[String]) {
     let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render.wav");
 
     // Render reed voice (reed → pickup with nonlinearity + HPF)
-    let reed_output =
-        Voice::render_note_with_scale(note, velocity as f64 / 127.0, duration, BASE_SR, disp_scale);
+    let reed_output = {
+        let vel_norm = velocity as f64 / 127.0;
+        let noise_seed = (note as u32).wrapping_mul(2654435761);
+        let mut voice = Voice::note_on(note, vel_norm, BASE_SR, noise_seed, true);
+        if let Some(scale) = disp_scale {
+            voice.set_displacement_scale(scale);
+        }
+        if no_attack_noise {
+            voice.disable_attack_noise();
+        }
+        let num_samples = (duration * BASE_SR) as usize;
+        let mut output = vec![0.0f64; num_samples];
+        let chunk_size = 1024;
+        let mut offset = 0;
+        while offset < num_samples {
+            let end = (offset + chunk_size).min(num_samples);
+            voice.render(&mut output[offset..end]);
+            offset = end;
+        }
+        output
+    };
 
     // Process through oversampled preamp (or bypass)
     let n_samples = reed_output.len();

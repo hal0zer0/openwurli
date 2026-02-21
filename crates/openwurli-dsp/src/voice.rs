@@ -120,6 +120,11 @@ impl Voice {
         self.pickup.set_displacement_scale(scale);
     }
 
+    /// Disable attack noise (for A/B testing of transient artifacts).
+    pub fn disable_attack_noise(&mut self) {
+        self.noise.disable();
+    }
+
     /// Start the damper (called on note_off).
     /// Activates progressive damping — higher modes die first.
     pub fn note_off(&mut self) {
