@@ -33,6 +33,7 @@ __pycache__/
 docs/verified_wurlitzer_200A_series_schematic.pdf
 *.mid
 midi/
+midis/
 
 # Rendered schematic tiles (large PNGs, regenerate from PDF as needed)
 schematic_tiles/

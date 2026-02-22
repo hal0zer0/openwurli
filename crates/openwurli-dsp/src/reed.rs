@@ -63,7 +63,7 @@ impl ModalReed {
     /// - `mode_ratios`: f_n / f_1 for each mode
     /// - `amplitudes`: initial amplitude for each mode (post dwell-filter, post variation)
     /// - `decay_rates_db`: decay rate in dB/s for each mode
-    /// - `dwell_time_s`: hammer contact duration in seconds (0.0 = instantaneous)
+    /// - `onset_time_s`: onset ramp duration in seconds (reed mechanical inertia)
     /// - `velocity`: 0.0 (pp) to 1.0 (ff), controls onset ramp shape
     /// - `sample_rate`: audio sample rate in Hz
     /// - `jitter_seed`: RNG seed for per-mode frequency jitter (decorrelates voices)
@@ -73,7 +73,7 @@ impl ModalReed {
         mode_ratios: &[f64; NUM_MODES],
         amplitudes: &[f64; NUM_MODES],
         decay_rates_db: &[f64; NUM_MODES],
-        dwell_time_s: f64,
+        onset_time_s: f64,
         velocity: f64,
         sample_rate: f64,
         jitter_seed: u32,
@@ -100,15 +100,15 @@ impl ModalReed {
         let jitter_revert = (-dt / JITTER_TAU).exp();
         let jitter_diffusion = JITTER_SIGMA * (1.0 - jitter_revert * jitter_revert).sqrt();
 
-        // Onset ramp: raised cosine over the hammer dwell period.
-        // e(t) = 0.5 * (1 - cos(pi * t / T_dwell)) for t < T_dwell, then 1.0.
+        // Onset ramp: raised cosine over the onset period (reed mechanical inertia).
+        // e(t) = 0.5 * (1 - cos(pi * t / T_onset)) for t < T_onset, then 1.0.
         //
-        // All modes ramp up together over the same dwell time. The hammer applies
+        // All modes ramp up together over the same onset time. The hammer applies
         // force to ALL modes simultaneously — the dwell filter (Gaussian in
         // frequency domain) controls how much energy each mode receives, NOT when
         // it arrives. Mode-dependent ramp times would create a vibraphone-like
         // staggered onset where the fundamental appears before higher modes.
-        let ramp_samps = (dwell_time_s * sample_rate).round() as u64;
+        let ramp_samps = (onset_time_s * sample_rate).round() as u64;
         let ramp_inc = if ramp_samps > 0 {
             std::f64::consts::PI / ramp_samps as f64
         } else {

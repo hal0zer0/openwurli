@@ -39,15 +39,21 @@ DS_AT_C4 ↑
     → bass/treble shift linearly, mid doesn't
 ```
 
-### TARGET_DB in the tanh shadow
+### TARGET_DB and POST_SPEAKER_GAIN
 
 ```
-TARGET_DB ↓ (trying to reduce clipping)
-  → bass/treble: shift by expected amount (linear region)
-  → mid ff: barely moves (tanh ceiling)
-  → mf all notes: shift by expected amount (linear region)
-  → net effect: wider register spread at ff, quieter mf
-  → WRONG direction for both problems
+TARGET_DB = -35 dBFS (v0.1.5)
+  → voice output_scale drives preamp at millivolt-level signals
+  → power amp sees ~5-10% of ±22V headroom at ff single notes
+  → polyphonic chords stay clean (4-note ff: ~11% headroom)
+  → speaker tanh operates in linear region (< 8% compression)
+  → register trim now calibrated in linear regime (stable)
+
+POST_SPEAKER_GAIN = +10 dB (3.16×)
+  → applied AFTER all analog stages (speaker.process() output)
+  → maps physical SPL to DAW levels (~-15 dBFS single ff note)
+  → does NOT interact with any nonlinear circuit model
+  → safe to adjust independently without recalibrating trim
 ```
 
 ### Register trim domain mismatch

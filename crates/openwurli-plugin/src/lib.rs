@@ -404,7 +404,9 @@ impl Plugin for OpenWurli {
             // Power amp: VAS gain → crossover distortion → rail clip
             let amplified = self.power_amp.process(attenuated);
             let shaped = self.speaker.process(amplified);
-            let sample = shaped as f32;
+            // Post-speaker gain: maps physical SPL to DAW-friendly levels.
+            // Applied after all analog stages — no circuit model distortion.
+            let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
             for s in channel_samples.iter_mut() {
                 *s = sample;
             }

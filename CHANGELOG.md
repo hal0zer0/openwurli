@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] "MountUp" - 2026-02-22
+
+### Changed
+- Pickup model: time-varying RC replaces static `y/(1-y)` + separate HPF.
+  Bilinear-discretized charge dynamics couple 1/(1-y) nonlinearity with
+  RC high-pass filtering in a single step. Self-limiting — no hard clamp
+  needed below y=0.98
+- Displacement scale reshaped: DS_AT_C4=0.75, EXP=0.75, CLAMP=[0.02, 0.82].
+  Bass cap reduced 0.92→0.82 to prevent extreme nonlinearity (y_peak 0.89→0.80)
+- Speaker LPF lowered 7500→5500 Hz per OBM A/B comparison (real 4x8"
+  ceramic speakers roll off well below 7500 Hz)
+- MLP retrained against RC pickup model: loss 0.355→0.101 (3.5x improvement),
+  ds correction MAE 0.13, frequency MAE 2.5 cents
+- Register trim recalibrated for new gain staging
+- Rename confusing `t_dwell`/`dwell_time_s` to `onset_time`/`onset_time_s`
+  in voice.rs and reed.rs (onset ramp ≠ spectral dwell filter)
+
+### Fixed
+- Gain staging: target_db -19→-35 dBFS so power amp sees realistic signal
+  levels (~5-10% headroom at ff, was 57%). Post-speaker gain (+10 dB)
+  models mic/DI stage. Single ff note: -14.6 dBFS, 6-note ff chord:
+  -9.8 dBFS — no more DAW clipping on polyphonic material
+- preamp-bench render/calibrate/centroid-track used linear volume instead
+  of audio taper (vol²), mismatching the plugin's signal chain
+- preamp-bench calibrate default ds_at_c4 was 0.85, now matches code (0.75)
+
+### Added
+- Version codename convention: lyric fragments from Wurlitzer songs
+- `POST_SPEAKER_GAIN` constant (tables.rs): +10 dB post-speaker output gain,
+  applied in plugin and all preamp-bench render commands
+- `tools/strip_pedal.py`: strip sustain pedal from MIDI files, extending
+  note durations to compensate (for testing without pedal support)
+
 ## [0.1.4] - 2026-02-21
 
 ### Changed
@@ -124,7 +157,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/hal0zer0/openwurli/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/hal0zer0/openwurli/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/hal0zer0/openwurli/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/hal0zer0/openwurli/compare/v0.1.1...v0.1.2

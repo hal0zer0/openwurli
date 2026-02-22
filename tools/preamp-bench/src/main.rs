@@ -427,13 +427,13 @@ fn cmd_render(args: &[String]) {
 
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
-        let attenuated = preamp_output[i] * volume;
+        let attenuated = preamp_output[i] * volume * volume; // audio taper
         let amplified = if no_poweramp {
             attenuated
         } else {
             power_amp.process(attenuated)
         };
-        final_output[i] = speaker.process(amplified);
+        final_output[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
     }
 
     // Peak measurement
@@ -918,7 +918,7 @@ fn h2_h1_ratio_db(signal: &[f64], fundamental_hz: f64, sr: f64) -> f64 {
 fn cmd_calibrate(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,40,44,48,52,56,60,64,68,72,76,80,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
-    let ds_at_c4 = parse_flag(args, "--ds-at-c4", 0.85);
+    let ds_at_c4 = parse_flag(args, "--ds-at-c4", 0.75);
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let zero_trim = args.contains(&"--zero-trim".to_string());
@@ -1067,9 +1067,9 @@ fn run_calibrate(
 
             let mut t5_buf = vec![0.0f64; n_samples];
             for i in 0..n_samples {
-                let attenuated = t4_buf[i] * volume;
+                let attenuated = t4_buf[i] * volume * volume; // audio taper
                 let amplified = power_amp.process(attenuated);
-                t5_buf[i] = speaker.process(amplified);
+                t5_buf[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
             }
             let t5_window = &t5_buf[measure_start..measure_end];
             let t5_pk = peak_db(t5_window);
@@ -1340,7 +1340,7 @@ fn cmd_render_poly(args: &[String]) {
         } else {
             power_amp.process(attenuated)
         };
-        final_output[i] = speaker.process(amplified);
+        final_output[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
     }
 
     // Also render each voice through its OWN separate chain for comparison
@@ -1369,7 +1369,7 @@ fn cmd_render_poly(args: &[String]) {
             } else {
                 sep_pa.process(attenuated)
             };
-            separate_sum[i] += sep_spk.process(amplified);
+            separate_sum[i] += sep_spk.process(amplified) * tables::POST_SPEAKER_GAIN;
         }
     }
 
@@ -1769,7 +1769,7 @@ fn cmd_render_midi(args: &[String]) {
         let mut down_buf = vec![0.0f64; len];
         os.downsample_2x(&up_buf[..len * 2], &mut down_buf);
 
-        // Output stage: volume → power amp → speaker
+        // Output stage: volume → power amp → speaker → post-speaker gain
         for i in 0..len {
             let attenuated = down_buf[i] * volume * volume;
             let amplified = if no_poweramp {
@@ -1777,7 +1777,7 @@ fn cmd_render_midi(args: &[String]) {
             } else {
                 power_amp.process(attenuated)
             };
-            output[sample_pos + i] = speaker.process(amplified);
+            output[sample_pos + i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
         }
 
         sample_pos = chunk_end;
@@ -1919,13 +1919,13 @@ fn cmd_centroid_track(args: &[String]) {
 
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
-        let attenuated = preamp_output[i] * volume;
+        let attenuated = preamp_output[i] * volume * volume; // audio taper
         let amplified = if no_poweramp {
             attenuated
         } else {
             power_amp.process(attenuated)
         };
-        final_output[i] = speaker.process(amplified);
+        final_output[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
     }
 
     // Centroid tracking with Hann-windowed frames
@@ -2146,13 +2146,7 @@ fn cmd_overshoot(args: &[String]) {
             let note_name = midi_note_name(note);
             println!(
                 "{:>6} {:>4}  {:>7.1} {:>7.1} {:>7.1}  {:>9.1} {:>9.1}",
-                note_name,
-                vel_byte,
-                pk_dbfs,
-                rms1_dbfs,
-                rms2_dbfs,
-                overshoot_db,
-                bark_decay_db,
+                note_name, vel_byte, pk_dbfs, rms1_dbfs, rms2_dbfs, overshoot_db, bark_decay_db,
             );
         }
         println!();

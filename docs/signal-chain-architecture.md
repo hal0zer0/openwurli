@@ -809,15 +809,21 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 
 ### Plugin Signal Levels (Current)
 
-| Point in Chain | Signal Level (arbitrary units) | Notes |
-|---------------|-------------------------------|-------|
+The gain staging is designed so the power amplifier sees realistic signal levels
+(5-15% of its ±22V headroom at ff). A post-speaker gain stage (+10 dB) maps
+the physical speaker output to DAW-friendly digital levels without distorting
+any circuit model — it sits after all analog stages.
+
+| Point in Chain | Level | Notes |
+|---------------|-------|-------|
 | Single voice, mf | ~0.05-0.15 | After pickup |
 | 6-voice chord, ff | ~0.3-0.9 | Sum of voices |
-| After output_scale() | scaled to mV range | Into DkPreamp |
-| After preamp Stage 1 | ~0.5-11 | Depends on gain/feedback |
-| After preamp Stage 2 | ~0.5-6.5 | Clipped by soft-limits |
-| After preampGain (0.7x) | ~0.35-4.5 | Into tremolo/speaker |
-| After masterVol (0.63, effective ~0.40x) | ~0.14-1.80 | Into power amp |
+| After output_scale() | target_db=-35 dBFS | Into DkPreamp |
+| After preamp | millivolts equivalent | 2x gain (no trem) |
+| After volume pot (0.63, taper 0.40) | ~5-10% of PA headroom | Single ff note |
+| After power amp | ~1-3V of ±22V rails | Clean at normal dynamics |
+| After speaker | physics-level output | |
+| After post-speaker gain (+10 dB) | -14.6 dBFS single ff | DAW-friendly |
 
 ### Input Drive (Historical)
 

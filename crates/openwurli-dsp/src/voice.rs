@@ -41,7 +41,7 @@ impl Voice {
         let detuned_fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
 
         let dwell = dwell_attenuation(velocity, detuned_fundamental, &params.mode_ratios);
-        let t_dwell = onset_ramp_time(velocity, detuned_fundamental);
+        let onset_time = onset_ramp_time(velocity, detuned_fundamental);
         let amp_offsets = variation::mode_amplitude_offsets(midi_note);
 
         let mut amplitudes = [0.0f64; NUM_MODES];
@@ -91,7 +91,7 @@ impl Voice {
             &corrected_ratios,
             &amplitudes,
             &corrected_decay,
-            t_dwell,
+            onset_time,
             velocity,
             sample_rate,
             noise_seed,
