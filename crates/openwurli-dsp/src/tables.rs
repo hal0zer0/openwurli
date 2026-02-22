@@ -244,15 +244,15 @@ pub fn reed_compliance(midi: u8) -> f64 {
 /// -6.4 dB low at DS=0.42 ("sleepy Wurli"). Raised to 0.85 (+102%).
 ///
 /// Approximate values across keyboard:
-///   A1 (MIDI 33): 0.85  (clamped — heavy bass bark/growl)
-///   D3 (MIDI 50): 0.85  (clamped — solid bark)
-///   C4 (MIDI 60): 0.85  (strong bark, reference)
-///   D5 (MIDI 74): 0.55  (moderate bark)
-///   D6 (MIDI 86): 0.42  (lighter)
-///   C7 (MIDI 96): 0.30  (clean, bell-like)
-const DS_AT_C4: f64 = 0.85;
-const DS_EXPONENT: f64 = 0.65;
-const DS_CLAMP: (f64, f64) = (0.02, 0.85);
+///   A1 (MIDI 33): 0.82  (clamped — heavy bass bark/growl)
+///   D3 (MIDI 50): 0.82  (clamped — solid bark)
+///   C4 (MIDI 60): 0.75  (reference, strong bark)
+///   D5 (MIDI 74): 0.52  (moderate bark)
+///   D6 (MIDI 86): 0.39  (lighter)
+///   C7 (MIDI 96): 0.21  (clean, bell-like)
+const DS_AT_C4: f64 = 0.75;
+const DS_EXPONENT: f64 = 0.75;
+const DS_CLAMP: (f64, f64) = (0.02, 0.82);
 
 /// Runtime-overridable calibration parameters.
 /// All fields default to the current hardcoded constants.
@@ -272,7 +272,7 @@ impl Default for CalibrationConfig {
             ds_at_c4: DS_AT_C4,
             ds_exponent: DS_EXPONENT,
             ds_clamp: DS_CLAMP,
-            target_db: -13.0,
+            target_db: -19.0,
             voicing_slope: -0.04,
             zero_trim: false,
         }
@@ -520,23 +520,25 @@ pub fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
 /// Positive = boost (note too quiet), negative = cut (note too loud).
 /// Linear interpolation between anchor points; clamped outside range.
 pub fn register_trim_db(midi: u8) -> f64 {
-    // Calibrated from zero-trim full-chain (t5_rms) renders at v=127 (2026-02-19).
-    // Reference: C4 = -23.0 dBFS. Trim = target - actual t5_rms.
-    // Measured via: preamp-bench sensitivity --zero-trim (DS=0.85, 13 notes × 3 vel)
+    // Calibrated from zero-trim full-chain (t5_rms) renders at v=127 (2026-02-21).
+    // Reference: C4 = -26.8 dBFS. Trim = t5_rms(C4) - t5_rms(note).
+    // Measured via: preamp-bench calibrate --zero-trim --ds-at-c4 0.75
+    // Time-varying RC pickup + DS_AT_C4=0.75, EXP=0.75, CLAMP=(0.02, 0.82)
+    // Speaker LPF=5500 Hz
     const ANCHORS: [(f64, f64); 13] = [
-        (36.0, -4.9), // C2:  -18.1 → -23.0
-        (40.0, -3.6), // E2:  -19.4 → -23.0
-        (44.0, -5.0), // G#2: -18.0 → -23.0
-        (48.0, -3.0), // C3:  -20.0 → -23.0
-        (52.0, -2.4), // E3:  -20.6 → -23.0
-        (56.0, -3.1), // G#3: -19.9 → -23.0
-        (60.0, 0.0),  // C4:  -23.0 (reference)
-        (64.0, 0.1),  // E4:  -23.1 → -23.0
-        (68.0, 0.1),  // G#4: -23.1 → -23.0
-        (72.0, -1.3), // C5:  -21.7 → -23.0
-        (76.0, 0.5),  // E5:  -23.5 → -23.0
-        (80.0, 1.1),  // G#5: -24.1 → -23.0
-        (84.0, 2.4),  // C6:  -25.4 → -23.0
+        (36.0, -3.0), // C2:  -23.8 → -26.8
+        (40.0, -1.6), // E2:  -25.1 → -26.8
+        (44.0, -2.9), // G#2: -23.9 → -26.8
+        (48.0, -0.9), // C3:  -25.9 → -26.8
+        (52.0, -1.3), // E3:  -25.5 → -26.8
+        (56.0, -2.6), // G#3: -24.2 → -26.8
+        (60.0, 0.0),  // C4:  -26.8 (reference)
+        (64.0, 0.8),  // E4:  -27.6 → -26.8
+        (68.0, 0.7),  // G#4: -27.4 → -26.8
+        (72.0, -0.9), // C5:  -25.9 → -26.8
+        (76.0, 0.9),  // E5:  -27.6 → -26.8
+        (80.0, 1.3),  // G#5: -28.1 → -26.8
+        (84.0, 2.6),  // C6:  -29.3 → -26.8
     ];
 
     let m = midi as f64;

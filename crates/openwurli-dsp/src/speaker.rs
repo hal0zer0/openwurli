@@ -24,7 +24,9 @@ const HPF_AUTHENTIC_HZ: f64 = 95.0;
 /// HPF Q (slightly underdamped for speaker resonance bump).
 const HPF_Q: f64 = 0.75;
 /// LPF cutoff at fully authentic position.
-const LPF_AUTHENTIC_HZ: f64 = 7500.0;
+/// 4x8" ceramic speakers roll off well below 7500 Hz. OBM A/B comparison
+/// shows real treble centroids at 0.44-0.48x of f0, consistent with ~5500 Hz.
+const LPF_AUTHENTIC_HZ: f64 = 5500.0;
 /// LPF Q (Butterworth).
 const LPF_Q: f64 = 0.707;
 /// HPF cutoff at bypass position (effectively transparent).

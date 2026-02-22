@@ -1,4 +1,4 @@
-//! Electrostatic pickup model — nonlinear capacitance + RC HPF.
+//! Electrostatic pickup model — time-varying RC circuit.
 //!
 //! The Wurlitzer 200A pickup is a capacitive sensor: reed vibration modulates
 //! the capacitance between the reed and a charged metal plate (+147V DC).
@@ -8,62 +8,74 @@
 //! where y = x/d_0 is the normalized displacement (fraction of rest gap,
 //! positive toward the plate).
 //!
-//! This 1/(1-y) nonlinearity is the PRIMARY source of the Wurlitzer "bark."
-//! It generates H2 that scales with displacement amplitude:
-//!   y=0.02 (pp): THD 1.7%,  H2 = -35 dB
-//!   y=0.10 (mf): THD 8.7%,  H2 = -21 dB
-//!   y=0.20 (f):  THD 17.6%, H2 = -15 dB
-//! (Validated against SPICE pickup model, tb_pickup.cir)
+//! Unlike the old model which applied y/(1-y) then a separate HPF, this model
+//! discretizes the actual RC circuit with bilinear transform, coupling the
+//! nonlinearity and filtering into a single physical system:
 //!
-//! The preamp, by contrast, produces < 0.01% THD at normal playing levels.
-//! The bark comes from HERE, not the preamp.
+//!   R_total * C(y) * dV/dt + V = V_hv
 //!
-//! One high-pass filter shapes the frequency response:
-//!   Pickup RC: 1-pole HPF at 2312 Hz (R_total=287K, C=240pF)
-//!   R_total = R_feed (1M) || (R-1 + R-2||R-3) = 1M || 402K = 287K
+//! Normalized charge q = Q/(C_0 * V_eq), equilibrium at q=1. The bilinear
+//! discretization with time-varying capacitance c_n = 1/(1-y):
 //!
-//! The HPF also amplifies H2 relative to H1 (since H2 is at 2f, where
-//! the HPF has higher gain), adding ~1.9x boost to the H2/H1 ratio.
+//!   alpha = beta / c_n = beta * (1 - y)
+//!   q_next = (q * (1 - alpha) + 2*beta) / (1 + alpha)
+//!   output = (1 - q_next/c_n) * SENSITIVITY
+//!
+//! This produces:
+//! - Identical small-signal HPF at f_c = 1/(2π*R*C_0) = 2312 Hz
+//! - Coupled nonlinear harmonic generation (H2 from capacitance modulation)
+//! - Frequency-dependent nonlinearity (stronger near/below RC corner)
+//! - Correct asymmetry (positive y amplified more than negative)
 
-use crate::filters::OnePoleHpf;
+/// RC time constant: R_total * C_0
+/// R_total = R_feed (1M) || (R-1 + R-2||R-3) = 1M || 402K = 287K
+/// C_0 = 240 pF (rest capacitance)
+const TAU: f64 = 287.0e3 * 240.0e-12; // 68.88 µs → f_c = 2312 Hz
 
 /// Pickup sensitivity: V_hv * C_0 / (C_0 + C_p) = 147 * 3/240 = 1.8375 V
-/// Applied to the nonlinear displacement y/(1-y).
-const SENSITIVITY: f64 = 1.8375;
+/// Applied to the AC voltage perturbation from charge dynamics.
+pub const PICKUP_SENSITIVITY: f64 = 1.8375;
+
+/// Maximum allowed displacement fraction (safety clamp).
+/// The reed physically cannot touch the plate (y=1.0 is a singularity in c_n).
+///
+/// The old static model needed a tight clamp (0.90) because y/(1-y) at 0.90 = 9.0
+/// produced huge intermediate signals. The time-varying RC model self-limits via
+/// charge dynamics — output is bounded at ~±SENSITIVITY regardless of y, so we
+/// can safely allow y closer to 1.0. At y=0.98, c_n=50, alpha=0.008 — numerically
+/// well-behaved. Only y→1.0 is a true singularity.
+///
+/// With DS_CLAMP=(0.02, 0.82) and reed onset peaks up to ~1.05, y_raw can reach
+/// ~0.86. The 0.98 clamp provides headroom without hard-clipping onset transients.
+pub const PICKUP_MAX_Y: f64 = 0.98;
 
 /// Convert reed model displacement units to physical y = x/d_0.
-///
-/// The reed model outputs in normalized units (fundamental amplitude = 1.0).
-/// These are NOT physical displacement fractions — they're ~10-15x too large.
-/// This constant converts to the physical ratio y = x/d_0 where d_0 is the
-/// rest gap between reed tip and pickup plate.
-///
-/// At C4 vel=127 (ff), y_peak ≈ 0.55, producing ~49% H2/H1 after HPF.
-/// At C4 vel=80 (mf), y_peak ≈ 0.20, producing ~16% H2/H1 after HPF.
-/// Value chosen by ear from a sweep of 0.15–0.75, constrained by research
-/// on the physical reed-to-pickup gap (estimated 0.3–1.5 mm, Pfeifle 2017).
-/// At 0.35 the sound was too clean ("wooden, like tuned wood blocks") —
-/// insufficient even-harmonic content from the 1/(1-y) nonlinearity.
 ///
 /// NOTE: This default is overridden per-note by tables::pickup_displacement_scale()
 /// in voice.rs. Only used if set_displacement_scale() is never called.
 const DISPLACEMENT_SCALE: f64 = 0.85;
 
-/// Maximum allowed displacement fraction (safety clamp).
-/// The reed physically cannot touch the plate (y=1.0 is a singularity).
-/// In practice, y rarely exceeds 0.25 even at extreme velocities.
-const MAX_Y: f64 = 0.90;
-
 pub struct Pickup {
-    hpf: OnePoleHpf,
+    /// Normalized charge state (equilibrium = 1.0).
+    q: f64,
+    /// Precomputed: dt / (2 * TAU). Bilinear integration coefficient.
+    beta: f64,
     displacement_scale: f64,
 }
 
 impl Pickup {
     pub fn new(sample_rate: f64) -> Self {
+        Self::new_with_scale(sample_rate, DISPLACEMENT_SCALE)
+    }
+
+    /// Construct with explicit displacement scale (for bark-audit/calibrate tools).
+    pub fn new_with_scale(sample_rate: f64, displacement_scale: f64) -> Self {
+        let dt = 1.0 / sample_rate;
+        let beta = dt / (2.0 * TAU);
         Self {
-            hpf: OnePoleHpf::new(2312.0, sample_rate),
-            displacement_scale: DISPLACEMENT_SCALE,
+            q: 1.0,
+            beta,
+            displacement_scale,
         }
     }
 
@@ -78,34 +90,39 @@ impl Pickup {
     /// Input: reed displacement in normalized model units.
     /// Output: pickup voltage in volts (millivolt-scale signals).
     ///
-    /// The nonlinear transfer function models the variable capacitance:
-    ///   C(y) = C_0 / (1-y)  →  signal ∝ y/(1-y)
-    /// where y = displacement * displacement_scale.
-    ///
-    /// This produces H2 that increases with displacement amplitude,
-    /// which is the primary source of the Wurlitzer bark.
+    /// The time-varying RC circuit couples the 1/(1-y) capacitance nonlinearity
+    /// with the charge dynamics, producing frequency-dependent harmonic generation.
+    /// At frequencies well below the RC corner (2312 Hz), the circuit generates
+    /// H2 proportional to displacement² (same as the static y/(1-y) model).
+    /// At frequencies near/above the corner, the charge can't follow the fast
+    /// capacitance changes, reducing the nonlinear contribution — physically
+    /// correct behavior that the old separated model couldn't capture.
     pub fn process(&mut self, buffer: &mut [f64]) {
         let scale = self.displacement_scale;
+        let beta = self.beta;
         for sample in buffer.iter_mut() {
-            // Convert to physical displacement fraction
-            let y = (*sample * scale).clamp(-MAX_Y, MAX_Y);
-
-            // Nonlinear capacitance: C(y) = C_0/(1-y)
-            // Signal voltage ∝ delta_C/C_total = y/(1-y)
-            // Asymmetry: positive y (toward plate) amplified more than
-            // negative y (away from plate). This generates H2.
-            let nonlinear = y / (1.0 - y);
-
-            // Scale to voltage: V = V_hv * C_0/(C_0+C_p) * y/(1-y)
-            let v = nonlinear * SENSITIVITY;
-
-            // Pickup RC highpass at 2312 Hz
-            *sample = self.hpf.process(v);
+            let y = (*sample * scale).clamp(-PICKUP_MAX_Y, PICKUP_MAX_Y);
+            // Time-varying normalized capacitance: C(y)/C_0 = 1/(1-y)
+            let c_n = 1.0 / (1.0 - y);
+            // Time-varying bilinear coefficient
+            let alpha = beta / c_n; // = beta * (1 - y)
+            // Bilinear (trapezoidal) integration of: TAU * dq/dt = 1 - q/c_n
+            // Driving term is 2*beta (from the constant V_hv source), NOT 2*alpha
+            let q_next = (self.q * (1.0 - alpha) + 2.0 * beta) / (1.0 + alpha);
+            self.q = q_next;
+            // AC voltage: deviation of capacitor voltage from equilibrium.
+            // V_c = V_eq * q/c_n; at equilibrium q=c_n so q/c_n=1.
+            // Physical: when reed approaches plate, C increases but charge lags →
+            // V drops below equilibrium. When reed recedes, C decreases but charge
+            // can't drain fast enough → V rises above equilibrium, with larger
+            // amplitude (fast RC discharge vs slow charge). (q/c_n - 1) is positive
+            // for the larger "away" excursion, giving pos_peak > neg_peak.
+            *sample = (q_next / c_n - 1.0) * PICKUP_SENSITIVITY;
         }
     }
 
     pub fn reset(&mut self) {
-        self.hpf.reset();
+        self.q = 1.0;
     }
 }
 
@@ -115,12 +132,60 @@ mod tests {
     use std::f64::consts::PI;
 
     #[test]
+    fn test_dc_equilibrium() {
+        // Zero displacement should produce zero output (DC blocked by RC).
+        let sr = 44100.0;
+        let mut pickup = Pickup::new(sr);
+        let n = (sr * 0.05) as usize;
+        let mut buf = vec![0.0f64; n];
+        pickup.process(&mut buf);
+
+        let peak = buf.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+        assert!(
+            peak < 1e-10,
+            "zero displacement should produce zero output, got peak={peak:.2e}"
+        );
+    }
+
+    #[test]
+    fn test_frequency_response_matches_rc() {
+        // Small-signal sweep: the time-varying RC should match a 1-pole HPF at 2312 Hz
+        // within ~1 dB for small amplitudes (linear regime).
+        let sr = 44100.0;
+        let fc = 1.0 / (2.0 * PI * TAU); // 2312 Hz
+        let amplitude = 0.01; // Very small — linear regime (y_peak = 0.0085)
+
+        for &freq in &[100.0, 500.0, 1000.0, 2312.0, 5000.0, 10000.0] {
+            let mut pickup = Pickup::new(sr);
+            let n = (sr * 0.1) as usize;
+            let mut buf: Vec<f64> = (0..n)
+                .map(|i| amplitude * (2.0 * PI * freq * i as f64 / sr).sin())
+                .collect();
+            pickup.process(&mut buf);
+
+            let steady = &buf[n / 2..];
+            let measured = steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+
+            // Expected: amplitude * DS * SENSITIVITY * HPF_gain
+            // For small y: output ≈ HPF(y) * SENSITIVITY = HPF(amplitude*DS*sin) * S
+            let y_amp = amplitude * DISPLACEMENT_SCALE;
+            let hpf_gain = freq / (freq * freq + fc * fc).sqrt();
+            let expected = y_amp * PICKUP_SENSITIVITY * hpf_gain;
+
+            let ratio_db = 20.0 * (measured / expected).log10();
+            // 2 dB tolerance: bilinear transform has frequency warping vs analog HPF
+            assert!(
+                ratio_db.abs() < 2.0,
+                "at {freq} Hz: measured={measured:.6}, expected={expected:.6}, error={ratio_db:.2} dB"
+            );
+        }
+    }
+
+    #[test]
     fn test_hpf_passes_high_freq() {
-        // At 10 kHz, the HPF is nearly unity gain.
-        // Input: unit sine (displacement). After DISPLACEMENT_SCALE + nonlinear + SENSITIVITY + HPF,
-        // output ≈ SENSITIVITY * (DISPLACEMENT_SCALE / (1 - DISPLACEMENT_SCALE)) * HPF_gain
-        // With DISPLACEMENT_SCALE = 0.85: y_peak = 0.85, y/(1-y) = 5.67
-        // Output ≈ 5.67 * 1.8375 * ~0.97 = 10.1 (peak, includes nonlinear asymmetry)
+        // At 10 kHz, the time-varying RC passes high-freq signals.
+        // For the RC model, at very high frequencies q can't follow c_n,
+        // so output ≈ y * SENSITIVITY (reduced from old y/(1-y) * S).
         let sr = 44100.0;
         let mut pickup = Pickup::new(sr);
         let freq = 10000.0;
@@ -132,13 +197,17 @@ mod tests {
         pickup.process(&mut buf);
 
         let peak = buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        assert!(peak > 1.0, "pickup output too low at 10kHz: {peak}");
+        // At 10 kHz with DS=0.85: y approaches MAX_Y.
+        // The RC model at high freq gives output ~ y * SENSITIVITY for small y,
+        // but for large y the nonlinear charge dynamics still produce amplification.
+        assert!(peak > 0.5, "pickup output too low at 10kHz: {peak}");
         assert!(peak < 12.0, "pickup output too high at 10kHz: {peak}");
     }
 
     #[test]
     fn test_hpf_attenuates_bass() {
-        // At 100 Hz, the HPF attenuates heavily (gain ≈ 0.043).
+        // At 100 Hz, the RC circuit's charge tracks the capacitance changes,
+        // attenuating the output — same HPF behavior as before.
         let sr = 44100.0;
         let mut pickup = Pickup::new(sr);
         let freq = 100.0;
@@ -150,19 +219,17 @@ mod tests {
         pickup.process(&mut buf);
 
         let peak = buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        // With DISPLACEMENT_SCALE=0.85: Output ≈ 5.67 * 1.8375 * 0.043 = 0.45
         assert!(peak < 0.65, "pickup should heavily attenuate 100Hz: {peak}");
     }
 
     #[test]
     fn test_nonlinearity_produces_h2() {
         // Drive the pickup with a large-amplitude sine and verify H2 > H3.
-        // This is the core test: 1/(1-y) generates even harmonics.
+        // The time-varying capacitance generates even harmonics.
         let sr = 44100.0;
         let mut pickup = Pickup::new(sr);
-        let freq = 2000.0; // Above HPF corner for cleaner measurement
+        let freq = 2000.0; // Near HPF corner for strong nonlinear coupling
 
-        // Amplitude of 1.0 in reed units → y = 0.35 → meaningful nonlinearity
         let amplitude = 1.0;
         let n = (sr * 0.2) as usize;
         let mut buf: Vec<f64> = (0..n)
@@ -170,7 +237,6 @@ mod tests {
             .collect();
         pickup.process(&mut buf);
 
-        // DFT at H1, H2, H3 (steady-state, last quarter)
         let start = n * 3 / 4;
         let signal = &buf[start..];
         let h1 = dft_magnitude(signal, freq, sr);
@@ -179,26 +245,28 @@ mod tests {
 
         assert!(
             h2 > h3,
-            "H2 ({h2:.2e}) should dominate H3 ({h3:.2e}) from 1/(1-y)"
+            "H2 ({h2:.2e}) should dominate H3 ({h3:.2e}) from capacitance modulation"
         );
-        // At y_peak = 0.35: H2/H1 ≈ y/2 * HPF_boost ≈ 17.5% * ~1.1 ≈ 19%
         let h2_ratio = h2 / h1;
         assert!(
-            h2_ratio > 0.07,
-            "H2/H1 too low ({h2_ratio:.4}), expected >7% from nonlinearity"
+            h2_ratio > 0.05,
+            "H2/H1 too low ({h2_ratio:.4}), expected >5% from nonlinearity"
         );
     }
 
     #[test]
     fn test_asymmetry() {
-        // The nonlinear pickup should produce asymmetric output:
-        // positive excursions (toward plate) larger than negative.
+        // The time-varying RC should produce asymmetric output.
+        // Must test BELOW the RC corner (2312 Hz) where charge dynamics
+        // interact with the asymmetric capacitance function. Above the corner,
+        // charge can't follow and output approaches linear y (no asymmetry) —
+        // this is physically correct and different from the old static model.
         let sr = 44100.0;
         let mut pickup = Pickup::new(sr);
-        let freq = 3000.0; // Well above HPF corner
+        let freq = 500.0; // Well below HPF corner — strong nonlinear coupling
 
-        let amplitude = 1.2; // y_peak = 0.42
-        let n = (sr * 0.1) as usize;
+        let amplitude = 0.5; // y_peak = 0.5 * 0.85 = 0.425, no clipping
+        let n = (sr * 0.2) as usize;
         let mut buf: Vec<f64> = (0..n)
             .map(|i| amplitude * (2.0 * PI * freq * i as f64 / sr).sin())
             .collect();
@@ -208,6 +276,7 @@ mod tests {
         let neg_peak = buf[n / 2..].iter().cloned().fold(0.0f64, f64::min).abs();
 
         // Positive excursion (toward plate) should produce larger signal
+        // because C(y) = C_0/(1-y) amplifies positive displacements more.
         assert!(
             pos_peak > neg_peak * 1.05,
             "Expected asymmetry: pos={pos_peak:.6} neg={neg_peak:.6}"

@@ -12,7 +12,6 @@
 use std::f64::consts::PI;
 
 use openwurli_dsp::dk_preamp::DkPreamp;
-use openwurli_dsp::filters::OnePoleHpf;
 use openwurli_dsp::hammer::dwell_attenuation;
 use openwurli_dsp::oversampler::Oversampler;
 use openwurli_dsp::power_amp::PowerAmp;
@@ -47,6 +46,7 @@ fn main() {
         "calibrate" => cmd_calibrate(&args[2..]),
         "sensitivity" => cmd_sensitivity(&args[2..]),
         "centroid-track" => cmd_centroid_track(&args[2..]),
+        "overshoot" => cmd_overshoot(&args[2..]),
         "render-poly" => cmd_render_poly(&args[2..]),
         "render-midi" => cmd_render_midi(&args[2..]),
         _ => {
@@ -70,6 +70,7 @@ fn print_usage() {
     eprintln!("  calibrate       Measure gain chain at 5 tap points → CSV");
     eprintln!("  sensitivity     Multi-DS grid sweep → CSV");
     eprintln!("  centroid-track  Spectral centroid tracking over time");
+    eprintln!("  overshoot       Measure onset overshoot (spec: 0-10ms peak vs 100-200ms RMS)");
     eprintln!("  render-poly     Render multiple simultaneous notes through shared chain");
     eprintln!("  render-midi     Render a MIDI file through the full signal chain");
     eprintln!();
@@ -508,14 +509,10 @@ fn cmd_render(args: &[String]) {
 ///
 /// Stages measured:
 ///   1. Raw reed (modal synthesis)
-///   2. After pickup nonlinearity (y/(1-y) * SENSITIVITY, no HPF)
-///   3. After pickup HPF (full pickup output)
-///   4. After preamp (oversampled)
+///   2. After pickup (time-varying RC — coupled NL + HPF)
+///   3. After preamp (oversampled)
 fn cmd_bark_audit(args: &[String]) {
-    // Pickup constants (duplicated here since they're private in pickup.rs)
-    const SENSITIVITY: f64 = 1.8375;
-    const MAX_Y: f64 = 0.90;
-    const PICKUP_HPF_HZ: f64 = 2312.0;
+    use openwurli_dsp::pickup::Pickup;
 
     let notes: Vec<u8> = if args.iter().any(|a| a == "--notes") {
         let s = parse_flag_str(args, "--notes", "36,48,60,72,84");
@@ -536,18 +533,10 @@ fn cmd_bark_audit(args: &[String]) {
     println!("=== BARK AUDIT: H2/H1 at each signal chain stage ===");
     println!();
     println!(
-        "{:>6} {:>4}  {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
-        "Note",
-        "Vel",
-        "Reed pk",
-        "y_peak",
-        "NL H2/H1",
-        "NL pk(mV)",
-        "HPF H2/H1",
-        "HPF pk(mV)",
-        "Pre H2/H1"
+        "{:>6} {:>4}  {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "Note", "Vel", "Reed pk", "y_peak", "PU H2/H1", "PU pk(mV)", "Pre H2/H1"
     );
-    println!("{}", "-".repeat(100));
+    println!("{}", "-".repeat(76));
 
     for &note in &notes {
         let params = tables::note_params(note);
@@ -563,11 +552,9 @@ fn cmd_bark_audit(args: &[String]) {
             let amp_offsets = variation::mode_amplitude_offsets(note);
             let vel_exp = tables::velocity_exponent(note);
             let vel_scale = tables::velocity_scurve(velocity).powf(vel_exp);
-            let _out_scale = tables::output_scale(note, velocity); // post-pickup only
 
             let mut amplitudes = [0.0f64; NUM_MODES];
             for i in 0..NUM_MODES {
-                // output_scale is now post-pickup (decoupled from nonlinearity)
                 amplitudes[i] = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i] * vel_scale;
             }
 
@@ -589,36 +576,20 @@ fn cmd_bark_audit(args: &[String]) {
 
             let reed_steady = &reed_buf[measure_offset..];
             let reed_peak = reed_steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-            let _reed_h1 = dft_magnitude(reed_steady, freq, BASE_SR);
-            let _reed_h2 = dft_magnitude(reed_steady, h2_freq, BASE_SR);
-
-            // ── Stage 2: After nonlinearity (before HPF) ──
             let displacement_scale = tables::pickup_displacement_scale(note);
-            let mut nl_buf = reed_buf.clone();
-            for s in &mut nl_buf {
-                let y = (*s * displacement_scale).clamp(-MAX_Y, MAX_Y);
-                *s = (y / (1.0 - y)) * SENSITIVITY;
-            }
-            let nl_steady = &nl_buf[measure_offset..];
-            let nl_peak = nl_steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-            let nl_h1 = dft_magnitude(nl_steady, freq, BASE_SR);
-            let nl_h2 = dft_magnitude(nl_steady, h2_freq, BASE_SR);
-            let nl_h2_h1 = if nl_h1 > 1e-15 { nl_h2 / nl_h1 } else { 0.0 };
             let y_peak = reed_peak * displacement_scale;
 
-            // ── Stage 3: After pickup HPF ──
-            let mut hpf = OnePoleHpf::new(PICKUP_HPF_HZ, BASE_SR);
-            let mut hpf_buf = nl_buf.clone();
-            for s in &mut hpf_buf {
-                *s = hpf.process(*s);
-            }
-            let hpf_steady = &hpf_buf[measure_offset..];
-            let hpf_peak = hpf_steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-            let hpf_h1 = dft_magnitude(hpf_steady, freq, BASE_SR);
-            let hpf_h2 = dft_magnitude(hpf_steady, h2_freq, BASE_SR);
-            let hpf_h2_h1 = if hpf_h1 > 1e-15 { hpf_h2 / hpf_h1 } else { 0.0 };
+            // ── Stage 2: After pickup (time-varying RC) ──
+            let mut pickup = Pickup::new_with_scale(BASE_SR, displacement_scale);
+            let mut pu_buf = reed_buf.clone();
+            pickup.process(&mut pu_buf);
+            let pu_steady = &pu_buf[measure_offset..];
+            let pu_peak = pu_steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+            let pu_h1 = dft_magnitude(pu_steady, freq, BASE_SR);
+            let pu_h2 = dft_magnitude(pu_steady, h2_freq, BASE_SR);
+            let pu_h2_h1 = if pu_h1 > 1e-15 { pu_h2 / pu_h1 } else { 0.0 };
 
-            // ── Stage 4: After preamp (oversampled) ──
+            // ── Stage 3: After preamp (oversampled) ──
             let mut preamp = create_preamp(args);
             preamp.set_ldr_resistance(1_000_000.0);
             let mut os = Oversampler::new();
@@ -626,7 +597,7 @@ fn cmd_bark_audit(args: &[String]) {
             let mut preamp_buf = vec![0.0f64; n_samples];
             for i in 0..n_samples {
                 let mut up = [0.0f64; 2];
-                os.upsample_2x(&[hpf_buf[i]], &mut up);
+                os.upsample_2x(&[pu_buf[i]], &mut up);
                 let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
                 let mut down = [0.0f64; 1];
                 os.downsample_2x(&processed, &mut down);
@@ -640,15 +611,13 @@ fn cmd_bark_audit(args: &[String]) {
             // ── Report ──
             let note_name = midi_note_name(note);
             println!(
-                "{:>6} {:>4}  {:>10.4} {:>10.4} {:>9.1}% {:>10.2} {:>9.1}% {:>10.2} {:>9.1}%",
+                "{:>6} {:>4}  {:>10.4} {:>10.4} {:>9.1}% {:>10.2} {:>9.1}%",
                 note_name,
                 vel_byte,
                 reed_peak,
                 y_peak,
-                nl_h2_h1 * 100.0,
-                nl_peak * 1000.0,
-                hpf_h2_h1 * 100.0,
-                hpf_peak * 1000.0,
+                pu_h2_h1 * 100.0,
+                pu_peak * 1000.0,
                 pre_h2_h1 * 100.0,
             );
         }
@@ -661,13 +630,11 @@ fn cmd_bark_audit(args: &[String]) {
     println!(
         "  y_peak    = physical displacement fraction (y = reed_pk * DS), DS = per-note from tables"
     );
-    println!("  NL H2/H1  = H2/H1 after 1/(1-y) nonlinearity, before HPF");
-    println!("  NL pk(mV) = peak signal after nonlinearity (millivolts)");
-    println!("  HPF H2/H1 = H2/H1 after pickup RC HPF at {PICKUP_HPF_HZ} Hz");
-    println!("  HPF pk(mV)= peak signal after HPF (millivolts, feeds preamp)");
+    println!("  PU H2/H1  = H2/H1 after time-varying RC pickup (coupled NL + HPF at 2312 Hz)");
+    println!("  PU pk(mV) = peak signal after pickup (millivolts, feeds preamp)");
     println!("  Pre H2/H1 = H2/H1 after preamp (2x gain, no tremolo)");
     println!();
-    println!("SPICE targets: y=0.10 → NL H2/H1 = 8.7%, HPF boosts H2 ~1.9x relative to H1");
+    println!("SPICE targets: y=0.10 → H2/H1 ≈ 8.7%, pickup HPF boosts H2 ~1.9x relative to H1");
 }
 
 fn midi_note_name(note: u8) -> String {
@@ -1009,10 +976,7 @@ fn run_calibrate(
     _mlp: bool,
     args: &[String],
 ) -> Vec<CalibrateRow> {
-    // Pickup constants (same as bark-audit)
-    const SENSITIVITY: f64 = 1.8375;
-    const MAX_Y: f64 = 0.90;
-    const PICKUP_HPF_HZ: f64 = 2312.0;
+    use openwurli_dsp::pickup::Pickup;
 
     let duration = 0.5;
     let measure_start = (0.100 * BASE_SR) as usize; // 100ms
@@ -1029,7 +993,6 @@ fn run_calibrate(
             let velocity = vel_byte as f64 / 127.0;
 
             // ── T1: Raw reed ──
-            // Construct reed exactly as bark-audit does
             let detuned = params.fundamental_hz * variation::freq_detune(note);
             let dwell = dwell_attenuation(velocity, detuned, &params.mode_ratios);
             let amp_offsets = variation::mode_amplitude_offsets(note);
@@ -1062,17 +1025,10 @@ fn run_calibrate(
                 .fold(0.0f64, f64::max);
             let y_peak = reed_peak * ds_actual;
 
-            // ── T2: After pickup nonlinearity + HPF ──
-            let mut nl_buf = reed_buf.clone();
-            for s in &mut nl_buf {
-                let y = (*s * ds_actual).clamp(-MAX_Y, MAX_Y);
-                *s = (y / (1.0 - y)) * SENSITIVITY;
-            }
-            let mut hpf = OnePoleHpf::new(PICKUP_HPF_HZ, BASE_SR);
-            let mut t2_buf = nl_buf.clone();
-            for s in &mut t2_buf {
-                *s = hpf.process(*s);
-            }
+            // ── T2: After pickup (time-varying RC) ──
+            let mut pickup = Pickup::new_with_scale(BASE_SR, ds_actual);
+            let mut t2_buf = reed_buf.clone();
+            pickup.process(&mut t2_buf);
             let t2_window = &t2_buf[measure_start..measure_end];
             let t2_pk = peak_db(t2_window);
             let t2_rm = rms_db(t2_window);
@@ -2095,5 +2051,133 @@ fn cmd_centroid_track(args: &[String]) {
     if !csv_path.is_empty() {
         std::fs::write(csv_path, csv_lines.join("\n") + "\n").expect("Failed to write CSV");
         println!("\n  CSV written to {csv_path}");
+    }
+}
+
+/// Measure onset overshoot per calibration spec (Section 10.1):
+///   overshoot = 20*log10(peak_0_10ms / rms_100_200ms)
+///
+/// Also reports "bark decay" — the perceptual brightness contrast over
+/// the full note that Dr Dawgg measured as "16.7 dB overshoot":
+///   bark_decay = 20*log10(peak_0_50ms / rms_1000_1500ms)
+///
+/// These are fundamentally different metrics:
+/// - Overshoot measures modal superposition energy at onset (milliseconds)
+/// - Bark decay measures pickup nonlinearity fading with reed decay (seconds)
+fn cmd_overshoot(args: &[String]) {
+    let notes: Vec<u8> = if args.iter().any(|a| a == "--notes") {
+        let s = parse_flag_str(args, "--notes", "36,48,60,72,84");
+        s.split(',').filter_map(|n| n.trim().parse().ok()).collect()
+    } else {
+        vec![36, 48, 60, 72, 84]
+    };
+    let velocities: Vec<u8> = if args.iter().any(|a| a == "--velocities") {
+        let s = parse_flag_str(args, "--velocities", "64,127");
+        s.split(',').filter_map(|v| v.trim().parse().ok()).collect()
+    } else {
+        vec![64, 127]
+    };
+
+    let duration = 2.0; // Need at least 1.5s for bark decay window
+
+    println!("=== OVERSHOOT AUDIT ===");
+    println!("Spec metric:  0-10ms peak vs 100-200ms RMS (calibration-and-evaluation.md §10.1)");
+    println!("Bark decay:   0-50ms peak vs 1000-1500ms RMS (perceptual bark fade, NOT overshoot)");
+    println!();
+    println!(
+        "{:>6} {:>4}  {:>8} {:>8} {:>8}  {:>10} {:>10}",
+        "Note", "Vel", "Pk(0-10)", "RMS(sus)", "RMS(late)", "Overshoot", "BarkDecay"
+    );
+    println!(
+        "{:>6} {:>4}  {:>8} {:>8} {:>8}  {:>10} {:>10}",
+        "", "", "dBFS", "dBFS", "dBFS", "dB", "dB"
+    );
+    println!("{}", "-".repeat(76));
+
+    for &note in &notes {
+        for &vel_byte in &velocities {
+            let velocity = vel_byte as f64 / 127.0;
+            let output = Voice::render_note(note, velocity, duration, BASE_SR);
+
+            // Window boundaries in samples
+            let t_10ms = (0.010 * BASE_SR) as usize;
+            let t_50ms = (0.050 * BASE_SR) as usize;
+            let t_100ms = (0.100 * BASE_SR) as usize;
+            let t_200ms = (0.200 * BASE_SR) as usize;
+            let t_1000ms = (1.000 * BASE_SR) as usize;
+            let t_1500ms = (1.500 * BASE_SR) as usize;
+
+            // Peak in 0-10ms (spec attack window)
+            let peak_0_10 = output[..t_10ms.min(output.len())]
+                .iter()
+                .map(|x| x.abs())
+                .fold(0.0f64, f64::max);
+
+            // Peak in 0-50ms (wider attack window for bark decay metric)
+            let peak_0_50 = output[..t_50ms.min(output.len())]
+                .iter()
+                .map(|x| x.abs())
+                .fold(0.0f64, f64::max);
+
+            // RMS in 100-200ms (early sustain — spec reference)
+            let rms_100_200 = rms_window(&output, t_100ms, t_200ms);
+
+            // RMS in 1000-1500ms (late sustain — bark decay reference)
+            let rms_1000_1500 = rms_window(&output, t_1000ms, t_1500ms);
+
+            // Overshoot (calibration spec §10.1)
+            let overshoot_db = if rms_100_200 > 1e-15 {
+                20.0 * (peak_0_10 / rms_100_200).log10()
+            } else {
+                f64::NAN
+            };
+
+            // Bark decay (what Dr Dawgg measured — NOT the same as overshoot)
+            let bark_decay_db = if rms_1000_1500 > 1e-15 {
+                20.0 * (peak_0_50 / rms_1000_1500).log10()
+            } else {
+                f64::NAN
+            };
+
+            let pk_dbfs = to_dbfs(peak_0_10);
+            let rms1_dbfs = to_dbfs(rms_100_200);
+            let rms2_dbfs = to_dbfs(rms_1000_1500);
+
+            let note_name = midi_note_name(note);
+            println!(
+                "{:>6} {:>4}  {:>7.1} {:>7.1} {:>7.1}  {:>9.1} {:>9.1}",
+                note_name,
+                vel_byte,
+                pk_dbfs,
+                rms1_dbfs,
+                rms2_dbfs,
+                overshoot_db,
+                bark_decay_db,
+            );
+        }
+        println!();
+    }
+
+    println!("Targets (from calibration-and-evaluation.md §4.1 & §10.1):");
+    println!("  Overshoot at mf (v64):   2-5 dB   (from modal superposition)");
+    println!("  Overshoot at ff (v127):  5-10 dB  (from modal superposition)");
+    println!("  Bark decay:              no target (physics-correct bark fade, not a defect)");
+}
+
+fn rms_window(signal: &[f64], start: usize, end: usize) -> f64 {
+    let s = start.min(signal.len());
+    let e = end.min(signal.len());
+    if e <= s {
+        return 0.0;
+    }
+    let sum_sq: f64 = signal[s..e].iter().map(|x| x * x).sum();
+    (sum_sq / (e - s) as f64).sqrt()
+}
+
+fn to_dbfs(val: f64) -> f64 {
+    if val > 1e-15 {
+        20.0 * val.log10()
+    } else {
+        -120.0
     }
 }
