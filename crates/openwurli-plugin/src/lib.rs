@@ -81,6 +81,9 @@ struct OpenWurli {
     // Sample rates
     sample_rate: f64,
     os_sample_rate: f64,
+
+    /// Whether to oversample the preamp (false at >= 88.2 kHz host rates).
+    oversample: bool,
 }
 
 impl Default for OpenWurli {
@@ -102,6 +105,7 @@ impl Default for OpenWurli {
             out_buf: vec![0.0; MAX_BLOCK_SIZE],
             sample_rate: sr,
             os_sample_rate: os_sr,
+            oversample: true,
         }
     }
 }
@@ -221,23 +225,31 @@ impl OpenWurli {
             }
         }
 
-        // Upsample to 2x rate
-        self.oversampler
-            .upsample_2x(&self.sum_buf[..len], &mut self.up_buf[..len * 2]);
+        if self.oversample {
+            // Upsample to 2x rate
+            self.oversampler
+                .upsample_2x(&self.sum_buf[..len], &mut self.up_buf[..len * 2]);
 
-        // Process through preamp at oversampled rate (tremolo modulates LDR)
-        // PERF: LDR resistance recomputed every oversampled sample; could be every 16
-        for s in &mut self.up_buf[..len * 2] {
-            let r_ldr = self.tremolo.process();
-            self.preamp.set_ldr_resistance(r_ldr);
-            *s = self.preamp.process_sample(*s);
+            // Process through preamp at oversampled rate
+            for s in &mut self.up_buf[..len * 2] {
+                let r_ldr = self.tremolo.process();
+                self.preamp.set_ldr_resistance(r_ldr);
+                *s = self.preamp.process_sample(*s);
+            }
+
+            // Downsample back to base rate
+            self.oversampler.downsample_2x(
+                &self.up_buf[..len * 2],
+                &mut self.out_buf[offset..offset + len],
+            );
+        } else {
+            // At >= 88.2 kHz: preamp runs at native rate, no oversampling needed
+            for i in 0..len {
+                let r_ldr = self.tremolo.process();
+                self.preamp.set_ldr_resistance(r_ldr);
+                self.out_buf[offset + i] = self.preamp.process_sample(self.sum_buf[i]);
+            }
         }
-
-        // Downsample back to base rate
-        self.oversampler.downsample_2x(
-            &self.up_buf[..len * 2],
-            &mut self.out_buf[offset..offset + len],
-        );
     }
 
     fn cleanup_voices(&mut self) {
@@ -285,7 +297,13 @@ impl Plugin for OpenWurli {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate as f64;
-        self.os_sample_rate = self.sample_rate * 2.0;
+        // Skip 2x oversampling at 88.2kHz+ — Nyquist is already above preamp BW
+        self.oversample = self.sample_rate < 88200.0;
+        self.os_sample_rate = if self.oversample {
+            self.sample_rate * 2.0
+        } else {
+            self.sample_rate
+        };
 
         // Reinitialize DSP modules at correct sample rate
         self.preamp = DkPreamp::new(self.os_sample_rate);

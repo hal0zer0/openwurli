@@ -2,8 +2,6 @@
 //!
 //! Signal flow: modal_oscillator -> pickup_hpf -> output
 //! Attack noise mixed in during first ~15 ms.
-#![allow(clippy::needless_range_loop)]
-
 use crate::hammer::{AttackNoise, dwell_attenuation, onset_ramp_time};
 use crate::mlp_correction::MlpCorrections;
 use crate::pickup::Pickup;
@@ -45,8 +43,8 @@ impl Voice {
         let amp_offsets = variation::mode_amplitude_offsets(midi_note);
 
         let mut amplitudes = [0.0f64; NUM_MODES];
-        for i in 0..NUM_MODES {
-            amplitudes[i] = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i];
+        for (i, amp) in amplitudes.iter_mut().enumerate() {
+            *amp = params.mode_amplitudes[i] * dwell[i] * amp_offsets[i];
         }
 
         // Sigmoid → power-law velocity curve (physical hammer force — pre-pickup).

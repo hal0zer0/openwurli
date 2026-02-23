@@ -4,8 +4,6 @@
 //! solder mass, and mounting characteristics. This module provides fixed
 //! per-note offsets so note 60 always sounds the same, but differs
 //! slightly from note 61.
-#![allow(clippy::needless_range_loop)]
-
 use crate::tables::NUM_MODES;
 
 /// Simple deterministic hash: takes MIDI note + seed, returns 0.0..1.0.
@@ -33,12 +31,10 @@ pub fn freq_detune(midi: u8) -> f64 {
 /// Per-mode amplitude variation factors: multipliers in range [1-max, 1+max].
 /// max = 0.08 (+/-8%).
 pub fn mode_amplitude_offsets(midi: u8) -> [f64; NUM_MODES] {
-    let mut offsets = [0.0f64; NUM_MODES];
-    for i in 0..NUM_MODES {
+    std::array::from_fn(|i| {
         let r = hash_f64(midi, 0xBEEF + i as u32) * 2.0 - 1.0;
-        offsets[i] = 1.0 + r * 0.08;
-    }
-    offsets
+        1.0 + r * 0.08
+    })
 }
 
 #[cfg(test)]

@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] "GoodbyeMary" - 2026-02-22
+
+### Changed
+- Reed oscillator: quadrature rotation replaces per-sample `sin()` calls —
+  7 transcendentals per sample per voice reduced to 0. Mode struct (AoS)
+  replaces parallel arrays. ~1075x realtime for 12 voices in isolation.
+- Reed jitter: subsample update (every 16 samples instead of every sample).
+  OU correlation time τ=20ms >> 0.36ms update interval — perceptually identical.
+- Pickup: algebraic division elimination — `beta / c_n` → `beta * (1-y)`,
+  `q / c_n` → `q * (1-y)`. 2 divisions per sample per voice removed.
+- Conditional oversampling: 2x oversampling skipped at host rates ≥ 88.2 kHz
+  (preamp BW ~15.5 kHz is below 44.1 kHz Nyquist at 96 kHz). Saves ~50%
+  of DK preamp cost at high sample rates.
+- Iterator idioms: module-level `needless_range_loop` allows removed from
+  tables.rs, voice.rs, variation.rs; loops converted to `std::array::from_fn`,
+  `iter_mut().enumerate()`, and `zip()` chains.
+- `powf(MODE_DECAY_EXPONENT)` → `x * x` in mode_decay_rates (exponent is 2.0)
+- Filter precomputes: `OnePoleLpf` caches `one_minus_alpha`, `TptLpf` caches
+  `g_denom = g / (1 + g)` — avoids recomputation per sample.
+
+### Added
+- `bench-reed` subcommand in preamp-bench: isolated reed microbenchmark
+  (voices × duration, reports realtime ratio)
+- `--sample-rate` flag for preamp-bench render: enables 96 kHz rendering
+  with automatic oversampling bypass
+
+### Performance
+- Batch offline render (15 notes × 3 velocities): 4.4% wall-clock improvement
+- 8-voice polyphonic stress test: 12.1% wall-clock improvement
+- Reed-only microbenchmark: 1075x realtime (12 voices, 2 seconds)
+
 ## [0.1.5] "MountUp" - 2026-02-22
 
 ### Changed
@@ -157,7 +188,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/hal0zer0/openwurli/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/hal0zer0/openwurli/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/hal0zer0/openwurli/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/hal0zer0/openwurli/compare/v0.1.2...v0.1.3

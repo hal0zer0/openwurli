@@ -102,22 +102,16 @@ impl Pickup {
         let beta = self.beta;
         for sample in buffer.iter_mut() {
             let y = (*sample * scale).clamp(-PICKUP_MAX_Y, PICKUP_MAX_Y);
-            // Time-varying normalized capacitance: C(y)/C_0 = 1/(1-y)
-            let c_n = 1.0 / (1.0 - y);
-            // Time-varying bilinear coefficient
-            let alpha = beta / c_n; // = beta * (1 - y)
+            // Eliminate c_n = 1/(1-y) division: use (1-y) directly.
+            // alpha = beta / c_n = beta * (1-y)
+            let one_minus_y = 1.0 - y;
+            let alpha = beta * one_minus_y;
             // Bilinear (trapezoidal) integration of: TAU * dq/dt = 1 - q/c_n
             // Driving term is 2*beta (from the constant V_hv source), NOT 2*alpha
             let q_next = (self.q * (1.0 - alpha) + 2.0 * beta) / (1.0 + alpha);
             self.q = q_next;
-            // AC voltage: deviation of capacitor voltage from equilibrium.
-            // V_c = V_eq * q/c_n; at equilibrium q=c_n so q/c_n=1.
-            // Physical: when reed approaches plate, C increases but charge lags →
-            // V drops below equilibrium. When reed recedes, C decreases but charge
-            // can't drain fast enough → V rises above equilibrium, with larger
-            // amplitude (fast RC discharge vs slow charge). (q/c_n - 1) is positive
-            // for the larger "away" excursion, giving pos_peak > neg_peak.
-            *sample = (q_next / c_n - 1.0) * PICKUP_SENSITIVITY;
+            // Output: (q/c_n - 1) = (q*(1-y) - 1) — no division needed
+            *sample = (q_next * one_minus_y - 1.0) * PICKUP_SENSITIVITY;
         }
     }
 

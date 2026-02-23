@@ -49,6 +49,7 @@ fn main() {
         "overshoot" => cmd_overshoot(&args[2..]),
         "render-poly" => cmd_render_poly(&args[2..]),
         "render-midi" => cmd_render_midi(&args[2..]),
+        "bench-reed" => cmd_bench_reed(&args[2..]),
         _ => {
             eprintln!("Unknown subcommand: {}", args[1]);
             print_usage();
@@ -73,6 +74,7 @@ fn print_usage() {
     eprintln!("  overshoot       Measure onset overshoot (spec: 0-10ms peak vs 100-200ms RMS)");
     eprintln!("  render-poly     Render multiple simultaneous notes through shared chain");
     eprintln!("  render-midi     Render a MIDI file through the full signal chain");
+    eprintln!("  bench-reed      Isolate reed rendering performance (quadrature oscillator)");
     eprintln!();
     eprintln!("Global options:");
     eprintln!("  --model MODEL   Preamp model: dk (default), ebers-moll");
@@ -340,6 +342,7 @@ fn cmd_render(args: &[String]) {
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let tremolo_rate = parse_flag(args, "--tremolo-rate", 5.63);
     let tremolo_depth = parse_flag(args, "--tremolo-depth", 0.0);
+    let sample_rate = parse_flag(args, "--sample-rate", BASE_SR);
     let no_poweramp = args.contains(&"--no-poweramp".to_string());
     let no_preamp = args.contains(&"--no-preamp".to_string());
     let no_attack_noise = args.contains(&"--no-attack-noise".to_string());
@@ -351,18 +354,26 @@ fn cmd_render(args: &[String]) {
     };
     let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render.wav");
 
+    // Conditional oversampling: skip at >= 88.2 kHz (Nyquist above preamp BW)
+    let do_oversample = sample_rate < 88200.0;
+    let preamp_sr = if do_oversample {
+        sample_rate * 2.0
+    } else {
+        sample_rate
+    };
+
     // Render reed voice (reed → pickup with nonlinearity + HPF)
     let reed_output = {
         let vel_norm = velocity as f64 / 127.0;
         let noise_seed = (note as u32).wrapping_mul(2654435761);
-        let mut voice = Voice::note_on(note, vel_norm, BASE_SR, noise_seed, true);
+        let mut voice = Voice::note_on(note, vel_norm, sample_rate, noise_seed, true);
         if let Some(scale) = disp_scale {
             voice.set_displacement_scale(scale);
         }
         if no_attack_noise {
             voice.disable_attack_noise();
         }
-        let num_samples = (duration * BASE_SR) as usize;
+        let num_samples = (duration * sample_rate) as usize;
         let mut output = vec![0.0f64; num_samples];
         let chunk_size = 1024;
         let mut offset = 0;
@@ -374,55 +385,62 @@ fn cmd_render(args: &[String]) {
         output
     };
 
-    // Process through oversampled preamp (or bypass)
+    // Process through preamp (oversampled or native rate)
     let n_samples = reed_output.len();
     let preamp_output = if no_preamp {
         reed_output.clone()
     } else {
-        let mut preamp = create_preamp(args);
+        let mut preamp = DkPreamp::new(preamp_sr);
 
-        // Tremolo: when depth > 0, instantiate LFO at oversampled rate.
-        // Otherwise use static LDR resistance (--ldr flag).
         let mut tremolo = if tremolo_depth > 0.0 {
-            let mut t = Tremolo::new(tremolo_rate, tremolo_depth, OVERSAMPLED_SR);
+            let mut t = Tremolo::new(tremolo_rate, tremolo_depth, preamp_sr);
             t.set_depth(tremolo_depth);
             Some(t)
         } else {
             preamp.set_ldr_resistance(r_ldr);
-            preamp.reset(); // Re-solve DC at the new R_ldr
+            preamp.reset();
             None
         };
 
-        let mut os = Oversampler::new();
         let mut out = vec![0.0f64; n_samples];
-        for i in 0..n_samples {
-            let mut up = [0.0f64; 2];
-            os.upsample_2x(&[reed_output[i]], &mut up);
-            let processed = [
-                {
-                    if let Some(ref mut trem) = tremolo {
-                        preamp.set_ldr_resistance(trem.process());
-                    }
-                    preamp.process_sample(up[0])
-                },
-                {
-                    if let Some(ref mut trem) = tremolo {
-                        preamp.set_ldr_resistance(trem.process());
-                    }
-                    preamp.process_sample(up[1])
-                },
-            ];
-            let mut down = [0.0f64; 1];
-            os.downsample_2x(&processed, &mut down);
-            out[i] = down[0];
+        if do_oversample {
+            let mut os = Oversampler::new();
+            for i in 0..n_samples {
+                let mut up = [0.0f64; 2];
+                os.upsample_2x(&[reed_output[i]], &mut up);
+                let processed = [
+                    {
+                        if let Some(ref mut trem) = tremolo {
+                            preamp.set_ldr_resistance(trem.process());
+                        }
+                        preamp.process_sample(up[0])
+                    },
+                    {
+                        if let Some(ref mut trem) = tremolo {
+                            preamp.set_ldr_resistance(trem.process());
+                        }
+                        preamp.process_sample(up[1])
+                    },
+                ];
+                let mut down = [0.0f64; 1];
+                os.downsample_2x(&processed, &mut down);
+                out[i] = down[0];
+            }
+        } else {
+            // Native rate: no oversampling needed
+            for i in 0..n_samples {
+                if let Some(ref mut trem) = tremolo {
+                    preamp.set_ldr_resistance(trem.process());
+                }
+                out[i] = preamp.process_sample(reed_output[i]);
+            }
         }
         out
     };
 
     // Output stage: volume → power amp (gain + crossover + clip) → speaker
-    // Matches the plugin signal chain in lib.rs
     let mut power_amp = PowerAmp::new();
-    let mut speaker = Speaker::new(BASE_SR);
+    let mut speaker = Speaker::new(sample_rate);
     speaker.set_character(speaker_char);
 
     let mut final_output = vec![0.0f64; n_samples];
@@ -459,7 +477,7 @@ fn cmd_render(args: &[String]) {
 
     let spec = hound::WavSpec {
         channels: 1,
-        sample_rate: BASE_SR as u32,
+        sample_rate: sample_rate as u32,
         bits_per_sample: 24,
         sample_format: hound::SampleFormat::Int,
     };
@@ -497,6 +515,12 @@ fn cmd_render(args: &[String]) {
     }
     if normalize {
         println!("  Normalize: ON (-3 dBFS ceiling)");
+    }
+    if sample_rate != BASE_SR {
+        println!(
+            "  Sample rate: {sample_rate:.0} Hz (oversample: {})",
+            if do_oversample { "on" } else { "off" }
+        );
     }
     println!("  Peak:      {peak_dbfs:.1} dBFS (raw)");
     println!("  Build:     v{}", env!("CARGO_PKG_VERSION"));
@@ -2174,4 +2198,84 @@ fn to_dbfs(val: f64) -> f64 {
     } else {
         -120.0
     }
+}
+
+// ─── Bench reed ─────────────────────────────────────────────────────────────
+
+/// Isolate reed rendering performance: N voices × D seconds, reed-only.
+/// No pickup, no preamp, no IO — just the quadrature oscillator.
+fn cmd_bench_reed(args: &[String]) {
+    use openwurli_dsp::hammer::{dwell_attenuation, onset_ramp_time};
+
+    let voices = parse_flag(args, "--voices", 12.0) as usize;
+    let duration = parse_flag(args, "--duration", 2.0);
+    let sr = BASE_SR;
+    let num_samples = (duration * sr) as usize;
+
+    // Create diverse voices (spread across keyboard and velocity range)
+    let notes: Vec<u8> = (0..voices)
+        .map(|i| {
+            let t = i as f64 / voices.max(1) as f64;
+            (36.0 + t * 48.0) as u8 // MIDI 36-84
+        })
+        .collect();
+    let velocities: Vec<f64> = (0..voices)
+        .map(|i| 0.3 + 0.7 * (i as f64 / voices.max(1) as f64))
+        .collect();
+
+    let mut reeds: Vec<ModalReed> = Vec::with_capacity(voices);
+    for i in 0..voices {
+        let note = notes[i];
+        let vel = velocities[i];
+        let params = tables::note_params(note);
+        let detuned = params.fundamental_hz * variation::freq_detune(note);
+        let dwell = dwell_attenuation(vel, detuned, &params.mode_ratios);
+        let onset = onset_ramp_time(vel, detuned);
+        let amp_off = variation::mode_amplitude_offsets(note);
+        let mut amps = [0.0f64; NUM_MODES];
+        for m in 0..NUM_MODES {
+            amps[m] = params.mode_amplitudes[m] * dwell[m] * amp_off[m];
+        }
+        let seed = (note as u32).wrapping_mul(2654435761).wrapping_add(i as u32);
+        reeds.push(ModalReed::new(
+            detuned,
+            &params.mode_ratios,
+            &amps,
+            &params.mode_decay_rates,
+            onset,
+            vel,
+            sr,
+            seed,
+        ));
+    }
+
+    let mut scratch = vec![0.0f64; 1024];
+
+    let start = std::time::Instant::now();
+    let mut offset = 0usize;
+    while offset < num_samples {
+        let chunk = 1024.min(num_samples - offset);
+        scratch[..chunk].fill(0.0);
+        for reed in &mut reeds {
+            reed.render(&mut scratch[..chunk]);
+        }
+        offset += chunk;
+    }
+    let elapsed = start.elapsed();
+
+    let total_ms = elapsed.as_secs_f64() * 1000.0;
+    let per_voice_per_sec = total_ms / (voices as f64 * duration);
+    let total_voice_seconds = voices as f64 * duration;
+    let realtime_ratio = total_voice_seconds / elapsed.as_secs_f64();
+    let samples_per_sec = (num_samples as f64 * voices as f64) / elapsed.as_secs_f64();
+
+    println!("Reed microbenchmark");
+    println!("  Voices:          {voices}");
+    println!("  Duration:        {duration:.1}s");
+    println!("  Sample rate:     {sr:.0} Hz");
+    println!("  Total time:      {total_ms:.1} ms");
+    println!("  Per voice/sec:   {per_voice_per_sec:.2} ms");
+    println!("  Realtime ratio:  {realtime_ratio:.1}x");
+    println!("  Samples/sec:     {samples_per_sec:.0}");
+    println!("  Build:           v{}", env!("CARGO_PKG_VERSION"));
 }

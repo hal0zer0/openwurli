@@ -2,8 +2,6 @@
 //!
 //! Derived from Euler-Bernoulli beam theory with tip mass (docs/reed-and-hammer-physics.md).
 //! Range: MIDI 33 (A1) to MIDI 96 (C7) -- 64 reeds.
-#![allow(clippy::needless_range_loop)]
-
 pub const NUM_MODES: usize = 7;
 pub const MIDI_LO: u8 = 33;
 pub const MIDI_HI: u8 = 96;
@@ -142,11 +140,7 @@ fn eigenvalues(mu: f64) -> [f64; NUM_MODES] {
         0.0
     };
 
-    let mut betas = [0.0f64; NUM_MODES];
-    for i in 0..NUM_MODES {
-        betas[i] = table[lo].betas[i] + t * (table[hi].betas[i] - table[lo].betas[i]);
-    }
-    betas
+    std::array::from_fn(|i| table[lo].betas[i] + t * (table[hi].betas[i] - table[lo].betas[i]))
 }
 
 /// Mode frequency ratios f_n/f_1 for a cantilever beam with tip mass ratio mu.
@@ -156,11 +150,7 @@ fn eigenvalues(mu: f64) -> [f64; NUM_MODES] {
 pub fn mode_ratios(mu: f64) -> [f64; NUM_MODES] {
     let betas = eigenvalues(mu);
     let b1_sq = betas[0] * betas[0];
-    let mut ratios = [0.0f64; NUM_MODES];
-    for i in 0..NUM_MODES {
-        ratios[i] = (betas[i] * betas[i]) / b1_sq;
-    }
-    ratios
+    std::array::from_fn(|i| (betas[i] * betas[i]) / b1_sq)
 }
 
 /// Reed length in mm for a given MIDI note.
@@ -323,6 +313,7 @@ const PLATE_ACTIVE_LENGTH_MM: f64 = 6.0;
 /// was calibrated against real-world bark levels assuming tip-displacement sensing.
 /// What matters for mode suppression is the *differential* attenuation: how much
 /// less the pickup senses mode n relative to mode 1.
+#[allow(clippy::needless_range_loop)]
 pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MODES] {
     let betas = eigenvalues(mu);
     let ell_over_l = (PLATE_ACTIVE_LENGTH_MM / reed_len_mm).clamp(0.0, 1.0);
@@ -365,11 +356,7 @@ pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MOD
     // Only the differential suppression (kappa_n / kappa_1) is meaningful.
     let k1 = kappa_raw[0];
     if k1 > 1e-30 {
-        let mut kappa = [0.0f64; NUM_MODES];
-        for i in 0..NUM_MODES {
-            kappa[i] = (kappa_raw[i] / k1).clamp(0.0, 1.0);
-        }
-        kappa
+        std::array::from_fn(|i| (kappa_raw[i] / k1).clamp(0.0, 1.0))
     } else {
         [1.0; NUM_MODES]
     }
@@ -389,6 +376,7 @@ pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MOD
 /// Returns per-mode coupling coefficients normalized to mode 1.
 /// Values > 1.0 mean that mode is excited MORE efficiently than mode 1
 /// at this position (mode 1 has small displacement near the clamp).
+#[allow(clippy::needless_range_loop)]
 pub fn hammer_spatial_coupling(mu: f64) -> [f64; NUM_MODES] {
     let betas = eigenvalues(mu);
 
@@ -416,11 +404,7 @@ pub fn hammer_spatial_coupling(mu: f64) -> [f64; NUM_MODES] {
     // Normalize to mode 1
     let k1 = coupling_raw[0];
     if k1 > 1e-30 {
-        let mut coupling = [0.0f64; NUM_MODES];
-        for i in 0..NUM_MODES {
-            coupling[i] = coupling_raw[i] / k1;
-        }
-        coupling
+        std::array::from_fn(|i| coupling_raw[i] / k1)
     } else {
         [1.0; NUM_MODES]
     }
@@ -467,15 +451,15 @@ pub fn fundamental_decay_rate(midi: u8) -> f64 {
 /// Previous value (1.5) allowed mode 2 to ring for ~77ms in mid-register,
 /// creating an audible metallic "plink" at 1642 Hz — peak ear sensitivity.
 /// The p=2.0 value better matches Zener thermoelastic theory (loss ∝ ω²).
-const MODE_DECAY_EXPONENT: f64 = 2.0;
+///
+/// Note: the constant is preserved for documentation; `mode_decay_rates()`
+/// inlines `ratio * ratio` instead of `powf(2.0)` for performance.
+pub const MODE_DECAY_EXPONENT: f64 = 2.0;
 
 pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES] {
     let base = fundamental_decay_rate(midi);
-    let mut rates = [0.0f64; NUM_MODES];
-    for i in 0..NUM_MODES {
-        rates[i] = base * ratios[i].powf(MODE_DECAY_EXPONENT);
-    }
-    rates
+    // Inlined ratio² is cheaper than powf(MODE_DECAY_EXPONENT)
+    std::array::from_fn(|i| base * ratios[i] * ratios[i])
 }
 
 /// Multi-harmonic RMS proxy for post-pickup signal level.
@@ -759,11 +743,10 @@ fn dwell_attenuation_ff(fundamental_hz: f64, mode_ratios: &[f64; NUM_MODES]) -> 
     let t_dwell = (0.75 / fundamental_hz).clamp(0.0003, 0.020);
     let sigma_sq = 8.0 * 8.0;
 
-    let mut atten = [0.0f64; NUM_MODES];
-    for i in 0..NUM_MODES {
+    let mut atten: [f64; NUM_MODES] = std::array::from_fn(|i| {
         let ft = fundamental_hz * mode_ratios[i] * t_dwell;
-        atten[i] = (-ft * ft / (2.0 * sigma_sq)).exp();
-    }
+        (-ft * ft / (2.0 * sigma_sq)).exp()
+    });
 
     let a0 = atten[0];
     if a0 > 1e-30 {
@@ -845,8 +828,8 @@ pub fn note_params(midi: u8) -> NoteParams {
 
     // Apply spatial pickup coupling — finite plate length attenuates higher bending modes
     let coupling = spatial_coupling_coefficients(mu, reed_length_mm(midi));
-    for i in 0..NUM_MODES {
-        amplitudes[i] *= coupling[i];
+    for (amp, &k) in amplitudes.iter_mut().zip(coupling.iter()) {
+        *amp *= k;
     }
 
     NoteParams {

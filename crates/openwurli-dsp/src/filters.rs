@@ -39,6 +39,7 @@ impl OnePoleHpf {
 /// 1-pole low-pass filter: y[n] = alpha * x[n] + (1 - alpha) * y[n-1]
 pub struct OnePoleLpf {
     alpha: f64,
+    one_minus_alpha: f64,
     dt: f64,
     prev_y: f64,
 }
@@ -56,6 +57,7 @@ impl OnePoleLpf {
         let alpha = dt / (rc + dt);
         Self {
             alpha,
+            one_minus_alpha: 1.0 - alpha,
             dt,
             prev_y: 0.0,
         }
@@ -77,10 +79,11 @@ impl OnePoleLpf {
     pub fn set_cutoff(&mut self, cutoff_hz: f64) {
         let rc = 1.0 / (2.0 * PI * cutoff_hz);
         self.alpha = self.dt / (rc + self.dt);
+        self.one_minus_alpha = 1.0 - self.alpha;
     }
 
     pub fn process(&mut self, x: f64) -> f64 {
-        let y = self.alpha * x + (1.0 - self.alpha) * self.prev_y;
+        let y = self.alpha * x + self.one_minus_alpha * self.prev_y;
         self.prev_y = y;
         y
     }
@@ -103,6 +106,7 @@ impl OnePoleLpf {
 /// which enables convergence in ZDF feedback iteration.
 pub struct TptLpf {
     g: f64,
+    g_denom: f64, // g / (1 + g), precomputed
     s: f64,
     sample_rate: f64,
 }
@@ -118,13 +122,14 @@ impl TptLpf {
         let g = (PI * cutoff_hz / sample_rate).tan();
         Self {
             g,
+            g_denom: g / (1.0 + g),
             s: 0.0,
             sample_rate,
         }
     }
 
     pub fn process(&mut self, x: f64) -> f64 {
-        let v = (x - self.s) * self.g / (1.0 + self.g);
+        let v = (x - self.s) * self.g_denom;
         let y = v + self.s;
         self.s = y + v;
         y
@@ -133,6 +138,7 @@ impl TptLpf {
     /// Update cutoff frequency without resetting filter state.
     pub fn set_cutoff(&mut self, cutoff_hz: f64) {
         self.g = (PI * cutoff_hz / self.sample_rate).tan();
+        self.g_denom = self.g / (1.0 + self.g);
     }
 
     /// Save filter state for ZDF iteration.
