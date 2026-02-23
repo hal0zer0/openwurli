@@ -11,10 +11,10 @@ speaker saturation.
 
 | Parameter | Location | Current | Role |
 |-----------|----------|---------|------|
-| `DS_AT_C4` | tables.rs | 0.85 | Pickup displacement anchor at C4 |
-| `DS_CLAMP` | tables.rs | [0.02, 0.85] | Physical limit on displacement |
-| `DS_EXPONENT` | tables.rs | 0.65 | Compliance-to-displacement curve shape |
-| `TARGET_DB` | tables.rs | -13.0 | Absolute output level target |
+| `DS_AT_C4` | tables.rs | 0.75 | Pickup displacement anchor at C4 |
+| `DS_CLAMP` | tables.rs | [0.02, 0.82] | Physical limit on displacement |
+| `DS_EXPONENT` | tables.rs | 0.75 | Compliance-to-displacement curve shape |
+| `TARGET_DB` | tables.rs | -35.0 | Absolute output level target |
 | `VOICING_SLOPE` | tables.rs | -0.04 | Treble roll-off (dB/semitone above C4) |
 | Register trim `ANCHORS` | tables.rs | 13 anchors | Per-note empirical correction |
 | Speaker Xmax | speaker.rs | tanh(polynomial) | Cone excursion limiting |
@@ -116,7 +116,7 @@ cargo run -p preamp-bench -- sensitivity \
 Scale modes:
 - `track` (default): Override DS + keep current trim → "how much trim error remains?"
 - `zero-trim`: Override DS + zero trim → "what's the natural imbalance?"
-- `freeze`: Original DS=0.85 + current trim → "raw level change from DS alone"
+- `freeze`: Original DS=0.75 + current trim → "raw level change from DS alone"
 
 Grid: 8 DS × 8 notes × 3 velocities = 192 renders. ~90 seconds.
 

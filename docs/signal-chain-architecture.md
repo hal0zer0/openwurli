@@ -268,19 +268,46 @@ Calibration target: `base_decay = 0.005 * freq^1.22` with MIN_DECAY_RATE = 3.0 d
 ### Per-Sample Rendering
 
 ```rust
-// Multiplicative decay: avoids per-sample exp() by precomputing decay_mult[m] = exp(-alpha/sr)
-// and maintaining a running envelope[m] *= decay_mult[m] each sample.
+// Quadrature oscillator: each Mode struct holds (s, c) sine/cosine state.
+// Phase advance via 2x2 rotation matrix — 0 sin() calls per sample per voice.
+// Mode struct is AoS (array of structs, 616 bytes/voice) for L1 cache locality.
+//
+// Multiplicative decay: precomputed decay_mult[m] = exp(-alpha/sr),
+// running envelope[m] *= decay_mult[m] each sample.
 // Mathematically identical to exp(-alpha*n) to ~15 decimal places.
 for each sample:
+    // Jitter: OU process updated every 16 samples (amortized cost /16, tau=20ms)
+    if sample_counter % 16 == 0:
+        for each mode m:
+            jitter_drift[m] += ou_update(jitter_drift[m], lcg_uniform_scaled())
+
     signal = 0.0
     for each mode m:
-        signal += amps[m] * envelope[m] * sin(phases[m]) * onset
-        phases[m] += 2*PI * freqs[m] * (1 + jitter_drift[m]) * dt
+        // Quadrature output: amplitude * sin_state * onset * envelope
+        signal += mode[m].amplitude * mode[m].s * onset * mode[m].envelope
+
+        // Jitter-corrected rotation (Taylor first-order correction for dω)
+        let ci = mode[m].cos_inc   // precomputed cos(2π * freq * dt)
+        let si = mode[m].sin_inc   // precomputed sin(2π * freq * dt)
+        let s_new = mode[m].s * ci + mode[m].c * si
+        let c_new = mode[m].c * ci - mode[m].s * si
+        mode[m].s = s_new
+        mode[m].c = c_new
+
     // Apply decay (multiply only — no transcendentals)
     for each mode m:
-        envelope[m] *= decay_mult[m]
+        mode[m].envelope *= decay_mult[m]
         if damper_active && damper_ramp_done:
-            envelope[m] *= damper_mult[m]
+            mode[m].envelope *= damper_mult[m]
+
+    // Renormalize quadrature state every 1024 samples (amortized cost)
+    if sample_counter % 1024 == 0:
+        for each mode m:
+            let norm = 1.0 / sqrt(mode[m].s² + mode[m].c²)
+            mode[m].s *= norm
+            mode[m].c *= norm
+
+    // Onset powf branching: exp≈1 direct multiply, exp≈2 squared (avoids powf)
 ```
 
 ### Phase Initialization
@@ -437,7 +464,7 @@ The `displacement_scale` parameter converts reed model output (normalized, funda
 
 ```
 displacement_scale(midi) = DS_AT_C4 * 2^((midi - 60) * DS_EXPONENT / 12)
-// DS_AT_C4 = 0.85, DS_EXPONENT = 0.65, clamp [0.02, 0.85]
+// DS_AT_C4 = 0.75, DS_EXPONENT = 0.75, clamp [0.02, 0.82]
 ```
 
 Bass reeds have wider gaps and larger displacements; treble reeds have tighter gaps. The exponential curve captures this register dependence.
@@ -446,8 +473,8 @@ Bass reeds have wider gaps and larger displacements; treble reeds have tighter g
 
 | Parameter | Default | Range | Purpose |
 |-----------|---------|-------|---------|
-| `displacement_scale` | Per-note (DS_AT_C4=0.85) | 0.02-0.85 | Converts model units to physical y = x/d_0 |
-| `MAX_Y` | 0.90 | — | Safety clamp (y=1.0 is a singularity) |
+| `displacement_scale` | Per-note (DS_AT_C4=0.75) | 0.02-0.82 | Converts model units to physical y = x/d_0 |
+| `MAX_Y` | 0.98 | — | Safety clamp (y=1.0 is a singularity; RC model self-limits via charge dynamics) |
 | `SENSITIVITY` | 1.8375 V | — | V_hv * C_0 / (C_0 + C_p) = 147 * 3/240 |
 | HPF corner | 2312 Hz | — | 1-pole HPF from pickup RC (R_total=287K, C=240pF) |
 
@@ -852,6 +879,12 @@ The preamp's input is naturally bandlimited by the pickup's RC HPF (~2312 Hz) an
 
 For 44.1 kHz base rate, 2x gives 88.2 kHz with 44.1 kHz Nyquist. Still adequate given the natural input bandwidth.
 
+### Conditional Bypass at High Sample Rates
+
+At host sample rates >= 88.2 kHz, the 2x oversampling is bypassed entirely. The preamp runs at the native host rate. Rationale: the preamp's bandwidth (~15.5 kHz) is well below the native Nyquist frequency (44.1+ kHz at 88.2 kHz host rate), so the oversampler provides no meaningful anti-aliasing benefit. Bypassing saves approximately 50% of the DK preamp solver cost (which dominates CPU usage).
+
+The plugin checks `sample_rate < 88200.0` at initialization and sets `oversample` accordingly. The preamp-bench CLI supports `--sample-rate` to test rendering at non-default rates; oversampling is auto-bypassed when the specified rate is >= 88.2 kHz.
+
 ### Filter Choice: Allpass Polyphase IIR Half-Band
 
 - Architecture: Polyphase IIR half-band filter using two allpass branches (3 coefficients each, 6 total)
@@ -904,14 +937,14 @@ The plugin must support at minimum: 44100, 48000, 88200, 96000 Hz. Higher rates 
 |-----------|----------------------|
 | Oscillator phase increment | `2*PI*freq/sampleRate` |
 | All filters (HPF, LPF, biquads) | Coefficients recomputed in `activate()` |
-| Oversampler | Operates at 2x whatever the base rate is |
+| Oversampler | 2x at base rates < 88.2 kHz; bypassed at >= 88.2 kHz |
 | Preamp (inside oversampler) | Filters prepared at 2x sampleRate |
 | Decay rates | Time-domain rates are sample-rate-independent (expressed in seconds) |
 | Tremolo LFO | Phase increment: `rate * dt` |
 
 ### At Higher Sample Rates
 
-At 96 kHz base rate, the 2x oversampler runs at 192 kHz. This provides even more anti-aliasing headroom. The preamp's harmonics have more room before Nyquist. No special handling needed -- just recompute filter coefficients.
+At 96 kHz base rate (above the 88.2 kHz threshold), 2x oversampling is bypassed — the preamp's bandwidth (~15.5 kHz) is well below the native 48 kHz Nyquist. The preamp runs at the native 96 kHz rate, saving approximately 50% of DK solver cost. Filter coefficients are recomputed for the native rate in `activate()`.
 
 At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The pickup RC HPF limits the preamp input to ~2312+ Hz, so even H12 of a 4 kHz input (48 kHz) is below the 44.1 kHz Nyquist of the oversampled domain. Adequate.
 
@@ -1042,23 +1075,29 @@ When a voice is stolen:
 - Tremolo ln() caching: `ln(r_min)`, `ln(r_max)` precomputed at construction
 - The oversampler and preamp run ONCE (shared), not per-voice
 - NaN guard in preamp: `result.is_finite()` check prevents permanent state corruption
+- **v0.2.0 optimizations:**
+- Quadrature oscillator: 7 sin() → 0 transcendentals/sample/voice (Mode AoS struct, 616 bytes fits L1)
+- Subsample jitter: OU process updated every 16 samples (amortized cost /16)
+- Pickup division elimination: `beta * (1-y)` replaces `beta / c_n` in RC model
+- Conditional oversampling: 2x bypassed at host rates >= 88.2 kHz (saves ~50% DK preamp cost)
+- Filter precomputes: `OnePoleLpf.one_minus_alpha`, `TptLpf.g_denom` cached at construction
 
 ### Per-Sample Budget (at 48 kHz)
 
 | Component | Operations per sample | Notes |
 |-----------|----------------------|-------|
-| 12 voices x 7 modes | ~84 sin, ~84 multiply | Per-voice oscillator (multiplicative decay, no exp) |
-| Jitter (12 voices x 7 modes) | ~84 LCG + multiply | Scaled uniform, OU filter |
+| 12 voices x 7 modes | ~336 multiply-adds (quadrature rotation), 0 sin | Per-voice oscillator (multiplicative decay, no exp) |
+| Jitter (12 voices x 7 modes) | ~5 LCG + multiply (subsampled every 16 samples) | Scaled uniform, OU filter |
 | Pickup per voice | ~12 max/add | Minimal |
 | Voice sum | ~12 additions | Trivial |
-| 2x oversampler up | ~12 multiply-adds | Allpass polyphase filter |
+| 2x oversampler up | ~12 multiply-adds (bypassed at >= 88.2 kHz) | Allpass polyphase filter |
 | Preamp (2 samples at 2x) | ~2 x (3 NR iterations x 2 fused exp) = 12 exp calls | Most expensive shared stage |
 | Shadow preamp | ~12 exp (tremolo on) / 0 (tremolo off) | Bypass saves ~50% DK cost |
-| 2x oversampler down | ~12 multiply-adds | Allpass polyphase filter |
+| 2x oversampler down | ~12 multiply-adds (bypassed at >= 88.2 kHz) | Allpass polyphase filter |
 | Tremolo | ~2 multiply-adds + 1 exp + 1 powf | Cached ln values |
 | Speaker (2 biquads) | ~10 multiply-adds | Trivial |
 
-**Total: approximately 84 sin + 12-24 exp + ~300 multiply-adds per base-rate sample.** Previously ~100 sin + ~100 exp before optimization.
+**Total: approximately 0 sin + 12-24 exp + ~600 multiply-adds per base-rate sample.** Previously ~84 sin + 12-24 exp + ~300 multiply-adds (v0.1.x).
 
 ---
 

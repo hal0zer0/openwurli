@@ -26,7 +26,7 @@ The signal chain:
 
 - Physically accurate sound derived from component-level circuit analysis
 - 12-voice polyphony with voice stealing and crossfade
-- 2x oversampled preamp processing
+- 2x oversampled preamp processing (bypassed at >= 88.2 kHz host rates)
 - Tremolo that modulates timbre (not just amplitude), matching the real 200A topology
 - Per-note MLP corrections trained on real Wurlitzer recordings (experimental)
 - Per-note variation in tuning and amplitude (no two notes sound identical)
