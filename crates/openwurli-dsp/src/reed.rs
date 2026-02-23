@@ -141,10 +141,10 @@ impl ModalReed {
             let decay_per_sample = alpha_nepers / sample_rate;
 
             Mode {
-                s: 0.0,                        // sin(0) = 0
-                c: 1.0,                        // cos(0) = 1
-                cos_inc: phase_inc.cos(),      // precomputed rotation
-                sin_inc: phase_inc.sin(),      // precomputed rotation
+                s: 0.0,                   // sin(0) = 0
+                c: 1.0,                   // cos(0) = 1
+                cos_inc: phase_inc.cos(), // precomputed rotation
+                sin_inc: phase_inc.sin(), // precomputed rotation
                 phase_inc,
                 amplitude: amplitudes[i],
                 decay_mult: (-decay_per_sample).exp(),

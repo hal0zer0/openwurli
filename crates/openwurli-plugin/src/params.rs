@@ -36,7 +36,7 @@ impl Default for OpenWurliParams {
                     factor: FloatRange::skew_factor(2.0),
                 },
             )
-            .with_smoother(SmoothingStyle::Logarithmic(5.0))
+            .with_smoother(SmoothingStyle::Linear(5.0))
             .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_string_to_value(formatters::s2v_f32_percentage()),

@@ -938,4 +938,4 @@ Best matches (octave 3-4): F4=11.6 dB, A4=14.8 dB, A3=15.4 dB. Upper register (o
 
 2. **H2/H1 too clean by 5-8 dB at mid-register**: A4 shows -8.2 dB real vs -16.1 dB synth (7.9 dB deficit). Confirms the MLP ds_correction saturation finding. **DONE (2026-02-19):** DS_AT_C4 increased from 0.70 to 0.85 (+2.69 dB H2/H1 analytically), trim recalibrated. MLP retrain deferred.
 
-3. **Speaker LPF possibly too gentle for upper register**: Real treble centroids at 0.44-0.48x of f0 suggest the 4"x8" ceramic speakers roll off well below 7500 Hz. Caveat: partly mic/room coloration. Needs DI recording to confirm.
+3. **Speaker LPF possibly too gentle for upper register**: **DONE (2026-02-21).** LPF lowered from 7500 Hz to 5500 Hz. Real treble centroids at 0.44-0.48x of f0 consistent with ~5500 Hz cutoff.

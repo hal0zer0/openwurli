@@ -69,16 +69,20 @@ impl Voice {
 
         // Apply frequency corrections to modes 1-5 (mode 0 = fundamental, never corrected)
         let mut corrected_ratios = params.mode_ratios;
-        for m in 1..NUM_MODES.min(6) {
-            let cents = corrections.freq_offsets_cents[m - 1];
-            corrected_ratios[m] *= f64::powf(2.0, cents / 1200.0);
+        for (ratio, &cents) in corrected_ratios[1..NUM_MODES.min(6)]
+            .iter_mut()
+            .zip(&corrections.freq_offsets_cents)
+        {
+            *ratio *= f64::powf(2.0, cents / 1200.0);
         }
 
         // Apply decay corrections to modes 1-5
         let mut corrected_decay = params.mode_decay_rates;
-        for m in 1..NUM_MODES.min(6) {
-            let ratio = corrections.decay_offsets[m - 1];
-            corrected_decay[m] /= ratio;
+        for (decay, &ratio) in corrected_decay[1..NUM_MODES.min(6)]
+            .iter_mut()
+            .zip(&corrections.decay_offsets)
+        {
+            *decay /= ratio;
         }
 
         // Apply displacement scale correction (from H2/H1 ratio matching)

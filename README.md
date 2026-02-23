@@ -2,7 +2,7 @@
 
 An *obsessively* physically-modeled Wurlitzer 200A electric piano plugin for CLAP and VST3 hosts. NOT IN ANY WAY OFFICIAL OR AFFILIATED WITH ANYONE.
 
-[![OpenWurli Demo](https://img.youtube.com/vi/Xp494_vKgIs/maxresdefault.jpg)](https://www.youtube.com/watch?v=Xp494_vKgIs)
+[![OpenWurli Demo](https://img.youtube.com/vi/HmLKrLThR6M/maxresdefault.jpg)](https://www.youtube.com/watch?v=HmLKrLThR6M)
 
 ## What Is This?
 
@@ -25,7 +25,7 @@ The signal chain:
 ## Features
 
 - Physically accurate sound derived from component-level circuit analysis
-- 12-voice polyphony with voice stealing and crossfade
+- Full 64-voice polyphony (matches real 200A's 64 keys) with voice stealing and crossfade
 - 2x oversampled preamp processing (bypassed at >= 88.2 kHz host rates)
 - Tremolo that modulates timbre (not just amplitude), matching the real 200A topology
 - Per-note MLP corrections trained on real Wurlitzer recordings (experimental)

@@ -43,8 +43,9 @@ Technical documentation for the OpenWurli Wurlitzer 200A virtual instrument plug
 | [Calibration and Evaluation](calibration-and-evaluation.md) | OBM recording analysis, spectral targets, tiered metrics, evaluation methodology |
 | [SPICE-Rust Mapping](spice-rust-mapping.md) | SPICE-to-Rust translation guide: node map, discretization reference, bug archaeology |
 
-### Reference
+### Tuning and Reference
 
 | Document | Description |
 |----------|-------------|
+| [Parameter Tuning Guide](parameter-tuning-guide.md) | Parameter interaction chains, calibration workflow, sensitivity analysis |
 | [Schematic Source](SCHEMATIC_SOURCE.md) | How to obtain the Wurlitzer 200A schematic (#203720-S-3) |

@@ -1642,7 +1642,7 @@ fn cmd_render_midi(args: &[String]) {
     );
 
     // Voice management (mirrors plugin architecture)
-    const MAX_VOICES: usize = 12;
+    const MAX_VOICES: usize = 64;
 
     struct VoiceSlot {
         voice: Option<Voice>,
@@ -2207,7 +2207,7 @@ fn to_dbfs(val: f64) -> f64 {
 fn cmd_bench_reed(args: &[String]) {
     use openwurli_dsp::hammer::{dwell_attenuation, onset_ramp_time};
 
-    let voices = parse_flag(args, "--voices", 12.0) as usize;
+    let voices = parse_flag(args, "--voices", 64.0) as usize;
     let duration = parse_flag(args, "--duration", 2.0);
     let sr = BASE_SR;
     let num_samples = (duration * sr) as usize;
@@ -2236,7 +2236,9 @@ fn cmd_bench_reed(args: &[String]) {
         for m in 0..NUM_MODES {
             amps[m] = params.mode_amplitudes[m] * dwell[m] * amp_off[m];
         }
-        let seed = (note as u32).wrapping_mul(2654435761).wrapping_add(i as u32);
+        let seed = (note as u32)
+            .wrapping_mul(2654435761)
+            .wrapping_add(i as u32);
         reeds.push(ModalReed::new(
             detuned,
             &params.mode_ratios,

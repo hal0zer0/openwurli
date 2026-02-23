@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] "GoodbyeMary" - 2026-02-22
+## [0.2.0] "GoodbyeMary" - 2026-02-23
 
 ### Changed
 - Reed oscillator: quadrature rotation replaces per-sample `sin()` calls —
   7 transcendentals per sample per voice reduced to 0. Mode struct (AoS)
-  replaces parallel arrays. ~1075x realtime for 12 voices in isolation.
+  replaces parallel arrays.
 - Reed jitter: subsample update (every 16 samples instead of every sample).
   OU correlation time τ=20ms >> 0.36ms update interval — perceptually identical.
 - Pickup: algebraic division elimination — `beta / c_n` → `beta * (1-y)`,
@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conditional oversampling: 2x oversampling skipped at host rates ≥ 88.2 kHz
   (preamp BW ~15.5 kHz is below 44.1 kHz Nyquist at 96 kHz). Saves ~50%
   of DK preamp cost at high sample rates.
+- Full 64-voice polyphony (matches real 200A's 64 mechanically independent
+  reeds). Was 12 voices — no physical basis for that limit.
+- Volume parameter smoother: Logarithmic → Linear (fixes NaN at zero volume)
 - Iterator idioms: module-level `needless_range_loop` allows removed from
   tables.rs, voice.rs, variation.rs; loops converted to `std::array::from_fn`,
   `iter_mut().enumerate()`, and `zip()` chains.
@@ -30,11 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (voices × duration, reports realtime ratio)
 - `--sample-rate` flag for preamp-bench render: enables 96 kHz rendering
   with automatic oversampling bypass
+- Plugin-level NaN output guard: `is_finite()` check after power amp + speaker,
+  resets both stages on NaN to prevent permanent state corruption
+
+### Fixed
+- **PipeWire audio engine crash** when volume swept to zero and back with
+  arpeggiator running. Root cause: `SmoothingStyle::Logarithmic` produces
+  NaN at volume=0.0 (`log(0) = -inf`), NaN cascades through biquad filter
+  state permanently, PipeWire kills non-finite audio streams. Fix: Linear
+  smoother + output NaN guard as safety net.
 
 ### Performance
 - Batch offline render (15 notes × 3 velocities): 4.4% wall-clock improvement
 - 8-voice polyphonic stress test: 12.1% wall-clock improvement
-- Reed-only microbenchmark: 1075x realtime (12 voices, 2 seconds)
+- Reed-only microbenchmark: 451x realtime (64 voices × 1 second)
 
 ## [0.1.5] "MountUp" - 2026-02-22
 
@@ -173,11 +185,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   modeling the 200A's two-stage direct-coupled NPN amplifier
 - Shadow preamp pump cancellation (tremolo pump: -25 dBFS → -120 dBFS)
 - Tremolo — LDR feedback modulation inside the preamp loop (timbral, not volume)
-- Speaker cabinet — HPF (95 Hz) + LPF (7500 Hz) + Hammerstein polynomial
+- Speaker cabinet — HPF (95 Hz) + LPF (5500 Hz) + Hammerstein polynomial
   nonlinearity + tanh Xmax + thermal voice coil compression
 - 2× polyphase IIR half-band oversampler for preamp processing
 - Volume control with audio taper (vol², skew 2.0, default 63%)
-- 12-voice polyphony with voice stealing and 5ms crossfade
+- 64-voice polyphony with voice stealing and 5ms crossfade
 - CLAP and VST3 plugin formats via nih-plug
 - Standalone reed renderer CLI tool
 - Preamp validation bench (gain, sweep, harmonics, tremolo-sweep, render,

@@ -423,7 +423,7 @@ The current implementation (`speaker.rs`) uses a generalized Hammerstein-like ar
 
 ```
 HPF: 2nd-order highpass at 95 Hz, Q = 0.75   (combined cone resonance + open-baffle rolloff)
-LPF: 2nd-order lowpass at 7500 Hz, Q = 0.707 (Butterworth, cone breakup + voice coil inductance)
+LPF: 2nd-order lowpass at 5500 Hz, Q = 0.707 (Butterworth, cone breakup + voice coil inductance; lowered from 7500 Hz per OBM A/B comparison)
 ```
 
 > **Note:** An earlier design (documented below in §5.4.1) specified three cascaded HPFs at 150/100/70 Hz to separately model cone resonance, dipole cancellation, and radiation impedance. The implementation simplified this to a single HPF at 95 Hz, which provides adequate bass rolloff (~12 dB/oct, ~3-4 dB down at C2 fundamental of 65 Hz) without the over-aggressive filtering of the three-HPF cascade.
@@ -564,7 +564,7 @@ Variable speaker emulation with bypass-to-authentic range. The plugin exposes a 
 
 At "authentic" position (character = 1.0):
 - HPF: 95 Hz, Q=0.75 (combined cone resonance + open-baffle rolloff)
-- LPF: 7500 Hz, Q=0.707 (Butterworth)
+- LPF: 5500 Hz, Q=0.707 (Butterworth, lowered from 7500 Hz)
 - Hammerstein polynomial: (x + 0.2x² + 0.6x³) / 1.8, normalized
 - tanh Xmax soft stop
 - Thermal voice coil compression (tau = 5.0s)

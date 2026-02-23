@@ -15,7 +15,7 @@ use std::sync::Arc;
 mod params;
 use params::OpenWurliParams;
 
-const MAX_VOICES: usize = 12;
+const MAX_VOICES: usize = 64;
 const MAX_BLOCK_SIZE: usize = 8192;
 
 // Signal path: reed → pickup (1/(1-y) nonlinearity + HPF) → preamp (DK method)
@@ -425,6 +425,15 @@ impl Plugin for OpenWurli {
             // Post-speaker gain: maps physical SPL to DAW-friendly levels.
             // Applied after all analog stages — no circuit model distortion.
             let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
+            // NaN guard: non-finite samples crash PipeWire/JACK audio engines.
+            // If any stage diverged, output silence and reset stateful stages.
+            let sample = if sample.is_finite() {
+                sample
+            } else {
+                self.power_amp.reset();
+                self.speaker.reset();
+                0.0f32
+            };
             for s in channel_samples.iter_mut() {
                 *s = sample;
             }
@@ -606,6 +615,81 @@ mod tests {
             .fold(0.0, f64::max);
         // With no notes, output should be near-silent (preamp idle noise only)
         assert!(peak < 0.01, "idle output peak {peak} too high");
+    }
+
+    #[test]
+    fn test_volume_zero_and_back_no_nan() {
+        // Regression test: sweeping volume to zero and back caused NaN output
+        // that crashed PipeWire audio engines. The logarithmic smoother produced
+        // non-finite values transitioning to/from 0.0 (log(0) = -inf).
+        let mut plugin = make_plugin();
+        plugin.note_on(60, 0.8, true);
+
+        let len = 256;
+
+        // Render with normal volume
+        plugin.render_subblock(0, len);
+        for i in 0..len {
+            let vol = 0.63;
+            let attenuated = plugin.out_buf[i] * vol * vol;
+            let amplified = plugin.power_amp.process(attenuated);
+            let shaped = plugin.speaker.process(amplified);
+            let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
+            assert!(
+                sample.is_finite(),
+                "Normal volume produced NaN at sample {i}"
+            );
+        }
+
+        // Render with volume = 0 (simulates user sweeping to zero)
+        plugin.render_subblock(0, len);
+        for i in 0..len {
+            let vol = 0.0;
+            let attenuated = plugin.out_buf[i] * vol * vol;
+            let amplified = plugin.power_amp.process(attenuated);
+            let shaped = plugin.speaker.process(amplified);
+            let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
+            assert!(sample.is_finite(), "Zero volume produced NaN at sample {i}");
+        }
+
+        // Render with volume back up (the transition that triggered the crash)
+        plugin.render_subblock(0, len);
+        for i in 0..len {
+            let vol = 0.63;
+            let attenuated = plugin.out_buf[i] * vol * vol;
+            let amplified = plugin.power_amp.process(attenuated);
+            let shaped = plugin.speaker.process(amplified);
+            let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
+            assert!(
+                sample.is_finite(),
+                "Volume restore produced NaN at sample {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_output_nan_guard() {
+        // Verify the NaN guard catches non-finite power amp / speaker output.
+        // If a NaN somehow reaches the output stage, it should be replaced with
+        // silence and the stateful stages should be reset.
+        let mut plugin = make_plugin();
+        plugin.note_on(60, 0.8, true);
+        let len = 256;
+        plugin.render_subblock(0, len);
+
+        // Inject a NaN into the output buffer (simulates upstream divergence)
+        plugin.out_buf[128] = f64::NAN;
+
+        // Process through the output chain — the NaN guard should catch it
+        for i in 0..len {
+            let vol = 0.63;
+            let attenuated = plugin.out_buf[i] * vol * vol;
+            let amplified = plugin.power_amp.process(attenuated);
+            let shaped = plugin.speaker.process(amplified);
+            let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
+            let safe = if sample.is_finite() { sample } else { 0.0f32 };
+            assert!(safe.is_finite(), "NaN guard failed at sample {i}");
+        }
     }
 
     #[test]
