@@ -202,11 +202,25 @@ fi
 
 # ── Step 6: Commit version/codename changes ──────────────────────────────────
 
-step 6 "Committing release changes"
+# ── Step 6: cargo fmt (before commit so fixes land in the release commit) ────
+
+step 6 "cargo fmt"
+if $DRY_RUN; then
+    warn "Dry run — skipping"
+else
+    cargo fmt 2>&1
+    pass "Formatted"
+fi
+
+# ── Step 7: Commit release changes ──────────────────────────────────────────
+
+step 7 "Committing release changes"
 if $DRY_RUN; then
     warn "Dry run — skipping commit"
 else
     git add "${CARGO_TOMLS[@]}" Cargo.lock CHANGELOG.md "$CODENAMES_FILE" "$CLAUDEMD_FILE"
+    # Also stage any files cargo fmt touched
+    git add -u -- '*.rs'
     if git diff --cached --quiet; then
         warn "Nothing to commit — already up to date (re-run?)"
     else
@@ -217,19 +231,6 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
         pass "Committed release changes"
-    fi
-fi
-
-# ── Step 7: cargo fmt ────────────────────────────────────────────────────────
-
-step 7 "cargo fmt --check"
-if $DRY_RUN; then
-    warn "Dry run — skipping"
-else
-    if cargo fmt --check 2>&1; then
-        pass "Formatting OK"
-    else
-        fail "Run 'cargo fmt' to fix formatting"
     fi
 fi
 

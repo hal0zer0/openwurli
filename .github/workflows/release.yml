@@ -1,4 +1,5 @@
 name: Release
+run-name: ${{ github.ref_name }}
 
 on:
   push:
@@ -171,8 +172,23 @@ jobs:
           echo "=== Release assets ==="
           ls -la release/
 
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - name: Extract release title from CHANGELOG
+        id: meta
+        run: |
+          # Parse codename from CHANGELOG.md: ## [0.2.2] "GoBackJack" - 2026-03-01
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          TITLE=$(grep "^## \[${VERSION}\]" CHANGELOG.md | sed 's/^## \[.*\] //' | sed 's/ - .*//')
+          echo "title=${TAG} ${TITLE}" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ steps.meta.outputs.title }}
           files: release/*
           generate_release_notes: true
