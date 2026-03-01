@@ -206,7 +206,7 @@ step 6 "Committing release changes"
 if $DRY_RUN; then
     warn "Dry run — skipping commit"
 else
-    git add "${CARGO_TOMLS[@]}" CHANGELOG.md "$CODENAMES_FILE" "$CLAUDEMD_FILE"
+    git add "${CARGO_TOMLS[@]}" Cargo.lock CHANGELOG.md "$CODENAMES_FILE" "$CLAUDEMD_FILE"
     if git diff --cached --quiet; then
         warn "Nothing to commit — already up to date (re-run?)"
     else
