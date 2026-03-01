@@ -48,6 +48,9 @@ tools/reed-renderer/output/
 # Market research (untracked, not part of the project deliverables)
 docs/market-research/
 
+# Release codename candidates (personal reference, not project deliverable)
+docs/release-codenames.md
+
 # SPICE simulation output (regenerate by running testbenches)
 spice/output/
 *.dat

@@ -7,7 +7,6 @@
 | [How the Circuit Modeling Works](how-circuit-modeling-works.md) | Non-technical overview of the DK method preamp solver and signal chain |
 | [How the MLP Corrections Work](how-mlp-corrections-work.md) | Non-technical overview of the per-note neural network correction layer |
 | [Schematic Source](SCHEMATIC_SOURCE.md) | How to obtain the Wurlitzer 200A schematic (#203720-S-3) |
-| [Release Codenames](release-codenames.md) | Version codename candidates and history |
 
 ## Wurlitzer 200A Research (`research/`)
 

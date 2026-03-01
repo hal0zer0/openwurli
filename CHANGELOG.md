@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] "AndAMicrophone" - 2026-03-01
+
+### Fixed
+- **CLAUDE.md corruption**: release script's codename table insertion used a `sed`
+  append with an empty line address, injecting garbage after every line in CLAUDE.md.
+  Root cause: condensed CLAUDE.md no longer has a codename table, so the awk match
+  returned empty, and `sed "a\..."` with no address inserts after every line.
+
+### Changed
+- Replaced `scripts/release.sh` with `/release` skill (Claude Code command). Same
+  checklist (version bump, fmt, clippy, test, bundle, commit, tag, push) but executed
+  by the AI agent instead of fragile bash sed. No more commit-ordering bugs.
+- Untracked `docs/release-codenames.md` — personal reference, not a project file.
+
 ## [0.2.3] "TwoTurntables" - 2026-03-01
 
 ### Added
