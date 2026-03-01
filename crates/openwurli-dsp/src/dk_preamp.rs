@@ -229,12 +229,6 @@ pub struct DkPreamp {
     r_ldr: f64,
     g_ldr: f64,      // 1/r_ldr (current conductance)
     g_ldr_prev: f64, // g_ldr from previous timestep
-
-    // ── Shadow bypass (when tremolo depth ≈ 0, R_ldr is constant → shadow output is constant) ──
-    shadow_bypass: bool,
-    shadow_dc: f64,           // Captured shadow output when transitioning to bypass
-    shadow_fade: u32,         // Crossfade samples remaining (0 = no crossfade)
-    shadow_fade_len: u32,     // Total crossfade length (~3ms)
 }
 
 /// Per-instance mutable state for the DK solver.
@@ -358,11 +352,6 @@ impl DkPreamp {
             r_ldr: r_ldr_init,
             g_ldr: 1.0 / r_ldr_init,
             g_ldr_prev: 1.0 / r_ldr_init,
-
-            shadow_bypass: false,
-            shadow_dc: v_dc[OUT],
-            shadow_fade: 0,
-            shadow_fade_len: (sample_rate * 0.010).round() as u32, // ~10ms crossfade
         }
     }
 
@@ -415,26 +404,6 @@ impl DkPreamp {
     /// Enable/disable shadow preamp bypass.
     /// When tremolo depth ≈ 0, R_ldr is constant so shadow output is constant DC.
     /// Bypassing saves ~50% of DK solver cost.
-    pub fn set_shadow_bypass(&mut self, bypass: bool) {
-        if bypass && !self.shadow_bypass {
-            // Transitioning to bypass: capture current shadow output as constant.
-            self.shadow_dc = self.shadow.v[OUT];
-            self.shadow_bypass = true;
-        } else if !bypass && self.shadow_bypass {
-            // Resume from frozen state — no reset. The frozen DkState preserves
-            // capacitor charges (Ce1 tau ~155ms) from recent r_ldr modulation.
-            // A full_dc_solve reset ignores those charges, creating a DC jump at
-            // OUT that the power amp gain (49×) amplifies into an audible click.
-            //
-            // However, after bypass the shadow state's operating point may have
-            // drifted from the true equilibrium (stale v[FB] vs current g_ldr).
-            // The first dk_step would produce a discontinuity. Crossfade from
-            // the constant shadow_dc to the live solver output over ~3ms to mask it.
-            self.shadow_bypass = false;
-            self.shadow_fade = self.shadow_fade_len;
-        }
-    }
-
     /// Get w = two_w / 2 (the original DC source vector).
     fn two_w_half(&self) -> Vec8 {
         core::array::from_fn(|i| self.two_w[i] * 0.5)
@@ -597,39 +566,29 @@ impl PreampModel for DkPreamp {
             input,
         );
 
-        // Run shadow solver with zero input — produces pure pump.
-        // When shadow_bypass is active (tremolo off), R_ldr is constant so
-        // shadow output is constant DC — skip the expensive DK solve.
-        let pump = if self.shadow_bypass {
-            self.shadow_dc
-        } else {
-            let solver_out = dk_step(
-                &self.a_neg_base,
-                &self.two_w,
-                &self.s_base,
-                &self.s_fb_col,
-                self.s_fb_fb,
-                self.g_ldr,
-                self.g_ldr_prev,
-                &self.k,
-                &self.nv_sfb,
-                &self.sfb_ni,
-                self.g_cin,
-                self.gc_1pc,
-                self.c_cin,
-                &mut self.shadow,
-                0.0,
-            );
-            if self.shadow_fade > 0 {
-                // Crossfade from constant shadow_dc to live solver output.
-                // Masks any discontinuity from stale shadow state after bypass.
-                let t = self.shadow_fade as f64 / self.shadow_fade_len as f64;
-                self.shadow_fade -= 1;
-                self.shadow_dc * t + solver_out * (1.0 - t)
-            } else {
-                solver_out
-            }
-        };
+        // Shadow solver: zero input → pure pump. Always runs — no bypass
+        // optimization. Toggling the solver on/off caused clicks (state
+        // discontinuities amplified by downstream gain), and the crossfade
+        // workarounds added complexity without fully fixing all edge cases.
+        // The cost of one extra DK step per sample is negligible vs 64
+        // reed oscillators, and pump cancellation is always exact.
+        let pump = dk_step(
+            &self.a_neg_base,
+            &self.two_w,
+            &self.s_base,
+            &self.s_fb_col,
+            self.s_fb_fb,
+            self.g_ldr,
+            self.g_ldr_prev,
+            &self.k,
+            &self.nv_sfb,
+            &self.sfb_ni,
+            self.g_cin,
+            self.gc_1pc,
+            self.c_cin,
+            &mut self.shadow,
+            0.0,
+        );
 
         // Update shared R_ldr tracking (after both steps used g_ldr_prev)
         self.g_ldr_prev = self.g_ldr;
@@ -669,9 +628,6 @@ impl PreampModel for DkPreamp {
         let state = DkState::at_dc(self.g_cin, v_nl_dc, v_dc);
         self.shadow = state.clone();
         self.main = state;
-        self.shadow_dc = v_dc[OUT];
-        self.shadow_bypass = false;
-        self.shadow_fade = 0;
     }
 }
 
@@ -2060,19 +2016,19 @@ mod tests {
     }
 
     #[test]
-    fn test_shadow_bypass_toggle_no_click() {
-        // Regression test: toggling shadow bypass (tremolo depth 0 → nonzero)
-        // caused a loud click. The old code did a full_dc_solve reset when
-        // un-bypassing, discarding Ce1 capacitor charges (tau ~155ms) and
-        // creating a DC step at OUT that downstream gain amplified into a click.
+    fn test_rldr_transition_no_click() {
+        // Regression test: R_ldr transitions (tremolo starting/stopping) must
+        // not produce per-sample discontinuities that downstream gain (~49×)
+        // would amplify into audible clicks.
         //
-        // The fix: resume from frozen state instead of resetting.
-        // This test verifies the output is continuous across the transition.
+        // The shadow solver always runs, so pump cancellation is always exact.
+        // This test verifies continuity through the full cycle: modulation →
+        // constant → modulation.
         let sr = 88200.0;
         let mut preamp = DkPreamp::new(sr);
 
-        // 1. Run with tremolo modulation (r_ldr cycling) to charge capacitors
-        let n_settle = (sr * 0.5) as usize; // 500ms
+        // 1. Run with tremolo modulation for 500ms
+        let n_settle = (sr * 0.5) as usize;
         for i in 0..n_settle {
             let phase = 2.0 * std::f64::consts::PI * 5.63 * i as f64 / sr;
             let lfo = phase.sin().max(0.0);
@@ -2081,46 +2037,36 @@ mod tests {
             preamp.process_sample(0.0);
         }
 
-        // 2. Enable shadow bypass (depth → 0): freeze shadow state
-        preamp.set_shadow_bypass(true);
-
-        // 3. Run at constant r_ldr with bypass active
-        preamp.set_ldr_resistance(1_068_000.0); // depth=0: 68K series + 1M dark LDR
-        let n_bypass = (sr * 0.3) as usize; // 300ms — longer than Ce1 tau
-        let mut last_out = 0.0;
-        for _ in 0..n_bypass {
-            last_out = preamp.process_sample(0.0);
-        }
-
-        // 4. Disable shadow bypass (depth → nonzero): resume shadow
-        preamp.set_shadow_bypass(false);
-
-        // 5. Check first samples after un-bypass for discontinuity
-        let first_out = preamp.process_sample(0.0);
-        let step = (first_out - last_out).abs();
-
-        // After volume (×0.16) × power amp (×69) × POST_SPEAKER_GAIN (×4.47),
-        // a preamp step of 0.001V becomes 0.049 in the output float domain.
-        // Anything above ~0.0002V at the preamp would be audible as a click.
-        eprintln!(
-            "Shadow bypass toggle: last={last_out:.6e}, first={first_out:.6e}, step={step:.6e}"
-        );
-        assert!(
-            step < 1e-4,
-            "Shadow bypass un-toggle caused output discontinuity: \
-             step={step:.2e} (want < 1e-4). This would be an audible click."
-        );
-
-        // Also verify the next few samples stay continuous (no delayed transient).
-        // R_ldr stays constant here to isolate the crossfade settling behavior
-        // from normal tremolo modulation (which legitimately changes the output).
-        let mut prev = first_out;
-        for j in 0..100 {
+        // 2. Transition to constant R_ldr (simulating depth → 0)
+        preamp.set_ldr_resistance(1_068_000.0);
+        let mut prev = preamp.process_sample(0.0);
+        for j in 0..200 {
             let out = preamp.process_sample(0.0);
             let delta = (out - prev).abs();
             assert!(
                 delta < 1e-4,
-                "Post-toggle transient at sample {j}: delta={delta:.2e}"
+                "Modulation→constant transient at sample {j}: delta={delta:.2e}"
+            );
+            prev = out;
+        }
+
+        // 3. Run at constant R_ldr for 300ms (longer than Ce1 tau)
+        let n_constant = (sr * 0.3) as usize;
+        for _ in 0..n_constant {
+            prev = preamp.process_sample(0.0);
+        }
+
+        // 4. Resume modulation (simulating depth → nonzero)
+        for j in 0..200 {
+            let phase = 2.0 * std::f64::consts::PI * 5.63 * j as f64 / sr;
+            let lfo = phase.sin().max(0.0);
+            let r_ldr = 18_000.0 + 50.0 + (1_000_000.0 - 50.0) * (1.0 - lfo);
+            preamp.set_ldr_resistance(r_ldr);
+            let out = preamp.process_sample(0.0);
+            let delta = (out - prev).abs();
+            assert!(
+                delta < 1e-4,
+                "Constant→modulation transient at sample {j}: delta={delta:.2e}"
             );
             prev = out;
         }
