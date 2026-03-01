@@ -44,7 +44,7 @@ Key distinctions of the 200A vs the 200 (and other Wurlitzer models) that the ci
 # Build everything
 cargo build --workspace
 
-# Run all tests (125 unit + 13 plugin + 5 integration (143 total))
+# Run all tests (126 unit + 13 plugin + 5 integration (144 total))
 cargo test --workspace
 
 # Bundle CLAP + VST3 plugin (release build)
@@ -82,6 +82,10 @@ cargo run -p preamp-bench -- render --note 60 --velocity 100 --duration 2.0 --sa
 # Reed renderer (standalone WAV output)
 cargo run -p reed-renderer -- -n 60 -v 100 -d 1.0 -o /tmp/reed.wav
 
+# Release (write CHANGELOG entry first, then run)
+./scripts/release.sh 0.2.3 SomeCodename --dry-run   # preview changes
+./scripts/release.sh 0.2.3 SomeCodename              # full release
+
 # Python virtual environment (for analysis/test tools only)
 source .venv/bin/activate
 ```
@@ -96,7 +100,7 @@ crates/
       lib.rs                        # Module exports
       reed.rs                       # Modal oscillator (7 modes) with damper support
       hammer.rs                     # Dwell filter + attack noise
-      pickup.rs                     # Electrostatic pickup model (HPF at 2312 Hz)
+      pickup.rs                     # Electrostatic pickup model (time-varying RC, f_c=2312 Hz)
       voice.rs                      # Voice assembly (reed + hammer + pickup + damper)
       tables.rs                     # Per-note parameters (frequencies, decay rates, mode ratios)
       variation.rs                  # Per-note detuning and amplitude variation
@@ -119,6 +123,11 @@ tools/
   preamp-bench/                     # Preamp DSP validation CLI (gain, sweep, harmonics, render, calibrate, sensitivity)
   analyze_calibration.py            # CSV analysis for calibrate/sensitivity output
   wurli_compare.py                 # OBM A/B comparison tool
+  strip_pedal.py                   # Strip sustain pedal from MIDI files
+  recording_analyzer.py            # Audio recording analysis
+  render-video.sh                  # Video rendering helper
+scripts/
+  release.sh                       # Automated release (version bump, codename, pre-flight, tag, push)
 xtask/                              # nih-plug bundler (cargo xtask bundle)
 docs/                               # Research: schematics, circuit analysis, DSP specs
 spice/                              # ngspice netlists and testbenches

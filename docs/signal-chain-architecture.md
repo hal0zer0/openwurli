@@ -16,7 +16,7 @@ Complete specification for a physically-accurate Wurlitzer 200A electric piano p
 8. [Stage 6: Electrostatic Pickup (Per-Voice)](#8-stage-6-electrostatic-pickup-per-voice)
 9. [Stage 7: Voice Summation (Per-Voice to Mono)](#9-stage-7-voice-summation-per-voice-to-mono)
 10. [Stage 8: Oversampling and Preamp (Mono, 2x Rate)](#10-stage-8-oversampling-and-preamp-mono-2x-rate)
-11. [Stage 9: Tremolo (Mono, Base Rate)](#11-stage-9-tremolo-mono-base-rate)
+11. [Tremolo — Integrated in Preamp Emitter Feedback Loop](#11-tremolo--integrated-in-preamp-emitter-feedback-loop)
 12. [Stage 10: Volume Control (Mono, Base Rate)](#12-stage-10-volume-control-mono-base-rate)
 13. [Stage 11: Power Amplifier (Mono, Base Rate)](#13-stage-11-power-amplifier-mono-base-rate)
 14. [Stage 12: Speaker Cabinet (Mono, Base Rate)](#14-stage-12-speaker-cabinet-mono-base-rate)
@@ -160,7 +160,7 @@ The plugin accepts both CLAP native note events and MIDI 1.0. CLAP note events c
 
 ### Voice Pool
 
-- **12 pre-allocated voices** (zero heap allocation in audio callback)
+- **64 pre-allocated voices** (zero heap allocation in audio callback)
 - States: `FREE` -> `HELD` -> `RELEASING` -> `FREE`
 - All voice data is pre-allocated in a fixed-size array
 
@@ -169,7 +169,7 @@ The plugin accepts both CLAP native note events and MIDI 1.0. CLAP note events c
 1. Search for first `FREE` voice
 2. If none free, steal the voice with the smallest `age` value (oldest note)
 3. Prefer stealing `RELEASING` voices over `HELD` voices
-4. On steal: immediately set stolen voice to `FREE`, then initialize new note
+4. On steal: move stolen voice into a 5ms linear crossfade-out slot, initialize new note in its place
 
 ### Note-On Processing
 
@@ -463,11 +463,12 @@ The HPF also amplifies H2 relative to H1 (since H2 is at 2f, where the HPF has h
 The `displacement_scale` parameter converts reed model output (normalized, fundamental amplitude = 1.0) to the physical displacement fraction y = x/d_0. It is the single biggest tuning knob for bark intensity and is set per-note from `tables::pickup_displacement_scale()`:
 
 ```
-displacement_scale(midi) = DS_AT_C4 * 2^((midi - 60) * DS_EXPONENT / 12)
+displacement_scale(midi) = DS_AT_C4 * (compliance(midi) / compliance(60))^DS_EXPONENT
+// compliance = L^3 / (w * t^3)  (beam compliance from reed dimensions)
 // DS_AT_C4 = 0.75, DS_EXPONENT = 0.75, clamp [0.02, 0.82]
 ```
 
-Bass reeds have wider gaps and larger displacements; treble reeds have tighter gaps. The exponential curve captures this register dependence.
+Bass reeds have wider gaps and larger displacements; treble reeds have tighter gaps. The compliance-ratio curve captures this register dependence — longer, thinner bass reeds are more compliant and deflect further relative to their gap.
 
 ### Parameters
 
@@ -838,7 +839,7 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 ### Plugin Signal Levels (Current)
 
 The gain staging is designed so the power amplifier sees realistic signal levels
-(5-15% of its ±22V headroom at ff). A post-speaker gain stage (+10 dB) maps
+(5-15% of its ±22V headroom at ff). A post-speaker gain stage (+13 dB) maps
 the physical speaker output to DAW-friendly digital levels without distorting
 any circuit model — it sits after all analog stages.
 
@@ -851,7 +852,7 @@ any circuit model — it sits after all analog stages.
 | After volume pot (0.63, taper 0.40) | ~5-10% of PA headroom | Single ff note |
 | After power amp | ~1-3V of ±22V rails | Clean at normal dynamics |
 | After speaker | physics-level output | |
-| After post-speaker gain (+10 dB) | -14.6 dBFS single ff | DAW-friendly |
+| After post-speaker gain (+13 dB) | -3.3 dBFS single ff | DAW-friendly |
 
 ### Input Drive (Historical)
 

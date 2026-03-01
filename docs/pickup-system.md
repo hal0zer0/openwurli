@@ -603,14 +603,15 @@ The patent describes the general principle; the specific 200A implementation may
 
 ### 8.1 Current Model (OpenWurli)
 
-The current implementation in `pickup.rs` uses the full 1/(1-y) nonlinearity with a one-pole RC high-pass filter:
+The current implementation in `pickup.rs` uses a time-varying RC circuit model with bilinear discretization. The 1/(1-y) nonlinearity and RC high-pass filtering are coupled into a single physical system — charge dynamics on the time-varying capacitance C(y) = C_0/(1-y) naturally produce both the nonlinear harmonic generation and the high-pass behavior:
 
 ```rust
-// pickup.rs — core transfer function
-let y = (displacement * displacement_scale).clamp(-MAX_Y, MAX_Y);
-let nonlinear = y / (1.0 - y);          // 1/(1-y) capacitance nonlinearity
-let v = nonlinear * SENSITIVITY;         // scale to voltage
-output = hpf.process(v);                 // one-pole HPF at 2312 Hz
+// pickup.rs — bilinear-discretized time-varying RC
+let y = (displacement * self.scale).clamp(-PICKUP_MAX_Y, PICKUP_MAX_Y);
+let c_n = 1.0 / (1.0 - y);             // C(y)/C_0 = 1/(1-y)
+let beta_c = self.beta * c_n;           // beta = dt / (2 * R * C_0)
+let v_out = (beta_c * (y - self.y_prev) + (beta_c - 1.0) * self.q_prev)
+          / (beta_c + 1.0);             // bilinear transform of RC circuit
 ```
 
 **Key parameters:**
@@ -735,7 +736,7 @@ V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
 | Miessner's asymmetric modulation in 200A | **DEFERRED** to OBM recording comparison phase. Unknown if preserved in production design. Will calibrate against OldBassMan recordings. |
 | Exact signal level at pickup output | Sub-mV to low mV estimated; no direct measurement found |
 
-**Pickup nonlinearity DECISION: IMPLEMENTED.** The full 1/(1-y) nonlinearity model is implemented in `pickup.rs` (line 97: `let nonlinear = y / (1.0 - y)`), with MAX_Y = 0.98 clamp, time-varying RC model at 2312 Hz, and register-dependent displacement scaling from beam compliance (`tables.rs:pickup_displacement_scale()`). The two deferred items above affect calibration constants only, not the model topology.
+**Pickup nonlinearity DECISION: IMPLEMENTED.** The full 1/(1-y) nonlinearity is implemented in `pickup.rs` as a bilinear-discretized time-varying RC circuit, with MAX_Y = 0.98 clamp, f_c = 2312 Hz, and register-dependent displacement scaling from beam compliance (`tables.rs:pickup_displacement_scale()`). The two deferred items above affect calibration constants only, not the model topology.
 
 ---
 

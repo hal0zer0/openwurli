@@ -49,9 +49,9 @@ TARGET_DB = -35 dBFS (v0.1.5)
   → speaker tanh operates in linear region (< 8% compression)
   → register trim now calibrated in linear regime (stable)
 
-POST_SPEAKER_GAIN = +10 dB (3.16×)
+POST_SPEAKER_GAIN = +13 dB (4.47×)
   → applied AFTER all analog stages (speaker.process() output)
-  → maps physical SPL to DAW levels (~-15 dBFS single ff note)
+  → maps physical SPL to DAW levels (~-3 dBFS single ff note at max vol)
   → does NOT interact with any nonlinear circuit model
   → safe to adjust independently without recalibrating trim
 ```

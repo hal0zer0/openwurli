@@ -223,7 +223,7 @@ pub fn reed_compliance(midi: u8) -> f64 {
 /// Per-note displacement scale for the pickup nonlinearity.
 ///
 /// Derived from beam compliance: stiffer treble reeds deflect less → less bark.
-/// Exponent 0.65 gives steeper bass-to-treble gradient than sqrt(0.5), needed
+/// Exponent 0.75 gives steeper bass-to-treble gradient than sqrt(0.5), needed
 /// to match OBM's ~10:1 H2/H1 ratio range (D3 bark ~0.5 vs Bb6 clean ~0.06).
 ///
 /// Calibrated against OBM + polyphonic Wurlitzer 200A recordings.
@@ -504,7 +504,7 @@ pub fn register_trim_db(midi: u8) -> f64 {
     // Calibrated from zero-trim full-chain (t5_rms) renders at v=127 (2026-02-22).
     // Reference: C4 = -38.9 dBFS. Trim = t5_rms(C4) - t5_rms(note).
     // Measured via: preamp-bench calibrate --zero-trim --ds-at-c4 0.75
-    // target_db=-35.0, audio taper (vol²), post-speaker gain +16 dB
+    // target_db=-35.0, audio taper (vol²), post-speaker gain +13 dB
     // Speaker LPF=5500 Hz
     const ANCHORS: [(f64, f64); 13] = [
         (36.0, -1.3), // C2:  -37.6 → -38.9
