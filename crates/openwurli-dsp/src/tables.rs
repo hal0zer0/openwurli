@@ -550,10 +550,10 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// circuit-realistic (power amp uses ~5-10% headroom at ff single notes), but
 /// the raw speaker output is too quiet for a DAW. This gain compensates without
 /// distorting any nonlinear circuit model — it's applied AFTER all analog stages.
-pub const POST_SPEAKER_GAIN_DB: f64 = 10.0;
+pub const POST_SPEAKER_GAIN_DB: f64 = 13.0;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 3.162_277_660_168_38; // 10^(10/20)
+pub const POST_SPEAKER_GAIN: f64 = 4.466_835_921_509_63; // 10^(13/20)
 
 /// Per-note output scaling to balance the keyboard.
 ///

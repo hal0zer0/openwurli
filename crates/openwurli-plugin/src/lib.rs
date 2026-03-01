@@ -412,11 +412,13 @@ impl Plugin for OpenWurli {
         // Signal chain: preamp -> volume pot -> power amp (gain + crossover + clip) -> speaker
         // Matches real 200A topology: volume pot sits between preamp and power amp.
         // Power amp has internal voltage gain (VAS/driver stages).
-        let speaker_char = self.params.speaker_character.value() as f64;
-        self.speaker.set_character(speaker_char);
 
         for (i, mut channel_samples) in buffer.iter_samples().enumerate() {
             let volume = self.params.volume.smoothed.next() as f64;
+            // Speaker character smoothed per-sample to prevent biquad coefficient
+            // discontinuities (HPF 20→95 Hz, LPF 20k→5.5k Hz) that cause clicks.
+            let speaker_char = self.params.speaker_character.smoothed.next() as f64;
+            self.speaker.set_character(speaker_char);
             // Volume pot attenuates before power amp (3K audio taper: vol² approximation)
             let attenuated = self.out_buf[i] * volume * volume;
             // Power amp: VAS gain → crossover distortion → rail clip

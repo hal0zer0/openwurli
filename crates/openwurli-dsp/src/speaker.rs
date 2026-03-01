@@ -70,7 +70,7 @@ impl Speaker {
     /// Set speaker character: 0.0 = bypass (flat, linear), 1.0 = authentic.
     pub fn set_character(&mut self, character: f64) {
         let c = character.clamp(0.0, 1.0);
-        if (c - self.character).abs() > 1e-6 {
+        if (c - self.character).abs() > 0.002 {
             self.character = c;
             self.update_coefficients();
         }
