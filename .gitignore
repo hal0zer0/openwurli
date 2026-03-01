@@ -45,6 +45,9 @@ tools/pulse-visualizer/
 *.wav
 tools/reed-renderer/output/
 
+# Local utility scripts
+tools/render-video.sh
+
 # Market research (untracked, not part of the project deliverables)
 docs/market-research/
 

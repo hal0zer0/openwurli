@@ -177,7 +177,7 @@ pub fn reed_length_mm(midi: u8) -> f64 {
 /// and reduce displacement for the same hammer force (less bark at extreme bass).
 /// The thickness transition is smoothed over 10 semitones (reeds 16-26, MIDI 48-58)
 /// to model the gradual grinding taper at blank boundaries.
-pub fn reed_blank_dims(midi: u8) -> (f64, f64) {
+pub(crate) fn reed_blank_dims(midi: u8) -> (f64, f64) {
     let reed = (midi as i32 - 32).clamp(1, 64) as u8;
 
     // Width in inches — steps between blanks
@@ -365,48 +365,6 @@ pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MOD
 /// acting as a spatial filter in mode space. Modes whose half-wavelength is
 /// shorter than the contact region experience partial cancellation.
 ///
-/// From Wurlitzer patents:
-///   - Strike center: 0.30L from clamp (Andersen US 2,919,616: 0.25-0.35L)
-///   - Contact length: 0.20L (Miessner US 2,932,231: 10-30% of reed)
-///   - Contact region: ξ ∈ [0.20, 0.40] in normalized coordinates
-///
-/// Returns per-mode coupling coefficients normalized to mode 1.
-/// Values > 1.0 mean that mode is excited MORE efficiently than mode 1
-/// at this position (mode 1 has small displacement near the clamp).
-#[allow(clippy::needless_range_loop)]
-pub fn hammer_spatial_coupling(mu: f64) -> [f64; NUM_MODES] {
-    let betas = eigenvalues(mu);
-
-    let xi_start = 0.20;
-    let xi_end = 0.40;
-    let contact_len = xi_end - xi_start;
-
-    let mut coupling_raw = [0.0f64; NUM_MODES];
-
-    const N_SIMPSON: usize = 32;
-    let h = contact_len / N_SIMPSON as f64;
-
-    for mode in 0..NUM_MODES {
-        let beta = betas[mode];
-        let mut sum = mode_shape(beta, xi_start) + mode_shape(beta, xi_end);
-        for j in 1..N_SIMPSON {
-            let xi = xi_start + j as f64 * h;
-            let coeff = if j % 2 == 1 { 4.0 } else { 2.0 };
-            sum += coeff * mode_shape(beta, xi);
-        }
-        let integral = (sum * h / 3.0).abs();
-        coupling_raw[mode] = integral / contact_len;
-    }
-
-    // Normalize to mode 1
-    let k1 = coupling_raw[0];
-    if k1 > 1e-30 {
-        std::array::from_fn(|i| coupling_raw[i] / k1)
-    } else {
-        [1.0; NUM_MODES]
-    }
-}
-
 /// Fundamental decay rate in dB/s for a given MIDI note.
 ///
 /// Frequency power law calibrated against 10 clean OBM 200A decay rates

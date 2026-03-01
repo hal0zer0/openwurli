@@ -800,7 +800,7 @@ From OldBassMan 200A recordings:
 
 > **Note:** Q = pi * f * 8.686 / decay_dB.
 
-Source: [Calibration Data](../reference/calibration-data.md)
+Source: [Calibration and Evaluation](../reference/calibration-and-evaluation.md)
 
 **Observations:**
 1. Q ranges from ~1025 to ~2874 across the keyboard.

@@ -102,4 +102,4 @@ xtask/                        # nih-plug bundler
 
 ## Version Codenames
 
-Each release gets a codename from Wurlitzer song lyrics. See `docs/release-codenames.md` for the full list. Format: `## [x.y.z] "Codename" - YYYY-MM-DD`
+Each release gets a codename from Wurlitzer song lyrics. Format in CHANGELOG: `## [x.y.z] "Codename" - YYYY-MM-DD`
