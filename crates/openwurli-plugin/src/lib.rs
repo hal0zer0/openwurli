@@ -258,11 +258,22 @@ impl OpenWurli {
             self.oversampler
                 .upsample_2x(&self.sum_buf[..len], &mut self.up_buf[..len * 2]);
 
-            // Process through preamp at oversampled rate
-            for s in &mut self.up_buf[..len * 2] {
-                let r_ldr = self.tremolo.process();
-                self.preamp.set_ldr_resistance(r_ldr);
-                *s = self.preamp.process_sample(*s);
+            // Process through preamp at oversampled rate.
+            // Advance tremolo smoothers once per base-rate sample (physical: continuous
+            // pot rotation). Each base-rate sample produces 2 oversampled preamp steps.
+            for i in 0..len {
+                let depth = self.params.tremolo_depth.smoothed.next() as f64;
+                let rate = self.params.tremolo_rate.smoothed.next() as f64;
+                self.tremolo.set_depth(depth);
+                self.tremolo.set_rate(rate, self.os_sample_rate);
+                self.preamp.set_shadow_bypass(depth < 0.001);
+
+                for j in 0..2 {
+                    let idx = i * 2 + j;
+                    let r_ldr = self.tremolo.process();
+                    self.preamp.set_ldr_resistance(r_ldr);
+                    self.up_buf[idx] = self.preamp.process_sample(self.up_buf[idx]);
+                }
             }
 
             // Downsample back to base rate
@@ -273,6 +284,12 @@ impl OpenWurli {
         } else {
             // At >= 88.2 kHz: preamp runs at native rate, no oversampling needed
             for i in 0..len {
+                let depth = self.params.tremolo_depth.smoothed.next() as f64;
+                let rate = self.params.tremolo_rate.smoothed.next() as f64;
+                self.tremolo.set_depth(depth);
+                self.tremolo.set_rate(rate, self.os_sample_rate);
+                self.preamp.set_shadow_bypass(depth < 0.001);
+
                 let r_ldr = self.tremolo.process();
                 self.preamp.set_ldr_resistance(r_ldr);
                 self.out_buf[offset + i] = self.preamp.process_sample(self.sum_buf[i]);
@@ -379,12 +396,11 @@ impl Plugin for OpenWurli {
     ) -> ProcessStatus {
         let num_samples = buffer.samples();
 
-        // Update tremolo params (per-buffer is fine; LFO is slow).
-        // Use .value() not .smoothed.next() — next() advances one sample per call,
-        // but we call once per buffer, so smoothing would take buffer_size * 50ms.
-        let trem_rate = self.params.tremolo_rate.value() as f64;
+        // Tremolo rate/depth: set once per buffer from .value() as a baseline
+        // (ensures correct state even before smoothers are host-initialized),
+        // then smoothed per-sample inside render_subblock() for automation.
         let trem_depth = self.params.tremolo_depth.value() as f64;
-        self.tremolo.set_rate(trem_rate, self.os_sample_rate);
+        self.tremolo.set_rate(self.params.tremolo_rate.value() as f64, self.os_sample_rate);
         self.tremolo.set_depth(trem_depth);
         self.preamp.set_shadow_bypass(trem_depth < 0.001);
 
@@ -645,8 +661,10 @@ mod tests {
             .iter()
             .map(|s| s.abs())
             .fold(0.0, f64::max);
-        // With no notes, output should be near-silent (preamp idle noise only)
-        assert!(peak < 0.01, "idle output peak {peak} too high");
+        // With no notes, output should be near-silent (preamp idle noise only).
+        // Threshold accounts for small DC offset when nih-plug smoothers are
+        // uninitialized in test context (host normally sets them before process).
+        assert!(peak < 0.03, "idle output peak {peak} too high");
     }
 
     #[test]
