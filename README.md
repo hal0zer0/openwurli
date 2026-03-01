@@ -85,19 +85,9 @@ cargo test --workspace
 
 ## Documentation
 
-Detailed technical documentation is in [`docs/`](docs/):
-
-- [Signal Chain Architecture](docs/signal-chain-architecture.md) — complete DSP specification
-- [Preamp Circuit Reference](docs/preamp-circuit.md) — component values, DC bias, harmonic analysis
-- [DK Preamp Derivation](docs/dk-preamp-derivation.md) — Discretization-K method math
-- [DK Preamp Testing](docs/dk-preamp-testing.md) — five-layer test pyramid strategy
-- [Output Stage](docs/output-stage.md) — power amp, tremolo, speaker
-- [Pickup System](docs/pickup-system.md) — electrostatic pickup physics
-- [Reed and Hammer Physics](docs/reed-and-hammer-physics.md) — modal synthesis parameters
-- [Calibration and Evaluation](docs/calibration-and-evaluation.md) — test methodology and targets
-- [Parameter Tuning Guide](docs/parameter-tuning-guide.md) — parameter interactions and calibration workflow
-- [SPICE-Rust Mapping](docs/spice-rust-mapping.md) — SPICE-to-Rust translation reference
-- [Schematic Source](docs/SCHEMATIC_SOURCE.md) — how to obtain the Wurlitzer 200A schematic
+- **[How the Circuit Modeling Works](docs/how-circuit-modeling-works.md)** — how we turn a schematic into real-time audio
+- **[How the MLP Corrections Work](docs/how-mlp-corrections-work.md)** — the per-note neural network that fine-tunes the model
+- [Full documentation index](docs/) — 200A research, DSP specs, calibration methodology
 
 ## License
 

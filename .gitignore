@@ -1,8 +1,7 @@
 # Python virtual environment
 .venv/
 
-# AI agent configuration (private dev tooling)
-CLAUDE.md
+# AI agent session data (private)
 .claude/
 
 # OS files

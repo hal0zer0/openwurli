@@ -4,7 +4,7 @@
 
 This document provides concrete, source-attributed calibration data and evaluation criteria for building a physically accurate Wurlitzer 200A electric piano synthesizer. Every value has an uncertainty range, every claim has a source, and every metric has an assessment of whether it actually correlates with perceptual quality.
 
-> **See also:** [Reed and Hammer Physics](reed-and-hammer-physics.md) (modal synthesis parameters), [Signal Chain Architecture](signal-chain-architecture.md) (overall DSP spec), [DK Preamp Testing](dk-preamp-testing.md) (preamp validation targets)
+> **See also:** [Reed and Hammer Physics](../research/reed-and-hammer-physics.md) (modal synthesis parameters), [Signal Chain Architecture](../research/signal-chain-architecture.md) (overall DSP spec), [DK Preamp Testing](dk-preamp-testing.md) (preamp validation targets)
 
 CRITICAL CONTEXT: A previous iteration of this project achieved good FFT-derived metrics (H2>H3 compliance, decay rates within range, spectral centroid targets met) but sounded terrible to human listeners. This document addresses why that happened and how to prevent it.
 

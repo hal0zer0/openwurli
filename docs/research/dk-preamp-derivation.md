@@ -1,6 +1,6 @@
 # DK Method Preamp Derivation
 
-> **See also:** [Preamp Circuit](preamp-circuit.md) (circuit analysis and component values), [DK Preamp Testing](dk-preamp-testing.md) (validation test pyramid)
+> **See also:** [Preamp Circuit](preamp-circuit.md) (circuit analysis and component values), [DK Preamp Testing](../reference/dk-preamp-testing.md) (validation test pyramid)
 
 ## 1. Circuit Overview
 

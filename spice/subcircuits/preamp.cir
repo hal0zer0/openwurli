@@ -6,7 +6,7 @@
 *
 * Topology resolved from BustedGear 200A schematic (874 KB PDF)
 * at 1000-2000 DPI plus DC analysis and SPICE stability validation.
-* All component values VERIFIED. See docs/preamp-circuit.md.
+* All component values VERIFIED. See docs/research/preamp-circuit.md.
 *
 * TOPOLOGY NOTES:
 *   R-2 (2M to +15V) and R-3 (470K to GND) are both at base1,

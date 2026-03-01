@@ -508,7 +508,7 @@ This is the most complex processing stage. The preamp adds harmonic coloring at 
 ### DECISION: Trait-Based A/B Architecture
 
 The preamp implements a `PreampModel` trait with `process_sample()`, `set_ldr_resistance()`, `reset()`. Two implementations exist behind this interface:
-1. **DkPreamp** (8-node coupled MNA solver using the DK method) — the shipping implementation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `docs/dk-preamp-derivation.md`.
+1. **DkPreamp** (8-node coupled MNA solver using the DK method) — the shipping implementation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `dk-preamp-derivation.md`.
 2. **EbersMollPreamp** — legacy reference with independent per-stage NR solvers. Retained for comparison only; not used in production.
 
 ### Oversampling Wrapper
@@ -635,7 +635,7 @@ The 200A tremolo modulates the preamp's closed-loop gain via an LDR (LG-1) that 
 
 ### LFO (Twin-T Oscillator, TR-3/TR-4)
 
-The oscillator is a twin-T (parallel-T) notch filter oscillator. SPICE-validated at 5.63 Hz with 11.8 Vpp output swing. See `spice/subcircuits/tremolo_osc.cir` and `docs/output-stage.md` Section 2.1 for full topology.
+The oscillator is a twin-T (parallel-T) notch filter oscillator. SPICE-validated at 5.63 Hz with 11.8 Vpp output swing. See `spice/subcircuits/tremolo_osc.cir` and `output-stage.md` Section 2.1 for full topology.
 
 ```
 lfo = sin(2*PI * rate * t)

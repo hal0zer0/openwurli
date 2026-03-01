@@ -2,7 +2,7 @@
 
 Comprehensive physical reference for Wurlitzer 200/200A reed and hammer mechanics.
 
-> **See also:** [Pickup System](pickup-system.md) (reed-to-signal transduction), [Calibration and Evaluation](calibration-and-evaluation.md) (spectral targets and test methodology)
+> **See also:** [Pickup System](pickup-system.md) (reed-to-signal transduction), [Calibration and Evaluation](../reference/calibration-and-evaluation.md) (spectral targets and test methodology)
 
 ---
 

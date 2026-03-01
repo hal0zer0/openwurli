@@ -2,7 +2,7 @@
 
 Comprehensive technical reference for implementing a digital model of the Wurlitzer 200A reed-bar preamplifier. Covers verified component values (from direct reading of BustedGear 200A schematic at 900 DPI), DC bias analysis, AC signal analysis, harmonic generation mechanisms, tremolo integration, and modeling recommendations.
 
-> **See also:** [DK Preamp Derivation](dk-preamp-derivation.md) (MNA math), [DK Preamp Testing](dk-preamp-testing.md) (test pyramid), [Output Stage](output-stage.md) (tremolo LDR integration)
+> **See also:** [DK Preamp Derivation](dk-preamp-derivation.md) (MNA math), [DK Preamp Testing](../reference/dk-preamp-testing.md) (test pyramid), [Output Stage](output-stage.md) (tremolo LDR integration)
 
 ---
 
@@ -1040,13 +1040,13 @@ Key lessons from previous modeling attempts:
 ### Related Documents in This Project
 
 14. **Pickup System** — signal levels reaching the preamp, electrostatic analysis
-    - `docs/pickup-system.md`
+    - `pickup-system.md`
 
 15. **Output Stage** — power amplifier, tremolo feedback discovery, speaker model
-    - `docs/output-stage.md`
+    - `output-stage.md`
 
 16. **Signal Chain Architecture** — overall signal flow, parameter values
-    - `docs/signal-chain-architecture.md`
+    - `signal-chain-architecture.md`
 
 ---
 

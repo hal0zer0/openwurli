@@ -38,6 +38,6 @@ This path is referenced by the schematic preprocessing tools in `tools/schematic
 
 If you don't have the schematic but need to verify the implementation, the critical component values extracted from it are documented in:
 
-- `docs/preamp-circuit.md` — Complete component values with DC bias points
-- `docs/output-stage.md` — Power amplifier and tremolo circuit
-- `docs/pickup-system.md` — Electrostatic pickup parameters
+- `docs/research/preamp-circuit.md` — Complete component values with DC bias points
+- `docs/research/output-stage.md` — Power amplifier and tremolo circuit
+- `docs/research/pickup-system.md` — Electrostatic pickup parameters

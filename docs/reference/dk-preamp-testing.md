@@ -1,6 +1,6 @@
 # DK Preamp Testing Strategy
 
-> **See also:** [DK Preamp Derivation](dk-preamp-derivation.md) (MNA math being tested), [Preamp Circuit](preamp-circuit.md) (circuit analysis and component values)
+> **See also:** [DK Preamp Derivation](../research/dk-preamp-derivation.md) (MNA math being tested), [Preamp Circuit](../research/preamp-circuit.md) (circuit analysis and component values)
 
 Testing strategy for the DK (Discretization-Kernel) preamp implementation. The DK method derives the circuit model from explicit MNA matrices, which means the matrices ARE the model — we can test the model mathematically without running audio through it.
 

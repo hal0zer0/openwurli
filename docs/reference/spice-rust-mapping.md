@@ -219,12 +219,12 @@ fix touches the preamp.
 ### Documentation
 | File | Purpose |
 |---|---|
-| `docs/dk-preamp-derivation.md` | Full MNA math, trapezoidal discretization, Sherman-Morrison |
-| `docs/dk-preamp-testing.md` | Five-layer test pyramid strategy |
-| `docs/preamp-circuit.md` | Circuit analysis, DC bias, feedback topology |
-| `docs/output-stage.md` | Power amp, tremolo, speaker, volume |
-| `docs/pickup-system.md` | Electrostatic pickup physics |
-| `docs/signal-chain-architecture.md` | Overall plugin architecture |
+| `docs/research/dk-preamp-derivation.md` | Full MNA math, trapezoidal discretization, Sherman-Morrison |
+| `docs/reference/dk-preamp-testing.md` | Five-layer test pyramid strategy |
+| `docs/research/preamp-circuit.md` | Circuit analysis, DC bias, feedback topology |
+| `docs/research/output-stage.md` | Power amp, tremolo, speaker, volume |
+| `docs/research/pickup-system.md` | Electrostatic pickup physics |
+| `docs/research/signal-chain-architecture.md` | Overall plugin architecture |
 
 ### SPICE (key testbenches only)
 | File | Purpose |

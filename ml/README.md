@@ -6,15 +6,16 @@ A small neural network that runs once at note-on to correct per-note spectral ch
 
 The physical model produces good spectral shape overall, but individual notes have small systematic errors in harmonic levels, tuning, and decay rates that vary across the keyboard. This pipeline extracts those residuals from real recordings and trains an MLP to correct them.
 
-**Architecture:** 2 inputs (MIDI note, velocity) -> 8 hidden (ReLU) -> 8 hidden (ReLU) -> 22 outputs. Total: 294 parameters. Runtime: <10 us per note-on.
+**Architecture (v2):** 2 inputs (MIDI note, velocity) -> 8 hidden (ReLU) -> 8 hidden (ReLU) -> 11 outputs. Total: 195 parameters. Runtime: <10 us per note-on.
 
-**Outputs (22 values):**
-- H2-H8 amplitude offsets (dB) -- 7 values
-- H2-H8 frequency offsets (cents) -- 7 values
-- H2-H8 decay ratio offsets -- 7 values
-- Displacement scale multiplier -- 1 value
+**Outputs (11 values):**
+- H2-H6 frequency offsets (cents) -- 5 values
+- H2-H6 decay ratio multipliers -- 5 values
+- Displacement scale correction -- 1 value
 
-**Training data:** 9 OBM gold-tier isolated notes (MIDI 65-97, velocity ~80) from [Freesound pack 5726](https://freesound.org/people/OldBassMan/packs/5726/) (CC-BY 4.0).
+v2 removed amplitude offsets (harmonic-vs-mode domain mismatch) and fixed a sign bug in the displacement scale correction that had v1 pushing corrections in the wrong direction.
+
+**Training data:** 8 OBM isolated notes (MIDI 70-97, velocity ~80) from [Freesound pack 5726](https://freesound.org/people/OldBassMan/packs/5726/) (CC-BY 4.0).
 
 ## Pipeline Stages
 
@@ -63,7 +64,7 @@ The final artifact is `crates/openwurli-dsp/src/mlp_weights.rs`, containing the 
 
 ## Integration
 
-At note-on, `mlp_correction::compute_corrections(midi, velocity)` runs the MLP forward pass and returns an `MlpCorrections` struct. The voice module applies these corrections to mode amplitudes, frequencies, decay rates, and displacement scale before synthesis begins.
+At note-on, `MlpCorrections::infer(midi, velocity)` runs the MLP forward pass and returns an `MlpCorrections` struct. The voice module applies these corrections to mode frequencies, decay rates, and displacement scale before synthesis begins.
 
 Outside the training range (MIDI 65-97), corrections fade linearly to identity over 12 semitones, ensuring graceful degradation at keyboard extremes.
 
