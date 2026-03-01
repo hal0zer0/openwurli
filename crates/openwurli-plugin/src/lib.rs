@@ -225,6 +225,34 @@ impl OpenWurli {
             }
         }
 
+        // NaN guard: catch non-finite voice output BEFORE the oversampler.
+        // Once NaN enters IIR allpass filter state, it persists and causes
+        // per-sample preamp resets (expensive full_dc_solve) → xruns → frozen audio.
+        if self.sum_buf[..len].iter().any(|s| !s.is_finite()) {
+            self.sum_buf[..len].fill(0.0);
+            // Kill the offending voice(s) immediately — don't wait for the
+            // 10-second is_silent() timeout which would cause sustained xruns.
+            for slot in &mut self.voices {
+                if slot.state == VoiceState::Free && slot.steal_voice.is_none() {
+                    continue;
+                }
+                if let Some(ref mut voice) = slot.voice {
+                    voice.render(&mut self.voice_buf[..len]);
+                    if self.voice_buf[..len].iter().any(|s| !s.is_finite()) {
+                        slot.state = VoiceState::Free;
+                        slot.voice = None;
+                    }
+                }
+                if let Some(ref mut steal) = slot.steal_voice {
+                    steal.render(&mut self.voice_buf[..len]);
+                    if self.voice_buf[..len].iter().any(|s| !s.is_finite()) {
+                        slot.steal_voice = None;
+                        slot.steal_fade = 0;
+                    }
+                }
+            }
+        }
+
         if self.oversample {
             // Upsample to 2x rate
             self.oversampler
@@ -432,6 +460,8 @@ impl Plugin for OpenWurli {
             let sample = if sample.is_finite() {
                 sample
             } else {
+                self.preamp.reset();
+                self.oversampler.reset();
                 self.power_amp.reset();
                 self.speaker.reset();
                 0.0f32

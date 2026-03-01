@@ -413,20 +413,16 @@ impl DkPreamp {
     /// Bypassing saves ~50% of DK solver cost.
     pub fn set_shadow_bypass(&mut self, bypass: bool) {
         if bypass && !self.shadow_bypass {
-            // Transitioning to bypass: capture current shadow output as constant
+            // Transitioning to bypass: capture current shadow output as constant.
             self.shadow_dc = self.shadow.v[OUT];
             self.shadow_bypass = true;
         } else if !bypass && self.shadow_bypass {
-            // Transitioning from bypass: re-sync shadow to current DC operating point
-            let w = self.two_w_half();
-            let (_, v_nl_dc, v_dc, _) = Self::full_dc_solve(&self.g_dc_base, &w, self.r_ldr);
-            self.shadow = DkState {
-                j_cin: self.g_cin * v_dc[BASE1],
-                cin_rhs_prev: self.g_cin * v_dc[BASE1],
-                v: v_dc,
-                i_nl: [bjt_ic(v_nl_dc[0]), bjt_ic(v_nl_dc[1])],
-                v_nl: v_nl_dc,
-            };
+            // Resume from frozen state — no reset. The frozen DkState preserves
+            // capacitor charges (Ce1 tau ~155ms) from recent r_ldr modulation.
+            // A full_dc_solve reset ignores those charges, creating a DC jump at
+            // OUT that the power amp gain (49×) amplifies into an audible click.
+            // The DK solver's inline SM correction handles any r_ldr change that
+            // occurred during bypass, so the shadow naturally re-tracks.
             self.shadow_bypass = false;
         }
     }
