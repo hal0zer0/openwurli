@@ -13,6 +13,10 @@
 #   - CHANGELOG.md must already have a [VERSION] section (the creative step)
 #   - Codename must exist in docs/release-codenames.md candidates
 #
+# Safety: nothing is committed until ALL validation passes (fmt, clippy, test,
+# bundle). If anything fails, the working tree has modifications but no commits —
+# just `git checkout .` to reset and try again.
+#
 set -euo pipefail
 
 RED='\033[0;31m'
@@ -77,19 +81,18 @@ CODENAME_ALREADY_MOVED=false
 
 if [[ "$OLD_VERSION" == "$VERSION" ]]; then
     VERSION_ALREADY_BUMPED=true
-    warn "Version already at ${VERSION} — skipping bump (re-run?)"
+    warn "Version already at ${VERSION} (re-run)"
 else
     pass "Version bump: ${OLD_VERSION} → ${VERSION}"
 fi
 
 # Codename: check if already moved to Already Used, or still in candidates
 if grep -q "| ${CODENAME} |" "$CODENAMES_FILE"; then
-    # Is it in candidates or Already Used?
     if sed -n '/^## Candidates/,$ p' "$CODENAMES_FILE" | grep -q "| ${CODENAME} |"; then
         pass "Codename '${CODENAME}' found in candidates"
     else
         CODENAME_ALREADY_MOVED=true
-        warn "Codename '${CODENAME}' already in Already Used — skipping (re-run?)"
+        warn "Codename '${CODENAME}' already in Already Used (re-run)"
     fi
 else
     fail "Codename '${CODENAME}' not found anywhere in ${CODENAMES_FILE}"
@@ -103,6 +106,10 @@ if grep -q "^## \[${VERSION}\]" CHANGELOG.md; then
 else
     fail "CHANGELOG.md is missing a [${VERSION}] section. Add release notes before releasing."
 fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Steps 3-5: File modifications (reversible with `git checkout .`)
+# ══════════════════════════════════════════════════════════════════════════════
 
 # ── Step 3: Bump versions in Cargo.toml files ────────────────────────────────
 
@@ -123,16 +130,13 @@ fi
 # ── Step 4: Update CHANGELOG.md link references ─────────────────────────────
 
 step 4 "Updating CHANGELOG.md link references"
-# Check if links are already correct
 if grep -q "compare/v${VERSION}\.\.\.HEAD" CHANGELOG.md && grep -q "^\[${VERSION}\]:" CHANGELOG.md; then
     warn "Links already up to date — skipping"
 elif $DRY_RUN; then
     info "Would update [Unreleased] compare link: v${OLD_VERSION} → v${VERSION}"
     info "Would insert [${VERSION}] compare link"
 else
-    # Update [Unreleased] compare link to point at new tag
     sed -i "s|compare/v${OLD_VERSION}\.\.\.HEAD|compare/v${VERSION}...HEAD|" CHANGELOG.md
-    # Insert new version compare link after [Unreleased] line (skip if already present)
     if ! grep -q "^\[${VERSION}\]:" CHANGELOG.md; then
         sed -i "/^\[Unreleased\]:/a\\[${VERSION}]: https://github.com/hal0zer0/openwurli/compare/v${OLD_VERSION}...v${VERSION}" CHANGELOG.md
     fi
@@ -146,18 +150,13 @@ if $CODENAME_ALREADY_MOVED; then
     warn "Codename already processed — skipping"
 else
     # Extract metadata from candidates section (after "## Candidates" line)
-    # The candidate line looks like: | GoBackJack | "Go back, Jack" | Do It Again |
     CANDIDATE_LINE=$(sed -n '/^## Candidates/,$ p' "$CODENAMES_FILE" | grep "| ${CODENAME} |")
 
-    # Extract lyric (column 2) and song (column 3)
     LYRIC=$(echo "$CANDIDATE_LINE" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
     SONG=$(echo "$CANDIDATE_LINE" | awk -F'|' '{gsub(/^ +| +$/, "", $4); print $4}')
-
-    # Extract artist from the section header above the candidate
-    # Look for the ### header preceding this codename's line
     ARTIST=$(awk "/^### /{artist=\$0} /\\| ${CODENAME} \\|/{print artist}" "$CODENAMES_FILE" | sed 's/^### //; s/ (.*//')
 
-    # Some tables (Soul/R&B, etc.) have artist in column 4/5 — check for that
+    # Some tables (Soul/R&B, etc.) have artist in column 5
     INLINE_ARTIST=$(echo "$CANDIDATE_LINE" | awk -F'|' '{if (NF >= 6) {gsub(/^ +| +$/, "", $5); print $5}}')
     if [[ -n "$INLINE_ARTIST" ]]; then
         ARTIST="$INLINE_ARTIST"
@@ -167,42 +166,34 @@ else
     info "Song: ${SONG}"
     info "Artist: ${ARTIST}"
 
-    # 5a: Remove from candidates (BEFORE adding to Already Used, to avoid matching the new row)
     if $DRY_RUN; then
         info "Would remove candidate line: ${CANDIDATE_LINE}"
+        info "Would add to Already Used: | v${VERSION} | ${CODENAME} | ${SONG} | ${ARTIST} |"
+        info "Would add to CLAUDE.md: | v${VERSION} | ${CODENAME} | ${LYRIC} — ${SONG}, ${ARTIST} |"
     else
+        # Remove from candidates FIRST (before adding to Already Used)
         sed -i "/| ${CODENAME} |/d" "$CODENAMES_FILE"
         pass "Removed from candidates"
-    fi
 
-    # 5b: Add to Already Used table
-    if $DRY_RUN; then
-        info "Would add to Already Used: | v${VERSION} | ${CODENAME} | ${SONG} | ${ARTIST} |"
-    else
-        # Find the last "| v" line in the Already Used section (before ## Candidates)
+        # Add to Already Used table
         CANDIDATES_LINE=$(grep -n "^## Candidates" "$CODENAMES_FILE" | cut -d: -f1)
         LAST_USED_LINE=$(awk -v max="$CANDIDATES_LINE" '/^\| v[0-9]/ && NR < max {line=NR} END{print line}' "$CODENAMES_FILE")
         sed -i "${LAST_USED_LINE}a\\| v${VERSION} | ${CODENAME} | ${SONG} | ${ARTIST} |" "$CODENAMES_FILE"
         pass "Added to Already Used table"
-    fi
 
-    # 5c: Update CLAUDE.md codenames table
-    # LYRIC already has quotes from the table (e.g. "Go back, Jack"), use as-is
-    LYRIC_SOURCE="${LYRIC} — ${SONG}, ${ARTIST}"
-    if $DRY_RUN; then
-        info "Would add to CLAUDE.md: | v${VERSION} | ${CODENAME} | ${LYRIC_SOURCE} |"
-    else
-        # Find the last "| v" line in the Version Codenames table
-        # The table is between "## Version Codenames" and "Format in CHANGELOG"
+        # Update CLAUDE.md codenames table
+        LYRIC_SOURCE="${LYRIC} — ${SONG}, ${ARTIST}"
         LAST_CODENAME_LINE=$(awk '/^## Version Codenames/,/^Format in CHANGELOG/{if (/^\| v[0-9]/) line=NR} END{print line}' "$CLAUDEMD_FILE")
         sed -i "${LAST_CODENAME_LINE}a\\| v${VERSION} | ${CODENAME} | ${LYRIC_SOURCE} |" "$CLAUDEMD_FILE"
         pass "Updated CLAUDE.md codenames table"
     fi
 fi
 
-# ── Step 6: Commit version/codename changes ──────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# Steps 6-9: Validation (nothing committed yet — safe to fail)
+# ══════════════════════════════════════════════════════════════════════════════
 
-# ── Step 6: cargo fmt (before commit so fixes land in the release commit) ────
+# ── Step 6: cargo fmt ────────────────────────────────────────────────────────
 
 step 6 "cargo fmt"
 if $DRY_RUN; then
@@ -212,57 +203,35 @@ else
     pass "Formatted"
 fi
 
-# ── Step 7: Commit release changes ──────────────────────────────────────────
+# ── Step 7: cargo clippy ─────────────────────────────────────────────────────
 
-step 7 "Committing release changes"
-if $DRY_RUN; then
-    warn "Dry run — skipping commit"
-else
-    git add "${CARGO_TOMLS[@]}" Cargo.lock CHANGELOG.md "$CODENAMES_FILE" "$CLAUDEMD_FILE"
-    # Also stage any files cargo fmt touched
-    git add -u -- '*.rs'
-    if git diff --cached --quiet; then
-        warn "Nothing to commit — already up to date (re-run?)"
-    else
-        git commit -m "$(cat <<EOF
-Release v${VERSION} "${CODENAME}"
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
-EOF
-)"
-        pass "Committed release changes"
-    fi
-fi
-
-# ── Step 8: cargo clippy ─────────────────────────────────────────────────────
-
-step 8 "cargo clippy --workspace -- -D warnings"
+step 7 "cargo clippy --workspace -- -D warnings"
 if $DRY_RUN; then
     warn "Dry run — skipping"
 else
     if cargo clippy --workspace -- -D warnings 2>&1; then
         pass "No clippy warnings"
     else
-        fail "Fix clippy warnings before release"
+        fail "Fix clippy warnings, then re-run (working tree not committed — git checkout . to reset)"
     fi
 fi
 
-# ── Step 9: cargo test ───────────────────────────────────────────────────────
+# ── Step 8: cargo test ───────────────────────────────────────────────────────
 
-step 9 "cargo test --workspace"
+step 8 "cargo test --workspace"
 if $DRY_RUN; then
     warn "Dry run — skipping"
 else
     if cargo test --workspace 2>&1; then
         pass "All tests pass"
     else
-        fail "Tests failed"
+        fail "Tests failed (working tree not committed — git checkout . to reset)"
     fi
 fi
 
-# ── Step 10: Bundle + install ────────────────────────────────────────────────
+# ── Step 9: Bundle + install ─────────────────────────────────────────────────
 
-step 10 "cargo xtask bundle openwurli --release"
+step 9 "cargo xtask bundle openwurli --release"
 if $DRY_RUN; then
     warn "Dry run — skipping"
 else
@@ -272,25 +241,43 @@ else
         cp -r target/bundled/openwurli.vst3 ~/.vst3/
         pass "Installed to ~/.clap/ and ~/.vst3/"
     else
-        fail "Bundle failed"
+        fail "Bundle failed (working tree not committed — git checkout . to reset)"
     fi
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Steps 10-11: Commit, tag, push (only reached if ALL validation passed)
+# ══════════════════════════════════════════════════════════════════════════════
+
+if $DRY_RUN; then
+    echo -e "\n${GREEN}${BOLD}Dry run complete.${RESET} All validations would pass."
+    echo "Run without --dry-run to release."
+    exit 0
+fi
+
+# ── Step 10: Commit ──────────────────────────────────────────────────────────
+
+step 10 "Committing release"
+git add "${CARGO_TOMLS[@]}" Cargo.lock CHANGELOG.md "$CODENAMES_FILE" "$CLAUDEMD_FILE"
+git add -u -- '*.rs'
+if git diff --cached --quiet; then
+    warn "Nothing to commit — already up to date"
+else
+    git commit -m "$(cat <<EOF
+v${VERSION} "${CODENAME}"
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+EOF
+)"
+    pass "Committed"
 fi
 
 # ── Step 11: Tag + push ─────────────────────────────────────────────────────
 
 step 11 "Tag and push"
-if $DRY_RUN; then
-    warn "Dry run — skipping tag and push"
-    echo -e "\n${GREEN}${BOLD}Dry run complete.${RESET} All validations passed."
-    echo "Run without --dry-run to release."
-    exit 0
-fi
-
-# Clean working tree check
 if ! git diff --quiet || ! git diff --cached --quiet; then
-    fail "Uncommitted changes. Commit or stash first."
+    fail "Uncommitted changes after release commit — something went wrong"
 fi
-pass "Clean working tree"
 
 if git rev-parse "$TAG" >/dev/null 2>&1; then
     if [ "$(git rev-parse "$TAG"^{commit})" = "$(git rev-parse HEAD)" ]; then
