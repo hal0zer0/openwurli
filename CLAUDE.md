@@ -208,6 +208,7 @@ Each release gets a codename drawn from **lyrics** (not titles) of songs featuri
 | v0.1.5 | MountUp | "Mount up!" — Regulate, Warren G ft. Nate Dogg |
 | v0.2.0 | GoodbyeMary | "Goodbye Mary" — Supertramp, Goodbye Stranger |
 | v0.2.1 | YouMakeMeLive | "You make me live" — Queen, You're My Best Friend |
+| v0.2.2 | GoBackJack | "Go back, Jack" — Do It Again, Steely Dan |
 
 Format in CHANGELOG: `## [x.y.z] "Codename" - YYYY-MM-DD`
 
