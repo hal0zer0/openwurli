@@ -1,6 +1,6 @@
 //! Per-note parameter tables for Wurlitzer 200A reed modal synthesis.
 //!
-//! Derived from Euler-Bernoulli beam theory with tip mass (docs/reed-and-hammer-physics.md).
+//! Derived from Euler-Bernoulli beam theory with tip mass (docs/research/reed-and-hammer-physics.md).
 //! Range: MIDI 33 (A1) to MIDI 96 (C7) -- 64 reeds.
 pub const NUM_MODES: usize = 7;
 pub const MIDI_LO: u8 = 33;
@@ -152,7 +152,7 @@ pub fn mode_ratios(mu: f64) -> [f64; NUM_MODES] {
 
 /// Reed length in mm for a given MIDI note.
 ///
-/// Two-segment linear formula from docs/reed-and-hammer-physics.md (Section 1.3):
+/// Two-segment linear formula from docs/research/reed-and-hammer-physics.md (Section 1.3):
 ///   Reed number n = midi - 32 (MIDI 33 = reed 1, MIDI 96 = reed 64)
 ///   Bass (n=1-20):   L = 3.0 - n/20 inches
 ///   Treble (n=21-64): L = 2.0 - (n-20)/44 inches
@@ -169,7 +169,7 @@ pub fn reed_length_mm(midi: u8) -> f64 {
 /// Reed blank width and thickness for a given MIDI note.
 ///
 /// Returns (width_mm, thickness_mm) based on 200A series blank dimensions
-/// from docs/reed-and-hammer-physics.md Section 1.2.
+/// from docs/research/reed-and-hammer-physics.md Section 1.2.
 ///
 /// Five blanks with distinct widths; thickness uses 200A values (thicker than
 /// 200-series) per Vintage Vibe case study: bass 0.026", mid/treble 0.034".

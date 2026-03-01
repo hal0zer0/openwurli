@@ -1,7 +1,7 @@
 //! Reed Renderer -- Wurlitzer 200A modal synthesis WAV renderer.
 //!
 //! Standalone CLI tool for rendering reed tones to WAV files.
-//! Uses physics-derived parameters from docs/reed-and-hammer-physics.md.
+//! Uses physics-derived parameters from docs/research/reed-and-hammer-physics.md.
 
 use openwurli_dsp::tables;
 use openwurli_dsp::voice::Voice;

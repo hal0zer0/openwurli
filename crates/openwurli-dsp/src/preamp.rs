@@ -18,7 +18,7 @@
 //!   - Gain @ 1kHz, tremolo bright: 12.1 dB (4.0x)
 //!   - H2 > H3 at all dynamics
 //!
-//! Known limitation -- nested feedback loops (see docs/preamp-circuit.md 5.5.1):
+//! Known limitation -- nested feedback loops (see docs/research/preamp-circuit.md 5.5.1):
 //!   The real preamp has TWO nested feedback loops: inner (C-3/C-4 Miller caps,
 //!   ~15.5 kHz BW) and outer (R-10/Ce1/R_ldr, gain control). This model treats
 //!   each stage independently with simple Miller poles, giving constant GBW and

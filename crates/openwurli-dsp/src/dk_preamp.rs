@@ -11,7 +11,7 @@
 //! companion element. This correctly blocks DC (preserving the R2/R3 bias point)
 //! while loading the base at audio frequencies with the proper R1 impedance.
 //!
-//! See docs/dk-preamp-derivation.md for the full mathematical derivation.
+//! See docs/research/dk-preamp-derivation.md for the full mathematical derivation.
 #![allow(clippy::needless_range_loop)]
 
 use crate::preamp::PreampModel;

@@ -1,229 +1,214 @@
 # CLAUDE.md
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+Guidance for Claude Code and AI-assisted contributors working on this codebase.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 ## Project Overview
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-OpenWurli is a virtual instrument plugin (CLAP and VST3 formats) that models the Wurlitzer 200A electric piano through analog circuit simulation. The goal is physically accurate sound — not sample playback or generic synthesis approximations.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+OpenWurli is a CLAP/VST3 virtual instrument plugin that models the Wurlitzer 200A electric piano through analog circuit simulation. Physically accurate sound from first principles — no samples, no IRs, no curve-fitting.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-**Critical context:** Multiple prior attempts to build this plugin have failed. This project follows a strict phased approach: each phase must be thoroughly tested and reviewed before proceeding to the next. Do not rush ahead or skip validation steps.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+## PR Guidelines
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-## Wurlitzer 200A Domain Knowledge
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+PRs must be clean, minimal, and follow software engineering best practices. The key question: **"If I was the project maintainer, would I want to review this?"**
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-Before making any design or DSP decisions, **always consult `docs/`** first. It contains research materials being assembled specifically for this project.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **Small and focused.** One concern per PR. If a PR touches unrelated code, split it.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **Tested.** All existing tests must pass (`cargo test --workspace`). New DSP code needs unit tests. No "I'll add tests later."
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **No placeholder DSP.** Every signal processing block must be derived from actual circuit analysis, not "close enough" approximations. If the circuit behavior isn't understood, research it first — see `docs/`.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **Formatted and lint-clean.** `cargo fmt --check` and `cargo clippy --workspace -- -D warnings` must pass.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **Python is for tooling only.** The plugin is Rust. Python is exclusively for offline analysis, ML training, and test utilities.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **It's OK to push back.** If a request would produce a large, messy, or untested PR, say so. Quality over velocity - ALWAYS.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-Key distinctions of the 200A vs the 200 (and other Wurlitzer models) that the circuit simulation must capture:
-- The 200A uses a solid-state amplifier circuit (not tube-based like earlier models)
-- Reed-based tone generation: steel reeds vibrate near an electrostatic pickup
-- The pickup is capacitive (not electromagnetic like Rhodes) — reed vibration modulates capacitance
-- **Tremolo is INSIDE the preamp feedback loop** — R-10 (56K) feeds back from the output to TR-1's emitter via Ce1 (4.7 MFD coupling cap), providing series-series negative feedback. LDR (LG-1) shunts the feedback junction to ground via the cable, modulating how much feedback reaches the emitter and thus the closed-loop gain. This produces timbral modulation (not just volume).
-- The preamp is a two-stage direct-coupled NPN CE amplifier (TR-1/TR-2, 2N5089) with asymmetric clipping headroom (Stage 1: 2.05V toward saturation vs 10.9V toward cutoff, ratio ~5.3:1). The pickup's 1/(1-y) nonlinearity is the primary source of even-harmonic "bark" at normal dynamics; the preamp adds further H2 at extreme ff where its asymmetric headroom is engaged
-- The 200A's specific amplifier topology, EQ curve, and soft-clipping characteristics define its signature sound
-- Velocity response is mechanical (hammer force on reed), not electronic
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+## Domain Knowledge
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-## Development Philosophy
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+Read `docs/` before making DSP decisions. Key 200A characteristics:
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-1. **Phased development** — complete and validate each phase before starting the next
-2. **Analog circuit simulation** — model actual circuit behavior (component-level where it matters), not curve-fitted approximations
-3. **Test everything** — each DSP module needs unit tests comparing output against known-good reference data
-4. **Consult docs/ first** — the docs folder is the primary source of truth for circuit schematics, frequency response data, and behavioral specifications
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **Solid-state preamp** — two-stage direct-coupled NPN CE amplifier (2N5089), asymmetric clipping (Stage 1: 5.3:1 sat/cutoff ratio)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **Capacitive pickup** — reed vibration modulates capacitance (not electromagnetic like Rhodes). The 1/(1-y) nonlinearity is the primary source of "bark"
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **Tremolo inside feedback loop** — LDR shunts the preamp's emitter feedback path, modulating gain and timbre (not just volume)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+- **Velocity is mechanical** — hammer force on reed, not electronic scaling
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-## Toolchain
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+The authoritative schematic is `#203720-S-3` (serial 102905+). See `docs/SCHEMATIC_SOURCE.md` for how to obtain it. DO NOT use other Wurlitzer schematics — different models have different topology. The 200 is not the 200A.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Rust / Cargo | 1.92.0 | Plugin and DSP (Rust 2024 edition) |
-| nih-plug | git HEAD | CLAP + VST3 plugin framework |
-| Python | 3.12.3 | Supporting tools only (analysis, schematic preprocessing) |
-| ALSA dev | 1.2.11 | Linux audio backend |
-| JACK (PipeWire) | available | Linux audio backend |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+## Build & Test
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-## Build Commands
-
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 ```bash
-# Build everything
-cargo build --workspace
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+cargo build --workspace          # Build everything
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+cargo test --workspace           # Run all tests (~144)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+cargo fmt --check                # Check formatting
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+cargo clippy --workspace -- -D warnings  # Lint
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-# Run all tests (126 unit + 13 plugin + 5 integration (144 total))
-cargo test --workspace
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+cargo xtask bundle openwurli --release   # Bundle CLAP + VST3
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-# Bundle CLAP + VST3 plugin (release build)
-cargo xtask bundle openwurli --release
-# Output: target/bundled/openwurli.clap, target/bundled/openwurli.vst3
-
-# Install to user plugin directories
-cp target/bundled/openwurli.clap ~/.clap/
-cp -r target/bundled/openwurli.vst3 ~/.vst3/
-
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 # Preamp validation CLI
-cargo run -p preamp-bench -- gain --freq 1000
-cargo run -p preamp-bench -- sweep --start 20 --end 20000 --points 50
-cargo run -p preamp-bench -- harmonics --freq 440
-cargo run -p preamp-bench -- tremolo-sweep
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 cargo run -p preamp-bench -- render --note 60 --velocity 100 --duration 2.0 --output /tmp/test.wav
-
-# Calibration & sensitivity sweep
-cargo run -p preamp-bench -- calibrate --notes 36,48,60,72,84 --velocities 40,80,127
-cargo run -p preamp-bench -- calibrate --zero-trim --output /tmp/calibrate.csv
-cargo run -p preamp-bench -- sensitivity --ds-range 0.70,0.80,0.85 --output /tmp/sensitivity.csv
-python tools/analyze_calibration.py /tmp/sensitivity.csv
-
-# Bark audit and poly/MIDI rendering
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+cargo run -p preamp-bench -- sweep --start 20 --end 20000 --points 50
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 cargo run -p preamp-bench -- bark-audit --notes 36,48,60,72,84
-cargo run -p preamp-bench -- render-poly --notes 38,59,62,66 --velocity 40 --duration 2.0
-cargo run -p preamp-bench -- render-midi --midi path/to/file.mid --output /tmp/render.wav
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-# Reed-only microbenchmark
-cargo run -p preamp-bench -- bench-reed --voices 64 --duration 2.0
-
-# Render at non-default sample rate (oversampling auto-bypassed at >= 88.2 kHz)
-cargo run -p preamp-bench -- render --note 60 --velocity 100 --duration 2.0 --sample-rate 96000 --output /tmp/test_96k.wav
-
-# Reed renderer (standalone WAV output)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+# Reed-only renderer
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 cargo run -p reed-renderer -- -n 60 -v 100 -d 1.0 -o /tmp/reed.wav
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-# Release (write CHANGELOG entry first, then run)
-./scripts/release.sh 0.2.3 SomeCodename --dry-run   # preview changes
-./scripts/release.sh 0.2.3 SomeCodename              # full release
-
-# Python virtual environment (for analysis/test tools only)
-source .venv/bin/activate
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+# Release (maintainer only — write CHANGELOG entry first)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+./scripts/release.sh 0.2.3 SomeCodename --dry-run
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 ```
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 ## Project Structure
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 ```
-Cargo.toml                          # Workspace root
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 crates/
-  openwurli-dsp/                    # Shared DSP library (pure math, no framework deps)
-    src/
-      lib.rs                        # Module exports
-      reed.rs                       # Modal oscillator (7 modes) with damper support
-      hammer.rs                     # Dwell filter + attack noise
-      pickup.rs                     # Electrostatic pickup model (time-varying RC, f_c=2312 Hz)
-      voice.rs                      # Voice assembly (reed + hammer + pickup + damper)
-      tables.rs                     # Per-note parameters (frequencies, decay rates, mode ratios)
-      variation.rs                  # Per-note detuning and amplitude variation
-      filters.rs                    # Filter primitives (OnePoleHpf/Lpf, DcBlocker, Biquad)
-      oversampler.rs                # 2x polyphase IIR half-band oversampler
-      bjt_stage.rs                  # Single BJT CE stage (NR solver + asymmetric soft-clip)
-      dk_preamp.rs                  # DK method 8-node MNA coupled preamp solver
-      mlp_correction.rs             # MLP per-note correction inference (2→8→8→11)
-      mlp_weights.rs                # Trained MLP weight parameters (195 params)
-      preamp.rs                     # PreampModel trait + EbersMollPreamp
-      tremolo.rs                    # LFO + CdS LDR model + feedback modulation
-      power_amp.rs                  # Class AB crossover distortion + rail clipping
-      speaker.rs                    # Variable HPF/LPF cabinet simulation
-  openwurli-plugin/                 # nih-plug CLAP+VST3 plugin (cdylib)
-    src/
-      lib.rs                        # Plugin entry, process callback, voice management
-      params.rs                     # Parameter definitions (Volume, Gain, Tremolo, Speaker)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+  openwurli-dsp/src/          # DSP library (pure math, no framework deps)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    reed.rs                   #   Modal oscillator (7 modes)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    hammer.rs                 #   Dwell filter + attack noise + onset ramp
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    pickup.rs                 #   Electrostatic pickup (time-varying RC)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    voice.rs                  #   Voice assembly (reed + hammer + pickup)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    tables.rs                 #   Per-note parameters (freq, decay, mode ratios)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    variation.rs              #   Per-note detuning and amplitude variation
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    filters.rs                #   Filter primitives (1-pole, biquad, DC blocker)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    oversampler.rs            #   2x polyphase IIR half-band
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    dk_preamp.rs              #   DK method 8-node MNA preamp solver
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    bjt_stage.rs              #   Single BJT CE stage (NR + soft-clip)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    mlp_correction.rs         #   Per-note MLP inference (2->8->8->11)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    mlp_weights.rs            #   Trained MLP weights (195 params)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    preamp.rs                 #   PreampModel trait
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    tremolo.rs                #   LFO + CdS LDR + feedback modulation
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    power_amp.rs              #   Class AB crossover + rail clipping
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    speaker.rs                #   HPF/LPF cabinet simulation
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+  openwurli-plugin/src/       # nih-plug CLAP+VST3 plugin
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    lib.rs                    #   Plugin entry, process callback, voice mgmt
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+    params.rs                 #   Parameter definitions
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 tools/
-  reed-renderer/                    # Standalone reed → WAV renderer
-  preamp-bench/                     # Preamp DSP validation CLI (gain, sweep, harmonics, render, calibrate, sensitivity)
-  analyze_calibration.py            # CSV analysis for calibrate/sensitivity output
-  wurli_compare.py                 # OBM A/B comparison tool
-  strip_pedal.py                   # Strip sustain pedal from MIDI files
-  recording_analyzer.py            # Audio recording analysis
-  render-video.sh                  # Video rendering helper
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+  preamp-bench/               # DSP validation CLI
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+  reed-renderer/              # Standalone WAV renderer
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 scripts/
-  release.sh                       # Automated release (version bump, codename, pre-flight, tag, push)
-xtask/                              # nih-plug bundler (cargo xtask bundle)
-docs/                               # Research: schematics, circuit analysis, DSP specs
-spice/                              # ngspice netlists and testbenches
-ml/                                 # MLP training pipeline (Python)
-.venv/                              # Python virtual environment (analysis tools)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+  release.sh                  # Automated release pipeline
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+docs/                         # Technical reference (circuit analysis, DSP specs)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+spice/                        # ngspice netlists and testbenches
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+ml/                           # MLP training pipeline (Python/PyTorch)
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+xtask/                        # nih-plug bundler
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 ```
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-## Authoritative Schematic
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+## Toolchain
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-The **only** schematic reference for this project is:
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+| Tool | Purpose |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+|------|---------|
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+| Rust (2024 edition) | Plugin and DSP |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+| nih-plug (git HEAD) | CLAP + VST3 framework |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+| Python 3.12+ | Offline analysis and ML training only |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+| ALSA dev / JACK | Linux audio backends |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-```
-docs/verified_wurlitzer_200A_series_schematic.pdf
-```
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+## Testing Tiers
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-This is the verified Wurlitzer Model 200A Electronic Piano Schematic (#203720-S-3, starting serial 102905). **Do not download, source, or use any other schematic PDF.** Other Wurlitzer schematics (200/203/206/207 combined sheets) have different component numbering and topology that will cause errors.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+| Tier | Scope | What it tests |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+|------|-------|---------------|
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+| 1 | Circuit | Sine -> preamp -> stop. Gain, sweep, harmonics, tremolo-sweep |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+| 2 | Voice + MLP | Reed -> pickup -> preamp -> stop. OBM comparison |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+| 3 | Full plugin | Complete chain with power amp, speaker, volume |
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-## Schematic Image Reading
-
-Claude's vision pipeline downsamples all images to **max 1568px on the long edge** (~1.15 MP). Pre-rendered tiles in `schematic_tiles/` are already processed for AI reading — use those first.
-
-**Pre-rendered tiles** (in `schematic_tiles/`, gitignored):
-- Named after their region and DPI, e.g. `preamp_600dpi.png`, `overview_150dpi.png`
-- Already preprocessed: grayscale, denoised, CLAHE contrast, sharpened, resized to fit Claude's limits
-- Read these directly with the Read tool — no rendering needed for standard analysis
-
-**To re-render or create new tiles**, use `tools/schematic_preprocess.py`:
-
-```bash
-source .venv/bin/activate
-
-# List available named regions
-python tools/schematic_preprocess.py regions
-
-# Render a named region
-python tools/schematic_preprocess.py render --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --region preamp
-
-# Render a custom area (normalized 0-1 coordinates)
-python tools/schematic_preprocess.py render --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --rect 0.1,0.3,0.3,0.5 --dpi 900
-
-# Enhance an existing PNG
-python tools/schematic_preprocess.py enhance some_image.png
-```
-
-Output goes to `schematic_tiles/` (gitignored). The pipeline: grayscale -> denoise -> CLAHE contrast -> unsharp mask -> border crop -> resize to fit Claude's limits.
-
-**Automatic text region detection** — find component labels without manual coordinate hunting:
-
-```bash
-# Detect all text/annotation regions in a schematic area
-python tools/schematic_preprocess.py detect-text \
-    --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --region preamp \
-    --output-dir /tmp/text_detect/
-
-# From an existing tile image
-python tools/schematic_preprocess.py detect-text --input schematic_tiles/preamp_600dpi.png \
-    --output-dir /tmp/text_detect/
-
-# Tune detection sensitivity
-python tools/schematic_preprocess.py detect-text --input img.png \
-    --min-area 200 --max-area 30000 --kernel-w 20 --kernel-h 8 --output-dir /tmp/td/
-```
-
-Outputs: `detected_regions.png` (annotated overview with red boxes), `detected_regions.json` (manifest), `text_region_NNN.png` (individual enhanced crops). Mr Schemey reads the overview image to locate labels, then reads individual crops to decipher values.
-
-**Optional OCR** (requires `pip install easyocr`):
-
-```bash
-python tools/schematic_preprocess.py ocr \
-    --pdf docs/verified_wurlitzer_200A_series_schematic.pdf --region preamp-detail \
-    --output /tmp/ocr_results.json --annotate /tmp/ocr_annotated.png
-```
-
-OCR is supplementary — Claude's vision on enhanced crops is more reliable for schematic text. Use OCR as a cross-check or when processing many regions programmatically.
-
-**Two-pass strategy for circuit analysis:**
-1. Overview crop at low DPI (150-300) to understand topology and signal flow
-2. Detail crops at higher DPI (600-900) to read specific component values
-3. (Optional) `detect-text` to automatically find and crop annotation regions for closer inspection
-
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 ## Version Codenames
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
 
-Each release gets a codename drawn from **lyrics** (not titles) of songs featuring the Wurlitzer electric piano. No particular ordering convention — pick whatever fits the mood when a release ships. Codenames start at v0.1.5.
-
-| Version | Codename | Lyric source |
-|---------|----------|--------------|
-| v0.1.5 | MountUp | "Mount up!" — Regulate, Warren G ft. Nate Dogg |
-| v0.2.0 | GoodbyeMary | "Goodbye Mary" — Supertramp, Goodbye Stranger |
-| v0.2.1 | YouMakeMeLive | "You make me live" — Queen, You're My Best Friend |
-| v0.2.2 | GoBackJack | "Go back, Jack" — Do It Again, Steely Dan |
-
-Format in CHANGELOG: `## [x.y.z] "Codename" - YYYY-MM-DD`
-
-## Rules
-
-- **Never skip a phase.** Each phase's tests must pass and output must be reviewed before the next phase begins.
-- **No placeholder DSP.** Every signal processing block must be derived from actual circuit analysis, not "close enough" approximations. If the circuit behavior isn't understood yet, research it before coding it.
-- **Python is for tooling only.** The plugin itself is Rust. Python scripts in `.venv` are exclusively for offline analysis, test signal generation, frequency response comparison, and MIDI test utilities.
-- **Always read docs/ before implementing a DSP component.** The research materials may contain critical details about component values, circuit topology, or measured frequency response that must inform the implementation.
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |
+Each release gets a codename from Wurlitzer song lyrics. See `docs/release-codenames.md` for the full list. Format: `## [x.y.z] "Codename" - YYYY-MM-DD`
+| v0.2.3 | TwoTurntables | "Two turntables" — Where It's At, Beck |

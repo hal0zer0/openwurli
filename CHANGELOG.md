@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] "TwoTurntables" - 2026-03-01
+
+### Added
+- **[How the Circuit Modeling Works](docs/how-circuit-modeling-works.md)** — non-technical
+  overview of the DK method preamp solver and full signal chain
+- **[How the MLP Corrections Work](docs/how-mlp-corrections-work.md)** — non-technical
+  overview of the per-note neural network correction layer
+
+### Changed
+- Reorganized `docs/` into user guides, `docs/research/` (200A circuit analysis),
+  and `docs/reference/` (agent/developer working docs)
+- Condensed CLAUDE.md from 230 to 107 lines with PR guidelines for contributors
+- Fixed 21 stale claims across 6 technical docs
+- Updated ml/README.md to reflect MLP v2 architecture (11 outputs, 195 params)
+- Enhanced release script: commit after validation, idempotent re-runs
+
 ## [0.2.2] "GoBackJack" - 2026-03-01
 
 ### Fixed
@@ -236,7 +252,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/hal0zer0/openwurli/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/hal0zer0/openwurli/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/hal0zer0/openwurli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/hal0zer0/openwurli/compare/v0.1.5...v0.2.0

@@ -12,6 +12,7 @@ NOT match the song title — they should be a distinctive phrase from the lyrics
 | v0.2.0 | GoodbyeMary | Goodbye Stranger | Supertramp |
 | v0.2.1 | YouMakeMeLive | You're My Best Friend | Queen |
 | v0.2.2 | GoBackJack | Do It Again | Steely Dan |
+| v0.2.3 | TwoTurntables | Where It's At | Beck |
 
 ## Candidates
 
@@ -113,7 +114,6 @@ NOT match the song title — they should be a distinctive phrase from the lyrics
 |----------|-------|------|--------|
 | PlayTheGame | "Why don't you play the game" | Digital Love | Daft Punk |
 | LastNight | "Last night" | Digital Love | Daft Punk |
-| TwoTurntables | "Two turntables" | Where It's At | Beck |
 | TallBuildings | "Tall buildings" | Jesus, Etc. | Wilco |
 | RideTheHeat | "Ride the heat wherever it goes" | Red Eyes | The War on Drugs |
 
