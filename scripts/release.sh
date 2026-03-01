@@ -65,21 +65,35 @@ $DRY_RUN && echo -e "${YELLOW}(dry run — preview changes only)${RESET}"
 
 step 1 "Validating arguments"
 
-# Codename must exist in candidates
-if ! grep -q "| ${CODENAME} |" "$CODENAMES_FILE"; then
-    fail "Codename '${CODENAME}' not found in ${CODENAMES_FILE} candidates"
-fi
-pass "Codename '${CODENAME}' found in candidates"
-
-# Detect old version from openwurli-dsp (single source of truth)
+# Detect current version from openwurli-dsp (single source of truth)
 OLD_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/openwurli-dsp/Cargo.toml)
 if [[ -z "$OLD_VERSION" ]]; then
     fail "Could not detect current version from crates/openwurli-dsp/Cargo.toml"
 fi
+
+# Track what's already done (for idempotent re-runs after partial failure)
+VERSION_ALREADY_BUMPED=false
+CODENAME_ALREADY_MOVED=false
+
 if [[ "$OLD_VERSION" == "$VERSION" ]]; then
-    fail "Version is already ${VERSION} — nothing to bump"
+    VERSION_ALREADY_BUMPED=true
+    warn "Version already at ${VERSION} — skipping bump (re-run?)"
+else
+    pass "Version bump: ${OLD_VERSION} → ${VERSION}"
 fi
-pass "Version bump: ${OLD_VERSION} → ${VERSION}"
+
+# Codename: check if already moved to Already Used, or still in candidates
+if grep -q "| ${CODENAME} |" "$CODENAMES_FILE"; then
+    # Is it in candidates or Already Used?
+    if sed -n '/^## Candidates/,$ p' "$CODENAMES_FILE" | grep -q "| ${CODENAME} |"; then
+        pass "Codename '${CODENAME}' found in candidates"
+    else
+        CODENAME_ALREADY_MOVED=true
+        warn "Codename '${CODENAME}' already in Already Used — skipping (re-run?)"
+    fi
+else
+    fail "Codename '${CODENAME}' not found anywhere in ${CODENAMES_FILE}"
+fi
 
 # ── Step 2: Check CHANGELOG.md ───────────────────────────────────────────────
 
@@ -93,19 +107,26 @@ fi
 # ── Step 3: Bump versions in Cargo.toml files ────────────────────────────────
 
 step 3 "Bumping versions in Cargo.toml files"
-for toml in "${CARGO_TOMLS[@]}"; do
-    if $DRY_RUN; then
-        info "Would update ${toml}: version \"${OLD_VERSION}\" → \"${VERSION}\""
-    else
-        sed -i "s/^version = \"${OLD_VERSION}\"/version = \"${VERSION}\"/" "$toml"
-        pass "Updated ${toml}"
-    fi
-done
+if $VERSION_ALREADY_BUMPED; then
+    warn "Already at ${VERSION} — skipping"
+else
+    for toml in "${CARGO_TOMLS[@]}"; do
+        if $DRY_RUN; then
+            info "Would update ${toml}: version \"${OLD_VERSION}\" → \"${VERSION}\""
+        else
+            sed -i "s/^version = \"${OLD_VERSION}\"/version = \"${VERSION}\"/" "$toml"
+            pass "Updated ${toml}"
+        fi
+    done
+fi
 
 # ── Step 4: Update CHANGELOG.md link references ─────────────────────────────
 
 step 4 "Updating CHANGELOG.md link references"
-if $DRY_RUN; then
+# Check if links are already correct
+if grep -q "compare/v${VERSION}\.\.\.HEAD" CHANGELOG.md && grep -q "^\[${VERSION}\]:" CHANGELOG.md; then
+    warn "Links already up to date — skipping"
+elif $DRY_RUN; then
     info "Would update [Unreleased] compare link: v${OLD_VERSION} → v${VERSION}"
     info "Would insert [${VERSION}] compare link"
 else
@@ -121,59 +142,62 @@ fi
 # ── Step 5: Update codename tables ───────────────────────────────────────────
 
 step 5 "Updating codename tables"
-
-# Extract metadata from candidates section (after "## Candidates" line)
-# The candidate line looks like: | GoBackJack | "Go back, Jack" | Do It Again |
-CANDIDATE_LINE=$(sed -n '/^## Candidates/,$ p' "$CODENAMES_FILE" | grep "| ${CODENAME} |")
-
-# Extract lyric (column 2) and song (column 3)
-LYRIC=$(echo "$CANDIDATE_LINE" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
-SONG=$(echo "$CANDIDATE_LINE" | awk -F'|' '{gsub(/^ +| +$/, "", $4); print $4}')
-
-# Extract artist from the section header above the candidate
-# Look for the ### header preceding this codename's line
-ARTIST=$(awk "/^### /{artist=\$0} /\\| ${CODENAME} \\|/{print artist}" "$CODENAMES_FILE" | sed 's/^### //; s/ (.*//')
-
-# Some tables (Soul/R&B, etc.) have artist in column 4/5 — check for that
-INLINE_ARTIST=$(echo "$CANDIDATE_LINE" | awk -F'|' '{if (NF >= 6) {gsub(/^ +| +$/, "", $5); print $5}}')
-if [[ -n "$INLINE_ARTIST" ]]; then
-    ARTIST="$INLINE_ARTIST"
-fi
-
-info "Lyric: ${LYRIC}"
-info "Song: ${SONG}"
-info "Artist: ${ARTIST}"
-
-# 5a: Remove from candidates (BEFORE adding to Already Used, to avoid matching the new row)
-if $DRY_RUN; then
-    info "Would remove candidate line: ${CANDIDATE_LINE}"
+if $CODENAME_ALREADY_MOVED; then
+    warn "Codename already processed — skipping"
 else
-    sed -i "/| ${CODENAME} |/d" "$CODENAMES_FILE"
-    pass "Removed from candidates"
-fi
+    # Extract metadata from candidates section (after "## Candidates" line)
+    # The candidate line looks like: | GoBackJack | "Go back, Jack" | Do It Again |
+    CANDIDATE_LINE=$(sed -n '/^## Candidates/,$ p' "$CODENAMES_FILE" | grep "| ${CODENAME} |")
 
-# 5b: Add to Already Used table
-if $DRY_RUN; then
-    info "Would add to Already Used: | v${VERSION} | ${CODENAME} | ${SONG} | ${ARTIST} |"
-else
-    # Find the last "| v" line in the Already Used section (before ## Candidates)
-    CANDIDATES_LINE=$(grep -n "^## Candidates" "$CODENAMES_FILE" | cut -d: -f1)
-    LAST_USED_LINE=$(awk -v max="$CANDIDATES_LINE" '/^\| v[0-9]/ && NR < max {line=NR} END{print line}' "$CODENAMES_FILE")
-    sed -i "${LAST_USED_LINE}a\\| v${VERSION} | ${CODENAME} | ${SONG} | ${ARTIST} |" "$CODENAMES_FILE"
-    pass "Added to Already Used table"
-fi
+    # Extract lyric (column 2) and song (column 3)
+    LYRIC=$(echo "$CANDIDATE_LINE" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
+    SONG=$(echo "$CANDIDATE_LINE" | awk -F'|' '{gsub(/^ +| +$/, "", $4); print $4}')
 
-# 5c: Update CLAUDE.md codenames table
-# LYRIC already has quotes from the table (e.g. "Go back, Jack"), use as-is
-LYRIC_SOURCE="${LYRIC} — ${SONG}, ${ARTIST}"
-if $DRY_RUN; then
-    info "Would add to CLAUDE.md: | v${VERSION} | ${CODENAME} | ${LYRIC_SOURCE} |"
-else
-    # Find the last "| v" line in the Version Codenames table
-    # The table is between "## Version Codenames" and "Format in CHANGELOG"
-    LAST_CODENAME_LINE=$(awk '/^## Version Codenames/,/^Format in CHANGELOG/{if (/^\| v[0-9]/) line=NR} END{print line}' "$CLAUDEMD_FILE")
-    sed -i "${LAST_CODENAME_LINE}a\\| v${VERSION} | ${CODENAME} | ${LYRIC_SOURCE} |" "$CLAUDEMD_FILE"
-    pass "Updated CLAUDE.md codenames table"
+    # Extract artist from the section header above the candidate
+    # Look for the ### header preceding this codename's line
+    ARTIST=$(awk "/^### /{artist=\$0} /\\| ${CODENAME} \\|/{print artist}" "$CODENAMES_FILE" | sed 's/^### //; s/ (.*//')
+
+    # Some tables (Soul/R&B, etc.) have artist in column 4/5 — check for that
+    INLINE_ARTIST=$(echo "$CANDIDATE_LINE" | awk -F'|' '{if (NF >= 6) {gsub(/^ +| +$/, "", $5); print $5}}')
+    if [[ -n "$INLINE_ARTIST" ]]; then
+        ARTIST="$INLINE_ARTIST"
+    fi
+
+    info "Lyric: ${LYRIC}"
+    info "Song: ${SONG}"
+    info "Artist: ${ARTIST}"
+
+    # 5a: Remove from candidates (BEFORE adding to Already Used, to avoid matching the new row)
+    if $DRY_RUN; then
+        info "Would remove candidate line: ${CANDIDATE_LINE}"
+    else
+        sed -i "/| ${CODENAME} |/d" "$CODENAMES_FILE"
+        pass "Removed from candidates"
+    fi
+
+    # 5b: Add to Already Used table
+    if $DRY_RUN; then
+        info "Would add to Already Used: | v${VERSION} | ${CODENAME} | ${SONG} | ${ARTIST} |"
+    else
+        # Find the last "| v" line in the Already Used section (before ## Candidates)
+        CANDIDATES_LINE=$(grep -n "^## Candidates" "$CODENAMES_FILE" | cut -d: -f1)
+        LAST_USED_LINE=$(awk -v max="$CANDIDATES_LINE" '/^\| v[0-9]/ && NR < max {line=NR} END{print line}' "$CODENAMES_FILE")
+        sed -i "${LAST_USED_LINE}a\\| v${VERSION} | ${CODENAME} | ${SONG} | ${ARTIST} |" "$CODENAMES_FILE"
+        pass "Added to Already Used table"
+    fi
+
+    # 5c: Update CLAUDE.md codenames table
+    # LYRIC already has quotes from the table (e.g. "Go back, Jack"), use as-is
+    LYRIC_SOURCE="${LYRIC} — ${SONG}, ${ARTIST}"
+    if $DRY_RUN; then
+        info "Would add to CLAUDE.md: | v${VERSION} | ${CODENAME} | ${LYRIC_SOURCE} |"
+    else
+        # Find the last "| v" line in the Version Codenames table
+        # The table is between "## Version Codenames" and "Format in CHANGELOG"
+        LAST_CODENAME_LINE=$(awk '/^## Version Codenames/,/^Format in CHANGELOG/{if (/^\| v[0-9]/) line=NR} END{print line}' "$CLAUDEMD_FILE")
+        sed -i "${LAST_CODENAME_LINE}a\\| v${VERSION} | ${CODENAME} | ${LYRIC_SOURCE} |" "$CLAUDEMD_FILE"
+        pass "Updated CLAUDE.md codenames table"
+    fi
 fi
 
 # ── Step 6: Commit version/codename changes ──────────────────────────────────
@@ -183,13 +207,17 @@ if $DRY_RUN; then
     warn "Dry run — skipping commit"
 else
     git add "${CARGO_TOMLS[@]}" CHANGELOG.md "$CODENAMES_FILE" "$CLAUDEMD_FILE"
-    git commit -m "$(cat <<EOF
+    if git diff --cached --quiet; then
+        warn "Nothing to commit — already up to date (re-run?)"
+    else
+        git commit -m "$(cat <<EOF
 Release v${VERSION} "${CODENAME}"
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
-    pass "Committed release changes"
+        pass "Committed release changes"
+    fi
 fi
 
 # ── Step 7: cargo fmt ────────────────────────────────────────────────────────
