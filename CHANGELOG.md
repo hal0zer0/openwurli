@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] "YouMakeMeLive" - 2026-02-28
+
+### Fixed
+- **Speaker character click**: moving the Speaker Character slider caused a loud
+  click from biquad filter coefficient discontinuities (HPF 20→95 Hz,
+  LPF 20k→5.5k Hz jumped in one buffer step). Now smoothed per-sample via
+  `.smoothed.next()` with coarser update threshold (0.002) to limit
+  recomputation rate.
+- **Volume slider feel**: Skewed range (`skew_factor(2.0)` = factor 4.0) applied
+  a fourth-root UI mapping on top of the circuit-accurate vol² audio taper,
+  compressing the entire 0–3 dB range into the top half of the slider. Changed
+  to Linear range — vol² alone gives standard audio pot feel (−12 dB at half
+  slider). Circuit model unchanged.
+- **Output too quiet**: POST_SPEAKER_GAIN raised from +10 dB to +13 dB. Applied
+  after all analog circuit stages (models mic/DI level), so distortion and
+  frequency response are unaffected. New levels: single ff at max vol = −3.3
+  dBFS, 4-voice ff chord at max vol = −4.3 dBFS.
+
 ## [0.2.0] "GoodbyeMary" - 2026-02-23
 
 ### Changed
@@ -188,7 +206,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Speaker cabinet — HPF (95 Hz) + LPF (5500 Hz) + Hammerstein polynomial
   nonlinearity + tanh Xmax + thermal voice coil compression
 - 2× polyphase IIR half-band oversampler for preamp processing
-- Volume control with audio taper (vol², skew 2.0, default 63%)
+- Volume control with audio taper (vol², default 63%)
 - 64-voice polyphony with voice stealing and 5ms crossfade
 - CLAP and VST3 plugin formats via nih-plug
 - Standalone reed renderer CLI tool
@@ -200,7 +218,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/hal0zer0/openwurli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/hal0zer0/openwurli/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/hal0zer0/openwurli/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/hal0zer0/openwurli/compare/v0.1.3...v0.1.4
