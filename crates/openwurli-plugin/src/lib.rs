@@ -254,7 +254,6 @@ impl OpenWurli {
                 self.tremolo.set_depth(depth);
                 self.tremolo.set_rate(rate, self.os_sample_rate);
 
-
                 for j in 0..2 {
                     let idx = i * 2 + j;
                     let r_ldr = self.tremolo.process();
@@ -275,7 +274,6 @@ impl OpenWurli {
                 let rate = self.params.tremolo_rate.smoothed.next() as f64;
                 self.tremolo.set_depth(depth);
                 self.tremolo.set_rate(rate, self.os_sample_rate);
-
 
                 let r_ldr = self.tremolo.process();
                 self.preamp.set_ldr_resistance(r_ldr);
@@ -387,7 +385,8 @@ impl Plugin for OpenWurli {
         // (ensures correct state even before smoothers are host-initialized),
         // then smoothed per-sample inside render_subblock() for automation.
         let trem_depth = self.params.tremolo_depth.value() as f64;
-        self.tremolo.set_rate(self.params.tremolo_rate.value() as f64, self.os_sample_rate);
+        self.tremolo
+            .set_rate(self.params.tremolo_rate.value() as f64, self.os_sample_rate);
         self.tremolo.set_depth(trem_depth);
 
         // Event-splitting process loop: split at each MIDI event for sample-accuracy
