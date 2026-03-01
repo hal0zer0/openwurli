@@ -83,14 +83,10 @@ fn main() {
             let velocity_f = vel as f64 / 127.0;
             let note_name = midi_note_name(midi_note);
 
-            let filename = if let Some(ref f) = output_file {
-                if notes.len() == 1 && velocities.len() == 1 {
-                    f.clone()
-                } else {
-                    format!("{output_dir}/reed_{note_name}_v{vel}.wav")
-                }
-            } else {
-                format!("{output_dir}/reed_{note_name}_v{vel}.wav")
+            let is_single = notes.len() == 1 && velocities.len() == 1;
+            let filename = match (&output_file, is_single) {
+                (Some(f), true) => f.clone(),
+                _ => format!("{output_dir}/reed_{note_name}_v{vel}.wav"),
             };
 
             eprintln!(

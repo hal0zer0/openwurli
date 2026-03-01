@@ -13,6 +13,8 @@
 //! Jitter is subsampled (every 16 samples) because the OU correlation time
 //! (τ=20ms, ~882 samples at 44.1kHz) is far longer than the update interval.
 
+use std::f64::consts::{PI, TAU};
+
 use crate::tables::NUM_MODES;
 
 /// RMS frequency jitter as fraction of mode frequency (~0.04% = 4 cents peak).
@@ -113,8 +115,6 @@ impl ModalReed {
         sample_rate: f64,
         jitter_seed: u32,
     ) -> Self {
-        let two_pi = 2.0 * std::f64::consts::PI;
-
         // Ornstein-Uhlenbeck jitter coefficients
         let dt = 1.0 / sample_rate;
         let jitter_revert = (-dt / JITTER_TAU).exp();
@@ -130,13 +130,13 @@ impl ModalReed {
             jitter_state = jitter_state.wrapping_mul(1664525).wrapping_add(1013904223);
             let u2 = (jitter_state >> 1) as f64 / (u32::MAX as f64 / 2.0);
             let r = (-2.0 * u1.max(1e-30).ln()).sqrt();
-            *d = JITTER_SIGMA * r * (two_pi * u2).cos();
+            *d = JITTER_SIGMA * r * (TAU * u2).cos();
         }
 
         // Build Mode structs with precomputed quadrature rotation coefficients
         let modes = std::array::from_fn(|i| {
             let freq = fundamental_hz * mode_ratios[i];
-            let phase_inc = two_pi * freq / sample_rate;
+            let phase_inc = TAU * freq / sample_rate;
             let alpha_nepers = decay_rates_db[i] / 8.686;
             let decay_per_sample = alpha_nepers / sample_rate;
 
@@ -158,7 +158,7 @@ impl ModalReed {
         // Onset ramp
         let ramp_samps = (onset_time_s * sample_rate).round() as u64;
         let ramp_inc = if ramp_samps > 0 {
-            std::f64::consts::PI / ramp_samps as f64
+            PI / ramp_samps as f64
         } else {
             0.0
         };
@@ -307,7 +307,7 @@ impl ModalReed {
 
     /// Check if the reed has decayed below a threshold (all modes).
     pub fn is_silent(&self, threshold_db: f64) -> bool {
-        let threshold_linear = f64::powf(10.0, threshold_db / 20.0);
+        let threshold_linear = 10.0_f64.powf(threshold_db / 20.0);
         self.modes
             .iter()
             .all(|mode| (mode.amplitude * mode.envelope).abs() <= threshold_linear)

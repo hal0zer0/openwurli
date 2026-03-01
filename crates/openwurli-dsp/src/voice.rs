@@ -9,8 +9,6 @@ use crate::reed::ModalReed;
 use crate::tables::{self, NUM_MODES};
 use crate::variation;
 
-// velocity_scurve is in tables.rs (shared with output_scale's velocity-aware proxy)
-
 pub struct Voice {
     reed: ModalReed,
     pickup: Pickup,
@@ -136,9 +134,7 @@ impl Voice {
     /// Render samples into the output buffer.
     /// Buffer is cleared first, then filled with the voice output.
     pub fn render(&mut self, output: &mut [f64]) {
-        for s in output.iter_mut() {
-            *s = 0.0;
-        }
+        output.fill(0.0);
 
         self.reed.render(output);
 
@@ -191,12 +187,8 @@ impl Voice {
         let num_samples = (duration_secs * sample_rate) as usize;
         let mut output = vec![0.0f64; num_samples];
 
-        let chunk_size = 1024;
-        let mut offset = 0;
-        while offset < num_samples {
-            let end = (offset + chunk_size).min(num_samples);
-            voice.render(&mut output[offset..end]);
-            offset = end;
+        for chunk in output.chunks_mut(1024) {
+            voice.render(chunk);
         }
 
         output

@@ -266,22 +266,21 @@ impl Biquad {
 
     /// Update coefficients to highpass without resetting filter state.
     pub fn set_highpass(&mut self, cutoff_hz: f64, q: f64, sample_rate: f64) {
-        let new = Self::highpass(cutoff_hz, q, sample_rate);
-        self.b0 = new.b0;
-        self.b1 = new.b1;
-        self.b2 = new.b2;
-        self.a1 = new.a1;
-        self.a2 = new.a2;
+        self.copy_coefficients(&Self::highpass(cutoff_hz, q, sample_rate));
     }
 
     /// Update coefficients to lowpass without resetting filter state.
     pub fn set_lowpass(&mut self, cutoff_hz: f64, q: f64, sample_rate: f64) {
-        let new = Self::lowpass(cutoff_hz, q, sample_rate);
-        self.b0 = new.b0;
-        self.b1 = new.b1;
-        self.b2 = new.b2;
-        self.a1 = new.a1;
-        self.a2 = new.a2;
+        self.copy_coefficients(&Self::lowpass(cutoff_hz, q, sample_rate));
+    }
+
+    /// Copy filter coefficients from another Biquad, preserving state.
+    fn copy_coefficients(&mut self, other: &Self) {
+        self.b0 = other.b0;
+        self.b1 = other.b1;
+        self.b2 = other.b2;
+        self.a1 = other.a1;
+        self.a2 = other.a2;
     }
 
     /// Process one sample (Direct Form II Transposed).

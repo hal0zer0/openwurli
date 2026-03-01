@@ -124,14 +124,11 @@ fn eigenvalues(mu: f64) -> [f64; NUM_MODES] {
 
     let mu_clamped = mu.clamp(0.0, 0.50);
 
-    let mut lo = 0;
-    for i in 0..table.len() - 1 {
-        if table[i + 1].mu > mu_clamped {
-            lo = i;
-            break;
-        }
-        lo = i;
-    }
+    // Find the interval [lo, hi] bracketing mu_clamped
+    let lo = table
+        .iter()
+        .rposition(|row| row.mu <= mu_clamped)
+        .unwrap_or(0);
     let hi = (lo + 1).min(table.len() - 1);
 
     let t = if table[hi].mu > table[lo].mu {
@@ -653,26 +650,6 @@ pub fn velocity_scurve(velocity: f64) -> f64 {
     let s0 = 1.0 / (1.0 + (k * 0.5).exp());
     let s1 = 1.0 / (1.0 + (-k * 0.5).exp());
     (s - s0) / (s1 - s0)
-}
-
-/// Bass mode amplitude taper — SUPERSEDED by hammer_spatial_coupling.
-///
-/// Kept for reference. Replaced by physics-based spatial integration over the
-/// hammer contact region (Andersen/Miessner patents) which models the same
-/// effect more accurately across the full register.
-#[allow(dead_code)]
-fn bass_mode_taper(midi: u8, mode: usize) -> f64 {
-    if mode == 0 || midi >= 48 {
-        return 1.0;
-    }
-    let semis_below_c3 = (48 - midi) as f64;
-    // Mode 2: -0.30 dB/semi, mode 3: -0.45, mode 4: -0.60, etc.
-    // Reduced from 0.6 base now that spatial_coupling_coefficients handle
-    // pickup geometry attenuation. The remaining taper covers the hammer
-    // contact-point proximity to mode 2's vibration node at ~0.78L.
-    let db_per_semi = 0.30 + 0.15 * (mode as f64 - 1.0);
-    let atten_db = semis_below_c3 * db_per_semi;
-    f64::powf(10.0, -atten_db / 20.0)
 }
 
 /// Full parameter set for one note.

@@ -10,9 +10,10 @@
 //!   preamp-bench render [--note N] [--velocity V] [--duration D] [--output FILE]
 
 use std::f64::consts::PI;
+use std::io::Write;
 
 use openwurli_dsp::dk_preamp::DkPreamp;
-use openwurli_dsp::hammer::dwell_attenuation;
+use openwurli_dsp::hammer::{dwell_attenuation, onset_ramp_time};
 use openwurli_dsp::oversampler::Oversampler;
 use openwurli_dsp::power_amp::PowerAmp;
 use openwurli_dsp::preamp::{EbersMollPreamp, PreampModel};
@@ -22,8 +23,6 @@ use openwurli_dsp::tables::{self, CalibrationConfig, NUM_MODES};
 use openwurli_dsp::tremolo::Tremolo;
 use openwurli_dsp::variation;
 use openwurli_dsp::voice::Voice;
-
-use std::io::Write;
 
 const BASE_SR: f64 = 44100.0;
 const OVERSAMPLED_SR: f64 = BASE_SR * 2.0;
@@ -98,6 +97,10 @@ fn parse_flag_str<'a>(args: &'a [String], flag: &str, default: &'a str) -> &'a s
         }
     }
     default
+}
+
+fn has_flag(args: &[String], flag: &str) -> bool {
+    args.iter().any(|a| a == flag)
 }
 
 // ─── Model selection ────────────────────────────────────────────────────────
@@ -343,11 +346,11 @@ fn cmd_render(args: &[String]) {
     let tremolo_rate = parse_flag(args, "--tremolo-rate", 5.63);
     let tremolo_depth = parse_flag(args, "--tremolo-depth", 0.0);
     let sample_rate = parse_flag(args, "--sample-rate", BASE_SR);
-    let no_poweramp = args.contains(&"--no-poweramp".to_string());
-    let no_preamp = args.contains(&"--no-preamp".to_string());
-    let no_attack_noise = args.contains(&"--no-attack-noise".to_string());
-    let normalize = args.contains(&"--normalize".to_string());
-    let disp_scale: Option<f64> = if args.contains(&"--displacement-scale".to_string()) {
+    let no_poweramp = has_flag(args, "--no-poweramp");
+    let no_preamp = has_flag(args, "--no-preamp");
+    let no_attack_noise = has_flag(args, "--no-attack-noise");
+    let normalize = has_flag(args, "--normalize");
+    let disp_scale: Option<f64> = if has_flag(args, "--displacement-scale") {
         Some(parse_flag(args, "--displacement-scale", 0.30))
     } else {
         None
@@ -393,9 +396,7 @@ fn cmd_render(args: &[String]) {
         let mut preamp = DkPreamp::new(preamp_sr);
 
         let mut tremolo = if tremolo_depth > 0.0 {
-            let mut t = Tremolo::new(tremolo_rate, tremolo_depth, preamp_sr);
-            t.set_depth(tremolo_depth);
-            Some(t)
+            Some(Tremolo::new(tremolo_rate, tremolo_depth, preamp_sr))
         } else {
             preamp.set_ldr_resistance(r_ldr);
             preamp.reset();
@@ -455,12 +456,8 @@ fn cmd_render(args: &[String]) {
     }
 
     // Peak measurement
-    let peak = final_output.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-    let peak_dbfs = if peak > 0.0 {
-        20.0 * peak.log10()
-    } else {
-        -120.0
-    };
+    let peak = peak_abs(&final_output);
+    let peak_dbfs = to_dbfs(peak);
 
     // Normalization: opt-in only. Default writes raw samples.
     let scale = if normalize {
@@ -475,23 +472,7 @@ fn cmd_render(args: &[String]) {
         );
     }
 
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: sample_rate as u32,
-        bits_per_sample: 24,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut writer =
-        hound::WavWriter::create(output_path, spec).expect("Failed to create WAV file");
-
-    let max_val = (1 << 23) - 1;
-    for sample in &final_output {
-        let scaled = (sample * scale * max_val as f64).round() as i32;
-        writer
-            .write_sample(scaled.clamp(-max_val, max_val))
-            .unwrap();
-    }
-    writer.finalize().unwrap();
+    write_wav_24bit(output_path, &final_output, sample_rate, scale);
 
     println!("Render complete");
     println!("  Note:      MIDI {note}");
@@ -538,18 +519,8 @@ fn cmd_render(args: &[String]) {
 fn cmd_bark_audit(args: &[String]) {
     use openwurli_dsp::pickup::Pickup;
 
-    let notes: Vec<u8> = if args.iter().any(|a| a == "--notes") {
-        let s = parse_flag_str(args, "--notes", "36,48,60,72,84");
-        s.split(',').filter_map(|n| n.trim().parse().ok()).collect()
-    } else {
-        vec![36, 48, 60, 72, 84]
-    };
-    let velocities: Vec<u8> = if args.iter().any(|a| a == "--velocities") {
-        let s = parse_flag_str(args, "--velocities", "40,80,100,127");
-        s.split(',').filter_map(|v| v.trim().parse().ok()).collect()
-    } else {
-        vec![40, 80, 100, 127]
-    };
+    let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,60,72,84");
+    let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,100,127");
 
     let duration = 0.5; // seconds
     let measure_start = 0.25; // start measuring at 250ms (steady state)
@@ -599,7 +570,7 @@ fn cmd_bark_audit(args: &[String]) {
             reed.render(&mut reed_buf);
 
             let reed_steady = &reed_buf[measure_offset..];
-            let reed_peak = reed_steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+            let reed_peak = peak_abs(reed_steady);
             let displacement_scale = tables::pickup_displacement_scale(note);
             let y_peak = reed_peak * displacement_scale;
 
@@ -608,7 +579,7 @@ fn cmd_bark_audit(args: &[String]) {
             let mut pu_buf = reed_buf.clone();
             pickup.process(&mut pu_buf);
             let pu_steady = &pu_buf[measure_offset..];
-            let pu_peak = pu_steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+            let pu_peak = peak_abs(pu_steady);
             let pu_h1 = dft_magnitude(pu_steady, freq, BASE_SR);
             let pu_h2 = dft_magnitude(pu_steady, h2_freq, BASE_SR);
             let pu_h2_h1 = if pu_h1 > 1e-15 { pu_h2 / pu_h1 } else { 0.0 };
@@ -616,17 +587,8 @@ fn cmd_bark_audit(args: &[String]) {
             // ── Stage 3: After preamp (oversampled) ──
             let mut preamp = create_preamp(args);
             preamp.set_ldr_resistance(1_000_000.0);
-            let mut os = Oversampler::new();
 
-            let mut preamp_buf = vec![0.0f64; n_samples];
-            for i in 0..n_samples {
-                let mut up = [0.0f64; 2];
-                os.upsample_2x(&[pu_buf[i]], &mut up);
-                let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
-                let mut down = [0.0f64; 1];
-                os.downsample_2x(&processed, &mut down);
-                preamp_buf[i] = down[0];
-            }
+            let preamp_buf = process_oversampled(&pu_buf, preamp.as_mut());
             let pre_steady = &preamp_buf[measure_offset..];
             let pre_h1 = dft_magnitude(pre_steady, freq, BASE_SR);
             let pre_h2 = dft_magnitude(pre_steady, h2_freq, BASE_SR);
@@ -719,12 +681,11 @@ fn spectral_grass(
 
 fn cmd_intermod_audit(args: &[String]) {
     let threshold = parse_flag(args, "--threshold", 0.07);
-    let do_render = args.contains(&"--render".to_string());
+    let do_render = has_flag(args, "--render");
     let duration = parse_flag(args, "--duration", 3.0);
 
-    let notes: Vec<u8> = if args.iter().any(|a| a == "--notes") {
-        let s = parse_flag_str(args, "--notes", "");
-        s.split(',').filter_map(|n| n.trim().parse().ok()).collect()
+    let notes: Vec<u8> = if has_flag(args, "--notes") {
+        parse_csv_list(args, "--notes", "")
     } else {
         (tables::MIDI_LO..=tables::MIDI_HI).collect()
     };
@@ -796,7 +757,7 @@ fn cmd_intermod_audit(args: &[String]) {
         return;
     }
 
-    let render_notes = if args.iter().any(|a| a == "--notes") {
+    let render_notes = if has_flag(args, "--notes") {
         notes.clone()
     } else {
         flagged_notes.clone()
@@ -908,13 +869,12 @@ fn parse_csv_list<T: std::str::FromStr>(args: &[String], flag: &str, default: &s
     s.split(',').filter_map(|v| v.trim().parse().ok()).collect()
 }
 
+fn peak_abs(signal: &[f64]) -> f64 {
+    signal.iter().map(|x| x.abs()).fold(0.0f64, f64::max)
+}
+
 fn peak_db(signal: &[f64]) -> f64 {
-    let peak = signal.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-    if peak > 0.0 {
-        20.0 * peak.log10()
-    } else {
-        -120.0
-    }
+    to_dbfs(peak_abs(signal))
 }
 
 fn rms_db(signal: &[f64]) -> f64 {
@@ -936,6 +896,43 @@ fn h2_h1_ratio_db(signal: &[f64], fundamental_hz: f64, sr: f64) -> f64 {
     }
 }
 
+// ─── WAV writing helper ───────────────────────────────────────────────────
+
+fn write_wav_24bit(path: &str, samples: &[f64], sample_rate: f64, scale: f64) {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: sample_rate as u32,
+        bits_per_sample: 24,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let max_val = (1 << 23) - 1;
+    let mut writer = hound::WavWriter::create(path, spec).expect("Failed to create WAV file");
+    for &sample in samples {
+        let scaled = (sample * scale * max_val as f64).round() as i32;
+        writer
+            .write_sample(scaled.clamp(-max_val, max_val))
+            .unwrap();
+    }
+    writer.finalize().unwrap();
+}
+
+// ─── Oversampled preamp processing ──────────────────────────────────────────
+
+fn process_oversampled(input: &[f64], preamp: &mut dyn PreampModel) -> Vec<f64> {
+    let n = input.len();
+    let mut os = Oversampler::new();
+    let mut out = vec![0.0f64; n];
+    for i in 0..n {
+        let mut up = [0.0f64; 2];
+        os.upsample_2x(&[input[i]], &mut up);
+        let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
+        let mut down = [0.0f64; 1];
+        os.downsample_2x(&processed, &mut down);
+        out[i] = down[0];
+    }
+    out
+}
+
 // ─── Calibrate subcommand ──────────────────────────────────────────────────
 
 /// Single-config measurement at 5 tap points across the signal chain.
@@ -945,8 +942,8 @@ fn cmd_calibrate(args: &[String]) {
     let ds_at_c4 = parse_flag(args, "--ds-at-c4", 0.75);
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
-    let zero_trim = args.contains(&"--zero-trim".to_string());
-    let mlp = args.contains(&"--mlp".to_string());
+    let zero_trim = has_flag(args, "--zero-trim");
+    let mlp = has_flag(args, "--mlp");
     let output_path = parse_flag_str(args, "--output", "/tmp/calibrate.csv");
 
     let cfg = CalibrationConfig {
@@ -1043,10 +1040,7 @@ fn run_calibrate(
             let mut reed_buf = vec![0.0f64; n_samples];
             reed.render(&mut reed_buf);
 
-            let reed_peak = reed_buf[measure_start..measure_end]
-                .iter()
-                .map(|x| x.abs())
-                .fold(0.0f64, f64::max);
+            let reed_peak = peak_abs(&reed_buf[measure_start..measure_end]);
             let y_peak = reed_peak * ds_actual;
 
             // ── T2: After pickup (time-varying RC) ──
@@ -1068,17 +1062,8 @@ fn run_calibrate(
             // ── T4: After preamp (oversampled) ──
             let mut preamp = create_preamp(args);
             preamp.set_ldr_resistance(1_000_000.0);
-            let mut os = Oversampler::new();
 
-            let mut t4_buf = vec![0.0f64; n_samples];
-            for i in 0..n_samples {
-                let mut up = [0.0f64; 2];
-                os.upsample_2x(&[t3_buf[i]], &mut up);
-                let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
-                let mut down = [0.0f64; 1];
-                os.downsample_2x(&processed, &mut down);
-                t4_buf[i] = down[0];
-            }
+            let t4_buf = process_oversampled(&t3_buf, preamp.as_mut());
             let t4_window = &t4_buf[measure_start..measure_end];
             let t4_pk = peak_db(t4_window);
             let t4_rm = rms_db(t4_window);
@@ -1202,12 +1187,12 @@ fn cmd_sensitivity(args: &[String]) {
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let scale_mode_raw = parse_flag_str(args, "--scale-mode", "track");
     // Honor --zero-trim as shorthand for --scale-mode zero-trim
-    let scale_mode = if args.contains(&"--zero-trim".to_string()) {
+    let scale_mode = if has_flag(args, "--zero-trim") {
         "zero-trim"
     } else {
         scale_mode_raw
     };
-    let mlp = args.contains(&"--mlp".to_string());
+    let mlp = has_flag(args, "--mlp");
     let output_path = parse_flag_str(args, "--output", "/tmp/sensitivity.csv");
 
     let total = ds_values.len() * notes.len() * velocities.len();
@@ -1278,8 +1263,8 @@ fn cmd_render_poly(args: &[String]) {
     let volume = parse_flag(args, "--volume", 0.60);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
-    let no_poweramp = args.contains(&"--no-poweramp".to_string());
-    let normalize = args.contains(&"--normalize".to_string());
+    let no_poweramp = has_flag(args, "--no-poweramp");
+    let normalize = has_flag(args, "--normalize");
     let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render_poly.wav");
 
     // Pad velocities to match notes if needed
@@ -1338,17 +1323,8 @@ fn cmd_render_poly(args: &[String]) {
     let mut preamp = create_preamp(args);
     preamp.set_ldr_resistance(r_ldr);
     preamp.reset();
-    let mut os = Oversampler::new();
 
-    let mut preamp_output = vec![0.0f64; n_samples];
-    for i in 0..n_samples {
-        let mut up = [0.0f64; 2];
-        os.upsample_2x(&[sum_buf[i]], &mut up);
-        let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
-        let mut down = [0.0f64; 1];
-        os.downsample_2x(&processed, &mut down);
-        preamp_output[i] = down[0];
-    }
+    let preamp_output = process_oversampled(&sum_buf, preamp.as_mut());
     eprintln!(" done");
 
     // Output stage: volume → power amp → speaker
@@ -1373,21 +1349,15 @@ fn cmd_render_poly(args: &[String]) {
         let mut sep_preamp = create_preamp(args);
         sep_preamp.set_ldr_resistance(r_ldr);
         sep_preamp.reset();
-        let mut sep_os = Oversampler::new();
+
+        let sep_preamp_out = process_oversampled(voice_buf, sep_preamp.as_mut());
+
         let mut sep_pa = PowerAmp::new();
         let mut sep_spk = Speaker::new(BASE_SR);
         sep_spk.set_character(speaker_char);
 
         for i in 0..n_samples {
-            let mut up = [0.0f64; 2];
-            sep_os.upsample_2x(&[voice_buf[i]], &mut up);
-            let processed = [
-                sep_preamp.process_sample(up[0]),
-                sep_preamp.process_sample(up[1]),
-            ];
-            let mut down = [0.0f64; 1];
-            sep_os.downsample_2x(&processed, &mut down);
-            let attenuated = down[0] * volume * volume;
+            let attenuated = sep_preamp_out[i] * volume * volume;
             let amplified = if no_poweramp {
                 attenuated
             } else {
@@ -1412,18 +1382,14 @@ fn cmd_render_poly(args: &[String]) {
 
     let poly_peak = peak_db(window);
     let sep_peak = peak_db(sep_window);
-    let res_peak = peak_db(res_window);
+    let res_peak_db = peak_db(res_window);
     let poly_rms = rms_db(window);
     let sep_rms = rms_db(sep_window);
     let res_rms = rms_db(res_window);
 
     // Peak and write WAV files
-    let peak = final_output.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-    let peak_dbfs = if peak > 0.0 {
-        20.0 * peak.log10()
-    } else {
-        -120.0
-    };
+    let peak = peak_abs(&final_output);
+    let peak_dbfs = to_dbfs(peak);
 
     let scale = if normalize {
         if peak > 0.7 { 0.7 / peak } else { 1.0 }
@@ -1431,45 +1397,17 @@ fn cmd_render_poly(args: &[String]) {
         1.0
     };
 
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: BASE_SR as u32,
-        bits_per_sample: 24,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let max_val = (1 << 23) - 1;
+    write_wav_24bit(output_path, &final_output, BASE_SR, scale);
 
-    // Write main poly output
-    {
-        let mut writer = hound::WavWriter::create(output_path, spec).expect("Failed to create WAV");
-        for sample in &final_output {
-            let scaled = (sample * scale * max_val as f64).round() as i32;
-            writer
-                .write_sample(scaled.clamp(-max_val, max_val))
-                .unwrap();
-        }
-        writer.finalize().unwrap();
-    }
-
-    // Write residual
+    // Write residual (normalized for listening)
     let residual_path = output_path.replace(".wav", "_residual.wav");
-    {
-        let res_peak_abs = residual.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        let res_scale = if res_peak_abs > 1e-10 {
-            0.5 / res_peak_abs
-        } else {
-            1.0
-        };
-        let mut writer =
-            hound::WavWriter::create(&residual_path, spec).expect("Failed to create residual WAV");
-        for sample in &residual {
-            let scaled = (sample * res_scale * max_val as f64).round() as i32;
-            writer
-                .write_sample(scaled.clamp(-max_val, max_val))
-                .unwrap();
-        }
-        writer.finalize().unwrap();
-    }
+    let res_peak = peak_abs(&residual);
+    let res_scale = if res_peak > 1e-10 {
+        0.5 / res_peak
+    } else {
+        1.0
+    };
+    write_wav_24bit(&residual_path, &residual, BASE_SR, res_scale);
 
     // Report
     println!("Polyphonic render complete");
@@ -1492,7 +1430,7 @@ fn cmd_render_poly(args: &[String]) {
     println!("  === INTERMOD ANALYSIS (0.2-2.0s window) ===");
     println!("  Shared chain (poly):  peak={poly_peak:.1} dBFS  rms={poly_rms:.1} dBFS");
     println!("  Separate chains (sum): peak={sep_peak:.1} dBFS  rms={sep_rms:.1} dBFS");
-    println!("  Residual (intermod):  peak={res_peak:.1} dBFS  rms={res_rms:.1} dBFS");
+    println!("  Residual (intermod):  peak={res_peak_db:.1} dBFS  rms={res_rms:.1} dBFS");
     println!(
         "  Intermod ratio:       {:.1} dB below signal",
         poly_rms - res_rms
@@ -1536,7 +1474,7 @@ fn cmd_render_midi(args: &[String]) {
     let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render_midi.wav");
     let volume = parse_flag(args, "--volume", 0.60);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
-    let no_poweramp = args.contains(&"--no-poweramp".to_string());
+    let no_poweramp = has_flag(args, "--no-poweramp");
     let tail_seconds = parse_flag(args, "--tail", 2.0);
 
     // Parse MIDI file
@@ -1676,6 +1614,7 @@ fn cmd_render_midi(args: &[String]) {
     let mut voice_buf = vec![0.0f64; chunk_size];
     let mut sum_buf = vec![0.0f64; chunk_size];
     let mut up_buf = vec![0.0f64; chunk_size * 2];
+    let mut down_buf = vec![0.0f64; chunk_size];
 
     let mut sample_pos: usize = 0;
     let mut peak_polyphony: usize = 0;
@@ -1738,10 +1677,8 @@ fn cmd_render_midi(args: &[String]) {
                     }
                 }
                 MidiEvt::Pedal { on } => {
-                    if on {
-                        pedal_down = true;
-                    } else {
-                        pedal_down = false;
+                    pedal_down = on;
+                    if !on {
                         // Release all pedal-held notes
                         for held_note in pedal_held.drain(..) {
                             if let Some(slot) = voices
@@ -1790,8 +1727,7 @@ fn cmd_render_midi(args: &[String]) {
         for s in &mut up_buf[..len * 2] {
             *s = preamp.process_sample(*s);
         }
-        let mut down_buf = vec![0.0f64; len];
-        os.downsample_2x(&up_buf[..len * 2], &mut down_buf);
+        os.downsample_2x(&up_buf[..len * 2], &mut down_buf[..len]);
 
         // Output stage: volume → power amp → speaker → post-speaker gain
         for i in 0..len {
@@ -1808,12 +1744,8 @@ fn cmd_render_midi(args: &[String]) {
     }
 
     // Peak measurement
-    let peak = output.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-    let peak_dbfs = if peak > 0.0 {
-        20.0 * peak.log10()
-    } else {
-        -120.0
-    };
+    let peak = peak_abs(&output);
+    let peak_dbfs = to_dbfs(peak);
 
     if peak > 1.0 {
         eprintln!(
@@ -1821,23 +1753,7 @@ fn cmd_render_midi(args: &[String]) {
         );
     }
 
-    // Write WAV
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: BASE_SR as u32,
-        bits_per_sample: 24,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let max_val = (1 << 23) - 1;
-    let mut writer =
-        hound::WavWriter::create(output_path, spec).expect("Failed to create WAV file");
-    for sample in &output {
-        let scaled = (sample * max_val as f64).round() as i32;
-        writer
-            .write_sample(scaled.clamp(-max_val, max_val))
-            .unwrap();
-    }
-    writer.finalize().unwrap();
+    write_wav_24bit(output_path, &output, BASE_SR, 1.0);
 
     println!("MIDI render complete");
     println!("  File:      {midi_path}");
@@ -1901,10 +1817,10 @@ fn cmd_centroid_track(args: &[String]) {
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
     let volume = parse_flag(args, "--volume", 0.60);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
-    let no_poweramp = args.contains(&"--no-poweramp".to_string());
-    let no_preamp = args.contains(&"--no-preamp".to_string());
+    let no_poweramp = has_flag(args, "--no-poweramp");
+    let no_preamp = has_flag(args, "--no-preamp");
     let csv_path = parse_flag_str(args, "--csv", "");
-    let disp_scale: Option<f64> = if args.contains(&"--displacement-scale".to_string()) {
+    let disp_scale: Option<f64> = if has_flag(args, "--displacement-scale") {
         Some(parse_flag(args, "--displacement-scale", 0.30))
     } else {
         None
@@ -1923,17 +1839,7 @@ fn cmd_centroid_track(args: &[String]) {
         let mut preamp = create_preamp(args);
         preamp.set_ldr_resistance(r_ldr);
         preamp.reset();
-        let mut os = Oversampler::new();
-        let mut out = vec![0.0f64; n_samples];
-        for i in 0..n_samples {
-            let mut up = [0.0f64; 2];
-            os.upsample_2x(&[reed_output[i]], &mut up);
-            let processed = [preamp.process_sample(up[0]), preamp.process_sample(up[1])];
-            let mut down = [0.0f64; 1];
-            os.downsample_2x(&processed, &mut down);
-            out[i] = down[0];
-        }
-        out
+        process_oversampled(&reed_output, preamp.as_mut())
     };
 
     // Output stage
@@ -2089,18 +1995,8 @@ fn cmd_centroid_track(args: &[String]) {
 /// - Overshoot measures modal superposition energy at onset (milliseconds)
 /// - Bark decay measures pickup nonlinearity fading with reed decay (seconds)
 fn cmd_overshoot(args: &[String]) {
-    let notes: Vec<u8> = if args.iter().any(|a| a == "--notes") {
-        let s = parse_flag_str(args, "--notes", "36,48,60,72,84");
-        s.split(',').filter_map(|n| n.trim().parse().ok()).collect()
-    } else {
-        vec![36, 48, 60, 72, 84]
-    };
-    let velocities: Vec<u8> = if args.iter().any(|a| a == "--velocities") {
-        let s = parse_flag_str(args, "--velocities", "64,127");
-        s.split(',').filter_map(|v| v.trim().parse().ok()).collect()
-    } else {
-        vec![64, 127]
-    };
+    let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,60,72,84");
+    let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "64,127");
 
     let duration = 2.0; // Need at least 1.5s for bark decay window
 
@@ -2205,8 +2101,6 @@ fn to_dbfs(val: f64) -> f64 {
 /// Isolate reed rendering performance: N voices × D seconds, reed-only.
 /// No pickup, no preamp, no IO — just the quadrature oscillator.
 fn cmd_bench_reed(args: &[String]) {
-    use openwurli_dsp::hammer::{dwell_attenuation, onset_ramp_time};
-
     let voices = parse_flag(args, "--voices", 64.0) as usize;
     let duration = parse_flag(args, "--duration", 2.0);
     let sr = BASE_SR;

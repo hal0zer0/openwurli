@@ -248,6 +248,19 @@ struct DkState {
     v_nl: [f64; 2], // Full Vbe (for NR warm start)
 }
 
+impl DkState {
+    /// Initialize state at a DC operating point.
+    fn at_dc(g_cin: f64, v_nl_dc: [f64; 2], v_dc: Vec8) -> Self {
+        Self {
+            j_cin: g_cin * v_dc[BASE1],
+            cin_rhs_prev: g_cin * v_dc[BASE1],
+            v: v_dc,
+            i_nl: [bjt_ic(v_nl_dc[0]), bjt_ic(v_nl_dc[1])],
+            v_nl: v_nl_dc,
+        }
+    }
+}
+
 impl DkPreamp {
     pub fn new(sample_rate: f64) -> Self {
         let t = 1.0 / sample_rate;
@@ -290,10 +303,7 @@ impl DkPreamp {
         stamp_capacitor(&mut c, EMIT2, EMIT2B, CE2);
         let two_c_over_t = mat_scale(two_over_t, &c);
 
-        let mut two_w = vec8_zero();
-        for i in 0..N {
-            two_w[i] = 2.0 * w[i];
-        }
+        let two_w: Vec8 = core::array::from_fn(|i| 2.0 * w[i]);
 
         // ── Build FIXED transient matrices (no R_ldr) ──
         let a_base = mat_add(&two_c_over_t, &g_base);
@@ -302,12 +312,8 @@ impl DkPreamp {
         let k = compute_k(&s_base);
 
         // Extract SM projection vectors
-        let mut s_fb_col = vec8_zero();
-        let mut s_fb_row = vec8_zero();
-        for i in 0..N {
-            s_fb_col[i] = s_base[i][FB]; // column FB
-            s_fb_row[i] = s_base[FB][i]; // row FB
-        }
+        let s_fb_col: Vec8 = core::array::from_fn(|i| s_base[i][FB]);
+        let s_fb_row: Vec8 = core::array::from_fn(|i| s_base[FB][i]);
         let s_fb_fb = s_base[FB][FB];
 
         // Pre-compute NL extraction/injection vectors for K correction
@@ -322,16 +328,10 @@ impl DkPreamp {
 
         // ── DC solve at initial R_ldr ──
         let r_ldr_init = 1_000_000.0;
-        let (_, v_nl_dc, v_dc, _) = Self::full_dc_solve(&g_dc_base, &w, r_ldr_init);
+        let (v_nl_dc, v_dc) = Self::full_dc_solve(&g_dc_base, &w, r_ldr_init);
 
         // Both main and shadow start at identical DC operating point
-        let init_state = DkState {
-            j_cin: g_cin * v_dc[BASE1],
-            cin_rhs_prev: g_cin * v_dc[BASE1],
-            v: v_dc,
-            i_nl: [bjt_ic(v_nl_dc[0]), bjt_ic(v_nl_dc[1])],
-            v_nl: v_nl_dc,
-        };
+        let init_state = DkState::at_dc(g_cin, v_nl_dc, v_dc);
 
         Self {
             s_base,
@@ -367,8 +367,8 @@ impl DkPreamp {
     }
 
     /// Full DC solve: find quiescent operating point at a given R_ldr.
-    /// Returns (i_nl_dc, v_nl_dc, v_dc, dc_rhs).
-    fn full_dc_solve(g_dc_base: &Mat8, w: &Vec8, r_ldr: f64) -> ([f64; 2], [f64; 2], Vec8, Vec8) {
+    /// Returns (v_nl_dc, v_dc).
+    fn full_dc_solve(g_dc_base: &Mat8, w: &Vec8, r_ldr: f64) -> ([f64; 2], Vec8) {
         let mut g_full = *g_dc_base;
         g_full[FB][FB] += 1.0 / r_ldr;
         let s_dc = mat_inverse(&g_full);
@@ -409,7 +409,7 @@ impl DkPreamp {
         dc_rhs[COLL2] -= ic[1];
         let v_dc = mat_vec_mul(&s_dc, &dc_rhs);
 
-        (ic, v_nl, v_dc, dc_rhs)
+        (v_nl, v_dc)
     }
 
     /// Enable/disable shadow preamp bypass.
@@ -437,11 +437,7 @@ impl DkPreamp {
 
     /// Get w = two_w / 2 (the original DC source vector).
     fn two_w_half(&self) -> Vec8 {
-        let mut w = vec8_zero();
-        for i in 0..N {
-            w[i] = self.two_w[i] * 0.5;
-        }
-        w
+        core::array::from_fn(|i| self.two_w[i] * 0.5)
     }
 }
 
@@ -663,20 +659,14 @@ impl PreampModel for DkPreamp {
     fn reset(&mut self) {
         // Full DC solve at current R_ldr
         let w = self.two_w_half();
-        let (_, v_nl_dc, v_dc, _) = Self::full_dc_solve(&self.g_dc_base, &w, self.r_ldr);
+        let (v_nl_dc, v_dc) = Self::full_dc_solve(&self.g_dc_base, &w, self.r_ldr);
 
         self.v_dc = v_dc;
         self.g_ldr = 1.0 / self.r_ldr;
         self.g_ldr_prev = self.g_ldr;
 
         // Reset both main and shadow to identical DC operating point
-        let state = DkState {
-            j_cin: self.g_cin * v_dc[BASE1],
-            cin_rhs_prev: self.g_cin * v_dc[BASE1],
-            v: v_dc,
-            i_nl: [bjt_ic(v_nl_dc[0]), bjt_ic(v_nl_dc[1])],
-            v_nl: v_nl_dc,
-        };
+        let state = DkState::at_dc(self.g_cin, v_nl_dc, v_dc);
         self.shadow = state.clone();
         self.main = state;
         self.shadow_dc = v_dc[OUT];
@@ -791,8 +781,6 @@ mod tests {
         }
         c
     }
-
-    // compute_k() is now a module-level function, reusable from tests
 
     // ── Complex arithmetic for Layer 4 ───────────────────────────────────────
 

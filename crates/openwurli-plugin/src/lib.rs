@@ -142,14 +142,13 @@ impl OpenWurli {
 
     fn note_off(&mut self, note: u8) {
         // Release the oldest held voice matching this note
-        let mut oldest_age = u64::MAX;
-        let mut oldest_idx = None;
-        for (i, slot) in self.voices.iter().enumerate() {
-            if slot.state == VoiceState::Held && slot.midi_note == note && slot.age < oldest_age {
-                oldest_age = slot.age;
-                oldest_idx = Some(i);
-            }
-        }
+        let oldest_idx = self
+            .voices
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.state == VoiceState::Held && s.midi_note == note)
+            .min_by_key(|(_, s)| s.age)
+            .map(|(i, _)| i);
         if let Some(idx) = oldest_idx {
             self.voices[idx].state = VoiceState::Releasing;
             if let Some(ref mut voice) = self.voices[idx].voice {
@@ -159,37 +158,25 @@ impl OpenWurli {
     }
 
     /// Find a voice slot: prefer Free, then oldest Releasing, then oldest Held.
-    fn allocate_voice(&mut self) -> usize {
-        // 1. Free slot
+    fn allocate_voice(&self) -> usize {
+        let mut best_idx = 0;
+        let mut best_priority = u64::MAX;
+
         for (i, slot) in self.voices.iter().enumerate() {
-            if slot.state == VoiceState::Free {
-                return i;
+            // Priority: Free (return immediately) > oldest Releasing > oldest Held.
+            // Releasing sorts before Held at equal age because its priority is lower.
+            let priority = match slot.state {
+                VoiceState::Free => return i,
+                VoiceState::Releasing => slot.age,
+                VoiceState::Held => slot.age + u64::MAX / 2,
+            };
+            if priority < best_priority {
+                best_priority = priority;
+                best_idx = i;
             }
         }
 
-        // 2. Oldest releasing voice
-        let mut oldest_age = u64::MAX;
-        let mut oldest_idx = 0;
-        for (i, slot) in self.voices.iter().enumerate() {
-            if slot.state == VoiceState::Releasing && slot.age < oldest_age {
-                oldest_age = slot.age;
-                oldest_idx = i;
-            }
-        }
-        if oldest_age < u64::MAX {
-            return oldest_idx;
-        }
-
-        // 3. Oldest held voice (voice stealing)
-        oldest_age = u64::MAX;
-        oldest_idx = 0;
-        for (i, slot) in self.voices.iter().enumerate() {
-            if slot.age < oldest_age {
-                oldest_age = slot.age;
-                oldest_idx = i;
-            }
-        }
-        oldest_idx
+        best_idx
     }
 
     /// Render a sub-block of audio: voices -> preamp -> output buffer.
@@ -677,44 +664,21 @@ mod tests {
 
         let len = 256;
 
-        // Render with normal volume
-        plugin.render_subblock(0, len);
-        for i in 0..len {
-            let vol = 0.63;
-            let attenuated = plugin.out_buf[i] * vol * vol;
-            let amplified = plugin.power_amp.process(attenuated);
-            let shaped = plugin.speaker.process(amplified);
-            let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
-            assert!(
-                sample.is_finite(),
-                "Normal volume produced NaN at sample {i}"
-            );
-        }
+        let render_and_check = |plugin: &mut OpenWurli, vol: f64, label: &str| {
+            plugin.render_subblock(0, len);
+            for i in 0..len {
+                let attenuated = plugin.out_buf[i] * vol * vol;
+                let amplified = plugin.power_amp.process(attenuated);
+                let shaped = plugin.speaker.process(amplified);
+                let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
+                assert!(sample.is_finite(), "{label} produced NaN at sample {i}");
+            }
+        };
 
-        // Render with volume = 0 (simulates user sweeping to zero)
-        plugin.render_subblock(0, len);
-        for i in 0..len {
-            let vol = 0.0;
-            let attenuated = plugin.out_buf[i] * vol * vol;
-            let amplified = plugin.power_amp.process(attenuated);
-            let shaped = plugin.speaker.process(amplified);
-            let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
-            assert!(sample.is_finite(), "Zero volume produced NaN at sample {i}");
-        }
-
-        // Render with volume back up (the transition that triggered the crash)
-        plugin.render_subblock(0, len);
-        for i in 0..len {
-            let vol = 0.63;
-            let attenuated = plugin.out_buf[i] * vol * vol;
-            let amplified = plugin.power_amp.process(attenuated);
-            let shaped = plugin.speaker.process(amplified);
-            let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
-            assert!(
-                sample.is_finite(),
-                "Volume restore produced NaN at sample {i}"
-            );
-        }
+        render_and_check(&mut plugin, 0.63, "Normal volume");
+        render_and_check(&mut plugin, 0.0, "Zero volume");
+        // Volume back up — the transition that triggered the crash
+        render_and_check(&mut plugin, 0.63, "Volume restore");
     }
 
     #[test]

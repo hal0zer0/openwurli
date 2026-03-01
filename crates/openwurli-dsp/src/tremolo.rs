@@ -30,17 +30,14 @@ pub struct Tremolo {
     ldr_attack: f64,
     /// LDR release coefficient (slow: ~50ms)
     ldr_release: f64,
-    /// Minimum LDR resistance (fully illuminated): ~50 ohms
-    #[allow(dead_code)]
-    r_ldr_min: f64,
     /// Maximum LDR resistance (dark): ~1M ohms
     r_ldr_max: f64,
     /// CdS power-law exponent
     gamma: f64,
-    /// Cached ln(r_ldr_min)
-    ln_r_min: f64,
-    /// Cached ln(r_ldr_max) - ln(r_ldr_min)
-    ln_range: f64,
+    /// Cached ln(r_ldr_max)
+    ln_r_max: f64,
+    /// Cached ln(r_ldr_min) - ln(r_ldr_max), always negative (min < max)
+    ln_min_minus_max: f64,
     /// Series resistance in LDR path: 18K (fixed) + vibrato pot position
     r_series: f64,
 }
@@ -57,8 +54,6 @@ impl Tremolo {
 
         let r_ldr_min: f64 = 50.0;
         let r_ldr_max: f64 = 1_000_000.0;
-        let ln_r_min = r_ldr_min.ln();
-        let ln_r_max = r_ldr_max.ln();
         Self {
             phase: 0.0,
             phase_inc: 2.0 * PI * rate / sample_rate,
@@ -67,11 +62,10 @@ impl Tremolo {
             ldr_envelope: 0.0,
             ldr_attack: (-1.0 / (attack_tau * sample_rate)).exp(),
             ldr_release: (-1.0 / (release_tau * sample_rate)).exp(),
-            r_ldr_min,
             r_ldr_max,
             gamma: 1.1,
-            ln_r_min,
-            ln_range: ln_r_min - ln_r_max,
+            ln_r_max: r_ldr_max.ln(),
+            ln_min_minus_max: r_ldr_min.ln() - r_ldr_max.ln(),
             r_series: 18_000.0,
         }
     }
@@ -123,7 +117,8 @@ impl Tremolo {
         if drive < 1e-6 {
             self.r_ldr = self.r_ldr_max;
         } else {
-            let log_r = (self.ln_r_min - self.ln_range) + self.ln_range * drive.powf(self.gamma);
+            // Log-space interpolation: ln(R_max) at drive=0, ln(R_min) at drive=1
+            let log_r = self.ln_r_max + self.ln_min_minus_max * drive.powf(self.gamma);
             self.r_ldr = log_r.exp();
         }
 
