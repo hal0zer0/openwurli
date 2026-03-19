@@ -934,10 +934,35 @@ pub const OUTPUT_SCALES: [f64; NUM_OUTPUTS] = [1.00000000000000000e0];
 pub const DC_OP_CONVERGED: bool = true;
 
 // =============================================================================
-// POTENTIOMETER CONSTANTS
+// POTENTIOMETER CONSTANTS (Sherman-Morrison precomputed vectors)
 // =============================================================================
 
+const POT_0_SU: [f64; N] = [
+    2.83504154605397846e-3,
+    6.23737600569627944e1,
+    6.31042903718863357e1,
+    0.00000000000000000e0,
+    2.33220993259697110e2,
+    1.79240637098779007e4,
+    1.79247188377856473e4,
+    4.91478661098262762e2,
+    0.00000000000000000e0,
+    0.00000000000000000e0,
+    2.37915434901982735e3,
+    2.74630059377063307e-1,
+];
+const POT_0_USU: f64 = 1.79247188377856473e4;
 const POT_0_G_NOM: f64 = 1.00000000000000008e-5;
+const POT_0_NV_SU: [f64; M] = [
+    -6.31042903718863357e1,
+    -1.78609594195060126e4,
+    2.33220993259697110e2,
+];
+const POT_0_U_NI: [f64; M] = [
+    6.31042903718863357e1,
+    1.77265646354572164e4,
+    -4.91945103084782147e2,
+];
 const POT_0_NODE_P: usize = 7;
 const POT_0_NODE_Q: usize = 0;
 const POT_0_MIN_R: f64 = 1.00000000000000000e3;
@@ -1023,13 +1048,14 @@ pub struct CircuitState {
     /// Potentiometer 0 previous timestep resistance (for trapezoidal A_neg correction)
     pub pot_0_resistance_prev: f64,
 
-    /// Working copy of G matrix (modified by pots/switches for rebuild)
-    pub g_work: [[f64; N]; N],
-    /// Current sample rate (needed for rebuild_matrices)
-    pub current_sample_rate: f64,
-
-    /// Potentiometer 0 resistance at last matrix rebuild (for change detection)
-    pub pot_0_resistance_rebuilt: f64,
+    /// Sherman-Morrison precomputed SU vector for pot 0 (recomputed by set_sample_rate)
+    pub pot_0_su: [f64; N],
+    /// Sherman-Morrison USU scalar for pot 0 (recomputed by set_sample_rate)
+    pub pot_0_usu: f64,
+    /// Sherman-Morrison NV_SU vector for pot 0 (recomputed by set_sample_rate)
+    pub pot_0_nv_su: [f64; M],
+    /// Sherman-Morrison U_NI vector for pot 0 (recomputed by set_sample_rate)
+    pub pot_0_u_ni: [f64; M],
 
     // --- Runtime-adjustable device parameters ---
     // These fields are initialized from the corresponding DEVICE_N_* constants.
@@ -1087,10 +1113,10 @@ impl Default for CircuitState {
             pot_0_resistance: 9.99999999999999854e4,
             pot_0_resistance_prev: 9.99999999999999854e4,
 
-            g_work: G,
-            current_sample_rate: SAMPLE_RATE,
-
-            pot_0_resistance_rebuilt: 9.99999999999999854e4,
+            pot_0_su: POT_0_SU,
+            pot_0_usu: POT_0_USU,
+            pot_0_nv_su: POT_0_NV_SU,
+            pot_0_u_ni: POT_0_U_NI,
 
             device_0_is: DEVICE_0_IS,
 
@@ -1131,9 +1157,6 @@ impl CircuitState {
 
         self.pot_0_resistance = 9.99999999999999854e4;
         self.pot_0_resistance_prev = 9.99999999999999854e4;
-        self.pot_0_resistance_rebuilt = 9.99999999999999854e4;
-
-        self.g_work = G;
 
         self.device_0_is = DEVICE_0_IS;
 
@@ -1165,7 +1188,8 @@ impl CircuitState {
     /// Recompute all sample-rate-dependent matrices for a new sample rate.
     ///
     /// Call this once during plugin initialization (NOT on the audio thread).
-    /// This recomputes S, A_neg, K, S*N_i from the stored G and C matrices.
+    /// This recomputes S, A_neg, K, S*N_i, inductor g_eq, and pot SM vectors
+    /// from the stored G and C matrices.
     ///
     /// If `sample_rate` matches [`SAMPLE_RATE`], this is a no-op (the defaults
     /// are already correct).
@@ -1174,52 +1198,37 @@ impl CircuitState {
             return; // Invalid sample rate, keep defaults
         }
 
-        self.current_sample_rate = sample_rate;
-
-        // If same as codegen sample rate AND all switches/pots at default, reset to defaults
+        // If same as codegen sample rate, reset to defaults (avoids numerical drift)
         if (sample_rate - SAMPLE_RATE).abs() < 0.5 {
-            let all_default = true;
-            if all_default {
-                self.s = S_DEFAULT;
-                self.a_neg = A_NEG_DEFAULT;
-                self.k = K_DEFAULT;
-                self.s_ni = S_NI_DEFAULT;
-                self.g_work = G;
+            self.s = S_DEFAULT;
+            self.a_neg = A_NEG_DEFAULT;
+            self.k = K_DEFAULT;
+            self.s_ni = S_NI_DEFAULT;
 
-                self.pot_0_resistance_rebuilt = 9.99999999999999854e4;
+            self.pot_0_su = POT_0_SU;
+            self.pot_0_usu = POT_0_USU;
+            self.pot_0_nv_su = POT_0_NV_SU;
+            self.pot_0_u_ni = POT_0_U_NI;
 
-                return;
-            }
+            return;
         }
-        self.rebuild_matrices();
-    }
 
-    /// Rebuild all sample-rate-dependent matrices from g_work and C.
-    ///
-    /// Recomputes A, A_neg, S, K, S*N_i. Called when a pot resistance changes.
-    fn rebuild_matrices(&mut self) {
-        let internal_rate = self.current_sample_rate * OVERSAMPLING_FACTOR as f64;
+        let internal_rate = sample_rate * OVERSAMPLING_FACTOR as f64;
         let alpha = 2.0 * internal_rate;
 
-        // Build A = G_work + alpha * C
+        // Build A = G + alpha*C
         let mut a = [[0.0f64; N]; N];
         for i in 0..N {
             for j in 0..N {
-                a[i][j] = self.g_work[i][j] + alpha * C[i][j];
+                a[i][j] = G[i][j] + alpha * C[i][j];
             }
         }
 
-        // Build A_neg = alpha * C - G_work
+        // Build A_neg = alpha*C - G
         let mut a_neg = [[0.0f64; N]; N];
         for i in 0..N {
             for j in 0..N {
-                a_neg[i][j] = alpha * C[i][j] - self.g_work[i][j];
-            }
-        }
-        // Zero VS/VCVS algebraic rows in A_neg
-        for i in 11..12 {
-            for j in 0..N {
-                a_neg[i][j] = 0.0;
+                a_neg[i][j] = alpha * C[i][j] - G[i][j];
             }
         }
 
@@ -1235,14 +1244,14 @@ impl CircuitState {
             for j in 0..M {
                 let mut sum = 0.0;
                 for kk in 0..N {
-                    sum += s[i][kk] * N_I[j][kk];
+                    sum += s[i][kk] * N_I[j][kk]; // N_I is transposed: [M][N]
                 }
                 s_ni[i][j] = sum;
             }
         }
 
         // Compute K = N_v * S_NI (M x M)
-        let mut k = [[0.0f64; 3]; 3];
+        let mut k = [[0.0f64; M]; M];
         for i in 0..M {
             for j in 0..M {
                 let mut sum = 0.0;
@@ -1257,35 +1266,54 @@ impl CircuitState {
         self.a_neg = a_neg;
         self.k = k;
         self.s_ni = s_ni;
-    }
 
-    /// Set potentiometer 0 resistance.
-    ///
-    /// The matrix rebuild happens at the start of the next process_sample call.
-    pub fn set_pot_0(&mut self, resistance: f64) {
-        self.pot_0_resistance = resistance.clamp(POT_0_MIN_R, POT_0_MAX_R);
-    }
-}
+        // Recompute Sherman-Morrison vectors for pots
+        {
+            let mut u = [0.0f64; N];
+            if POT_0_NODE_P > 0 {
+                u[POT_0_NODE_P - 1] = 1.0;
+            }
+            if POT_0_NODE_Q > 0 {
+                u[POT_0_NODE_Q - 1] = -1.0;
+            }
 
-/// Stamp a conductance between two nodes into a matrix.
-/// Node indices are 1-indexed; 0 means ground.
-fn stamp_conductance(mat: &mut [[f64; N]; N], node_i: usize, node_j: usize, g: f64) {
-    match (node_i > 0, node_j > 0) {
-        (true, true) => {
-            let i = node_i - 1;
-            let j = node_j - 1;
-            mat[i][i] += g;
-            mat[j][j] += g;
-            mat[i][j] -= g;
-            mat[j][i] -= g;
+            let mut su = [0.0f64; N];
+            for i in 0..N {
+                let mut sum = 0.0;
+                for j in 0..N {
+                    sum += self.s[i][j] * u[j];
+                }
+                su[i] = sum;
+            }
+
+            let mut usu = 0.0f64;
+            for i in 0..N {
+                usu += u[i] * su[i];
+            }
+
+            let mut nv_su = [0.0f64; M];
+            for i in 0..M {
+                let mut sum = 0.0;
+                for j in 0..N {
+                    sum += N_V[i][j] * su[j];
+                }
+                nv_su[i] = sum;
+            }
+
+            let mut u_ni = [0.0f64; M];
+            for j in 0..M {
+                let mut sum = 0.0;
+                for i in 0..N {
+                    sum += su[i] * N_I[j][i];
+                }
+                u_ni[j] = sum;
+            }
+
+            self.pot_0_su = su;
+            self.pot_0_usu = usu;
+            self.pot_0_nv_su = nv_su;
+            self.pot_0_u_ni = u_ni;
         }
-        (true, false) => {
-            mat[node_i - 1][node_i - 1] += g;
-        }
-        (false, true) => {
-            mat[node_j - 1][node_j - 1] += g;
-        }
-        (false, false) => {}
     }
 }
 
@@ -1930,6 +1958,29 @@ fn bjt_with_parasitics(
     )
 }
 
+// =============================================================================
+// POTENTIOMETER SM SCALE HELPERS
+// =============================================================================
+
+/// Sherman-Morrison scale factor for pot 0
+#[allow(dead_code)]
+#[inline(always)]
+fn sm_scale_0(state: &CircuitState) -> (f64, f64) {
+    let r = state.pot_0_resistance;
+    if !r.is_finite() {
+        return (0.0, 0.0);
+    }
+    let r = r.clamp(POT_0_MIN_R, POT_0_MAX_R);
+    let delta_g = 1.0 / r - POT_0_G_NOM;
+    let denom = 1.0 + delta_g * state.pot_0_usu;
+    let scale = if denom.abs() > 1e-15 {
+        delta_g / denom
+    } else {
+        0.0
+    };
+    (delta_g, scale)
+}
+
 /// Build RHS vector: rhs = rhs_const + A_neg * v_prev + N_i^T * i_nl_prev + input
 ///
 /// The A_neg * v_prev term captures capacitor history contribution
@@ -2010,7 +2061,7 @@ fn extract_controlling_voltages(v_pred: &[f64; N]) -> [f64; M] {
 /// Solves: i_nl - i_d(p + K*i_nl) = 0
 /// where p = N_v * v_pred is the linear prediction
 #[inline(always)]
-fn solve_nonlinear(p: &[f64; M], state: &mut CircuitState) -> [f64; M] {
+fn solve_nonlinear(p: &[f64; M], k_eff: &[[f64; M]; M], state: &mut CircuitState) -> [f64; M] {
     const MAX_ITER: usize = 200;
     const TOL: f64 = 1.00000000000000006e-9;
     const SINGULARITY_THRESHOLD: f64 = 1e-15;
@@ -2025,13 +2076,10 @@ fn solve_nonlinear(p: &[f64; M], state: &mut CircuitState) -> [f64; M] {
 
     // Newton-Raphson iteration
     for iter in 0..MAX_ITER {
-        // Compute controlling voltages: v_d = p + K * i_nl
-        let v_d0 =
-            p[0] + state.k[0][0] * i_nl[0] + state.k[0][1] * i_nl[1] + state.k[0][2] * i_nl[2];
-        let v_d1 =
-            p[1] + state.k[1][0] * i_nl[0] + state.k[1][1] * i_nl[1] + state.k[1][2] * i_nl[2];
-        let v_d2 =
-            p[2] + state.k[2][0] * i_nl[0] + state.k[2][1] * i_nl[1] + state.k[2][2] * i_nl[2];
+        // Compute controlling voltages: v_d = p + K_eff * i_nl
+        let v_d0 = p[0] + k_eff[0][0] * i_nl[0] + k_eff[0][1] * i_nl[1] + k_eff[0][2] * i_nl[2];
+        let v_d1 = p[1] + k_eff[1][0] * i_nl[0] + k_eff[1][1] * i_nl[1] + k_eff[1][2] * i_nl[2];
+        let v_d2 = p[2] + k_eff[2][0] * i_nl[0] + k_eff[2][1] * i_nl[1] + k_eff[2][2] * i_nl[2];
 
         // Evaluate device currents and Jacobians
         let i_dev0 = diode_current(v_d0, state.device_0_is, state.device_0_n_vt);
@@ -2053,15 +2101,15 @@ fn solve_nonlinear(p: &[f64; M], state: &mut CircuitState) -> [f64; M] {
         let f2 = i_nl[2] - i_dev2;
 
         // Jacobian: J[i][j] = delta_ij - sum_k(jdev_ik * K_eff[k][j])
-        let j00 = 1.0 - jdev_0_0 * state.k[0][0];
-        let j01 = 0.0 - jdev_0_0 * state.k[0][1];
-        let j02 = 0.0 - jdev_0_0 * state.k[0][2];
-        let j10 = 0.0 - jdev_1_1 * state.k[1][0];
-        let j11 = 1.0 - jdev_1_1 * state.k[1][1];
-        let j12 = 0.0 - jdev_1_1 * state.k[1][2];
-        let j20 = 0.0 - jdev_2_2 * state.k[2][0];
-        let j21 = 0.0 - jdev_2_2 * state.k[2][1];
-        let j22 = 1.0 - jdev_2_2 * state.k[2][2];
+        let j00 = 1.0 - jdev_0_0 * k_eff[0][0];
+        let j01 = 0.0 - jdev_0_0 * k_eff[0][1];
+        let j02 = 0.0 - jdev_0_0 * k_eff[0][2];
+        let j10 = 0.0 - jdev_1_1 * k_eff[1][0];
+        let j11 = 1.0 - jdev_1_1 * k_eff[1][1];
+        let j12 = 0.0 - jdev_1_1 * k_eff[1][2];
+        let j20 = 0.0 - jdev_2_2 * k_eff[2][0];
+        let j21 = 0.0 - jdev_2_2 * k_eff[2][1];
+        let j22 = 1.0 - jdev_2_2 * k_eff[2][2];
 
         // Solve 3x3 system via inline Gaussian elimination
         let mut a = [[j00, j01, j02], [j10, j11, j12], [j20, j21, j22]];
@@ -2113,9 +2161,9 @@ fn solve_nonlinear(p: &[f64; M], state: &mut CircuitState) -> [f64; M] {
             let delta1 = b[1];
             let delta2 = b[2];
             // Voltage-space limiting (SPICE pnjlim/fetlim through K matrix)
-            let dv0 = -(state.k[0][0] * delta0 + state.k[0][1] * delta1 + state.k[0][2] * delta2);
-            let dv1 = -(state.k[1][0] * delta0 + state.k[1][1] * delta1 + state.k[1][2] * delta2);
-            let dv2 = -(state.k[2][0] * delta0 + state.k[2][1] * delta1 + state.k[2][2] * delta2);
+            let dv0 = -(k_eff[0][0] * delta0 + k_eff[0][1] * delta1 + k_eff[0][2] * delta2);
+            let dv1 = -(k_eff[1][0] * delta0 + k_eff[1][1] * delta1 + k_eff[1][2] * delta2);
+            let dv2 = -(k_eff[2][0] * delta0 + k_eff[2][1] * delta1 + k_eff[2][2] * delta2);
             let mut alpha = 1.0_f64;
             if dv0.abs() > 1e-15 {
                 let v_lim = pnjlim(v_d0 + dv0, v_d0, state.device_0_n_vt, DEVICE_0_VCRIT);
@@ -2224,43 +2272,94 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
         0.0
     };
 
-    // Check if any pot resistance has changed; if so, re-stamp G and rebuild matrices
-    {
-        let mut needs_rebuild = false;
-        if (state.pot_0_resistance - state.pot_0_resistance_rebuilt).abs() > 1e-12 {
-            let r_old = state.pot_0_resistance_rebuilt;
-            let r_new = state.pot_0_resistance.clamp(POT_0_MIN_R, POT_0_MAX_R);
-            let delta_g = 1.0 / r_new - 1.0 / r_old;
-            stamp_conductance(&mut state.g_work, POT_0_NODE_P, POT_0_NODE_Q, delta_g);
-            state.pot_0_resistance_rebuilt = r_new;
-            needs_rebuild = true;
-        }
-        if needs_rebuild {
-            state.rebuild_matrices();
-            // Don't re-init v_prev — keep the current DC state and let
-            // the trapezoidal integration track to the new OP naturally.
-            // The linear DC prediction (S * RHS_CONST) causes metastable
-            // convergence at extreme pot values. Keeping v_prev works if
-            // the pot change is incremental (smooth modulation). For
-            // instantaneous jumps, the caller should ramp the pot value.
-            state.i_nl_prev_prev = state.i_nl_prev;
-        }
-    }
+    // Compute Sherman-Morrison scale factors for potentiometers
+    // Sequential Sherman-Morrison setup with cross-corrections
+    let delta_g_0 = {
+        let r = state.pot_0_resistance.clamp(POT_0_MIN_R, POT_0_MAX_R);
+        1.0 / r - POT_0_G_NOM
+    };
+    let su_c0 = state.pot_0_su;
+    let usu_c0 = su_c0[6];
+    let scale_c0 = if (1.0 + delta_g_0 * usu_c0).abs() > 1e-15 {
+        delta_g_0 / (1.0 + delta_g_0 * usu_c0)
+    } else {
+        0.0
+    };
+    let nv_su_c0 = state.pot_0_nv_su;
+    let u_ni_c0 = state.pot_0_u_ni;
 
     // Step 1: Build RHS vector from history and input
-    let rhs = build_rhs(input, state.input_prev, state);
+    let mut rhs = build_rhs(input, state.input_prev, state);
+
+    // Step 1b: A_neg correction for pot conductance change
+    let delta_g_0_prev = {
+        let r = state.pot_0_resistance_prev.clamp(POT_0_MIN_R, POT_0_MAX_R);
+        1.0 / r - POT_0_G_NOM
+    };
+    rhs[6] -= delta_g_0_prev * state.v_prev[6];
 
     // Step 2: Linear prediction: v_pred = S * rhs
-    let v_pred = mat_vec_mul_s(&rhs, state);
+    let mut v_pred = mat_vec_mul_s(&rhs, state);
+
+    // Step 2b: Sherman-Morrison S correction on v_pred
+    let mut su_dot_rhs_0 = 0.0;
+    for _k in 0..N {
+        su_dot_rhs_0 += su_c0[_k] * rhs[_k];
+    }
+    let factor_0 = scale_c0 * su_dot_rhs_0;
+    v_pred[0] -= factor_0 * su_c0[0];
+    v_pred[1] -= factor_0 * su_c0[1];
+    v_pred[2] -= factor_0 * su_c0[2];
+    v_pred[3] -= factor_0 * su_c0[3];
+    v_pred[4] -= factor_0 * su_c0[4];
+    v_pred[5] -= factor_0 * su_c0[5];
+    v_pred[6] -= factor_0 * su_c0[6];
+    v_pred[7] -= factor_0 * su_c0[7];
+    v_pred[8] -= factor_0 * su_c0[8];
+    v_pred[9] -= factor_0 * su_c0[9];
+    v_pred[10] -= factor_0 * su_c0[10];
+    v_pred[11] -= factor_0 * su_c0[11];
 
     // Step 3: Extract controlling voltages for nonlinear devices
     let p = extract_controlling_voltages(&v_pred);
 
+    // Step 3b: Precompute corrected K matrix for NR solver
+    // Precompute corrected K matrix: K_eff = K - Σ_k scale_ck * nv_su_ck ⊗ u_ni_ck
+    let mut k_eff = state.k;
+    k_eff[0][0] -= scale_c0 * nv_su_c0[0] * u_ni_c0[0];
+    k_eff[0][1] -= scale_c0 * nv_su_c0[0] * u_ni_c0[1];
+    k_eff[0][2] -= scale_c0 * nv_su_c0[0] * u_ni_c0[2];
+    k_eff[1][0] -= scale_c0 * nv_su_c0[1] * u_ni_c0[0];
+    k_eff[1][1] -= scale_c0 * nv_su_c0[1] * u_ni_c0[1];
+    k_eff[1][2] -= scale_c0 * nv_su_c0[1] * u_ni_c0[2];
+    k_eff[2][0] -= scale_c0 * nv_su_c0[2] * u_ni_c0[0];
+    k_eff[2][1] -= scale_c0 * nv_su_c0[2] * u_ni_c0[1];
+    k_eff[2][2] -= scale_c0 * nv_su_c0[2] * u_ni_c0[2];
+
     // Step 4: Solve M×M nonlinear system via Newton-Raphson
-    let i_nl = solve_nonlinear(&p, state);
+    let i_nl = solve_nonlinear(&p, &k_eff, state);
 
     // Step 5: Compute final node voltages
-    let v = compute_final_voltages(&v_pred, &i_nl, state);
+    let mut v = compute_final_voltages(&v_pred, &i_nl, state);
+
+    // Step 5b: Sherman-Morrison S*N_i correction on final voltages
+    let mut u_ni_dot_inl_0 = 0.0;
+    for _j in 0..M {
+        u_ni_dot_inl_0 += u_ni_c0[_j] * i_nl[_j];
+    }
+    let sni_factor_0 = scale_c0 * u_ni_dot_inl_0;
+    v[0] -= sni_factor_0 * su_c0[0];
+    v[1] -= sni_factor_0 * su_c0[1];
+    v[2] -= sni_factor_0 * su_c0[2];
+    v[3] -= sni_factor_0 * su_c0[3];
+    v[4] -= sni_factor_0 * su_c0[4];
+    v[5] -= sni_factor_0 * su_c0[5];
+    v[6] -= sni_factor_0 * su_c0[6];
+    v[7] -= sni_factor_0 * su_c0[7];
+    v[8] -= sni_factor_0 * su_c0[8];
+    v[9] -= sni_factor_0 * su_c0[9];
+    v[10] -= sni_factor_0 * su_c0[10];
+    v[11] -= sni_factor_0 * su_c0[11];
 
     // Step 6: Update history (no-op, handled by A_neg formulation)
     update_history(&v, state);

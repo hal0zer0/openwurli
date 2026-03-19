@@ -67,3 +67,15 @@ ml/notes.json
 ml/scored_notes.json
 ml/harmonics.json
 ml/model_harmonics.json
+
+# Secrets (preemptive)
+.env
+.env.*
+*.pem
+*.key
+
+# Misc
+desktop.ini
+*.log
+*.bak
+*.orig

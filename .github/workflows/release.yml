@@ -45,9 +45,9 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p ${{ matrix.archive }}
-          ls -la target/bundled/ || echo "WARNING: target/bundled/ not found"
-          cp target/bundled/openwurli.clap ${{ matrix.archive }}/ || echo "WARNING: no .clap found"
-          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/ || echo "WARNING: no .vst3 found"
+          ls -la target/bundled/
+          cp target/bundled/openwurli.clap ${{ matrix.archive }}/
+          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/
           ls -la ${{ matrix.archive }}/
           tar czf ${{ matrix.archive }}.tar.gz ${{ matrix.archive }}
 
@@ -56,9 +56,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p ${{ matrix.archive }}
-          ls -la target/bundled/ || echo "WARNING: target/bundled/ not found"
-          cp target/bundled/openwurli.clap ${{ matrix.archive }}/ || echo "WARNING: no .clap found"
-          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/ || echo "WARNING: no .vst3 found"
+          ls -la target/bundled/
+          cp target/bundled/openwurli.clap ${{ matrix.archive }}/
+          cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/
           ls -la ${{ matrix.archive }}/
           7z a ${{ matrix.archive }}.zip ${{ matrix.archive }}
 

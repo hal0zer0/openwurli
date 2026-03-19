@@ -44,7 +44,7 @@ Download the latest release from the [Releases](https://github.com/hal0zer0/open
 
 ## Build from Source
 
-Requires [Rust](https://rustup.rs/) (stable toolchain).
+Requires [Rust](https://rustup.rs/) (stable toolchain, MSRV 1.85).
 
 ```bash
 # Clone

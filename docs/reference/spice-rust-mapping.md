@@ -169,7 +169,7 @@ This is the checklist. For each circuit element in SPICE, verify against Rust:
 
 ## 6. Verification Methodology
 
-When Rusty Spice is invoked to debug a mismatch, follow this protocol:
+When debugging a SPICE↔Rust mismatch, follow this protocol:
 
 ### Step 1: Reproduce in SPICE
 Run the relevant testbench and extract the exact SPICE result. Record node voltages, currents,

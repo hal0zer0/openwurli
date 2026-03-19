@@ -1,21 +1,17 @@
 //! Melange-generated DK preamp adapter with shadow pump cancellation.
 //!
-//! Uses pot-as-rebuild: `set_pot_0()` re-stamps G and rebuilds A/S/K.
-//! The circuit settles at the compile-time nominal (100K) and tremolo
-//! modulation sweeps smoothly from there — no abrupt pot jumps.
+//! Uses SM (Sherman-Morrison) pot correction with max_iter=200 for NR
+//! convergence across the full R_ldr range (1K-1M). No per-sample matrix
+//! rebuild — SM handles the per-sample delta_g smoothly.
 
 use crate::gen_preamp::{self, CircuitState};
 use crate::preamp::PreampModel;
 use std::sync::OnceLock;
 
-/// Cached state settled at the compile-time nominal pot value (100K).
-/// Tremolo starts from here and sweeps smoothly.
 static SETTLED_STATE: OnceLock<CircuitState> = OnceLock::new();
 
 fn compute_settled_state() -> CircuitState {
     let mut s = CircuitState::default();
-    // Settle at compile-time nominal (100K, already baked into G matrix).
-    // No pot change needed — just let the circuit reach equilibrium.
     for _ in 0..176_400 {
         gen_preamp::process_sample(0.0, &mut s);
     }
@@ -61,8 +57,8 @@ impl PreampModel for DkPreamp {
 
     fn set_ldr_resistance(&mut self, r_ldr_path: f64) {
         let r = r_ldr_path.max(1000.0);
-        self.main.set_pot_0(r);
-        self.shadow.set_pot_0(r);
+        self.main.pot_0_resistance = r;
+        self.shadow.pot_0_resistance = r;
     }
 
     fn reset(&mut self) {
