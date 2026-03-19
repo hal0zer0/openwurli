@@ -16,7 +16,7 @@ use openwurli_dsp::dk_preamp::DkPreamp;
 use openwurli_dsp::hammer::{dwell_attenuation, onset_ramp_time};
 use openwurli_dsp::oversampler::Oversampler;
 use openwurli_dsp::power_amp::PowerAmp;
-use openwurli_dsp::preamp::{EbersMollPreamp, PreampModel};
+use openwurli_dsp::preamp::PreampModel;
 use openwurli_dsp::reed::ModalReed;
 use openwurli_dsp::speaker::Speaker;
 use openwurli_dsp::tables::{self, CalibrationConfig, NUM_MODES};
@@ -76,7 +76,7 @@ fn print_usage() {
     eprintln!("  bench-reed      Isolate reed rendering performance (quadrature oscillator)");
     eprintln!();
     eprintln!("Global options:");
-    eprintln!("  --model MODEL   Preamp model: dk (default), ebers-moll");
+    eprintln!("  --model MODEL   Preamp model: dk (default)");
     eprintln!();
     eprintln!("Use --help after any subcommand for options.");
 }
@@ -109,9 +109,12 @@ fn create_preamp(args: &[String]) -> Box<dyn PreampModel> {
     let model = parse_flag_str(args, "--model", "dk");
     match model {
         "dk" => Box::new(DkPreamp::new(OVERSAMPLED_SR)),
-        "ebers-moll" => Box::new(EbersMollPreamp::new(OVERSAMPLED_SR)),
+        #[cfg(feature = "legacy-preamp")]
+        "dk-legacy" => Box::new(openwurli_dsp::dk_preamp_legacy::DkPreamp::new(
+            OVERSAMPLED_SR,
+        )),
         other => {
-            eprintln!("Unknown model '{other}'. Use 'ebers-moll' or 'dk'.");
+            eprintln!("Unknown model '{other}'. Use 'dk'.");
             std::process::exit(1);
         }
     }
@@ -1988,7 +1991,7 @@ fn cmd_centroid_track(args: &[String]) {
 ///   overshoot = 20*log10(peak_0_10ms / rms_100_200ms)
 ///
 /// Also reports "bark decay" — the perceptual brightness contrast over
-/// the full note that Dr Dawgg measured as "16.7 dB overshoot":
+/// the full note that was measured as "16.7 dB overshoot":
 ///   bark_decay = 20*log10(peak_0_50ms / rms_1000_1500ms)
 ///
 /// These are fundamentally different metrics:
@@ -2052,7 +2055,7 @@ fn cmd_overshoot(args: &[String]) {
                 f64::NAN
             };
 
-            // Bark decay (what Dr Dawgg measured — NOT the same as overshoot)
+            // Bark decay (what was measured — NOT the same as overshoot)
             let bark_decay_db = if rms_1000_1500 > 1e-15 {
                 20.0 * (peak_0_50 / rms_1000_1500).log10()
             } else {

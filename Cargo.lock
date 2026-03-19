@@ -309,6 +309,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "melange-primitives"
+version = "0.1.0"
+
+[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -355,7 +359,7 @@ dependencies = [
 [[package]]
 name = "nih_plug"
 version = "0.0.0"
-source = "git+https://github.com/robbert-vdh/nih-plug.git#28b149ec4d62757d0b448809148a0c3ca6e09a95"
+source = "git+https://github.com/robbert-vdh/nih-plug.git?rev=28b149ec#28b149ec4d62757d0b448809148a0c3ca6e09a95"
 dependencies = [
  "anyhow",
  "anymap3",
@@ -386,7 +390,7 @@ dependencies = [
 [[package]]
 name = "nih_plug_derive"
 version = "0.1.0"
-source = "git+https://github.com/robbert-vdh/nih-plug.git#28b149ec4d62757d0b448809148a0c3ca6e09a95"
+source = "git+https://github.com/robbert-vdh/nih-plug.git?rev=28b149ec#28b149ec4d62757d0b448809148a0c3ca6e09a95"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -396,7 +400,7 @@ dependencies = [
 [[package]]
 name = "nih_plug_xtask"
 version = "0.1.0"
-source = "git+https://github.com/robbert-vdh/nih-plug.git#28b149ec4d62757d0b448809148a0c3ca6e09a95"
+source = "git+https://github.com/robbert-vdh/nih-plug.git?rev=28b149ec#28b149ec4d62757d0b448809148a0c3ca6e09a95"
 dependencies = [
  "anyhow",
  "cargo_metadata",
@@ -456,6 +460,9 @@ dependencies = [
 [[package]]
 name = "openwurli-dsp"
 version = "0.2.4"
+dependencies = [
+ "melange-primitives",
+]
 
 [[package]]
 name = "parking_lot"

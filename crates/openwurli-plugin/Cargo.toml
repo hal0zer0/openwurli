@@ -7,9 +7,12 @@ repository.workspace = true
 authors.workspace = true
 description = "Wurlitzer 200A virtual instrument — CLAP and VST3 plugin"
 
+[features]
+melange-preamp = ["openwurli-dsp/melange-preamp"]
+
 [lib]
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "28b149ec", features = ["assert_process_allocs"] }
 openwurli-dsp = { path = "../openwurli-dsp" }

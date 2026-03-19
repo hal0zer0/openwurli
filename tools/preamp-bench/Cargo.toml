@@ -7,6 +7,10 @@ repository.workspace = true
 authors.workspace = true
 description = "Preamp DSP validation CLI — compare against SPICE reference data"
 
+[features]
+legacy-preamp = ["openwurli-dsp/legacy-preamp"]
+melange-preamp = ["openwurli-dsp/melange-preamp"]
+
 [dependencies]
 openwurli-dsp = { path = "../../crates/openwurli-dsp" }
 hound = "3.5"

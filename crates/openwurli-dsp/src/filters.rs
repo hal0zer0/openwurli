@@ -1,7 +1,12 @@
-//! Shared filter primitives for the Wurlitzer 200A signal chain.
+//! Filter primitives for the Wurlitzer 200A signal chain.
 //!
-//! All filters: `new(freq, sample_rate)`, `process(sample) -> sample`, `reset()`.
+//! Biquad is backed by melange-primitives (identical Audio EQ Cookbook
+//! coefficients and Direct Form II Transposed structure).
+//!
+//! Legacy types (OnePoleLpf, OnePoleHpf, TptLpf, DcBlocker) are retained
+//! for bjt_stage.rs and EbersMollPreamp pending cleanup.
 
+use melange_primitives::{Biquad as MelangeBiquad, BiquadType};
 use std::f64::consts::PI;
 
 /// 1-pole high-pass filter: y[n] = alpha * (y[n-1] + x[n] - x[n-1])
@@ -179,121 +184,54 @@ impl DcBlocker {
 
 /// Biquad filter — Direct Form II Transposed.
 ///
-/// General-purpose second-order IIR filter. Coefficients set via
-/// constructor methods for specific filter types.
-pub struct Biquad {
-    b0: f64,
-    b1: f64,
-    b2: f64,
-    a1: f64,
-    a2: f64,
-    s1: f64,
-    s2: f64,
-}
+/// Backed by melange-primitives. Identical Audio EQ Cookbook coefficients
+/// and DF-II Transposed structure — bit-identical output.
+pub struct Biquad(MelangeBiquad);
 
 impl Biquad {
     /// Bandpass filter (constant skirt gain, Audio EQ Cookbook).
     pub fn bandpass(center_hz: f64, q: f64, sample_rate: f64) -> Self {
-        let w0 = 2.0 * PI * center_hz / sample_rate;
-        let alpha = w0.sin() / (2.0 * q);
-        let cos_w0 = w0.cos();
-
-        let b0 = alpha;
-        let b1 = 0.0;
-        let b2 = -alpha;
-        let a0 = 1.0 + alpha;
-        let a1 = -2.0 * cos_w0;
-        let a2 = 1.0 - alpha;
-
-        Self {
-            b0: b0 / a0,
-            b1: b1 / a0,
-            b2: b2 / a0,
-            a1: a1 / a0,
-            a2: a2 / a0,
-            s1: 0.0,
-            s2: 0.0,
-        }
+        Self(MelangeBiquad::new(
+            BiquadType::Bandpass { fc: center_hz, q },
+            sample_rate,
+        ))
     }
 
     /// Low-pass filter (Audio EQ Cookbook).
     pub fn lowpass(cutoff_hz: f64, q: f64, sample_rate: f64) -> Self {
-        let w0 = 2.0 * PI * cutoff_hz / sample_rate;
-        let alpha = w0.sin() / (2.0 * q);
-        let cos_w0 = w0.cos();
-
-        let b1 = 1.0 - cos_w0;
-        let b0 = b1 / 2.0;
-        let b2 = b0;
-        let a0 = 1.0 + alpha;
-        let a1 = -2.0 * cos_w0;
-        let a2 = 1.0 - alpha;
-
-        Self {
-            b0: b0 / a0,
-            b1: b1 / a0,
-            b2: b2 / a0,
-            a1: a1 / a0,
-            a2: a2 / a0,
-            s1: 0.0,
-            s2: 0.0,
-        }
+        Self(MelangeBiquad::new(
+            BiquadType::Lowpass { fc: cutoff_hz, q },
+            sample_rate,
+        ))
     }
 
     /// High-pass filter (Audio EQ Cookbook).
     pub fn highpass(cutoff_hz: f64, q: f64, sample_rate: f64) -> Self {
-        let w0 = 2.0 * PI * cutoff_hz / sample_rate;
-        let alpha = w0.sin() / (2.0 * q);
-        let cos_w0 = w0.cos();
-
-        let b1 = -(1.0 + cos_w0);
-        let b0 = -b1 / 2.0;
-        let b2 = b0;
-        let a0 = 1.0 + alpha;
-        let a1 = -2.0 * cos_w0;
-        let a2 = 1.0 - alpha;
-
-        Self {
-            b0: b0 / a0,
-            b1: b1 / a0,
-            b2: b2 / a0,
-            a1: a1 / a0,
-            a2: a2 / a0,
-            s1: 0.0,
-            s2: 0.0,
-        }
+        Self(MelangeBiquad::new(
+            BiquadType::Highpass { fc: cutoff_hz, q },
+            sample_rate,
+        ))
     }
 
     /// Update coefficients to highpass without resetting filter state.
     pub fn set_highpass(&mut self, cutoff_hz: f64, q: f64, sample_rate: f64) {
-        self.copy_coefficients(&Self::highpass(cutoff_hz, q, sample_rate));
+        self.0
+            .set_type(BiquadType::Highpass { fc: cutoff_hz, q }, sample_rate);
     }
 
     /// Update coefficients to lowpass without resetting filter state.
     pub fn set_lowpass(&mut self, cutoff_hz: f64, q: f64, sample_rate: f64) {
-        self.copy_coefficients(&Self::lowpass(cutoff_hz, q, sample_rate));
-    }
-
-    /// Copy filter coefficients from another Biquad, preserving state.
-    fn copy_coefficients(&mut self, other: &Self) {
-        self.b0 = other.b0;
-        self.b1 = other.b1;
-        self.b2 = other.b2;
-        self.a1 = other.a1;
-        self.a2 = other.a2;
+        self.0
+            .set_type(BiquadType::Lowpass { fc: cutoff_hz, q }, sample_rate);
     }
 
     /// Process one sample (Direct Form II Transposed).
     pub fn process(&mut self, x: f64) -> f64 {
-        let y = self.b0 * x + self.s1;
-        self.s1 = self.b1 * x - self.a1 * y + self.s2;
-        self.s2 = self.b2 * x - self.a2 * y;
-        y
+        self.0.process(x)
     }
 
     pub fn reset(&mut self) {
-        self.s1 = 0.0;
-        self.s2 = 0.0;
+        self.0.reset();
     }
 }
 
