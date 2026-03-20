@@ -4,7 +4,6 @@
 // ============================================================================
 
 #![allow(clippy::excessive_precision)]
-#![allow(clippy::approx_constant)]
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::absurd_extreme_comparisons)]
@@ -977,23 +976,23 @@ const POT_0_MAX_R: f64 = 1.00000000000000000e6;
 pub const DC_OP: [f64; N] = [
     0.00000000000000000e0,
     0.00000000000000000e0,
-    2.80161370026149248e0,
+    2.80161370026149292e0,
     1.50000000000000000e1,
-    3.91902323487866111e0,
-    2.24501822676543838e0,
-    5.84429111984855876e0,
-    9.51450637213117467e0,
-    3.26458447254610773e0,
-    2.45592593297620754e0,
-    9.11709447424405361e0,
-    -3.12746884651113853e-3,
+    3.91902323487871085e0,
+    2.24501822676543883e0,
+    5.84429111984846905e0,
+    9.51450637213103612e0,
+    3.26458447254615702e0,
+    2.45592593297624440e0,
+    9.11709447424391328e0,
+    -3.12746884651121486e-3,
 ];
 
 /// DC operating point: nonlinear device currents at bias point
 pub const DC_NL_I: [f64; M] = [
     -2.52000000000000040e-9,
     6.78950674666129573e-5,
-    2.98905352425273690e-3,
+    2.98905352425279025e-3,
 ];
 
 /// Circuit state for one processing channel.
@@ -1434,15 +1433,15 @@ const DEVICE_2_VCRIT: f64 = 7.01253027371174009e-1;
 /// Fast exp() for audio circuit simulation.
 /// Input clamped to [-40, 40] (matches melange safe_exp convention).
 ///
-/// Default: polynomial approximation (<0.0004% error, ~6x faster than libm).
-/// To use hardware/libm exp, compile with: `--cfg melange_precise_exp`
+/// To use the polynomial approximation (faster on ARM/WASM, no libm dependency),
+/// compile with: `--cfg melange_fast_exp`
 #[inline(always)]
 fn fast_exp(x: f64) -> f64 {
-    #[cfg(melange_precise_exp)]
+    #[cfg(not(melange_fast_exp))]
     {
         x.clamp(-40.0, 40.0).exp()
     }
-    #[cfg(not(melange_precise_exp))]
+    #[cfg(melange_fast_exp)]
     {
         // Range reduction + 5th-order minimax polynomial. <0.0004% max relative error.
         // No lookup tables, no libm dependency, branchless hot path.
@@ -1827,118 +1826,6 @@ fn bjt_jacobian(
     ]
 }
 
-/// Combined BJT evaluation: returns (Ic, Ib, [dIc/dVbe, dIc/dVbc, dIb/dVbe, dIb/dVbc]).
-///
-/// Computes exp(Vbe/(NF*VT)) and exp(Vbc/VT) once and shares them across current
-/// and Jacobian calculations. Reduces from 8-10 exp() to 2-3 per evaluation.
-#[inline(always)]
-fn bjt_evaluate(
-    vbe: f64,
-    vbc: f64,
-    is: f64,
-    vt: f64,
-    nf: f64,
-    beta_f: f64,
-    beta_r: f64,
-    sign: f64,
-    use_gp: bool,
-    vaf: f64,
-    var: f64,
-    ikf: f64,
-    ikr: f64,
-    ise: f64,
-    ne: f64,
-) -> (f64, f64, [f64; 4]) {
-    let vbe_eff = sign * vbe;
-    let vbc_eff = sign * vbc;
-    let nf_vt = nf * vt;
-
-    // Shared exponentials (computed once)
-    let exp_be = safe_exp(vbe_eff / nf_vt);
-    let exp_bc = safe_exp(vbc_eff / vt);
-
-    // ISE leakage exponential (computed once, only when needed)
-    let exp_be_leak = if ise > 0.0 {
-        safe_exp(vbe_eff / (ne * vt))
-    } else {
-        0.0
-    };
-
-    // === Collector current ===
-    let i_cc = is * (exp_be - exp_bc);
-
-    // === Base current (not modified by GP) ===
-    let mut ib_raw = is / beta_f * (exp_be - 1.0) + is / beta_r * (exp_bc - 1.0);
-    if ise > 0.0 {
-        ib_raw += ise * (exp_be_leak - 1.0);
-    }
-
-    // === Base current Jacobian ===
-    let mut dib_dvbe = (is / (beta_f * nf_vt)) * exp_be;
-    let dib_dvbc = (is / (beta_r * vt)) * exp_bc;
-    if ise > 0.0 {
-        let ne_vt = ne * vt;
-        dib_dvbe += (ise / ne_vt) * exp_be_leak;
-    }
-
-    if !use_gp {
-        // Ebers-Moll
-        let ic = sign * (i_cc - is / beta_r * (exp_bc - 1.0));
-        let ib = sign * ib_raw;
-        let dic_dvbe = is / nf_vt * exp_be;
-        let dic_dvbc = -(is / vt) * exp_bc - (is / (beta_r * vt)) * exp_bc;
-        return (ic, ib, [dic_dvbe, dic_dvbc, dib_dvbe, dib_dvbc]);
-    }
-
-    // Gummel-Poon
-    // q1 and derivatives
-    let q1_denom = 1.0 - vbe_eff / var - vbc_eff / vaf;
-    let (q1, dq1_dvbe, dq1_dvbc) = if q1_denom.abs() < 1e-30 {
-        (1.0, 0.0, 0.0)
-    } else {
-        let q1 = 1.0 / q1_denom;
-        (q1, q1 * q1 / var, q1 * q1 / vaf)
-    };
-
-    // q2 and derivatives (uses shared exp_be, exp_bc)
-    let q2 = is * exp_be / ikf + is * exp_bc / ikr;
-    let dq2_dvbe = is / (nf_vt * ikf) * exp_be;
-    let dq2_dvbc = is / (vt * ikr) * exp_bc;
-
-    // Discriminant D = sqrt(1 + 4*q2)
-    let disc = (1.0 + 4.0 * q2).max(0.0);
-    let d = disc.sqrt();
-    let dd_dvbe = if d > 1e-15 { 2.0 * dq2_dvbe / d } else { 0.0 };
-    let dd_dvbc = if d > 1e-15 { 2.0 * dq2_dvbc / d } else { 0.0 };
-
-    // qb = q1 * (1 + D) / 2
-    let qb = q1 * (1.0 + d) / 2.0;
-    let dqb_dvbe = dq1_dvbe * (1.0 + d) / 2.0 + q1 * dd_dvbe / 2.0;
-    let dqb_dvbc = dq1_dvbc * (1.0 + d) / 2.0 + q1 * dd_dvbc / 2.0;
-
-    let ic = sign * (i_cc / qb - is / beta_r * (exp_bc - 1.0));
-    let ib = sign * ib_raw;
-
-    // Quotient rule: d(Icc/qb)/dV = (dIcc/dV * qb - Icc * dqb/dV) / qb^2
-    let dicc_dvbe = is / nf_vt * exp_be;
-    let dicc_dvbc = -is / vt * exp_bc;
-    let qb2 = (qb * qb).max(1e-30);
-    let quotient_dvbe = (dicc_dvbe * qb - i_cc * dqb_dvbe) / qb2;
-    let quotient_dvbc = (dicc_dvbc * qb - i_cc * dqb_dvbc) / qb2;
-    let d_bc_term_dvbc = is / (beta_r * vt) * exp_bc;
-
-    (
-        ic,
-        ib,
-        [
-            quotient_dvbe,
-            quotient_dvbc - d_bc_term_dvbc,
-            dib_dvbe,
-            dib_dvbc,
-        ],
-    )
-}
-
 /// BJT with parasitic resistances (RB, RC, RE).
 ///
 /// Given external junction voltages (Vbe_ext, Vbc_ext), solves for internal
@@ -1980,7 +1867,11 @@ fn bjt_with_parasitics(
     let mut vbc_int = vbc_ext;
 
     for _iter in 0..INNER_MAX_ITER {
-        let (ic, ib, jac_int) = bjt_evaluate(
+        let ic = bjt_ic(
+            vbe_int, vbc_int, is, vt, nf, beta_r, sign, use_gp, vaf, var, ikf, ikr,
+        );
+        let ib = bjt_ib(vbe_int, vbc_int, is, vt, nf, beta_f, beta_r, sign, ise, ne);
+        let jac_int = bjt_jacobian(
             vbe_int, vbc_int, is, vt, nf, beta_f, beta_r, sign, use_gp, vaf, var, ikf, ikr, ise, ne,
         );
         let dic_dvbe = jac_int[0];
@@ -2021,7 +1912,11 @@ fn bjt_with_parasitics(
     }
 
     // Final evaluation at converged internal voltages
-    let (ic, ib, jac_int) = bjt_evaluate(
+    let ic = bjt_ic(
+        vbe_int, vbc_int, is, vt, nf, beta_r, sign, use_gp, vaf, var, ikf, ikr,
+    );
+    let ib = bjt_ib(vbe_int, vbc_int, is, vt, nf, beta_f, beta_r, sign, ise, ne);
+    let jac_int = bjt_jacobian(
         vbe_int, vbc_int, is, vt, nf, beta_f, beta_r, sign, use_gp, vaf, var, ikf, ikr, ise, ne,
     );
 
@@ -2269,84 +2164,41 @@ fn solve_nonlinear(p: &[f64; M], k_eff: &[[f64; M]; M], state: &mut CircuitState
             let dv0 = -(k_eff[0][0] * delta0 + k_eff[0][1] * delta1 + k_eff[0][2] * delta2);
             let dv1 = -(k_eff[1][0] * delta0 + k_eff[1][1] * delta1 + k_eff[1][2] * delta2);
             let dv2 = -(k_eff[2][0] * delta0 + k_eff[2][1] * delta1 + k_eff[2][2] * delta2);
-            let mut alpha = [1.0_f64; 3];
-            let mut any_limited = false;
+            let mut alpha = 1.0_f64;
             if dv0.abs() > 1e-15 {
                 let v_lim = pnjlim(v_d0 + dv0, v_d0, state.device_0_n_vt, DEVICE_0_VCRIT);
                 let ratio = ((v_lim - v_d0) / dv0).max(0.01);
-                if ratio < alpha[0] {
-                    alpha[0] = ratio;
-                    if ratio < 1.0 {
-                        any_limited = true;
-                    }
+                if ratio < alpha {
+                    alpha = ratio;
                 }
             }
             if dv1.abs() > 1e-15 {
                 let v_lim = pnjlim(v_d1 + dv1, v_d1, state.device_1_vt, DEVICE_1_VCRIT);
                 let ratio = ((v_lim - v_d1) / dv1).max(0.01);
-                if ratio < alpha[1] {
-                    alpha[1] = ratio;
-                    if ratio < 1.0 {
-                        any_limited = true;
-                    }
+                if ratio < alpha {
+                    alpha = ratio;
                 }
             }
             if dv2.abs() > 1e-15 {
                 let v_lim = pnjlim(v_d2 + dv2, v_d2, state.device_2_vt, DEVICE_2_VCRIT);
                 let ratio = ((v_lim - v_d2) / dv2).max(0.01);
-                if ratio < alpha[2] {
-                    alpha[2] = ratio;
-                    if ratio < 1.0 {
-                        any_limited = true;
-                    }
+                if ratio < alpha {
+                    alpha = ratio;
                 }
             }
-            // Global voltage backstop: limit max voltage change to 3.5V
-            let max_dv = (dv0 * alpha[0])
-                .abs()
-                .max((dv1 * alpha[1]).abs())
-                .max((dv2 * alpha[2]).abs());
-            if max_dv > 3.5 {
-                let factor = (3.5 / max_dv).max(0.1);
-                for a in alpha.iter_mut() {
-                    *a *= factor;
-                }
-            }
-            i_nl[0] -= alpha[0] * delta0;
-            i_nl[1] -= alpha[1] * delta1;
-            i_nl[2] -= alpha[2] * delta2;
+            i_nl[0] -= alpha * delta0;
+            i_nl[1] -= alpha * delta1;
+            i_nl[2] -= alpha * delta2;
 
-            // Convergence check (SPICE RELTOL=0.001, VNTOL=1e-6)
-            if !any_limited {
-                let mut nr_converged = true;
-                {
-                    let step = alpha[0] * delta0;
-                    let v_new = v_d0 + dv0 * alpha[0];
-                    let threshold = 1e-3 * v_d0.abs().max(v_new.abs()) + 1e-6;
-                    if step.abs() > threshold {
-                        nr_converged = false;
-                    }
-                }
-                {
-                    let step = alpha[1] * delta1;
-                    let v_new = v_d1 + dv1 * alpha[1];
-                    let threshold = 1e-3 * v_d1.abs().max(v_new.abs()) + 1e-6;
-                    if step.abs() > threshold {
-                        nr_converged = false;
-                    }
-                }
-                {
-                    let step = alpha[2] * delta2;
-                    let v_new = v_d2 + dv2 * alpha[2];
-                    let threshold = 1e-3 * v_d2.abs().max(v_new.abs()) + 1e-6;
-                    if step.abs() > threshold {
-                        nr_converged = false;
-                    }
-                }
-                if nr_converged {
-                    state.last_nr_iterations = iter as u32;
-                    return i_nl;
-                }
+            // Convergence check (max-norm on actual step)
+            if (alpha * delta0)
+                .abs()
+                .max((alpha * delta1).abs())
+                .max((alpha * delta2).abs())
+                < TOL
+            {
+                state.last_nr_iterations = iter as u32;
+                return i_nl;
             }
         } else {
             // Singular Jacobian — damped fallback (0.5 * residual)
