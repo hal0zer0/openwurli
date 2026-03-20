@@ -21,5 +21,6 @@ pub mod preamp;
 pub mod tremolo;
 
 // Output stage
+pub mod gen_power_amp;
 pub mod power_amp;
 pub mod speaker;
