@@ -4,6 +4,7 @@
 // ============================================================================
 
 #![allow(clippy::excessive_precision)]
+#![allow(clippy::approx_constant)]
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::absurd_extreme_comparisons)]
@@ -976,23 +977,23 @@ const POT_0_MAX_R: f64 = 1.00000000000000000e6;
 pub const DC_OP: [f64; N] = [
     0.00000000000000000e0,
     0.00000000000000000e0,
-    2.80161370026149292e0,
+    2.80161370026149248e0,
     1.50000000000000000e1,
-    3.91902323487871085e0,
-    2.24501822676543883e0,
-    5.84429111984846905e0,
-    9.51450637213103612e0,
-    3.26458447254615702e0,
-    2.45592593297624440e0,
-    9.11709447424391328e0,
-    -3.12746884651121486e-3,
+    3.91902323487866111e0,
+    2.24501822676543838e0,
+    5.84429111984855876e0,
+    9.51450637213117467e0,
+    3.26458447254610773e0,
+    2.45592593297620754e0,
+    9.11709447424405361e0,
+    -3.12746884651113853e-3,
 ];
 
 /// DC operating point: nonlinear device currents at bias point
 pub const DC_NL_I: [f64; M] = [
     -2.52000000000000040e-9,
     6.78950674666129573e-5,
-    2.98905352425279025e-3,
+    2.98905352425273690e-3,
 ];
 
 /// Circuit state for one processing channel.
@@ -1224,7 +1225,7 @@ impl CircuitState {
             }
         }
 
-        // Build A_neg = alpha*C - G
+        // Build A_neg = alpha*C - G (trapezoidal)
         let mut a_neg = [[0.0f64; N]; N];
         for i in 0..N {
             for j in 0..N {
@@ -1433,15 +1434,15 @@ const DEVICE_2_VCRIT: f64 = 7.01253027371174009e-1;
 /// Fast exp() for audio circuit simulation.
 /// Input clamped to [-40, 40] (matches melange safe_exp convention).
 ///
-/// To use the polynomial approximation (faster on ARM/WASM, no libm dependency),
-/// compile with: `--cfg melange_fast_exp`
+/// Default: polynomial approximation (<0.0004% error, ~6x faster than libm).
+/// To use hardware/libm exp, compile with: `--cfg melange_precise_exp`
 #[inline(always)]
 fn fast_exp(x: f64) -> f64 {
-    #[cfg(not(melange_fast_exp))]
+    #[cfg(melange_precise_exp)]
     {
         x.clamp(-40.0, 40.0).exp()
     }
-    #[cfg(melange_fast_exp)]
+    #[cfg(not(melange_precise_exp))]
     {
         // Range reduction + 5th-order minimax polynomial. <0.0004% max relative error.
         // No lookup tables, no libm dependency, branchless hot path.
@@ -1461,6 +1462,33 @@ fn fast_exp(x: f64) -> f64 {
                         + f * (0.04166666666665876 + f * 0.008333333333492337))));
         let pow2n = f64::from_bits(((1023 + n_i64) as u64) << 52);
         p * pow2n
+    }
+}
+
+/// Fast ln() for audio circuit simulation.
+/// Symmetric log series (~0.005% max relative error, ~3x faster than libm).
+/// Only valid for positive inputs.
+#[inline(always)]
+fn fast_ln(x: f64) -> f64 {
+    #[cfg(melange_precise_exp)]
+    {
+        x.ln()
+    }
+    #[cfg(not(melange_precise_exp))]
+    {
+        // Extract exponent and mantissa from IEEE 754 double
+        let bits = x.to_bits();
+        let e = ((bits >> 52) & 0x7FF) as i64 - 1023;
+        // Normalize mantissa to [1, 2)
+        let m_bits = (bits & 0x000F_FFFF_FFFF_FFFF) | 0x3FF0_0000_0000_0000;
+        let m = f64::from_bits(m_bits);
+        // Symmetric log series: u = (m-1)/(m+1), ln(m) = 2u(1 + u²/3 + u⁴/5 + u⁶/7)
+        // For m in [1,2), u in [0,1/3): converges much faster than Taylor.
+        let u = (m - 1.0) / (m + 1.0);
+        let u2 = u * u;
+        let ln_m =
+            2.0 * u * (1.0 + u2 * (0.3333333333333333 + u2 * (0.2 + u2 * 0.14285714285714285)));
+        ln_m + (e as f64) * 0.6931471805599453 // e * ln(2)
     }
 }
 
@@ -1707,7 +1735,8 @@ fn bjt_ic(
 /// sign: +1.0 for NPN, -1.0 for PNP
 /// nf: forward emission coefficient for ideal base current.
 /// ise, ne: B-E leakage saturation current and emission coefficient.
-/// Base current is NOT modified by Gummel-Poon in standard formulation.
+/// When use_gp=true, forward ideal component (Is/BF) is divided by qb.
+/// Reverse component and ISE leakage are unchanged.
 #[inline(always)]
 fn bjt_ib(
     vbe: f64,
@@ -1720,14 +1749,27 @@ fn bjt_ib(
     sign: f64,
     ise: f64,
     ne: f64,
+    use_gp: bool,
+    vaf: f64,
+    var: f64,
+    ikf: f64,
+    ikr: f64,
 ) -> f64 {
     let vbe_eff = sign * vbe;
     let vbc_eff = sign * vbc;
     let nf_vt = nf * vt;
     let exp_be = safe_exp(vbe_eff / nf_vt);
     let exp_bc = safe_exp(vbc_eff / vt);
-    let mut ib = is / beta_f * (exp_be - 1.0) + is / beta_r * (exp_bc - 1.0);
-    // B-E leakage current: ISE * (exp(Vbe/(NE*VT)) - 1)
+    // Forward ideal component: Is/BF * (exp(Vbe/NF*VT) - 1)
+    let ib_fwd = is / beta_f * (exp_be - 1.0);
+    let ib_rev = is / beta_r * (exp_bc - 1.0);
+    let mut ib = if use_gp {
+        let qb = bjt_qb(vbe, vbc, is, vt, nf, sign, true, vaf, var, ikf, ikr);
+        ib_fwd / qb + ib_rev
+    } else {
+        ib_fwd + ib_rev
+    };
+    // B-E leakage current: ISE * (exp(Vbe/(NE*VT)) - 1) (unaffected by GP)
     if ise > 0.0 {
         let ne_vt = ne * vt;
         let exp_be_leak = safe_exp(vbe_eff / ne_vt);
@@ -1764,21 +1806,27 @@ fn bjt_jacobian(
     let exp_be = safe_exp(vbe_eff / nf_vt);
     let exp_bc = safe_exp(vbc_eff / vt);
 
-    // Base current Jacobian (unchanged by GP)
-    let mut dib_dvbe = (is / (beta_f * nf_vt)) * exp_be;
-    let dib_dvbc = (is / (beta_r * vt)) * exp_bc;
+    // Base current Jacobian (EM components — may be adjusted for GP below)
+    let dib_fwd_dvbe = (is / (beta_f * nf_vt)) * exp_be;
+    let dib_rev_dvbc = (is / (beta_r * vt)) * exp_bc;
+    let mut dib_leak_dvbe = 0.0;
     // ISE leakage contribution to dIb/dVbe
     if ise > 0.0 {
         let ne_vt = ne * vt;
         let exp_be_leak = safe_exp(vbe_eff / ne_vt);
-        dib_dvbe += (ise / ne_vt) * exp_be_leak;
+        dib_leak_dvbe = (ise / ne_vt) * exp_be_leak;
     }
 
     if !use_gp {
         // Ebers-Moll: simple derivatives
         let dic_dvbe = is / nf_vt * exp_be;
         let dic_dvbc = -(is / vt) * exp_bc - (is / (beta_r * vt)) * exp_bc;
-        return [dic_dvbe, dic_dvbc, dib_dvbe, dib_dvbc];
+        return [
+            dic_dvbe,
+            dic_dvbc,
+            dib_fwd_dvbe + dib_leak_dvbe,
+            dib_rev_dvbc,
+        ];
     }
 
     // Gummel-Poon: quotient rule for d(Icc/qb)/dV
@@ -1818,12 +1866,147 @@ fn bjt_jacobian(
 
     let d_bc_term_dvbc = is / (beta_r * vt) * exp_bc;
 
+    // GP base current Jacobian: forward ideal component (Is/BF*(exp_be-1)) / qb
+    let ib_fwd = is / beta_f * (exp_be - 1.0);
+    let dib_fwd_gp_dvbe = (dib_fwd_dvbe * qb - ib_fwd * dqb_dvbe) / qb2;
+    let dib_fwd_gp_dvbc = -ib_fwd * dqb_dvbc / qb2;
+
     [
         quotient_dvbe,
         quotient_dvbc - d_bc_term_dvbc,
-        dib_dvbe,
-        dib_dvbc,
+        dib_fwd_gp_dvbe + dib_leak_dvbe,
+        dib_fwd_gp_dvbc + dib_rev_dvbc,
     ]
+}
+
+/// Combined BJT evaluation: returns (Ic, Ib, [dIc/dVbe, dIc/dVbc, dIb/dVbe, dIb/dVbc]).
+///
+/// Computes exp(Vbe/(NF*VT)) and exp(Vbc/VT) once and shares them across current
+/// and Jacobian calculations. Reduces from 8-10 exp() to 2-3 per evaluation.
+#[inline(always)]
+fn bjt_evaluate(
+    vbe: f64,
+    vbc: f64,
+    is: f64,
+    vt: f64,
+    nf: f64,
+    beta_f: f64,
+    beta_r: f64,
+    sign: f64,
+    use_gp: bool,
+    vaf: f64,
+    var: f64,
+    ikf: f64,
+    ikr: f64,
+    ise: f64,
+    ne: f64,
+) -> (f64, f64, [f64; 4]) {
+    let vbe_eff = sign * vbe;
+    let vbc_eff = sign * vbc;
+    let nf_vt = nf * vt;
+
+    // Shared exponentials (computed once)
+    let exp_be = safe_exp(vbe_eff / nf_vt);
+    let exp_bc = safe_exp(vbc_eff / vt);
+
+    // ISE leakage exponential (computed once, only when needed)
+    let exp_be_leak = if ise > 0.0 {
+        safe_exp(vbe_eff / (ne * vt))
+    } else {
+        0.0
+    };
+
+    // === Collector current ===
+    let i_cc = is * (exp_be - exp_bc);
+
+    // === Base current components ===
+    let ib_fwd = is / beta_f * (exp_be - 1.0);
+    let ib_rev = is / beta_r * (exp_bc - 1.0);
+    let ib_leak = if ise > 0.0 {
+        ise * (exp_be_leak - 1.0)
+    } else {
+        0.0
+    };
+
+    // === Base current Jacobian (EM components) ===
+    let dib_fwd_dvbe = (is / (beta_f * nf_vt)) * exp_be;
+    let dib_rev_dvbc = (is / (beta_r * vt)) * exp_bc;
+    let dib_leak_dvbe = if ise > 0.0 {
+        (ise / (ne * vt)) * exp_be_leak
+    } else {
+        0.0
+    };
+
+    if !use_gp {
+        // Ebers-Moll
+        let ic = sign * (i_cc - is / beta_r * (exp_bc - 1.0));
+        let ib = sign * (ib_fwd + ib_rev + ib_leak);
+        let dic_dvbe = is / nf_vt * exp_be;
+        let dic_dvbc = -(is / vt) * exp_bc - (is / (beta_r * vt)) * exp_bc;
+        return (
+            ic,
+            ib,
+            [
+                dic_dvbe,
+                dic_dvbc,
+                dib_fwd_dvbe + dib_leak_dvbe,
+                dib_rev_dvbc,
+            ],
+        );
+    }
+
+    // Gummel-Poon
+    // q1 and derivatives
+    let q1_denom = 1.0 - vbe_eff / var - vbc_eff / vaf;
+    let (q1, dq1_dvbe, dq1_dvbc) = if q1_denom.abs() < 1e-30 {
+        (1.0, 0.0, 0.0)
+    } else {
+        let q1 = 1.0 / q1_denom;
+        (q1, q1 * q1 / var, q1 * q1 / vaf)
+    };
+
+    // q2 and derivatives (uses shared exp_be, exp_bc)
+    let q2 = is * exp_be / ikf + is * exp_bc / ikr;
+    let dq2_dvbe = is / (nf_vt * ikf) * exp_be;
+    let dq2_dvbc = is / (vt * ikr) * exp_bc;
+
+    // Discriminant D = sqrt(1 + 4*q2)
+    let disc = (1.0 + 4.0 * q2).max(0.0);
+    let d = disc.sqrt();
+    let dd_dvbe = if d > 1e-15 { 2.0 * dq2_dvbe / d } else { 0.0 };
+    let dd_dvbc = if d > 1e-15 { 2.0 * dq2_dvbc / d } else { 0.0 };
+
+    // qb = q1 * (1 + D) / 2
+    let qb = q1 * (1.0 + d) / 2.0;
+    let dqb_dvbe = dq1_dvbe * (1.0 + d) / 2.0 + q1 * dd_dvbe / 2.0;
+    let dqb_dvbc = dq1_dvbc * (1.0 + d) / 2.0 + q1 * dd_dvbc / 2.0;
+
+    let ic = sign * (i_cc / qb - is / beta_r * (exp_bc - 1.0));
+    // GP: forward ideal component divided by qb
+    let ib = sign * (ib_fwd / qb + ib_rev + ib_leak);
+
+    // Quotient rule: d(Icc/qb)/dV = (dIcc/dV * qb - Icc * dqb/dV) / qb^2
+    let dicc_dvbe = is / nf_vt * exp_be;
+    let dicc_dvbc = -is / vt * exp_bc;
+    let qb2 = (qb * qb).max(1e-30);
+    let quotient_dvbe = (dicc_dvbe * qb - i_cc * dqb_dvbe) / qb2;
+    let quotient_dvbc = (dicc_dvbc * qb - i_cc * dqb_dvbc) / qb2;
+    let d_bc_term_dvbc = is / (beta_r * vt) * exp_bc;
+
+    // GP base current Jacobian: forward ideal component / qb
+    let dib_fwd_gp_dvbe = (dib_fwd_dvbe * qb - ib_fwd * dqb_dvbe) / qb2;
+    let dib_fwd_gp_dvbc = -ib_fwd * dqb_dvbc / qb2;
+
+    (
+        ic,
+        ib,
+        [
+            quotient_dvbe,
+            quotient_dvbc - d_bc_term_dvbc,
+            dib_fwd_gp_dvbe + dib_leak_dvbe,
+            dib_fwd_gp_dvbc + dib_rev_dvbc,
+        ],
+    )
 }
 
 /// BJT with parasitic resistances (RB, RC, RE).
@@ -1867,11 +2050,7 @@ fn bjt_with_parasitics(
     let mut vbc_int = vbc_ext;
 
     for _iter in 0..INNER_MAX_ITER {
-        let ic = bjt_ic(
-            vbe_int, vbc_int, is, vt, nf, beta_r, sign, use_gp, vaf, var, ikf, ikr,
-        );
-        let ib = bjt_ib(vbe_int, vbc_int, is, vt, nf, beta_f, beta_r, sign, ise, ne);
-        let jac_int = bjt_jacobian(
+        let (ic, ib, jac_int) = bjt_evaluate(
             vbe_int, vbc_int, is, vt, nf, beta_f, beta_r, sign, use_gp, vaf, var, ikf, ikr, ise, ne,
         );
         let dic_dvbe = jac_int[0];
@@ -1912,11 +2091,7 @@ fn bjt_with_parasitics(
     }
 
     // Final evaluation at converged internal voltages
-    let ic = bjt_ic(
-        vbe_int, vbc_int, is, vt, nf, beta_r, sign, use_gp, vaf, var, ikf, ikr,
-    );
-    let ib = bjt_ib(vbe_int, vbc_int, is, vt, nf, beta_f, beta_r, sign, ise, ne);
-    let jac_int = bjt_jacobian(
+    let (ic, ib, jac_int) = bjt_evaluate(
         vbe_int, vbc_int, is, vt, nf, beta_f, beta_r, sign, use_gp, vaf, var, ikf, ikr, ise, ne,
     );
 
@@ -2164,41 +2339,84 @@ fn solve_nonlinear(p: &[f64; M], k_eff: &[[f64; M]; M], state: &mut CircuitState
             let dv0 = -(k_eff[0][0] * delta0 + k_eff[0][1] * delta1 + k_eff[0][2] * delta2);
             let dv1 = -(k_eff[1][0] * delta0 + k_eff[1][1] * delta1 + k_eff[1][2] * delta2);
             let dv2 = -(k_eff[2][0] * delta0 + k_eff[2][1] * delta1 + k_eff[2][2] * delta2);
-            let mut alpha = 1.0_f64;
+            let mut alpha = [1.0_f64; 3];
+            let mut any_limited = false;
             if dv0.abs() > 1e-15 {
                 let v_lim = pnjlim(v_d0 + dv0, v_d0, state.device_0_n_vt, DEVICE_0_VCRIT);
                 let ratio = ((v_lim - v_d0) / dv0).max(0.01);
-                if ratio < alpha {
-                    alpha = ratio;
+                if ratio < alpha[0] {
+                    alpha[0] = ratio;
+                    if ratio < 1.0 {
+                        any_limited = true;
+                    }
                 }
             }
             if dv1.abs() > 1e-15 {
                 let v_lim = pnjlim(v_d1 + dv1, v_d1, state.device_1_vt, DEVICE_1_VCRIT);
                 let ratio = ((v_lim - v_d1) / dv1).max(0.01);
-                if ratio < alpha {
-                    alpha = ratio;
+                if ratio < alpha[1] {
+                    alpha[1] = ratio;
+                    if ratio < 1.0 {
+                        any_limited = true;
+                    }
                 }
             }
             if dv2.abs() > 1e-15 {
                 let v_lim = pnjlim(v_d2 + dv2, v_d2, state.device_2_vt, DEVICE_2_VCRIT);
                 let ratio = ((v_lim - v_d2) / dv2).max(0.01);
-                if ratio < alpha {
-                    alpha = ratio;
+                if ratio < alpha[2] {
+                    alpha[2] = ratio;
+                    if ratio < 1.0 {
+                        any_limited = true;
+                    }
                 }
             }
-            i_nl[0] -= alpha * delta0;
-            i_nl[1] -= alpha * delta1;
-            i_nl[2] -= alpha * delta2;
-
-            // Convergence check (max-norm on actual step)
-            if (alpha * delta0)
+            // Global voltage backstop: limit max voltage change to 3.5V
+            let max_dv = (dv0 * alpha[0])
                 .abs()
-                .max((alpha * delta1).abs())
-                .max((alpha * delta2).abs())
-                < TOL
-            {
-                state.last_nr_iterations = iter as u32;
-                return i_nl;
+                .max((dv1 * alpha[1]).abs())
+                .max((dv2 * alpha[2]).abs());
+            if max_dv > 3.5 {
+                let factor = (3.5 / max_dv).max(0.1);
+                for a in alpha.iter_mut() {
+                    *a *= factor;
+                }
+            }
+            i_nl[0] -= alpha[0] * delta0;
+            i_nl[1] -= alpha[1] * delta1;
+            i_nl[2] -= alpha[2] * delta2;
+
+            // Convergence check (SPICE RELTOL=0.001, VNTOL=1e-6)
+            if !any_limited {
+                let mut nr_converged = true;
+                {
+                    let step = dv0 * alpha[0];
+                    let v_new = v_d0 + step;
+                    let threshold = 1e-3 * v_d0.abs().max(v_new.abs()) + 1e-6;
+                    if step.abs() > threshold {
+                        nr_converged = false;
+                    }
+                }
+                {
+                    let step = dv1 * alpha[1];
+                    let v_new = v_d1 + step;
+                    let threshold = 1e-3 * v_d1.abs().max(v_new.abs()) + 1e-6;
+                    if step.abs() > threshold {
+                        nr_converged = false;
+                    }
+                }
+                {
+                    let step = dv2 * alpha[2];
+                    let v_new = v_d2 + step;
+                    let threshold = 1e-3 * v_d2.abs().max(v_new.abs()) + 1e-6;
+                    if step.abs() > threshold {
+                        nr_converged = false;
+                    }
+                }
+                if nr_converged {
+                    state.last_nr_iterations = iter as u32;
+                    return i_nl;
+                }
             }
         } else {
             // Singular Jacobian — damped fallback (0.5 * residual)
@@ -2364,15 +2582,43 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
     // Step 6: Update history (no-op, handled by A_neg formulation)
     update_history(&v, state);
 
-    // Step 7: Update state for next iteration
-    state.v_prev = v;
-    state.i_nl_prev_prev = state.i_nl_prev;
-    state.i_nl_prev = i_nl;
-    state.input_prev = input;
-    state.pot_0_resistance_prev = state.pot_0_resistance;
+    // Step 6c: Global node voltage damping safety net.
+    // Threshold scales with max DC OP voltage so tube 250V circuits aren't over-damped.
+    let (v, i_nl) = {
+        let mut max_delta = 0.0_f64;
+        for i in 0..11 {
+            let d = (v[i] - state.v_prev[i]).abs();
+            if d > max_delta {
+                max_delta = d;
+            }
+        }
+        // Adaptive threshold: max(2V, 5% of max DC OP node voltage)
+        let mut max_dc = 0.0_f64;
+        for i in 0..11 {
+            let a = state.dc_operating_point[i].abs();
+            if a > max_dc {
+                max_dc = a;
+            }
+        }
+        let damp_thresh = max_dc.mul_add(0.05, 2.0);
+        if max_delta > damp_thresh {
+            let damp = (damp_thresh / max_delta).max(0.01);
+            let mut v_d = v;
+            for i in 0..N {
+                v_d[i] = state.v_prev[i] + damp * (v[i] - state.v_prev[i]);
+            }
+            let mut i_d = i_nl;
+            for i in 0..M {
+                i_d[i] = state.i_nl_prev[i] + damp * (i_nl[i] - state.i_nl_prev[i]);
+            }
+            (v_d, i_d)
+        } else {
+            (v, i_nl)
+        }
+    };
 
-    // Step 8: Sanitize state — if NaN/inf entered, reset to DC operating point
-    if !state.v_prev.iter().all(|x| x.is_finite()) {
+    // Step 7: Check for NaN/inf BEFORE updating state (prevents corruption of v_prev/i_nl_prev)
+    if !v.iter().all(|x| x.is_finite()) {
         state.v_prev = state.dc_operating_point;
         state.i_nl_prev = [0.0; M];
         state.i_nl_prev_prev = [0.0; M];
@@ -2382,6 +2628,15 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
         state.diag_nan_reset_count += 1;
         return [0.0; NUM_OUTPUTS];
     }
+
+    // Update state for next iteration
+    state.v_prev = v;
+    state.i_nl_prev_prev = state.i_nl_prev;
+    state.i_nl_prev = i_nl;
+    state.input_prev = input;
+    state.pot_0_resistance_prev = state.pot_0_resistance;
+
+    // (NaN check already done in Step 7, before state update)
 
     if state.last_nr_iterations >= 200 as u32 {
         state.diag_nr_max_iter_count += 1;
