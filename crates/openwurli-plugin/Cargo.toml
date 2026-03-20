@@ -10,6 +10,7 @@ description = "Wurlitzer 200A virtual instrument — CLAP and VST3 plugin"
 [features]
 melange-preamp = ["openwurli-dsp/melange-preamp"]
 melange-power-amp = ["openwurli-dsp/melange-power-amp"]
+melange-tremolo = ["openwurli-dsp/melange-tremolo"]
 
 [lib]
 crate-type = ["cdylib", "lib"]

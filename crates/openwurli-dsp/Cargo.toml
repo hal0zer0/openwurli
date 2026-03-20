@@ -11,6 +11,7 @@ description = "Wurlitzer 200A DSP library — modal synthesis, preamp circuit si
 legacy-preamp = []
 melange-preamp = []
 melange-power-amp = []
+melange-tremolo = []
 
 [dependencies]
 melange-primitives.workspace = true
