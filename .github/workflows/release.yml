@@ -46,7 +46,7 @@ jobs:
         run: |
           mkdir -p ${{ matrix.archive }}
           ls -la target/bundled/
-          cp target/bundled/openwurli.clap ${{ matrix.archive }}/
+          cp -r target/bundled/openwurli.clap ${{ matrix.archive }}/
           cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/
           ls -la ${{ matrix.archive }}/
           tar czf ${{ matrix.archive }}.tar.gz ${{ matrix.archive }}
@@ -57,7 +57,7 @@ jobs:
         run: |
           mkdir -p ${{ matrix.archive }}
           ls -la target/bundled/
-          cp target/bundled/openwurli.clap ${{ matrix.archive }}/
+          cp -r target/bundled/openwurli.clap ${{ matrix.archive }}/
           cp -r target/bundled/openwurli.vst3 ${{ matrix.archive }}/
           ls -la ${{ matrix.archive }}/
           7z a ${{ matrix.archive }}.zip ${{ matrix.archive }}
@@ -107,21 +107,26 @@ jobs:
           echo "=== arm64 extracted ==="
           ls -laR arm64/openwurli-macos-arm64/ || true
           # Verify at least one format exists
-          test -f x64/openwurli-macos-x64/openwurli.clap || \
+          test -d x64/openwurli-macos-x64/openwurli.clap || \
             test -d x64/openwurli-macos-x64/openwurli.vst3
 
       - name: Create universal CLAP
         run: |
           mkdir -p openwurli-macos-universal
-          if [ -f x64/openwurli-macos-x64/openwurli.clap ] && \
-             [ -f arm64/openwurli-macos-arm64/openwurli.clap ]; then
-            lipo -create \
-              x64/openwurli-macos-x64/openwurli.clap \
-              arm64/openwurli-macos-arm64/openwurli.clap \
-              -output openwurli-macos-universal/openwurli.clap
-            echo "Created universal CLAP"
+          if [ -d x64/openwurli-macos-x64/openwurli.clap ] && \
+             [ -d arm64/openwurli-macos-arm64/openwurli.clap ]; then
+            cp -r arm64/openwurli-macos-arm64/openwurli.clap openwurli-macos-universal/openwurli.clap
+            CLAP_BIN=$(find openwurli-macos-universal/openwurli.clap -name 'openwurli' -type f | head -1)
+            X64_CLAP_BIN=$(find x64/openwurli-macos-x64/openwurli.clap -name 'openwurli' -type f | head -1)
+            if [ -n "$CLAP_BIN" ] && [ -n "$X64_CLAP_BIN" ]; then
+              lipo -create "$X64_CLAP_BIN" "$CLAP_BIN" -output "${CLAP_BIN}.universal"
+              mv "${CLAP_BIN}.universal" "$CLAP_BIN"
+              echo "Created universal CLAP"
+            else
+              echo "WARNING: CLAP binaries not found inside bundle"
+            fi
           else
-            echo "WARNING: CLAP binaries not found, skipping universal CLAP"
+            echo "WARNING: CLAP bundles not found, skipping universal CLAP"
           fi
 
       - name: Create universal VST3
