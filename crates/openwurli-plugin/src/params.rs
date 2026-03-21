@@ -27,7 +27,7 @@ pub struct OpenWurliParams {
 impl Default for OpenWurliParams {
     fn default() -> Self {
         Self {
-            volume: FloatParam::new("Volume", 0.63, FloatRange::Linear { min: 0.0, max: 1.0 })
+            volume: FloatParam::new("Volume", 0.50, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_smoother(SmoothingStyle::Linear(5.0))
                 .with_unit(" %")
                 .with_value_to_string(formatters::v2s_f32_percentage(0))

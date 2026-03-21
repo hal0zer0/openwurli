@@ -102,7 +102,8 @@ def stage_render_model(args):
     ml_data_dir = os.path.join(os.path.dirname(__file__), "ml_data")
     render_dir = os.path.join(ml_data_dir, "renders")
 
-    wav_paths = render_all_notes(pairs, render_dir)
+    cargo_features = getattr(args, 'cargo_features', None)
+    wav_paths = render_all_notes(pairs, render_dir, cargo_features)
     if not wav_paths:
         print("ERROR: No notes rendered")
         sys.exit(1)
@@ -222,6 +223,8 @@ def main():
                         help="Run through stage 7 (train + export)")
     parser.add_argument("--hidden", type=int, default=8,
                         help="MLP hidden layer size (for stage 6)")
+    parser.add_argument("--cargo-features", default=None,
+                        help="Cargo features to pass to preamp-bench (e.g. melange-preamp)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show what would be done without executing")
     args = parser.parse_args()

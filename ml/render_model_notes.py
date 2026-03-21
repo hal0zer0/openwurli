@@ -46,7 +46,7 @@ def collect_unique_pairs(features):
     return sorted(pairs)
 
 
-def render_note(midi, velocity, output_path):
+def render_note(midi, velocity, output_path, cargo_features=None):
     """Render a single note via preamp-bench CLI.
 
     Renders reed -> pickup -> preamp (DI path), bypassing power amp and speaker
@@ -55,7 +55,12 @@ def render_note(midi, velocity, output_path):
     Returns True on success.
     """
     cmd = [
-        "cargo", "run", "-p", "preamp-bench", "--release", "--",
+        "cargo", "run", "-p", "preamp-bench", "--release",
+    ]
+    if cargo_features:
+        cmd.extend(["--features", cargo_features])
+    cmd.extend([
+        "--",
         "render",
         "--note", str(midi),
         "--velocity", str(velocity),
@@ -64,7 +69,7 @@ def render_note(midi, velocity, output_path):
         "--no-poweramp",
         "--speaker", "0.0",
         "--output", output_path,
-    ]
+    ])
     result = subprocess.run(
         cmd,
         capture_output=True, text=True,
@@ -77,15 +82,18 @@ def render_note(midi, velocity, output_path):
     return True
 
 
-def render_all_notes(pairs, output_dir):
+def render_all_notes(pairs, output_dir, cargo_features=None):
     """Render all (midi, vel) pairs, returning dict of WAV paths."""
     os.makedirs(output_dir, exist_ok=True)
     wav_paths = {}
 
     # Build once in release mode before rendering
+    build_cmd = ["cargo", "build", "-p", "preamp-bench", "--release"]
+    if cargo_features:
+        build_cmd.extend(["--features", cargo_features])
     print("  Building preamp-bench (release)...")
     build_result = subprocess.run(
-        ["cargo", "build", "-p", "preamp-bench", "--release"],
+        build_cmd,
         capture_output=True, text=True,
         cwd=PROJECT_DIR
     )
@@ -98,7 +106,7 @@ def render_all_notes(pairs, output_dir):
         wav_path = os.path.join(output_dir, f"model_{midi}_{vel}.wav")
         print(f"  [{i+1}/{len(pairs)}] Rendering MIDI {midi:>3} vel {vel:>3}...", end="", flush=True)
 
-        if render_note(midi, vel, wav_path):
+        if render_note(midi, vel, wav_path, cargo_features):
             wav_paths[(midi, vel)] = wav_path
             print(" OK")
         else:
@@ -236,6 +244,8 @@ def main():
                         help="Output JSON with model harmonic features")
     parser.add_argument("--render-dir", default=None,
                         help="Directory for rendered WAVs (default: ml_data/renders)")
+    parser.add_argument("--cargo-features", default=None,
+                        help="Cargo features to pass to preamp-bench (e.g. melange-preamp)")
     args = parser.parse_args()
 
     input_path = os.path.join(os.path.dirname(__file__), args.input)
@@ -253,7 +263,7 @@ def main():
 
     # Render all notes
     print(f"\nRendering {len(pairs)} notes...")
-    wav_paths = render_all_notes(pairs, render_dir)
+    wav_paths = render_all_notes(pairs, render_dir, args.cargo_features)
     print(f"  Successfully rendered: {len(wav_paths)}/{len(pairs)}")
 
     if not wav_paths:
