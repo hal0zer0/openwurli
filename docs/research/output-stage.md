@@ -169,7 +169,7 @@ The 3K audio pot is unusually low impedance for a volume control. This has impli
 
 **DECISION: Model as real attenuator, not output gain.** The volume pot must sit between preamp and power amp in the plugin signal chain, not at the output. At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the character of the distortion (more odd harmonics from the dead zone). This interaction is audible and should be preserved. Implementation: audio-taper gain curve applied between preamp output and power amp input.
 
-**Volume taper implementation:** `gain = volume^2` (quadratic approximation of audio taper). The parameter UI uses a skew factor of 2.0 for display. Default volume is 0.63, giving effective gain of approximately 0.40 (-8 dB).
+**Volume taper implementation:** `gain = volume^2` (quadratic approximation of audio taper). The parameter UI uses a skew factor of 2.0 for display. Default volume is 0.50, giving effective gain of 0.25 (-12 dB).
 
 ---
 
@@ -339,7 +339,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 
 **For modeling purposes:** The power amplifier is modeled as a closed-loop negative feedback amplifier. The R-31/R-30 feedback network (loop gain ≈ 275) linearizes the output at normal signal levels. Distortion becomes significant only near the ±22V supply rails. The power amp is NOT a major tonal contributor — the Wurlitzer's characteristic bark comes primarily from the pickup's 1/(1-y) nonlinearity, with the preamp's asymmetric soft-clipping adding further coloring at high dynamics.
 
-**Gain staging (v0.1.5):** The voice output_scale uses target_db=-35 dBFS so the power amp sees realistic signal levels: a single ff note uses ~5-10% of the ±22V headroom, matching Brad Avenson's measurements of 2-7 mV at the volume pot. A post-speaker gain of +13 dB (applied AFTER the speaker model) maps physical SPL to DAW-friendly digital levels. This separates two concerns: the analog circuit model operates at realistic voltages, while the digital output is set for typical DAW workflows (~-3 dBFS for single ff notes at max volume, ~-4 dBFS for 4-voice ff chords).
+**Gain staging:** The voice output_scale uses target_db=-35 dBFS so the power amp sees realistic signal levels: a single ff note uses ~1-3% of the ±22V headroom, matching Brad Avenson's measurements of 2-7 mV at the volume pot (model produces 3 mV RMS). A post-speaker gain of +10.5 dB (applied AFTER the speaker model) maps physical SPL to DAW-friendly digital levels. This separates two concerns: the analog circuit model operates at realistic voltages, while the digital output is set for typical DAW workflows (~-8 dBFS for single ff notes at max volume, ~-1 dBFS for 16-voice ff chords).
 
 ---
 

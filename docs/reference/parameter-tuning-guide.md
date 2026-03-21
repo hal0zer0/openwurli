@@ -18,7 +18,7 @@ speaker saturation.
 | `VOICING_SLOPE` | tables.rs | -0.04 | Treble roll-off (dB/semitone above C4) |
 | Register trim `ANCHORS` | tables.rs | 13 anchors | Per-note empirical correction |
 | Speaker Xmax | speaker.rs | tanh(polynomial) | Cone excursion limiting |
-| Volume default | params.rs | 0.63 | Audio-taper attenuator |
+| Volume default | params.rs | 0.50 | Audio-taper attenuator |
 
 ## Known Interaction Chains
 
@@ -49,11 +49,12 @@ TARGET_DB = -35 dBFS (v0.1.5)
   → speaker tanh operates in linear region (< 8% compression)
   → register trim now calibrated in linear regime (stable)
 
-POST_SPEAKER_GAIN = +13 dB (4.47×)
+POST_SPEAKER_GAIN = +10.5 dB (3.35×)
   → applied AFTER all analog stages (speaker.process() output)
-  → maps physical SPL to DAW levels (~-3 dBFS single ff note at max vol)
+  → maps physical SPL to DAW levels (~-8 dBFS single ff note at max vol)
   → does NOT interact with any nonlinear circuit model
   → safe to adjust independently without recalibrating trim
+  → 16-voice ff chord at full vol peaks at ~-1 dBFS (clean)
 ```
 
 ### Register trim domain mismatch

@@ -718,7 +718,7 @@ output = input * pot_position * pot_position  // vol^2 in the audio path
 // -> feeds into power amplifier stage
 ```
 
-The effective taper combines two stages: `FloatRange::Skewed` with factor 2.0 (which controls the DAW display/automation curve) plus the `vol * vol` squared multiplier in the audio path. The default volume of 0.63 produces an effective gain of ~0.40 (0.63^2). In the real instrument, the volume pot output is measured at 2-7 mV AC.
+The effective taper combines two stages: `FloatRange::Skewed` with factor 2.0 (which controls the DAW display/automation curve) plus the `vol * vol` squared multiplier in the audio path. The default volume of 0.50 produces an effective gain of 0.25 (0.50^2). In the real instrument, the volume pot output is measured at 2-7 mV AC.
 
 ---
 
@@ -763,7 +763,7 @@ The code models crossover/feedback behavior generically, not specific transistor
 
 At mf single notes, the power amp is nearly transparent -- the preamp dominates tonal character. At ff polyphonic, the power amp's tanh soft-clip adds compression and gradual saturation (Yeh/Abel/Smith 2007). With aging, bias drifts, increasing crossover distortion (odd harmonics from the dead zone).
 
-Audio taper volume control: `vol^2` (quadratic, skew +2.0), default position 0.63 (effective ~0.40).
+Audio taper volume control: `vol^2` (quadratic), default position 0.50 (effective 0.25).
 
 ---
 
@@ -839,20 +839,24 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 ### Plugin Signal Levels (Current)
 
 The gain staging is designed so the power amplifier sees realistic signal levels
-(5-15% of its ±22V headroom at ff). A post-speaker gain stage (+13 dB) maps
-the physical speaker output to DAW-friendly digital levels without distorting
-any circuit model — it sits after all analog stages.
+(1-7% of its ±22V headroom at typical dynamics). A post-speaker gain stage
+(+10.5 dB) maps the physical speaker output to DAW-friendly digital levels
+without distorting any circuit model — it sits after all analog stages.
 
 | Point in Chain | Level | Notes |
 |---------------|-------|-------|
 | Single voice, mf | ~0.05-0.15 | After pickup |
 | 6-voice chord, ff | ~0.3-0.9 | Sum of voices |
 | After output_scale() | target_db=-35 dBFS | Into DkPreamp |
-| After preamp | millivolts equivalent | 2x gain (no trem) |
-| After volume pot (0.63, taper 0.40) | ~5-10% of PA headroom | Single ff note |
-| After power amp | ~1-3V of ±22V rails | Clean at normal dynamics |
+| After preamp | ~3 mV RMS (C4 ff) | 2.1x gain (no trem), matches real 2-7 mV |
+| After volume pot (0.50, taper 0.25) | ~1-3% of PA headroom | Single ff note |
+| After power amp | ~0.3-1.4V of ±22V rails | Clean at normal dynamics |
 | After speaker | physics-level output | |
-| After post-speaker gain (+13 dB) | -3.3 dBFS single ff | DAW-friendly |
+| After post-speaker gain (+10.5 dB) | -8 dBFS single ff (full vol) | DAW-friendly |
+
+Polyphonic headroom (measured, ff at default vol=0.50):
+- 1 voice: -17.4 dBFS, 8 voices: -13.1 dBFS, 16 voices: -10.3 dBFS
+- At full vol: 8 voices: -0.8 dBFS, 16 voices: -1.0 dBFS (clean)
 
 ### Input Drive (Historical)
 
@@ -958,7 +962,7 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The pickup RC HPF limits the p
 
 | ID | Name | Module | Min | Max | Default | Purpose |
 |----|------|--------|-----|-----|---------|---------|
-| "volume" | Volume | output | 0% | 100% | 63% | Audio taper attenuator between preamp and power amp |
+| "volume" | Volume | output | 0% | 100% | 50% | Audio taper attenuator between preamp and power amp |
 | "trem_rate" | Tremolo Rate | tremolo | 0.1 | 15.0 Hz | 5.63 Hz | LFO frequency |
 | "trem_depth" | Tremolo Depth | tremolo | 0% | 100% | 50% | Modulation amount |
 | "speaker" | Speaker Character | speaker | 0% | 100% | 0% | 0%=bypass (full range), 100%=authentic (HPF+LPF+waveshaper) |
