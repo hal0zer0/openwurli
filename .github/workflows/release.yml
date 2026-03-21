@@ -3,9 +3,15 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and release (e.g. v0.2.3)"
+        required: true
 
 env:
   CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   build:
@@ -29,6 +35,8 @@ jobs:
             archive: openwurli-windows-x64
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -167,6 +175,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.RELEASE_TAG }}
           sparse-checkout: CHANGELOG.md
           sparse-checkout-cone-mode: false
 
@@ -185,7 +194,7 @@ jobs:
         id: meta
         run: |
           # Parse codename from CHANGELOG.md: ## [0.2.2] "GoBackJack" - 2026-03-01
-          TAG="${{ github.ref_name }}"
+          TAG="${{ env.RELEASE_TAG }}"
           VERSION="${TAG#v}"
           TITLE=$(grep "^## \[${VERSION}\]" CHANGELOG.md | sed 's/^## \[.*\] //' | sed 's/ - .*//')
           echo "title=${TAG} ${TITLE}" >> "$GITHUB_OUTPUT"
@@ -193,6 +202,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ steps.meta.outputs.title }}
           files: release/*
           generate_release_notes: true
