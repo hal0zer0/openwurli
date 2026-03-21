@@ -1,6 +1,6 @@
 [package]
 name = "openwurli-dsp"
-version = "0.2.4"
+version = "0.3.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -11,6 +11,22 @@ description = "Wurlitzer 200A DSP library — modal synthesis, preamp circuit si
 legacy-preamp = []
 legacy-tremolo = []
 melange-power-amp = []
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(melange_precise_exp)'] }
+unused_variables = "allow"
+
+[lints.clippy]
+# Melange-generated solvers (gen_preamp.rs, gen_tremolo.rs) emit idiomatic
+# MNA/NR code that triggers these lints. Suppressing crate-wide is simpler
+# than patching generated output.
+needless_range_loop = "allow"
+too_many_arguments = "allow"
+approx_constant = "allow"
+absurd_extreme_comparisons = "allow"
+identity_op = "allow"
+erasing_op = "allow"
+unnecessary_cast = "allow"
 
 [dependencies]
 melange-primitives.workspace = true
