@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Melange circuit solvers are now the default.** The preamp (12-node DK with
+  Sherman-Morrison pot correction) and tremolo oscillator (Twin-T circuit) are
+  now melange-generated from SPICE netlists. The legacy hand-written solvers
+  remain available behind `--features legacy-preamp` and `--features
+  legacy-tremolo` for A/B testing.
+- **Gain staging recalibrated from circuit measurements.** POST_SPEAKER_GAIN
+  reduced from +13 dB to +10.5 dB after audit showed accumulated drift from
+  prior modeling revisions. Preamp output (3 mV RMS) matches Brad Avenson's
+  2-7 mV measurement of a real 200A. Volume default lowered from 63% to 50%.
+  16-voice ff chords at full volume now peak at -1 dBFS instead of clipping.
+- MLP v2 retrained against melange preamp (loss 0.129 → 0.090).
+- `melange-primitives` dependency switched from local path to
+  [github.com/hal0zer0/melange](https://github.com/hal0zer0/melange).
+
+### Removed
+- Deleted dead filter types (`OnePoleLpf`, `OnePoleHpf`, `TptLpf`, `DcBlocker`)
+  superseded by melange-primitives — 370 lines removed.
+- Deleted `bjt_stage.rs` (single BJT CE stage), superseded by DK method preamp.
+- Removed `melange-preamp` and `melange-tremolo` feature flags — melange is now
+  the default, not an opt-in.
+
+### Added
+- `--cargo-features` flag for `ml/render_model_notes.py` and `ml/pipeline.py`
+  to support feature-gated MLP training renders.
+
 ## [0.2.4] "AndAMicrophone" - 2026-03-01
 
 ### Fixed
