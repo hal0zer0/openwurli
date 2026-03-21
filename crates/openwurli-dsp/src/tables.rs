@@ -455,7 +455,7 @@ pub fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
 pub fn register_trim_db(midi: u8) -> f64 {
     // Calibrated from zero-trim full-chain (t5_rms) renders at v=127 (2026-03-20).
     // Reference: C4 = -44.9 dBFS. Trim = t5_rms(C4) - t5_rms(note).
-    // Measured via: preamp-bench calibrate --zero-trim --features melange-preamp
+    // Measured via: preamp-bench calibrate --zero-trim (melange preamp, default)
     // target_db=-35.0, audio taper (vol²), post-speaker gain +10.5 dB
     // Speaker LPF=5500 Hz
     const ANCHORS: [(f64, f64); 13] = [

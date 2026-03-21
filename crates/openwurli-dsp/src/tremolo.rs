@@ -1,15 +1,14 @@
-//! Wurlitzer 200A tremolo — feature-toggled between behavioral and circuit oscillator.
+//! Wurlitzer 200A tremolo — feature-toggled between circuit (default) and behavioral oscillator.
 //!
-//! Default: behavioral sine LFO.
-//! `--features melange-tremolo`: melange-generated Twin-T oscillator circuit.
+//! Default: melange-generated Twin-T oscillator circuit (real waveform shape).
+//! `--features legacy-tremolo`: behavioral sine LFO (for A/B testing).
 //!
 //! Both share the same CdS LDR model (LED drive → asymmetric envelope → power-law R).
-//! The circuit model replaces the sine LFO with the real Twin-T waveform shape.
 
-#[cfg(not(feature = "melange-tremolo"))]
+#[cfg(feature = "legacy-tremolo")]
 use std::f64::consts::PI;
 
-#[cfg(feature = "melange-tremolo")]
+#[cfg(not(feature = "legacy-tremolo"))]
 use crate::gen_tremolo;
 
 /// CdS LDR parameters (shared between behavioral and circuit paths).
@@ -20,21 +19,21 @@ const R_LDR_MAX: f64 = 1_000_000.0;
 const GAMMA: f64 = 1.1;
 
 /// Twin-T oscillator output voltage range (from ngspice/melange validation).
-#[cfg(feature = "melange-tremolo")]
+#[cfg(not(feature = "legacy-tremolo"))]
 const V_OUT_MIN: f64 = 0.70;
-#[cfg(feature = "melange-tremolo")]
+#[cfg(not(feature = "legacy-tremolo"))]
 const V_OUT_MAX: f64 = 10.95;
 
 pub struct Tremolo {
     // --- Oscillator state ---
     /// Behavioral: LFO phase
-    #[cfg(not(feature = "melange-tremolo"))]
+    #[cfg(feature = "legacy-tremolo")]
     phase: f64,
-    #[cfg(not(feature = "melange-tremolo"))]
+    #[cfg(feature = "legacy-tremolo")]
     phase_inc: f64,
 
     /// Circuit: Twin-T oscillator state
-    #[cfg(feature = "melange-tremolo")]
+    #[cfg(not(feature = "legacy-tremolo"))]
     osc_state: gen_tremolo::CircuitState,
 
     // --- Shared LDR model ---
@@ -53,13 +52,13 @@ pub struct Tremolo {
 impl Tremolo {
     pub fn new(rate: f64, depth: f64, sample_rate: f64) -> Self {
         Self {
-            #[cfg(not(feature = "melange-tremolo"))]
+            #[cfg(feature = "legacy-tremolo")]
             phase: 0.0,
-            #[cfg(not(feature = "melange-tremolo"))]
+            #[cfg(feature = "legacy-tremolo")]
             phase_inc: 2.0 * PI * rate / sample_rate,
 
             // Circuit oscillator frequency is set by components, not `rate`.
-            #[cfg(feature = "melange-tremolo")]
+            #[cfg(not(feature = "legacy-tremolo"))]
             osc_state: {
                 let _ = rate;
                 let mut s = gen_tremolo::CircuitState::default();
@@ -87,11 +86,11 @@ impl Tremolo {
     }
 
     pub fn set_rate(&mut self, rate: f64, sample_rate: f64) {
-        #[cfg(not(feature = "melange-tremolo"))]
+        #[cfg(feature = "legacy-tremolo")]
         {
             self.phase_inc = 2.0 * PI * rate / sample_rate;
         }
-        #[cfg(feature = "melange-tremolo")]
+        #[cfg(not(feature = "legacy-tremolo"))]
         {
             // The circuit oscillator's frequency is set by components, not a parameter.
             // Rate knob is ignored — the Twin-T frequency is fixed at ~5.3 Hz.
@@ -130,7 +129,7 @@ impl Tremolo {
     }
 
     /// Get the oscillator's LED drive signal (0..1).
-    #[cfg(not(feature = "melange-tremolo"))]
+    #[cfg(feature = "legacy-tremolo")]
     fn oscillator_drive(&mut self) -> f64 {
         let lfo = self.phase.sin();
         self.phase += self.phase_inc;
@@ -140,7 +139,7 @@ impl Tremolo {
         lfo.max(0.0) // half-wave rectify
     }
 
-    #[cfg(feature = "melange-tremolo")]
+    #[cfg(not(feature = "legacy-tremolo"))]
     fn oscillator_drive(&mut self) -> f64 {
         let v_out = gen_tremolo::process_sample(0.0, &mut self.osc_state)[0];
         // Map collector voltage to LED drive: low V = bright LED = high drive
@@ -152,11 +151,11 @@ impl Tremolo {
     }
 
     pub fn reset(&mut self) {
-        #[cfg(not(feature = "melange-tremolo"))]
+        #[cfg(feature = "legacy-tremolo")]
         {
             self.phase = 0.0;
         }
-        #[cfg(feature = "melange-tremolo")]
+        #[cfg(not(feature = "legacy-tremolo"))]
         {
             self.osc_state.reset();
         }

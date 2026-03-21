@@ -1,15 +1,15 @@
-//! DK preamp — feature-toggled between legacy and melange solvers.
+//! DK preamp — feature-toggled between melange (default) and legacy solvers.
 //!
-//! Default: hand-written 8-node MNA solver (proven).
-//! `--features melange-preamp`: melange-generated 12-node M=3 solver
-//! with Sherman-Morrison pot correction. Settles at 100K nominal, tremolo sweeps smoothly.
+//! Default: melange-generated 12-node M=3 solver with Sherman-Morrison pot
+//! correction. Settles at 100K nominal, tremolo sweeps smoothly.
+//! `--features legacy-preamp`: hand-written 8-node MNA solver (for A/B testing).
 
-#[cfg(not(feature = "melange-preamp"))]
+#[cfg(feature = "legacy-preamp")]
 pub use crate::dk_preamp_legacy::DkPreamp;
 
-#[cfg(feature = "melange-preamp")]
+#[cfg(not(feature = "legacy-preamp"))]
 mod melange_adapter;
-#[cfg(feature = "melange-preamp")]
+#[cfg(not(feature = "legacy-preamp"))]
 pub use melange_adapter::DkPreamp;
 
 #[cfg(test)]
