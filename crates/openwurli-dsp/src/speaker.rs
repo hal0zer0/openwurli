@@ -104,9 +104,12 @@ impl Speaker {
         // 2. Cone excursion limit (Xmax soft stop)
         //    Real speaker cones have physical excursion limits where the spider
         //    and surround stiffen rapidly. tanh models the soft mechanical stop.
-        //    At normal levels (|shaped| < 0.5): <8% compression (inaudible).
-        //    At ff chords (|shaped| > 1.0): graceful saturation to ±1.0.
-        let limited = shaped.tanh();
+        //    Scaled by character: at 0.0 this is a pure passthrough.
+        let limited = if self.character < 0.001 {
+            shaped
+        } else {
+            shaped.tanh()
+        };
 
         // 3. Thermal voice coil compression (slow envelope follower)
         let power = x2;
