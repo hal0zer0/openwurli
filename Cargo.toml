@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-melange-primitives = { path = "../melange/crates/melange-primitives" }
+melange-primitives = { git = "https://github.com/hal0zer0/melange", rev = "792ba85" }
 
 [workspace.package]
 edition = "2024"
