@@ -2,7 +2,7 @@
 
 An *obsessively* physically-modeled Wurlitzer 200A electric piano plugin for CLAP and VST3 hosts. NOT IN ANY WAY OFFICIAL OR AFFILIATED WITH ANYONE.
 
-[![OpenWurli Demo](https://img.youtube.com/vi/HmLKrLThR6M/maxresdefault.jpg)](https://www.youtube.com/watch?v=HmLKrLThR6M)
+[![OpenWurli Demo](https://img.youtube.com/vi/7wYLONtzc5Q/maxresdefault.jpg)](https://www.youtube.com/watch?v=7wYLONtzc5Q)
 
 ## What Is This?
 
