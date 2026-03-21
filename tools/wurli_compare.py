@@ -3,7 +3,7 @@
 wurli_compare.py — A/B comparison between extracted real Wurlitzer notes
 and OpenWurli synthesized versions.
 
-Designed for Dr Dawgg's calibration workflow:
+Designed for the calibration workflow:
   1. Selects best extracted notes per pitch (highest isolation)
   2. Renders matching OpenWurli notes via preamp-bench
   3. Computes per-note harmonic, decay, and spectral comparisons
@@ -303,7 +303,7 @@ def compare_note(real_path, synth_path, f0_hz, sr=44100):
 # ---------------------------------------------------------------------------
 
 def print_comparison_report(comparisons, output_dir=None):
-    """Print human-readable comparison report (Dr Dawgg format)."""
+    """Print human-readable comparison report (comparison format)."""
     print(f"\n{'=' * 70}")
     print(f"  WURLI A/B COMPARISON REPORT — {len(comparisons)} notes")
     print(f"{'=' * 70}")

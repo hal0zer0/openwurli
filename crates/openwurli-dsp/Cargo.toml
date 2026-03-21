@@ -7,5 +7,10 @@ repository.workspace = true
 authors.workspace = true
 description = "Wurlitzer 200A DSP library — modal synthesis, preamp circuit simulation, tremolo"
 
+[features]
+legacy-preamp = []
+legacy-tremolo = []
+melange-power-amp = []
+
 [dependencies]
-# Pure DSP math — no audio framework dependencies
+melange-primitives.workspace = true

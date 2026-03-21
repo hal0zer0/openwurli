@@ -376,8 +376,8 @@ fn test_tremolo_gain_range() {
 #[test]
 fn test_bandwidth_extends_past_15khz() {
     // THE key test: bandwidth should be ~15.5 kHz regardless of Rldr.
-    // The current EbersMollPreamp gives ~5.2 kHz at tremolo-bright
-    // because it doesn't model the C-3/C-4 coupled Miller loop.
+    // The legacy EbersMollPreamp (since deleted) gave ~5.2 kHz at tremolo-bright
+    // because it didn't model the C-3/C-4 coupled Miller loop.
     let dk = DkPreamp::new(44100.0);
 
     dk.set_ldr_resistance(1e6);
@@ -457,7 +457,7 @@ fn test_transfer_function_independent_of_sample_rate() {
 }
 ```
 
-**This is the decisive layer.** The `test_bandwidth_independent_of_rldr` test is the one the current EbersMollPreamp fundamentally cannot pass. If the DK model passes it, the coupled C-3/C-4 Miller loop is working correctly.
+**This is the decisive layer.** The `test_bandwidth_independent_of_rldr` test is the one the legacy EbersMollPreamp (since deleted) fundamentally could not pass. If the DK model passes it, the coupled C-3/C-4 Miller loop is working correctly.
 
 **Failure diagnosis:** If this fails but Layer 3 passes, the linearization or transfer function extraction has a bug. The DC point is right, but the small-signal behavior isn't — check the gm computation or the complex matrix inverse.
 
@@ -585,9 +585,11 @@ During development, run in layer order:
 If Layer N fails, don't bother with Layer N+1 — the bug is localized to Layer N's domain.
 
 
-## Comparison Test: DK vs EbersMoll
+## Comparison Test: DK vs EbersMoll (Historical)
 
-One special test that runs both models and compares:
+> **Note:** EbersMollPreamp was deleted when the melange-generated solver became the default in v0.3.0. This section is retained as historical reference for the testing methodology.
+
+One special test that ran both models and compared:
 
 ```rust
 #[test]
@@ -613,4 +615,4 @@ fn test_dk_vs_ebers_moll_midband_gain() {
 }
 ```
 
-This confirms the DK model is a refinement of the existing model, not a departure from it. Agreement at midband + disagreement at high frequencies = the C-3/C-4 coupling is the only meaningful difference.
+This confirmed the DK model was a refinement of the existing model, not a departure from it. Agreement at midband + disagreement at high frequencies = the C-3/C-4 coupling was the only meaningful difference.

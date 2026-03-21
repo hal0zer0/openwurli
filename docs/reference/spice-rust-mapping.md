@@ -11,7 +11,7 @@ Each row maps a circuit block from schematic → SPICE netlist → Rust implemen
 | Circuit Block | Schematic Ref | SPICE File(s) | Rust File(s) | Key Equations | Notes |
 |---|---|---|---|---|---|
 | **Electrostatic pickup** | Pickup plate, reed | `spice/subcircuits/pickup.cir`, `spice/testbench/tb_pickup.cir` | `pickup.rs` | `C(y) = C₀/(1-y)`, `v = dC/dt · V_pol` | 1/(1-y) is primary bark source |
-| **Preamp Stage 1 (TR-1)** | TR-1 (2N5089), Rc1=150K, Re1=33K | `spice/subcircuits/preamp.cir`, `spice/testbench/preamp_emitter_fb.cir` | `dk_preamp.rs` (DK), `bjt_stage.rs` + `preamp.rs` (EM) | Ebers-Moll: `Ic = Is(e^(Vbe/Vt) - 1)` | Headroom: 2.05V sat / 10.9V cutoff (5.3:1) |
+| **Preamp Stage 1 (TR-1)** | TR-1 (2N5089), Rc1=150K, Re1=33K | `spice/subcircuits/preamp.cir`, `spice/testbench/preamp_emitter_fb.cir` | `dk_preamp/` (melange adapter, default), `dk_preamp_legacy.rs` (hand-written 8-node) | Ebers-Moll: `Ic = Is(e^(Vbe/Vt) - 1)` | Headroom: 2.05V sat / 10.9V cutoff (5.3:1) |
 | **Preamp Stage 2 (TR-2)** | TR-2 (2N5089), Rc2=1.8K, Re2a=270Ω, Re2b=820Ω | Same as above | Same as above | Direct-coupled from TR-1 collector | Headroom: 5.3V sat / 6.2V cutoff (1.17:1) |
 | **Miller caps (C-3, C-4)** | C-3=100pF (TR-1), C-4=100pF (TR-2) | `spice/testbench/tb_variable_gbw.cir` | `dk_preamp.rs` (inner loop) | Trapezoidal companion: `i = g_c·v + J_prev` | Forms inner BW-controlling feedback loop |
 | **Input network (Cin, R-1)** | Cin=0.022µF, R-1=22K | `spice/testbench/tb_dk_ac_extract.cir` | `dk_preamp.rs` (bilinear companion, §8.1) | `g_cin = 2C/T`, history source `cin_rhs_prev` | See Cin-R1 bug in §4 below |
@@ -68,7 +68,7 @@ Off-by-one errors here cascade through the entire MNA system.
 |---|---|---|---|
 | **Trapezoidal** | `x[n+1] = x[n] + (T/2)(f[n] + f[n+1])` | `g_c = 2C/T; J = g_c*v_prev + i_prev` | C-3, C-4 Miller caps in DK preamp |
 | **Bilinear (pre-discretized)** | `H(z) = H(s)\|_{s=(2/T)(z-1)/(z+1)}` | Companion conductance + history source | Cin-R1 in DK preamp (§8.1) |
-| **ZDF (zero-delay feedback)** | Implicit trapezoidal for filters | `OnePoleHpf`, `OnePoleLpf` in `filters.rs` | Pickup HPF, speaker filters |
+| **ZDF (zero-delay feedback)** | Implicit trapezoidal for filters | `Biquad` in `filters.rs` (backed by melange-primitives) | Pickup HPF, speaker filters |
 | **Forward Euler** | `x[n+1] = x[n] + T·f[n]` | **DO NOT USE** — unstable at high freq | — |
 
 ### Trapezoidal Companion Model (capacitor)
@@ -105,7 +105,7 @@ schematic (`docs/verified_wurlitzer_200A_series_schematic.pdf`) is the ONLY refe
 
 ### Bug 3: Constant-GBW Assumption (Feb 2026)
 **Symptom:** Trem-bright bandwidth was 5.2 kHz (should be ~10 kHz).
-**Root cause:** Decoupled (EbersMoll) model assumed constant GBW like a simple op-amp. But the
+**Root cause:** Decoupled (EbersMoll) model (since deleted) assumed constant GBW like a simple op-amp. But the
 200A preamp has TWO nested feedback loops — inner (C-3/C-4 Miller) controls BW, outer
 (R-10/Ce1/Rldr) controls gain. GBW scales with gain, not constant.
 **Fix:** DK method models both loops as a coupled 8-node MNA system, capturing the interaction.
@@ -169,7 +169,7 @@ This is the checklist. For each circuit element in SPICE, verify against Rust:
 
 ## 6. Verification Methodology
 
-When Rusty Spice is invoked to debug a mismatch, follow this protocol:
+When debugging a SPICE↔Rust mismatch, follow this protocol:
 
 ### Step 1: Reproduce in SPICE
 Run the relevant testbench and extract the exact SPICE result. Record node voltages, currents,
@@ -206,14 +206,13 @@ fix touches the preamp.
 ### Rust DSP Source
 | File | Purpose |
 |---|---|
-| `crates/openwurli-dsp/src/dk_preamp.rs` | DK method preamp (8-node MNA, trapezoidal, NR) |
-| `crates/openwurli-dsp/src/bjt_stage.rs` | Single BJT CE stage (used by EbersMoll preamp) |
-| `crates/openwurli-dsp/src/preamp.rs` | PreampModel trait + EbersMollPreamp |
+| `crates/openwurli-dsp/src/dk_preamp/` | Feature-toggled preamp (melange 12-node default, legacy 8-node) |
+| `crates/openwurli-dsp/src/preamp.rs` | PreampModel trait |
 | `crates/openwurli-dsp/src/pickup.rs` | Electrostatic pickup: 1/(1-y) + HPF |
 | `crates/openwurli-dsp/src/power_amp.rs` | Class AB crossover distortion |
 | `crates/openwurli-dsp/src/tremolo.rs` | LFO + CdS LDR model |
 | `crates/openwurli-dsp/src/speaker.rs` | Hammerstein nonlinearity + HPF/LPF |
-| `crates/openwurli-dsp/src/filters.rs` | ZDF one-pole filters, DC blocker, biquad |
+| `crates/openwurli-dsp/src/filters.rs` | Biquad wrapper (backed by melange-primitives) |
 | `crates/openwurli-dsp/src/voice.rs` | Voice assembly (reed→hammer→pickup→preamp→...) |
 
 ### Documentation

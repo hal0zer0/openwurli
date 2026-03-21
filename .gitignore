@@ -24,9 +24,10 @@ cmake-build-*/
 *.dylib
 *.dll
 
-# Python bytecode
+# Python bytecode and virtual environments
 __pycache__/
 *.pyc
+venv/
 
 # Copyrighted reference materials (obtain separately, see docs/SCHEMATIC_SOURCE.md)
 docs/verified_wurlitzer_200A_series_schematic.pdf
@@ -67,3 +68,15 @@ ml/notes.json
 ml/scored_notes.json
 ml/harmonics.json
 ml/model_harmonics.json
+
+# Secrets (preemptive)
+.env
+.env.*
+*.pem
+*.key
+
+# Misc
+desktop.ini
+*.log
+*.bak
+*.orig

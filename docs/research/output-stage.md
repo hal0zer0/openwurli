@@ -88,7 +88,7 @@ Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vc
 
 **Output swing:** 11.8 Vpp (target ~11.5 Vpp). Near rail-to-rail.
 
-**Waveform:** The real twin-T oscillator produces a mildly distorted sinusoid (estimated THD 3-10%). The OpenWurli implementation uses a pure sine LFO (`phase.sin()`) -- the mild oscillator distortion is not modeled, as it has negligible audible effect on the tremolo character.
+**Waveform:** The real twin-T oscillator produces a mildly distorted sinusoid (estimated THD 3-10%). The OpenWurli implementation now uses a melange-generated Twin-T circuit oscillator as the default, which models the real waveform shape including the mild distortion. The behavioral sine LFO is still available behind `--features legacy-tremolo`.
 
 **LED drive path:** Node G → R17 (4.7K) → LG-1 pin 1 (LED cathode) → LED → pin 2 (LED anode) → return to Vcc via cable. The LG-1 LED symbol points downward on the schematic (anode=pin 2 at top, cathode=pin 1 at bottom).
 
@@ -169,7 +169,7 @@ The 3K audio pot is unusually low impedance for a volume control. This has impli
 
 **DECISION: Model as real attenuator, not output gain.** The volume pot must sit between preamp and power amp in the plugin signal chain, not at the output. At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the character of the distortion (more odd harmonics from the dead zone). This interaction is audible and should be preserved. Implementation: audio-taper gain curve applied between preamp output and power amp input.
 
-**Volume taper implementation:** `gain = volume^2` (quadratic approximation of audio taper). The parameter UI uses a skew factor of 2.0 for display. Default volume is 0.63, giving effective gain of approximately 0.40 (-8 dB).
+**Volume taper implementation:** `gain = volume^2` (quadratic approximation of audio taper). The parameter uses `FloatRange::Linear` (0.0 to 1.0). Default volume is 0.50, giving effective gain of 0.25 (-12 dB).
 
 ---
 
@@ -339,7 +339,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 
 **For modeling purposes:** The power amplifier is modeled as a closed-loop negative feedback amplifier. The R-31/R-30 feedback network (loop gain ≈ 275) linearizes the output at normal signal levels. Distortion becomes significant only near the ±22V supply rails. The power amp is NOT a major tonal contributor — the Wurlitzer's characteristic bark comes primarily from the pickup's 1/(1-y) nonlinearity, with the preamp's asymmetric soft-clipping adding further coloring at high dynamics.
 
-**Gain staging (v0.1.5):** The voice output_scale uses target_db=-35 dBFS so the power amp sees realistic signal levels: a single ff note uses ~5-10% of the ±22V headroom, matching Brad Avenson's measurements of 2-7 mV at the volume pot. A post-speaker gain of +13 dB (applied AFTER the speaker model) maps physical SPL to DAW-friendly digital levels. This separates two concerns: the analog circuit model operates at realistic voltages, while the digital output is set for typical DAW workflows (~-3 dBFS for single ff notes at max volume, ~-4 dBFS for 4-voice ff chords).
+**Gain staging:** The voice output_scale uses target_db=-35 dBFS so the power amp sees realistic signal levels: a single ff note uses ~1-3% of the ±22V headroom, matching Brad Avenson's measurements of 2-7 mV at the volume pot (model produces 3 mV RMS). A post-speaker gain of +10.5 dB (applied AFTER the speaker model) maps physical SPL to DAW-friendly digital levels. This separates two concerns: the analog circuit model operates at realistic voltages, while the digital output is set for typical DAW workflows (~-8 dBFS for single ff notes at max volume, ~-1 dBFS for 16-voice ff chords).
 
 ---
 
@@ -479,14 +479,15 @@ This cascade produced ~30 dB/oct rolloff below 70 Hz, which proved too aggressiv
 
 ### 7.1 Tremolo Model
 
-**Status: IMPLEMENTED.** Tremolo operates inside the preamp feedback loop. The `Tremolo` module (`tremolo.rs`) computes a per-sample LDR path resistance, which is passed to the DkPreamp via `set_ldr_resistance()`. The DkPreamp's 8-node MNA circuit solver then modulates the feedback loop gain accordingly, producing the correct timbral variation (gain + distortion character change) through the tremolo cycle.
+**Status: IMPLEMENTED.** Tremolo operates inside the preamp feedback loop. The `Tremolo` module (`tremolo.rs`) computes a per-sample LDR path resistance, which is passed to the DkPreamp via `set_ldr_resistance()`. The DkPreamp's 12-node MNA circuit solver (melange-generated) then modulates the feedback loop gain accordingly, producing the correct timbral variation (gain + distortion character change) through the tremolo cycle.
 
 **Implementation details:**
 
 ```
-// Oscillator (tremolo.rs)
-rate = 5.63 Hz (pure sine LFO; real twin-T oscillator's mild THD not modeled)
-waveform: phase.sin(), half-wave rectified for LED drive
+// Oscillator (tremolo.rs) — default: melange Twin-T circuit oscillator
+rate = ~5.6 Hz (fixed by Twin-T RC network; no rate parameter)
+waveform: real oscillator circuit output, half-wave rectified for LED drive
+// --features legacy-tremolo: behavioral sine LFO at 5.63 Hz (phase.sin())
 
 // LDR time constants (VTL5C3-like, tuned to match perceived tremolo
 // character of real 200A instruments. CdS time constants vary significantly

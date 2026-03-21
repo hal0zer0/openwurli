@@ -7,10 +7,6 @@ pub struct OpenWurliParams {
     #[id = "volume"]
     pub volume: FloatParam,
 
-    /// Tremolo LFO rate in Hz.
-    #[id = "trem_rate"]
-    pub tremolo_rate: FloatParam,
-
     /// Tremolo modulation depth (0 = off, 1 = full).
     #[id = "trem_depth"]
     pub tremolo_depth: FloatParam,
@@ -27,23 +23,11 @@ pub struct OpenWurliParams {
 impl Default for OpenWurliParams {
     fn default() -> Self {
         Self {
-            volume: FloatParam::new("Volume", 0.63, FloatRange::Linear { min: 0.0, max: 1.0 })
+            volume: FloatParam::new("Volume", 0.50, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_smoother(SmoothingStyle::Linear(5.0))
                 .with_unit(" %")
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
                 .with_string_to_value(formatters::s2v_f32_percentage()),
-
-            tremolo_rate: FloatParam::new(
-                "Tremolo Rate",
-                5.63,
-                FloatRange::Linear {
-                    min: 0.1,
-                    max: 15.0,
-                },
-            )
-            .with_smoother(SmoothingStyle::Linear(50.0))
-            .with_unit(" Hz")
-            .with_step_size(0.1),
 
             tremolo_depth: FloatParam::new(
                 "Tremolo Depth",

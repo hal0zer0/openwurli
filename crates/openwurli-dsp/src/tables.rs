@@ -359,12 +359,6 @@ pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MOD
     }
 }
 
-/// Hammer spatial coupling coefficients for mode excitation.
-///
-/// The hammer contacts the reed over a finite length at a specific position,
-/// acting as a spatial filter in mode space. Modes whose half-wavelength is
-/// shorter than the contact region experience partial cancellation.
-///
 /// Fundamental decay rate in dB/s for a given MIDI note.
 ///
 /// Frequency power law calibrated against 10 clean OBM 200A decay rates
@@ -459,25 +453,25 @@ pub fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
 /// Positive = boost (note too quiet), negative = cut (note too loud).
 /// Linear interpolation between anchor points; clamped outside range.
 pub fn register_trim_db(midi: u8) -> f64 {
-    // Calibrated from zero-trim full-chain (t5_rms) renders at v=127 (2026-02-22).
-    // Reference: C4 = -38.9 dBFS. Trim = t5_rms(C4) - t5_rms(note).
-    // Measured via: preamp-bench calibrate --zero-trim --ds-at-c4 0.75
-    // target_db=-35.0, audio taper (vol²), post-speaker gain +13 dB
+    // Calibrated from zero-trim full-chain (t5_rms) renders at v=127 (2026-03-20).
+    // Reference: C4 = -44.9 dBFS. Trim = t5_rms(C4) - t5_rms(note).
+    // Measured via: preamp-bench calibrate --zero-trim (melange preamp, default)
+    // target_db=-35.0, audio taper (vol²), post-speaker gain +10.5 dB
     // Speaker LPF=5500 Hz
     const ANCHORS: [(f64, f64); 13] = [
-        (36.0, -1.3), // C2:  -37.6 → -38.9
-        (40.0, 0.0),  // E2:  -38.9 → -38.9
-        (44.0, -1.3), // G#2: -37.6 → -38.9
-        (48.0, 0.7),  // C3:  -39.5 → -38.9
-        (52.0, 0.2),  // E3:  -39.1 → -38.9
-        (56.0, -1.1), // G#3: -37.8 → -38.9
-        (60.0, 0.0),  // C4:  -38.9 (reference)
-        (64.0, 0.9),  // E4:  -39.7 → -38.9
-        (68.0, 1.2),  // G#4: -40.0 → -38.9
-        (72.0, 0.0),  // C5:  -38.9 → -38.9
-        (76.0, 1.8),  // E5:  -40.6 → -38.9
-        (80.0, 2.4),  // G#5: -41.2 → -38.9
-        (84.0, 3.6),  // C6:  -42.5 → -38.9
+        (36.0, -1.3), // C2:  -40.6 → -41.9
+        (40.0, 0.0),  // E2:  -41.9 → -41.9
+        (44.0, -1.3), // G#2: -40.6 → -41.9
+        (48.0, 0.7),  // C3:  -42.5 → -41.9
+        (52.0, 0.2),  // E3:  -42.1 → -41.9
+        (56.0, -1.0), // G#3: -40.8 → -41.9
+        (60.0, 0.0),  // C4:  -41.9 (reference)
+        (64.0, 0.9),  // E4:  -42.7 → -41.9
+        (68.0, 1.2),  // G#4: -43.0 → -41.9
+        (72.0, 0.0),  // C5:  -41.9 → -41.9
+        (76.0, 1.8),  // E5:  -43.6 → -41.9
+        (80.0, 2.4),  // G#5: -44.2 → -41.9
+        (84.0, 3.6),  // C6:  -45.5 → -41.9
     ];
 
     let m = midi as f64;
@@ -505,10 +499,10 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// circuit-realistic (power amp uses ~5-10% headroom at ff single notes), but
 /// the raw speaker output is too quiet for a DAW. This gain compensates without
 /// distorting any nonlinear circuit model — it's applied AFTER all analog stages.
-pub const POST_SPEAKER_GAIN_DB: f64 = 13.0;
+pub const POST_SPEAKER_GAIN_DB: f64 = 10.5;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 4.466_835_921_509_63; // 10^(13/20)
+pub const POST_SPEAKER_GAIN: f64 = 3.349_654_391_578_277; // 10^(10.5/20)
 
 /// Per-note output scaling to balance the keyboard.
 ///

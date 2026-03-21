@@ -2,7 +2,7 @@
 //!
 //! Pure DSP math with no audio framework dependencies.
 
-// Reed/voice synthesis (from reed-renderer)
+// Reed/voice synthesis
 pub mod filters;
 pub mod hammer;
 pub mod mlp_correction;
@@ -12,13 +12,18 @@ pub mod tables;
 pub mod variation;
 pub mod voice;
 
-// Preamp circuit simulation
-pub mod bjt_stage;
+// Preamp circuit simulation (melange-generated DK solver)
 pub mod dk_preamp;
+pub mod dk_preamp_legacy;
+pub mod gen_preamp;
 pub mod oversampler;
 pub mod preamp;
 pub mod tremolo;
 
 // Output stage
+#[cfg(feature = "melange-power-amp")]
+pub mod gen_power_amp;
+#[cfg(not(feature = "legacy-tremolo"))]
+pub mod gen_tremolo;
 pub mod power_amp;
 pub mod speaker;

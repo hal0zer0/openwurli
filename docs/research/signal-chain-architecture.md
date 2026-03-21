@@ -112,7 +112,7 @@ MIDI note-on (key, velocity, channel, note_id)
 
   Mono shared processing:
      -> 2x Upsample (6-coefficient (3+3) allpass polyphase IIR, ~28 dB rejection at 30 kHz)
-        [F] DkPreamp (8-node coupled MNA solver) WITH INTEGRATED TREMOLO
+        [F] DkPreamp (melange-generated 12-node MNA solver) WITH INTEGRATED TREMOLO
             Tremolo: LDR (LG-1) + R-10 (56K) modulate feedback ratio
             DkPreamp: 8-node coupled MNA solver (DK method)
               -> Stage 1: Miller pole ~23 Hz open-loop
@@ -508,8 +508,8 @@ This is the most complex processing stage. The preamp adds harmonic coloring at 
 ### DECISION: Trait-Based A/B Architecture
 
 The preamp implements a `PreampModel` trait with `process_sample()`, `set_ldr_resistance()`, `reset()`. Two implementations exist behind this interface:
-1. **DkPreamp** (8-node coupled MNA solver using the DK method) — the shipping implementation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `dk-preamp-derivation.md`.
-2. **EbersMollPreamp** — legacy reference with independent per-stage NR solvers. Retained for comparison only; not used in production.
+1. **DkPreamp** (melange-generated 12-node MNA solver using the DK method) — the shipping implementation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `dk-preamp-derivation.md`.
+2. **DkPreampLegacy** (`dk_preamp_legacy.rs`, `--features legacy-preamp`) — hand-written 8-node solver. Retained for comparison only; not used in production. The former `EbersMollPreamp` was deleted in v0.3.0.
 
 ### Oversampling Wrapper
 
@@ -526,6 +526,8 @@ The oversampler uses allpass IIR filters (custom Rust implementation in `oversam
 The DkPreamp receives the voice summation output directly. Because the DK method models the full circuit with physical component values, no artificial input drive scaling is needed -- the circuit's gain, impedances, and nonlinear behavior emerge naturally from the MNA equations. The voice output is scaled by `output_scale()` (physics-based, computed from displacement scale and pickup geometry) to approximate millivolt-level signals before entering the preamp.
 
 ### BJT Stage Model
+
+**Historical:** This section describes the `EbersMollPreamp` implementation, deleted in v0.3.0. The shipping preamp is the melange-generated 12-node DK solver.
 
 Each stage implements the Ebers-Moll exponential transfer function solved by Newton-Raphson iteration:
 
@@ -638,6 +640,8 @@ The 200A tremolo modulates the preamp's closed-loop gain via an LDR (LG-1) that 
 The oscillator is a twin-T (parallel-T) notch filter oscillator. SPICE-validated at 5.63 Hz with 11.8 Vpp output swing. See `spice/subcircuits/tremolo_osc.cir` and `output-stage.md` Section 2.1 for full topology.
 
 ```
+// Default: melange Twin-T circuit oscillator (5.63 Hz, SPICE-validated).
+// Legacy sine LFO available behind --features legacy-tremolo.
 lfo = sin(2*PI * rate * t)
 led_drive = max(0, lfo)  // half-wave rectified (LED only conducts forward)
 ```
@@ -692,13 +696,12 @@ Because the tremolo modulates the preamp's emitter feedback (via the LDR shunt a
 
 R_ldr modulation at 5.63 Hz creates a ~4.5V pp pump at the preamp output via Ce1 transient dynamics (confirmed by SPICE). The pump has harmonics at 28-200+ Hz that overlap bass fundamentals -- no HPF can separate them without cutting bass. Solution: a second `DkState` ("shadow") runs in parallel with zero audio input but the same R_ldr modulation. Its output is pure pump. Subtracting the shadow output from the main output cancels all pump harmonics at every frequency. Pump level after subtraction: < -120 dBFS.
 
-**Shadow bypass optimization:** When tremolo depth < 0.001, R_ldr is effectively constant, so the shadow output is constant DC. `DkPreamp::set_shadow_bypass(true)` captures the current shadow output as `shadow_dc` and skips the shadow DK solver entirely, saving ~50% of preamp CPU cost. On transition back to active tremolo, a `full_dc_solve()` re-syncs the shadow state.
+**Shadow bypass:** Removed in v0.2.1. The shadow preamp always runs -- the cost of one extra DK step is negligible vs 64 reed oscillators, and toggling the solver on/off caused clicks that crossfade workarounds could not fully resolve.
 
 ### Parameters
 
 | Parameter | Default | Range | Notes |
 |-----------|---------|-------|-------|
-| Rate | 5.63 Hz | 0.1-15.0 | Most real instruments 5.3-7 Hz |
 | Depth | 0.5 | 0.0-1.0 | 0=off, 0.5 ~ 4.5 dB dip, 1.0 ~ 9 dB dip |
 
 ---
@@ -712,13 +715,13 @@ In the real 200A, the 3K audio-taper volume potentiometer sits between the pream
 **Why placement matters:** At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the distortion character (more odd harmonics from the Class AB dead zone). This interaction between volume and power amp behavior is audible and contributes to the instrument's character at low volumes.
 
 ```
-// Audio taper: skewed range (display mapping) + squared multiplier (audio path)
-pot_position = user_volume_param  // 0.0 to 1.0 (FloatRange::Skewed, factor 2.0)
+// Audio taper: linear range + squared multiplier (audio path)
+pot_position = user_volume_param  // 0.0 to 1.0 (FloatRange::Linear)
 output = input * pot_position * pot_position  // vol^2 in the audio path
 // -> feeds into power amplifier stage
 ```
 
-The effective taper combines two stages: `FloatRange::Skewed` with factor 2.0 (which controls the DAW display/automation curve) plus the `vol * vol` squared multiplier in the audio path. The default volume of 0.63 produces an effective gain of ~0.40 (0.63^2). In the real instrument, the volume pot output is measured at 2-7 mV AC.
+The audio taper is implemented as `vol * vol` (quadratic) in the audio path, with a `FloatRange::Linear` parameter. The default volume of 0.50 produces an effective gain of 0.25 (0.50^2). In the real instrument, the volume pot output is measured at 2-7 mV AC.
 
 ---
 
@@ -763,7 +766,7 @@ The code models crossover/feedback behavior generically, not specific transistor
 
 At mf single notes, the power amp is nearly transparent -- the preamp dominates tonal character. At ff polyphonic, the power amp's tanh soft-clip adds compression and gradual saturation (Yeh/Abel/Smith 2007). With aging, bias drifts, increasing crossover distortion (odd harmonics from the dead zone).
 
-Audio taper volume control: `vol^2` (quadratic, skew +2.0), default position 0.63 (effective ~0.40).
+Audio taper volume control: `vol^2` (quadratic), default position 0.50 (effective 0.25).
 
 ---
 
@@ -839,24 +842,28 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 ### Plugin Signal Levels (Current)
 
 The gain staging is designed so the power amplifier sees realistic signal levels
-(5-15% of its ±22V headroom at ff). A post-speaker gain stage (+13 dB) maps
-the physical speaker output to DAW-friendly digital levels without distorting
-any circuit model — it sits after all analog stages.
+(1-7% of its ±22V headroom at typical dynamics). A post-speaker gain stage
+(+10.5 dB) maps the physical speaker output to DAW-friendly digital levels
+without distorting any circuit model — it sits after all analog stages.
 
 | Point in Chain | Level | Notes |
 |---------------|-------|-------|
 | Single voice, mf | ~0.05-0.15 | After pickup |
 | 6-voice chord, ff | ~0.3-0.9 | Sum of voices |
 | After output_scale() | target_db=-35 dBFS | Into DkPreamp |
-| After preamp | millivolts equivalent | 2x gain (no trem) |
-| After volume pot (0.63, taper 0.40) | ~5-10% of PA headroom | Single ff note |
-| After power amp | ~1-3V of ±22V rails | Clean at normal dynamics |
+| After preamp | ~3 mV RMS (C4 ff) | 2.1x gain (no trem), matches real 2-7 mV |
+| After volume pot (0.50, taper 0.25) | ~1-3% of PA headroom | Single ff note |
+| After power amp | ~0.3-1.4V of ±22V rails | Clean at normal dynamics |
 | After speaker | physics-level output | |
-| After post-speaker gain (+13 dB) | -3.3 dBFS single ff | DAW-friendly |
+| After post-speaker gain (+10.5 dB) | -8 dBFS single ff (full vol) | DAW-friendly |
+
+Polyphonic headroom (measured, ff at default vol=0.50):
+- 1 voice: -17.4 dBFS, 8 voices: -13.1 dBFS, 16 voices: -10.3 dBFS
+- At full vol: 8 voices: -0.8 dBFS, 16 voices: -1.0 dBFS (clean)
 
 ### Input Drive (Historical)
 
-**Note:** The `kPreampInputDrive` scaling factor discussed here is historical and applies only to the legacy `EbersMollPreamp`. The shipping `DkPreamp` implementation uses physical component values directly (resistances, capacitances, transistor parameters) and does not require artificial input drive scaling. The DK method MNA solver operates on the actual circuit equations, so signal levels are determined by the component values themselves.
+**Note:** The `kPreampInputDrive` scaling factor discussed here is historical and applies only to the deleted `EbersMollPreamp` (historical). The shipping `DkPreamp` implementation uses physical component values directly (resistances, capacitances, transistor parameters) and does not require artificial input drive scaling. The DK method MNA solver operates on the actual circuit equations, so signal levels are determined by the component values themselves.
 
 SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo, 12.1 dB (4.0x) at tremolo bright peak. BW: ~15.5 kHz preamp-only, ~11.8 kHz full-chain (no trem) / ~9.7 kHz (trem bright).
 
@@ -958,8 +965,7 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The pickup RC HPF limits the p
 
 | ID | Name | Module | Min | Max | Default | Purpose |
 |----|------|--------|-----|-----|---------|---------|
-| "volume" | Volume | output | 0% | 100% | 63% | Audio taper attenuator between preamp and power amp |
-| "trem_rate" | Tremolo Rate | tremolo | 0.1 | 15.0 Hz | 5.63 Hz | LFO frequency |
+| "volume" | Volume | output | 0% | 100% | 50% | Audio taper attenuator between preamp and power amp |
 | "trem_depth" | Tremolo Depth | tremolo | 0% | 100% | 50% | Modulation amount |
 | "speaker" | Speaker Character | speaker | 0% | 100% | 0% | 0%=bypass (full range), 100%=authentic (HPF+LPF+waveshaper) |
 | "mlp" | MLP Corrections | dsp | off / on | — | on | Per-note ML corrections for freq/decay/displacement |
@@ -970,7 +976,7 @@ All other parameters (decay rates, pickup gap, preamp component values, mode amp
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| B (thermal voltage) | 38.5 | 1/(n*Vt) for BJT Ebers-Moll |
+| B (thermal voltage) | 38.5 | 1/(n*Vt) for BJT |
 | Stage 1 gain | 420 (max) | gm1 × Rc1 = 2.80 mA/V × 150K (open-loop, fb_junct grounded) |
 | Stage 1 satLimit | 10.9 V | Vcc - Vc1 = 15 - 4.1 |
 | Stage 1 cutoffLimit | 2.05 V | Vc1 - Ve1 - Vce_sat = 4.1 - 1.95 - 0.1 |
@@ -1069,7 +1075,7 @@ When a voice is stolen:
 - Multiplicative decay (`envelope *= decay_mult`) replaces per-sample `exp(-alpha*n)` — saves 7 exp/sample/voice
 - Jitter uses scaled uniform noise (1 LCG call/mode) instead of Box-Muller (2 LCG + ln + sqrt + cos per mode) — saves 3 transcendentals/mode/sample
 - BJT function fusion: `bjt_ic_gm()` computes one exp() for both ic and gm in the NR loop
-- Shadow preamp bypass: when tremolo depth < 0.001, shadow DK solver is skipped (constant DC output)
+- Shadow preamp always runs (bypass optimization was removed in v0.2.1)
 - Tremolo ln() caching: `ln(r_min)`, `ln(r_max)` precomputed at construction
 - The oversampler and preamp run ONCE (shared), not per-voice
 - NaN guard in preamp: `result.is_finite()` check prevents permanent state corruption
@@ -1079,7 +1085,7 @@ When a voice is stolen:
 - Subsample jitter: OU process updated every 16 samples (amortized cost /16)
 - Pickup division elimination: `beta * (1-y)` replaces `beta / c_n` in RC model
 - Conditional oversampling: 2x bypassed at host rates >= 88.2 kHz (saves ~50% DK preamp cost)
-- Filter precomputes: `OnePoleLpf.one_minus_alpha`, `TptLpf.g_denom` cached at construction
+- Filter precomputes: melange-primitives Biquad coefficients cached at construction/set_type()
 
 ### Per-Sample Budget (at 48 kHz)
 
@@ -1091,7 +1097,7 @@ When a voice is stolen:
 | Voice sum | ~N additions | Trivial |
 | 2x oversampler up | ~12 multiply-adds (bypassed at >= 88.2 kHz) | Allpass polyphase filter |
 | Preamp (2 samples at 2x) | ~2 x (3 NR iterations x 2 fused exp) = 12 exp calls | Most expensive shared stage |
-| Shadow preamp | ~12 exp (tremolo on) / 0 (tremolo off) | Bypass saves ~50% DK cost |
+| Shadow preamp | ~12 exp | Always runs (bypass removed) |
 | 2x oversampler down | ~12 multiply-adds (bypassed at >= 88.2 kHz) | Allpass polyphase filter |
 | Tremolo | ~2 multiply-adds + 1 exp + 1 powf | Cached ln values |
 | Speaker (2 biquads) | ~10 multiply-adds | Trivial |

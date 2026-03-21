@@ -1,107 +1,103 @@
-//! Wurlitzer 200A tremolo -- LFO + LED + CdS LDR model.
+//! Wurlitzer 200A tremolo — feature-toggled between circuit (default) and behavioral oscillator.
 //!
-//! The tremolo modulates preamp gain by varying the LDR resistance in the
-//! emitter feedback path. The signal flow is:
+//! Default: melange-generated Twin-T oscillator circuit (real waveform shape).
+//! `--features legacy-tremolo`: behavioral sine LFO (for A/B testing).
 //!
-//!   Twin-T oscillator (~5.63 Hz per SPICE) -> half-wave rectified -> LED current
-//!   -> CdS LDR (light-dependent resistor) -> R_ldr
-//!   -> feedback junction -> modulates preamp closed-loop gain
-//!
-//! LDR characteristics:
-//!   - CdS photoresistors have asymmetric response: fast attack (~3ms),
-//!     slow decay (~50ms) -- the "memory" effect.
-//!   - Resistance follows approximate power law: R = R_dark * (I_led / I_ref)^(-gamma)
-//!   - R_dark ~ 1M ohm, gamma = 1.1 (calibrated to OBM tremolo depth)
+//! Both share the same CdS LDR model (LED drive → asymmetric envelope → power-law R).
 
+#[cfg(feature = "legacy-tremolo")]
 use std::f64::consts::PI;
 
+#[cfg(not(feature = "legacy-tremolo"))]
+use crate::gen_tremolo;
+
+/// CdS LDR parameters (shared between behavioral and circuit paths).
+const ATTACK_TAU: f64 = 0.003;
+const RELEASE_TAU: f64 = 0.050;
+const R_LDR_MIN: f64 = 50.0;
+const R_LDR_MAX: f64 = 1_000_000.0;
+const GAMMA: f64 = 1.1;
+
+/// Twin-T oscillator output voltage range (from ngspice/melange validation).
+#[cfg(not(feature = "legacy-tremolo"))]
+const V_OUT_MIN: f64 = 0.70;
+#[cfg(not(feature = "legacy-tremolo"))]
+const V_OUT_MAX: f64 = 10.95;
+
 pub struct Tremolo {
-    /// LFO phase (0..2*PI)
+    // --- Oscillator state ---
+    /// Behavioral: LFO phase
+    #[cfg(feature = "legacy-tremolo")]
     phase: f64,
-    /// Phase increment per sample
+    #[cfg(feature = "legacy-tremolo")]
     phase_inc: f64,
-    /// Depth: 0.0 = no tremolo, 1.0 = full depth
+
+    /// Circuit: Twin-T oscillator state
+    #[cfg(not(feature = "legacy-tremolo"))]
+    osc_state: gen_tremolo::CircuitState,
+
+    // --- Shared LDR model ---
     depth: f64,
-    /// Current LDR resistance (ohms)
     r_ldr: f64,
-    /// LDR envelope state (smoothed LED drive)
     ldr_envelope: f64,
-    /// LDR attack coefficient (fast: ~3ms)
     ldr_attack: f64,
-    /// LDR release coefficient (slow: ~50ms)
     ldr_release: f64,
-    /// Maximum LDR resistance (dark): ~1M ohms
     r_ldr_max: f64,
-    /// CdS power-law exponent
     gamma: f64,
-    /// Cached ln(r_ldr_max)
     ln_r_max: f64,
-    /// Cached ln(r_ldr_min) - ln(r_ldr_max), always negative (min < max)
     ln_min_minus_max: f64,
-    /// Series resistance in LDR path: 18K (fixed) + vibrato pot position
     r_series: f64,
 }
 
-impl Tremolo {
-    /// Create a new tremolo at the given rate and sample rate.
-    ///
-    /// - `rate`: LFO frequency in Hz (default 5.63 per SPICE twin-T measurement)
-    /// - `depth`: 0.0 to 1.0 (maps to vibrato pot position)
-    /// - `sample_rate`: audio sample rate
-    pub fn new(rate: f64, depth: f64, sample_rate: f64) -> Self {
-        let attack_tau = 0.003; // 3ms
-        let release_tau = 0.050; // 50ms
+/// Fixed oscillator rate for the legacy behavioral LFO (Hz).
+#[cfg(feature = "legacy-tremolo")]
+const LEGACY_RATE_HZ: f64 = 5.63;
 
-        let r_ldr_min: f64 = 50.0;
-        let r_ldr_max: f64 = 1_000_000.0;
+impl Tremolo {
+    pub fn new(depth: f64, sample_rate: f64) -> Self {
         Self {
+            #[cfg(feature = "legacy-tremolo")]
             phase: 0.0,
-            phase_inc: 2.0 * PI * rate / sample_rate,
+            #[cfg(feature = "legacy-tremolo")]
+            phase_inc: 2.0 * PI * LEGACY_RATE_HZ / sample_rate,
+
+            #[cfg(not(feature = "legacy-tremolo"))]
+            osc_state: {
+                let mut s = gen_tremolo::CircuitState::default();
+                if (sample_rate - gen_tremolo::SAMPLE_RATE).abs() > 0.5 {
+                    s.set_sample_rate(sample_rate);
+                }
+                // Settle oscillator to reach steady-state amplitude
+                for _ in 0..(sample_rate * 2.0) as usize {
+                    gen_tremolo::process_sample(0.0, &mut s);
+                }
+                s
+            },
+
             depth,
-            r_ldr: r_ldr_max,
+            r_ldr: R_LDR_MAX,
             ldr_envelope: 0.0,
-            ldr_attack: (-1.0 / (attack_tau * sample_rate)).exp(),
-            ldr_release: (-1.0 / (release_tau * sample_rate)).exp(),
-            r_ldr_max,
-            gamma: 1.1,
-            ln_r_max: r_ldr_max.ln(),
-            ln_min_minus_max: r_ldr_min.ln() - r_ldr_max.ln(),
+            ldr_attack: (-1.0 / (ATTACK_TAU * sample_rate)).exp(),
+            ldr_release: (-1.0 / (RELEASE_TAU * sample_rate)).exp(),
+            r_ldr_max: R_LDR_MAX,
+            gamma: GAMMA,
+            ln_r_max: R_LDR_MAX.ln(),
+            ln_min_minus_max: R_LDR_MIN.ln() - R_LDR_MAX.ln(),
             r_series: 18_000.0,
         }
     }
 
-    /// Set LFO rate in Hz.
-    pub fn set_rate(&mut self, rate: f64, sample_rate: f64) {
-        self.phase_inc = 2.0 * PI * rate / sample_rate;
-    }
-
-    /// Set tremolo depth (0.0 = off, 1.0 = full).
-    /// Maps to the 50K vibrato pot: higher depth = less series resistance.
     pub fn set_depth(&mut self, depth: f64) {
         self.depth = depth.clamp(0.0, 1.0);
-        // Vibrato pot: 50K at depth=0 (minimum tremolo), ~0 at depth=1 (max tremolo)
         let pot_resistance = 50_000.0 * (1.0 - self.depth);
         self.r_series = 18_000.0 + pot_resistance;
     }
 
-    /// Process one sample: advance LFO, update LDR resistance.
-    /// Returns the total LDR path resistance (R_series + R_ldr) in ohms,
-    /// suitable for `PreampModel::set_ldr_resistance()`.
     pub fn process(&mut self) -> f64 {
-        // LFO: sinusoidal oscillator (twin-T output is ~sinusoidal)
-        let lfo = self.phase.sin();
-        self.phase += self.phase_inc;
-        if self.phase >= 2.0 * PI {
-            self.phase -= 2.0 * PI;
-        }
+        // Step 1: Get oscillator drive (0..1)
+        let led_drive = self.oscillator_drive() * self.depth;
 
-        // Half-wave rectify: LED only conducts on positive half-cycle.
-        // Scale by depth: vibrato pot controls LED current.
-        // At depth=0, pot adds 50K series resistance → negligible LED current.
-        let led_drive = lfo.max(0.0) * self.depth;
-
-        // LDR envelope follower with asymmetric time constants
-        // (CdS material has fast response to light increase, slow decay)
+        // Step 2: CdS LDR envelope (asymmetric attack/release)
         let coeff = if led_drive > self.ldr_envelope {
             self.ldr_attack
         } else {
@@ -109,30 +105,49 @@ impl Tremolo {
         };
         self.ldr_envelope = led_drive + coeff * (self.ldr_envelope - led_drive);
 
-        // CdS LDR: resistance varies logarithmically with illumination.
-        // Real CdS cells span ~4 decades (50Ω fully lit to 1MΩ dark).
-        // log(R) interpolates between log(R_max) and log(R_min) as drive
-        // increases, with gamma controlling the knee of the response curve.
+        // Step 3: CdS power-law resistance
         let drive = self.ldr_envelope.clamp(0.0, 1.0);
         if drive < 1e-6 {
             self.r_ldr = self.r_ldr_max;
         } else {
-            // Log-space interpolation: ln(R_max) at drive=0, ln(R_min) at drive=1
             let log_r = self.ln_r_max + self.ln_min_minus_max * drive.powf(self.gamma);
             self.r_ldr = log_r.exp();
         }
 
-        // Total path resistance: series resistors + LDR
         self.r_series + self.r_ldr
     }
 
-    /// Get the current LDR path resistance without advancing the LFO.
+    /// Get the oscillator's LED drive signal (0..1).
+    #[cfg(feature = "legacy-tremolo")]
+    fn oscillator_drive(&mut self) -> f64 {
+        let lfo = self.phase.sin();
+        self.phase += self.phase_inc;
+        if self.phase >= 2.0 * PI {
+            self.phase -= 2.0 * PI;
+        }
+        lfo.max(0.0) // half-wave rectify
+    }
+
+    #[cfg(not(feature = "legacy-tremolo"))]
+    fn oscillator_drive(&mut self) -> f64 {
+        let v_out = gen_tremolo::process_sample(0.0, &mut self.osc_state)[0];
+        // Map collector voltage to LED drive: low V = bright LED = high drive
+        ((V_OUT_MAX - v_out) / (V_OUT_MAX - V_OUT_MIN)).clamp(0.0, 1.0)
+    }
+
     pub fn current_resistance(&self) -> f64 {
         self.r_series + self.r_ldr
     }
 
     pub fn reset(&mut self) {
-        self.phase = 0.0;
+        #[cfg(feature = "legacy-tremolo")]
+        {
+            self.phase = 0.0;
+        }
+        #[cfg(not(feature = "legacy-tremolo"))]
+        {
+            self.osc_state.reset();
+        }
         self.ldr_envelope = 0.0;
         self.r_ldr = self.r_ldr_max;
     }
@@ -143,23 +158,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lfo_frequency() {
+    fn test_oscillator_frequency() {
         let sr = 44100.0;
-        let rate = 5.5;
-        let mut trem = Tremolo::new(rate, 1.0, sr);
+        let mut trem = Tremolo::new(1.0, sr);
 
-        // Count zero crossings of the effective resistance
-        // (resistance oscillates between min and max)
-        let n = (sr * 2.0) as usize; // 2 seconds
+        let n = (sr * 2.0) as usize;
         let mut values = Vec::with_capacity(n);
         for _ in 0..n {
             values.push(trem.process());
         }
 
-        // Find the mean resistance
         let mean: f64 = values.iter().sum::<f64>() / values.len() as f64;
-
-        // Count upward zero crossings through the mean
         let mut crossings = 0u32;
         for i in 1..values.len() {
             if values[i - 1] < mean && values[i] >= mean {
@@ -167,18 +176,18 @@ mod tests {
             }
         }
 
-        // Should be approximately rate * 2 seconds = 11 crossings
-        let expected = (rate * 2.0) as u32;
+        // Twin-T oscillator is ~5.3-5.6 Hz; legacy is 5.63 Hz
+        // Over 2 seconds expect ~11 crossings
         assert!(
-            crossings.abs_diff(expected) <= 2,
-            "Expected ~{expected} oscillations, got {crossings}"
+            crossings >= 8 && crossings <= 14,
+            "Expected ~11 oscillations in 2s, got {crossings}"
         );
     }
 
     #[test]
     fn test_depth_zero_is_static() {
         let sr = 44100.0;
-        let mut trem = Tremolo::new(5.5, 0.0, sr);
+        let mut trem = Tremolo::new(0.0, sr);
         trem.set_depth(0.0);
 
         let n = (sr * 0.5) as usize;
@@ -191,12 +200,7 @@ mod tests {
             max_r = max_r.max(r);
         }
 
-        // At depth 0, the series resistance is 50K + 18K = 68K + LDR
-        // The LDR still oscillates, but the pot resistance dominates
-        // and the modulation range is much smaller
         let range_db = 20.0 * (max_r / min_r).log10();
-
-        // At depth=0, modulation should be small (vibrato pot adds 50K series)
         assert!(
             range_db < 20.0,
             "At depth 0, resistance should not vary much: {range_db:.1} dB range"
@@ -206,7 +210,7 @@ mod tests {
     #[test]
     fn test_resistance_range() {
         let sr = 44100.0;
-        let mut trem = Tremolo::new(5.5, 1.0, sr);
+        let mut trem = Tremolo::new(1.0, sr);
         trem.set_depth(1.0);
 
         let n = (sr * 2.0) as usize;
@@ -219,8 +223,6 @@ mod tests {
             max_r = max_r.max(r);
         }
 
-        // At full depth: min should approach 18K + ~50 ohm (LDR bright)
-        // max should approach 18K + ~1M (LDR dark)
         assert!(min_r < 100_000.0, "Min resistance too high: {min_r:.0}");
         assert!(max_r > 200_000.0, "Max resistance too low: {max_r:.0}");
     }
@@ -228,26 +230,16 @@ mod tests {
     #[test]
     fn test_asymmetric_envelope() {
         let sr = 44100.0;
-        let mut trem = Tremolo::new(5.5, 1.0, sr);
+        let mut trem = Tremolo::new(1.0, sr);
         trem.set_depth(1.0);
 
-        // Run for a few cycles to settle
         let n = (sr * 1.0) as usize;
         let mut values = Vec::with_capacity(n);
         for _ in 0..n {
             values.push(trem.process());
         }
 
-        // The LDR should have asymmetric response: fast decrease (attack),
-        // slow increase (release). Check by measuring fall time vs rise time.
-        // Find a min->max transition and a max->min transition
         let mean = values.iter().sum::<f64>() / values.len() as f64;
-
-        // This is a qualitative test — just verify the waveform isn't symmetric
-        // by checking that the resistance spends more time below the mean than above.
-        // Fast attack (3ms) means the envelope reaches peak quickly and stays high,
-        // keeping resistance LOW for most of each cycle. Slow release (50ms) means
-        // the envelope only partially decays during the LFO's off-phase.
         let above_count = values.iter().filter(|&&v| v > mean).count();
         let below_count = values.len() - above_count;
 
