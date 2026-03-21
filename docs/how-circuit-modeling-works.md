@@ -14,7 +14,7 @@ The challenge: the 200A's preamp circuit has two transistor stages with feedback
 
 Every electronic circuit obeys Kirchhoff's laws: current into a node equals current out, and voltages around a loop sum to zero. Engineers formalize this as **Modified Nodal Analysis (MNA)** — a system of equations with one equation per circuit node.
 
-The 200A preamp has 8 nodes that matter: the input, two transistor bases, two emitters, two collectors, the output, and a feedback junction. Each component (resistor, capacitor, transistor) contributes terms to these equations. A 22K resistor between nodes A and B adds `(V_A - V_B) / 22000` to the current balance at both nodes. A capacitor adds a term involving the *rate of change* of voltage.
+The 200A preamp has 12 nodes that matter: the input, two transistor bases, two emitters, two collectors, the output, and a feedback junction, plus additional nodes for coupling and bias networks. Each component (resistor, capacitor, transistor) contributes terms to these equations. A 22K resistor between nodes A and B adds `(V_A - V_B) / 22000` to the current balance at both nodes. A capacitor adds a term involving the *rate of change* of voltage.
 
 We write all of this down as matrices — one for resistive elements (G), one for capacitive elements (C), one for nonlinear devices (the transistors). The full system looks like:
 
@@ -30,9 +30,9 @@ This is a set of coupled differential equations. The G and C matrices are consta
 
 **Step 1 — Discretize time.** Capacitors involve derivatives (dv/dt). We approximate these using the trapezoidal rule, which converts each capacitor into an equivalent resistor plus a memory term from the previous sample. After this step, the differential equations become algebraic equations — no calculus, just arithmetic at each time step.
 
-**Step 2 — Isolate the nonlinear kernel.** The transistor equations are nonlinear (exponential Ebers-Moll model), which means we can't solve the full 8-node system in one shot. But most of the circuit is linear — only the two transistors are nonlinear. The DK method uses linear algebra (specifically, the Sherman-Morrison formula) to reduce the 8-node system down to a 2x2 nonlinear problem: just the two base-emitter junctions.
+**Step 2 — Isolate the nonlinear kernel.** The transistor equations are nonlinear (exponential Ebers-Moll model), which means we can't solve the full 12-node system in one shot. But most of the circuit is linear — only the two transistors are nonlinear. The DK method uses linear algebra (specifically, the Sherman-Morrison formula) to reduce the 12-node system down to a 3x3 nonlinear problem: just the two base-emitter junctions and the feedback interaction.
 
-We solve that 2x2 system with Newton-Raphson iteration (typically converges in 2-3 iterations), then back-substitute to get all 8 node voltages. The output voltage is our audio sample.
+We solve that 3x3 system with Newton-Raphson iteration (typically converges in 2-3 iterations), then back-substitute to get all 12 node voltages. The output voltage is our audio sample.
 
 ## What This Gets Right
 

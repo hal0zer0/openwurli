@@ -876,25 +876,25 @@ At low preamp drive levels (pp), the distinction between gain modulation and vol
 
 **ARCHITECTURE DECISION: Trait-based A/B testing.** Implement a `PreampModel` trait (Rust) or abstract interface (C++) with `process_sample()`, `set_ldr_resistance()`, `reset()`. Build two implementations behind this interface:
 1. Full SPICE-derived model (ground truth / reference)
-2. Simplified Ebers-Moll (candidate for shipping)
+2. Simplified Ebers-Moll (deleted in v0.3.0)
 
 The voice holds a swappable `PreampModel` implementation. A/B testing compares the two until the simplified version is perceptually indistinguishable from the reference. If CPU allows, ship both as a quality toggle.
 
 #### Approach 1: DK Method — Coupled 8-Node MNA Solver — SHIPPING IMPLEMENTATION
 
-Model the complete circuit as an 8-node Modified Nodal Analysis (MNA) system using the Discretization-Kernel (DK) method. Trapezoidal discretization with a precomputed system inverse reduces the per-sample nonlinear solve to a 2x2 Newton-Raphson iteration on Vbe1/Vbe2. Implemented as `DkPreamp` in `dk_preamp.rs`. See [DK Preamp Derivation](dk-preamp-derivation.md) for the full math.
+Model the complete circuit as an 8-node Modified Nodal Analysis (MNA) system using the Discretization-Kernel (DK) method. Trapezoidal discretization with a precomputed system inverse reduces the per-sample nonlinear solve to a 2x2 Newton-Raphson iteration on Vbe1/Vbe2. Implemented as `DkPreamp` in `dk_preamp/` (melange-generated 12-node solver, default) and `dk_preamp_legacy.rs` (hand-written 8-node). See [DK Preamp Derivation](dk-preamp-derivation.md) for the full math.
 
 **Pros:** Most accurate harmonic content, correct frequency-dependent gain (captures nested C-3/C-4 Miller loop), proper bias-shift dynamics, explicit R_ldr handling via Sherman-Morrison
 **Cons:** Requires solving two coupled implicit equations per sample (Newton-Raphson iteration); ~900 FLOPs/sample (two dk_step calls: main + shadow)
 **Role:** Shipping implementation. Correctly models the ~15.5 kHz bandwidth that is independent of R_ldr (see Section 5.5.1).
 
-#### Approach 2: Simplified Ebers-Moll with Feedback Caps — LEGACY REFERENCE
+#### Approach 2: Simplified Ebers-Moll with Feedback Caps — DELETED
 
-Two independent BjtStage objects with exponential transfer functions, NR solver for feedback, and asymmetric soft-clip for collector limits. Implementation exists in `preamp.rs` as `EbersMollPreamp`.
+Two independent BjtStage objects with exponential transfer functions, NR solver for feedback, and asymmetric soft-clip for collector limits.
 
 **Pros:** Captures the key H2 mechanism; reasonable computational cost; NR converges quickly at physical signal levels
 **Cons:** Misses inter-stage DC bias modulation ("sag"); constant-GBW model is structurally inadequate (gives ~5.2 kHz BW at trem-bright vs real ~15.5 kHz — see Section 5.5.1)
-**Status:** Superseded by DkPreamp. Retained in `preamp.rs` as legacy reference for A/B comparison.
+**Status:** Deleted in v0.3.0. Was in `preamp.rs`, now removed.
 
 #### Approach 3: Wave Digital Filter (WDF) Model — NOT PURSUED
 
@@ -969,7 +969,7 @@ Add to the minimum model:
 
 Key lessons from previous modeling attempts:
 
-1. **(Historical — EbersMollPreamp only)** The old `kPreampInputDrive` constant (removed from codebase) should have been ~1.0. A value >> 1 indicated wrong gain staging. The DkPreamp implementation does not use an input drive constant; the MNA system handles gain staging implicitly.
+1. **(Historical — EbersMollPreamp only (deleted))** The old `kPreampInputDrive` constant (removed from codebase) should have been ~1.0. A value >> 1 indicated wrong gain staging. The DkPreamp implementation does not use an input drive constant; the MNA system handles gain staging implicitly.
 
 2. **Miller feedback polarity: MORE feedback at HF, LESS at LF.** The capacitor passes high frequencies and blocks low frequencies. An LPF-based feedback implementation inverts this behavior.
 
@@ -1128,7 +1128,7 @@ full_chain_bandwidth_no_trem = 19 Hz - 11.8 kHz (includes input network loading)
 full_chain_bandwidth_trem_bright = 19 Hz - 9.7 kHz (input network loaded more by higher gain)
 // Earlier "9.9 kHz / 8.3 kHz" figures were full-chain, possibly with R_ldr=120K default
 passband_peak = ~450 Hz (from feedback loop resonance)
-// kPreampInputDrive: removed (was EbersMollPreamp only; DkPreamp handles gain implicitly)
+// kPreampInputDrive: removed (was EbersMollPreamp only (deleted); DkPreamp handles gain implicitly)
 
 // Note: C20 (220 pF) appears only on 206A board, NOT on 200A.
 // Bass rolloff comes from pickup RC (f_c = 2312 Hz), not from preamp.

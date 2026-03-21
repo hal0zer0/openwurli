@@ -88,7 +88,7 @@ Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vc
 
 **Output swing:** 11.8 Vpp (target ~11.5 Vpp). Near rail-to-rail.
 
-**Waveform:** The real twin-T oscillator produces a mildly distorted sinusoid (estimated THD 3-10%). The OpenWurli implementation uses a pure sine LFO (`phase.sin()`) -- the mild oscillator distortion is not modeled, as it has negligible audible effect on the tremolo character.
+**Waveform:** The real twin-T oscillator produces a mildly distorted sinusoid (estimated THD 3-10%). The OpenWurli implementation now uses a melange-generated Twin-T circuit oscillator as the default, which models the real waveform shape including the mild distortion. The behavioral sine LFO is still available behind `--features legacy-tremolo`.
 
 **LED drive path:** Node G → R17 (4.7K) → LG-1 pin 1 (LED cathode) → LED → pin 2 (LED anode) → return to Vcc via cable. The LG-1 LED symbol points downward on the schematic (anode=pin 2 at top, cathode=pin 1 at bottom).
 
@@ -479,14 +479,15 @@ This cascade produced ~30 dB/oct rolloff below 70 Hz, which proved too aggressiv
 
 ### 7.1 Tremolo Model
 
-**Status: IMPLEMENTED.** Tremolo operates inside the preamp feedback loop. The `Tremolo` module (`tremolo.rs`) computes a per-sample LDR path resistance, which is passed to the DkPreamp via `set_ldr_resistance()`. The DkPreamp's 8-node MNA circuit solver then modulates the feedback loop gain accordingly, producing the correct timbral variation (gain + distortion character change) through the tremolo cycle.
+**Status: IMPLEMENTED.** Tremolo operates inside the preamp feedback loop. The `Tremolo` module (`tremolo.rs`) computes a per-sample LDR path resistance, which is passed to the DkPreamp via `set_ldr_resistance()`. The DkPreamp's 12-node MNA circuit solver (melange-generated) then modulates the feedback loop gain accordingly, producing the correct timbral variation (gain + distortion character change) through the tremolo cycle.
 
 **Implementation details:**
 
 ```
-// Oscillator (tremolo.rs)
-rate = 5.63 Hz (pure sine LFO; real twin-T oscillator's mild THD not modeled)
-waveform: phase.sin(), half-wave rectified for LED drive
+// Oscillator (tremolo.rs) — default: melange Twin-T circuit oscillator
+rate = ~5.6 Hz (fixed by Twin-T RC network; no rate parameter)
+waveform: real oscillator circuit output, half-wave rectified for LED drive
+// --features legacy-tremolo: behavioral sine LFO at 5.63 Hz (phase.sin())
 
 // LDR time constants (VTL5C3-like, tuned to match perceived tremolo
 // character of real 200A instruments. CdS time constants vary significantly
