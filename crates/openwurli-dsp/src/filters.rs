@@ -4,7 +4,7 @@
 //! coefficients and Direct Form II Transposed structure).
 //!
 //! Legacy types (OnePoleLpf, OnePoleHpf, TptLpf, DcBlocker) are retained
-//! for bjt_stage.rs and EbersMollPreamp pending cleanup.
+//! for dk_preamp_legacy.rs and other signal chain modules.
 
 use melange_primitives::{Biquad as MelangeBiquad, BiquadType};
 use std::f64::consts::PI;

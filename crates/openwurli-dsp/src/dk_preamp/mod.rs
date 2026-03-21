@@ -2,7 +2,7 @@
 //!
 //! Default: hand-written 8-node MNA solver (proven).
 //! `--features melange-preamp`: melange-generated 12-node M=3 solver
-//! with pot-as-rebuild. Settles at 100K nominal, tremolo sweeps smoothly.
+//! with Sherman-Morrison pot correction. Settles at 100K nominal, tremolo sweeps smoothly.
 
 #[cfg(not(feature = "melange-preamp"))]
 pub use crate::dk_preamp_legacy::DkPreamp;
@@ -15,7 +15,7 @@ pub use melange_adapter::DkPreamp;
 #[cfg(test)]
 mod melange_gate_tests {
     use crate::gen_preamp::{self, CircuitState};
-    use crate::preamp::PreampModel;
+    use crate::preamp::PreampModel; // needed for leg_gain() trait method calls
     use std::f64::consts::PI;
     use std::sync::OnceLock;
 

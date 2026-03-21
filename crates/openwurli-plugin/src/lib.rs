@@ -673,10 +673,10 @@ mod tests {
             }
         };
 
-        render_and_check(&mut plugin, 0.63, "Normal volume");
+        render_and_check(&mut plugin, 0.50, "Normal volume");
         render_and_check(&mut plugin, 0.0, "Zero volume");
         // Volume back up — the transition that triggered the crash
-        render_and_check(&mut plugin, 0.63, "Volume restore");
+        render_and_check(&mut plugin, 0.50, "Volume restore");
     }
 
     #[test]
@@ -694,7 +694,7 @@ mod tests {
 
         // Process through the output chain — the NaN guard should catch it
         for i in 0..len {
-            let vol = 0.63;
+            let vol = 0.50;
             let attenuated = plugin.out_buf[i] * vol * vol;
             let amplified = plugin.power_amp.process(attenuated);
             let shaped = plugin.speaker.process(amplified);

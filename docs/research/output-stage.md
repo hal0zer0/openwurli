@@ -169,7 +169,7 @@ The 3K audio pot is unusually low impedance for a volume control. This has impli
 
 **DECISION: Model as real attenuator, not output gain.** The volume pot must sit between preamp and power amp in the plugin signal chain, not at the output. At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the character of the distortion (more odd harmonics from the dead zone). This interaction is audible and should be preserved. Implementation: audio-taper gain curve applied between preamp output and power amp input.
 
-**Volume taper implementation:** `gain = volume^2` (quadratic approximation of audio taper). The parameter UI uses a skew factor of 2.0 for display. Default volume is 0.50, giving effective gain of 0.25 (-12 dB).
+**Volume taper implementation:** `gain = volume^2` (quadratic approximation of audio taper). The parameter uses `FloatRange::Linear` (0.0 to 1.0). Default volume is 0.50, giving effective gain of 0.25 (-12 dB).
 
 ---
 

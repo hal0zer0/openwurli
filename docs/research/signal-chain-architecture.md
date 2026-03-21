@@ -712,13 +712,13 @@ In the real 200A, the 3K audio-taper volume potentiometer sits between the pream
 **Why placement matters:** At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the distortion character (more odd harmonics from the Class AB dead zone). This interaction between volume and power amp behavior is audible and contributes to the instrument's character at low volumes.
 
 ```
-// Audio taper: skewed range (display mapping) + squared multiplier (audio path)
-pot_position = user_volume_param  // 0.0 to 1.0 (FloatRange::Skewed, factor 2.0)
+// Audio taper: linear range + squared multiplier (audio path)
+pot_position = user_volume_param  // 0.0 to 1.0 (FloatRange::Linear)
 output = input * pot_position * pot_position  // vol^2 in the audio path
 // -> feeds into power amplifier stage
 ```
 
-The effective taper combines two stages: `FloatRange::Skewed` with factor 2.0 (which controls the DAW display/automation curve) plus the `vol * vol` squared multiplier in the audio path. The default volume of 0.50 produces an effective gain of 0.25 (0.50^2). In the real instrument, the volume pot output is measured at 2-7 mV AC.
+The audio taper is implemented as `vol * vol` (quadratic) in the audio path, with a `FloatRange::Linear` parameter. The default volume of 0.50 produces an effective gain of 0.25 (0.50^2). In the real instrument, the volume pot output is measured at 2-7 mV AC.
 
 ---
 

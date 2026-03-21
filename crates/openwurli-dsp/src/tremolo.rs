@@ -6,6 +6,7 @@
 //! Both share the same CdS LDR model (LED drive → asymmetric envelope → power-law R).
 //! The circuit model replaces the sine LFO with the real Twin-T waveform shape.
 
+#[cfg(not(feature = "melange-tremolo"))]
 use std::f64::consts::PI;
 
 #[cfg(feature = "melange-tremolo")]
@@ -57,8 +58,10 @@ impl Tremolo {
             #[cfg(not(feature = "melange-tremolo"))]
             phase_inc: 2.0 * PI * rate / sample_rate,
 
+            // Circuit oscillator frequency is set by components, not `rate`.
             #[cfg(feature = "melange-tremolo")]
             osc_state: {
+                let _ = rate;
                 let mut s = gen_tremolo::CircuitState::default();
                 if (sample_rate - gen_tremolo::SAMPLE_RATE).abs() > 0.5 {
                     s.set_sample_rate(sample_rate);

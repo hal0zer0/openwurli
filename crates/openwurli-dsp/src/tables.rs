@@ -359,12 +359,6 @@ pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MOD
     }
 }
 
-/// Hammer spatial coupling coefficients for mode excitation.
-///
-/// The hammer contacts the reed over a finite length at a specific position,
-/// acting as a spatial filter in mode space. Modes whose half-wavelength is
-/// shorter than the contact region experience partial cancellation.
-///
 /// Fundamental decay rate in dB/s for a given MIDI note.
 ///
 /// Frequency power law calibrated against 10 clean OBM 200A decay rates
