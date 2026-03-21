@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [github.com/hal0zer0/melange](https://github.com/hal0zer0/melange).
 
 ### Removed
+- **Tremolo Rate parameter removed.** The real 200A has no rate knob — the
+  Twin-T oscillator frequency (~5.6 Hz) is fixed by passive components. The
+  rate slider in earlier versions was an artifact of the synthetic sine LFO.
 - Deleted dead filter types (`OnePoleLpf`, `OnePoleHpf`, `TptLpf`, `DcBlocker`)
   superseded by melange-primitives — 370 lines removed.
 - Deleted `bjt_stage.rs` (single BJT CE stage), superseded by DK method preamp.

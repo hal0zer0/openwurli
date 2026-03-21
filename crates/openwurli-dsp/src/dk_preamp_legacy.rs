@@ -1958,8 +1958,7 @@ mod tests {
 
         let os_sr = 88200.0;
         let mut preamp = DkPreamp::new(os_sr);
-        let mut tremolo = Tremolo::new(5.63, 1.0, os_sr);
-        tremolo.set_depth(1.0);
+        let mut tremolo = Tremolo::new(1.0, os_sr);
 
         // Run 2 seconds of zero input with cycling R_ldr
         let n = (os_sr * 2.0) as usize;

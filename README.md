@@ -78,8 +78,7 @@ cargo test --workspace
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
 | Volume | 0-100% | 50% | Attenuator between preamp and power amp (audio taper) |
-| Tremolo Rate | 0.1-15.0 Hz | 5.63 Hz | LFO rate (stock 200A: 5.63 Hz) |
-| Tremolo Depth | 0-100% | 50% | Modulation depth (0 = off) |
+| Tremolo Depth | 0-100% | 50% | Modulation depth (0 = off). Rate fixed at ~5.6 Hz by Twin-T oscillator. |
 | Speaker Character | 0-100% | 0% | 0% = flat bypass, 100% = authentic cabinet response |
 | MLP Corrections | off/on | on | Per-note corrections trained on real Wurlitzer recordings |
 

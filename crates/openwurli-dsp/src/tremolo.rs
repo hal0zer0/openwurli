@@ -49,18 +49,20 @@ pub struct Tremolo {
     r_series: f64,
 }
 
+/// Fixed oscillator rate for the legacy behavioral LFO (Hz).
+#[cfg(feature = "legacy-tremolo")]
+const LEGACY_RATE_HZ: f64 = 5.63;
+
 impl Tremolo {
-    pub fn new(rate: f64, depth: f64, sample_rate: f64) -> Self {
+    pub fn new(depth: f64, sample_rate: f64) -> Self {
         Self {
             #[cfg(feature = "legacy-tremolo")]
             phase: 0.0,
             #[cfg(feature = "legacy-tremolo")]
-            phase_inc: 2.0 * PI * rate / sample_rate,
+            phase_inc: 2.0 * PI * LEGACY_RATE_HZ / sample_rate,
 
-            // Circuit oscillator frequency is set by components, not `rate`.
             #[cfg(not(feature = "legacy-tremolo"))]
             osc_state: {
-                let _ = rate;
                 let mut s = gen_tremolo::CircuitState::default();
                 if (sample_rate - gen_tremolo::SAMPLE_RATE).abs() > 0.5 {
                     s.set_sample_rate(sample_rate);
@@ -82,19 +84,6 @@ impl Tremolo {
             ln_r_max: R_LDR_MAX.ln(),
             ln_min_minus_max: R_LDR_MIN.ln() - R_LDR_MAX.ln(),
             r_series: 18_000.0,
-        }
-    }
-
-    pub fn set_rate(&mut self, rate: f64, sample_rate: f64) {
-        #[cfg(feature = "legacy-tremolo")]
-        {
-            self.phase_inc = 2.0 * PI * rate / sample_rate;
-        }
-        #[cfg(not(feature = "legacy-tremolo"))]
-        {
-            // The circuit oscillator's frequency is set by components, not a parameter.
-            // Rate knob is ignored — the Twin-T frequency is fixed at ~5.3 Hz.
-            let _ = (rate, sample_rate);
         }
     }
 
@@ -169,10 +158,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lfo_frequency() {
+    fn test_oscillator_frequency() {
         let sr = 44100.0;
-        let rate = 5.5;
-        let mut trem = Tremolo::new(rate, 1.0, sr);
+        let mut trem = Tremolo::new(1.0, sr);
 
         let n = (sr * 2.0) as usize;
         let mut values = Vec::with_capacity(n);
@@ -188,17 +176,18 @@ mod tests {
             }
         }
 
-        let expected = (rate * 2.0) as u32;
+        // Twin-T oscillator is ~5.3-5.6 Hz; legacy is 5.63 Hz
+        // Over 2 seconds expect ~11 crossings
         assert!(
-            crossings.abs_diff(expected) <= 2,
-            "Expected ~{expected} oscillations, got {crossings}"
+            crossings >= 8 && crossings <= 14,
+            "Expected ~11 oscillations in 2s, got {crossings}"
         );
     }
 
     #[test]
     fn test_depth_zero_is_static() {
         let sr = 44100.0;
-        let mut trem = Tremolo::new(5.5, 0.0, sr);
+        let mut trem = Tremolo::new(0.0, sr);
         trem.set_depth(0.0);
 
         let n = (sr * 0.5) as usize;
@@ -221,7 +210,7 @@ mod tests {
     #[test]
     fn test_resistance_range() {
         let sr = 44100.0;
-        let mut trem = Tremolo::new(5.5, 1.0, sr);
+        let mut trem = Tremolo::new(1.0, sr);
         trem.set_depth(1.0);
 
         let n = (sr * 2.0) as usize;
@@ -241,7 +230,7 @@ mod tests {
     #[test]
     fn test_asymmetric_envelope() {
         let sr = 44100.0;
-        let mut trem = Tremolo::new(5.5, 1.0, sr);
+        let mut trem = Tremolo::new(1.0, sr);
         trem.set_depth(1.0);
 
         let n = (sr * 1.0) as usize;

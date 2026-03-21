@@ -346,7 +346,6 @@ fn cmd_render(args: &[String]) {
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
     let volume = parse_flag(args, "--volume", 0.60);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
-    let tremolo_rate = parse_flag(args, "--tremolo-rate", 5.63);
     let tremolo_depth = parse_flag(args, "--tremolo-depth", 0.0);
     let sample_rate = parse_flag(args, "--sample-rate", BASE_SR);
     let no_poweramp = has_flag(args, "--no-poweramp");
@@ -399,7 +398,7 @@ fn cmd_render(args: &[String]) {
         let mut preamp = DkPreamp::new(preamp_sr);
 
         let mut tremolo = if tremolo_depth > 0.0 {
-            Some(Tremolo::new(tremolo_rate, tremolo_depth, preamp_sr))
+            Some(Tremolo::new(tremolo_depth, preamp_sr))
         } else {
             preamp.set_ldr_resistance(r_ldr);
             preamp.reset();
@@ -482,7 +481,7 @@ fn cmd_render(args: &[String]) {
     println!("  Velocity:  {velocity}");
     println!("  Duration:  {duration:.1}s");
     if tremolo_depth > 0.0 {
-        println!("  Tremolo:   rate={tremolo_rate:.1} Hz, depth={tremolo_depth:.2}");
+        println!("  Tremolo:   depth={tremolo_depth:.2}");
     } else {
         println!("  LDR:       {r_ldr:.0} Ω (static)");
     }

@@ -95,7 +95,7 @@ impl Default for OpenWurli {
             voices: (0..MAX_VOICES).map(|_| VoiceSlot::default()).collect(),
             age_counter: 0,
             preamp: DkPreamp::new(os_sr),
-            tremolo: Tremolo::new(5.63, 0.5, os_sr),
+            tremolo: Tremolo::new(0.5, os_sr),
             oversampler: Oversampler::new(),
             power_amp: PowerAmp::new(),
             speaker: Speaker::new(sr),
@@ -250,9 +250,7 @@ impl OpenWurli {
             // pot rotation). Each base-rate sample produces 2 oversampled preamp steps.
             for i in 0..len {
                 let depth = self.params.tremolo_depth.smoothed.next() as f64;
-                let rate = self.params.tremolo_rate.smoothed.next() as f64;
                 self.tremolo.set_depth(depth);
-                self.tremolo.set_rate(rate, self.os_sample_rate);
 
                 for j in 0..2 {
                     let idx = i * 2 + j;
@@ -271,9 +269,7 @@ impl OpenWurli {
             // At >= 88.2 kHz: preamp runs at native rate, no oversampling needed
             for i in 0..len {
                 let depth = self.params.tremolo_depth.smoothed.next() as f64;
-                let rate = self.params.tremolo_rate.smoothed.next() as f64;
                 self.tremolo.set_depth(depth);
-                self.tremolo.set_rate(rate, self.os_sample_rate);
 
                 let r_ldr = self.tremolo.process();
                 self.preamp.set_ldr_resistance(r_ldr);
@@ -338,7 +334,6 @@ impl Plugin for OpenWurli {
         // Reinitialize DSP modules at correct sample rate
         self.preamp = DkPreamp::new(self.os_sample_rate);
         self.tremolo = Tremolo::new(
-            self.params.tremolo_rate.value() as f64,
             self.params.tremolo_depth.value() as f64,
             self.os_sample_rate,
         );
@@ -385,8 +380,6 @@ impl Plugin for OpenWurli {
         // (ensures correct state even before smoothers are host-initialized),
         // then smoothed per-sample inside render_subblock() for automation.
         let trem_depth = self.params.tremolo_depth.value() as f64;
-        self.tremolo
-            .set_rate(self.params.tremolo_rate.value() as f64, self.os_sample_rate);
         self.tremolo.set_depth(trem_depth);
 
         // Event-splitting process loop: split at each MIDI event for sample-accuracy
@@ -521,7 +514,6 @@ mod tests {
     fn test_params_have_correct_defaults() {
         let params = OpenWurliParams::default();
         assert!((params.volume.default_plain_value() - 0.50).abs() < 0.01);
-        assert!((params.tremolo_rate.default_plain_value() - 5.63).abs() < 0.01);
         assert!((params.tremolo_depth.default_plain_value() - 0.5).abs() < 0.01);
         assert!((params.speaker_character.default_plain_value()).abs() < 0.01);
         assert!(params.mlp_enabled.default_plain_value());

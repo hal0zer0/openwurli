@@ -963,7 +963,6 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The pickup RC HPF limits the p
 | ID | Name | Module | Min | Max | Default | Purpose |
 |----|------|--------|-----|-----|---------|---------|
 | "volume" | Volume | output | 0% | 100% | 50% | Audio taper attenuator between preamp and power amp |
-| "trem_rate" | Tremolo Rate | tremolo | 0.1 | 15.0 Hz | 5.63 Hz | LFO frequency |
 | "trem_depth" | Tremolo Depth | tremolo | 0% | 100% | 50% | Modulation amount |
 | "speaker" | Speaker Character | speaker | 0% | 100% | 0% | 0%=bypass (full range), 100%=authentic (HPF+LPF+waveshaper) |
 | "mlp" | MLP Corrections | dsp | off / on | — | on | Per-note ML corrections for freq/decay/displacement |
