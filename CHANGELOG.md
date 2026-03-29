@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] "GoodbyeJane" - 2026-03-29
+
+### Added
+- **Sustain pedal support (CC64).** Lifts the damper rail — reeds ring freely
+  while the pedal is held, matching the real 200A's mechanical sustain lever.
+  Re-striking a sustained note releases the old voice first (one reed per
+  pitch). Voice stealing priority: Free > Releasing > Sustained > Held.
+- MIDI input upgraded from `MidiConfig::Basic` to `MidiConfig::MidiCCs` to
+  receive CC events from the host.
+
+### Fixed
+- **note_off clamping mismatch**: `note_off()` did not clamp MIDI note numbers
+  to the valid range, while `note_on()` did. A note-on for out-of-range note 0
+  (stored as clamped 33) could never be released by note-off 0. Both paths now
+  clamp identically.
+
 ## [0.3.0] "MercyMercyMercy" - 2026-03-21
 
 ### Changed
@@ -304,7 +320,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/hal0zer0/openwurli/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/hal0zer0/openwurli/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/hal0zer0/openwurli/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/hal0zer0/openwurli/compare/v0.2.2...v0.2.3

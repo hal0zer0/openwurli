@@ -1,5 +1,6 @@
 // OpenWurli — Wurlitzer 200A virtual instrument plugin (CLAP + VST3).
 
+use nih_plug::midi::control_change;
 use nih_plug::prelude::*;
 use openwurli_dsp::dk_preamp::DkPreamp;
 use openwurli_dsp::oversampler::Oversampler;
@@ -24,10 +25,12 @@ const MAX_BLOCK_SIZE: usize = 8192;
 
 // ── Voice management ────────────────────────────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum VoiceState {
     Free,
     Held,
+    /// Key released while sustain pedal was down — reed rings undamped.
+    Sustained,
     Releasing,
 }
 
@@ -84,6 +87,9 @@ struct OpenWurli {
 
     /// Whether to oversample the preamp (false at >= 88.2 kHz host rates).
     oversample: bool,
+
+    /// Sustain pedal state (CC64 >= 0.5 = held).
+    sustain_held: bool,
 }
 
 impl Default for OpenWurli {
@@ -106,6 +112,7 @@ impl Default for OpenWurli {
             sample_rate: sr,
             os_sample_rate: os_sr,
             oversample: true,
+            sustain_held: false,
         }
     }
 }
@@ -113,6 +120,18 @@ impl Default for OpenWurli {
 impl OpenWurli {
     fn note_on(&mut self, note: u8, velocity: f32, mlp_enabled: bool) {
         let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
+
+        // Release any sustained voice for this note — real 200A has one reed per pitch,
+        // so re-striking a sustained note damps the old vibration before the new attack.
+        for slot in &mut self.voices {
+            if slot.state == VoiceState::Sustained && slot.midi_note == note {
+                slot.state = VoiceState::Releasing;
+                if let Some(ref mut voice) = slot.voice {
+                    voice.note_off();
+                }
+            }
+        }
+
         let slot_idx = self.allocate_voice();
         let slot = &mut self.voices[slot_idx];
 
@@ -141,6 +160,7 @@ impl OpenWurli {
     }
 
     fn note_off(&mut self, note: u8) {
+        let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
         // Release the oldest held voice matching this note
         let oldest_idx = self
             .voices
@@ -150,24 +170,43 @@ impl OpenWurli {
             .min_by_key(|(_, s)| s.age)
             .map(|(i, _)| i);
         if let Some(idx) = oldest_idx {
-            self.voices[idx].state = VoiceState::Releasing;
-            if let Some(ref mut voice) = self.voices[idx].voice {
-                voice.note_off();
+            if self.sustain_held {
+                // Pedal down: reed rings undamped until pedal release
+                self.voices[idx].state = VoiceState::Sustained;
+            } else {
+                self.voices[idx].state = VoiceState::Releasing;
+                if let Some(ref mut voice) = self.voices[idx].voice {
+                    voice.note_off();
+                }
             }
         }
     }
 
-    /// Find a voice slot: prefer Free, then oldest Releasing, then oldest Held.
+    /// Release all sustained voices (called when sustain pedal goes up).
+    fn release_sustained(&mut self) {
+        for slot in &mut self.voices {
+            if slot.state == VoiceState::Sustained {
+                slot.state = VoiceState::Releasing;
+                if let Some(ref mut voice) = slot.voice {
+                    voice.note_off();
+                }
+            }
+        }
+    }
+
+    /// Find a voice slot: prefer Free, then oldest Releasing, Sustained, then Held.
     fn allocate_voice(&self) -> usize {
         let mut best_idx = 0;
         let mut best_priority = u64::MAX;
 
         for (i, slot) in self.voices.iter().enumerate() {
-            // Priority: Free (return immediately) > oldest Releasing > oldest Held.
-            // Releasing sorts before Held at equal age because its priority is lower.
+            // Priority: Free (immediate) > oldest Releasing > oldest Sustained > oldest Held.
+            // Sustained voices already had their key released — less disruptive to steal
+            // than a Held voice the player is still pressing.
             let priority = match slot.state {
                 VoiceState::Free => return i,
                 VoiceState::Releasing => slot.age,
+                VoiceState::Sustained => slot.age + u64::MAX / 4,
                 VoiceState::Held => slot.age + u64::MAX / 2,
             };
             if priority < best_priority {
@@ -306,7 +345,7 @@ impl Plugin for OpenWurli {
         names: PortNames::const_default(),
     }];
 
-    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
+    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
     type SysExMessage = ();
@@ -366,6 +405,7 @@ impl Plugin for OpenWurli {
         self.power_amp.reset();
         self.speaker.reset();
         self.age_counter = 0;
+        self.sustain_held = false;
     }
 
     fn process(
@@ -399,6 +439,15 @@ impl Plugin for OpenWurli {
                             NoteEvent::NoteOff { note, .. } => {
                                 self.note_off(*note);
                             }
+                            NoteEvent::MidiCC { cc, value, .. }
+                                if *cc == control_change::DAMPER_PEDAL =>
+                            {
+                                let pedal_down = *value >= 0.5;
+                                if self.sustain_held && !pedal_down {
+                                    self.release_sustained();
+                                }
+                                self.sustain_held = pedal_down;
+                            }
                             _ => {}
                         }
                         next_event = context.next_event();
@@ -426,6 +475,13 @@ impl Plugin for OpenWurli {
             match event {
                 NoteEvent::NoteOn { note, velocity, .. } => self.note_on(note, velocity, mlp_on),
                 NoteEvent::NoteOff { note, .. } => self.note_off(note),
+                NoteEvent::MidiCC { cc, value, .. } if cc == control_change::DAMPER_PEDAL => {
+                    let pedal_down = value >= 0.5;
+                    if self.sustain_held && !pedal_down {
+                        self.release_sustained();
+                    }
+                    self.sustain_held = pedal_down;
+                }
                 _ => {}
             }
             next_event = context.next_event();
@@ -713,6 +769,587 @@ mod tests {
         assert!(
             energy_loud > energy_soft,
             "ff ({energy_loud}) should be louder than pp ({energy_soft})"
+        );
+    }
+
+    // ── Sustain pedal tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_sustain_pedal_defers_note_off() {
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(60);
+        // Voice should be Sustained, not Releasing
+        let slot = plugin.voices.iter().find(|s| s.midi_note == 60).unwrap();
+        assert_eq!(slot.state, VoiceState::Sustained);
+    }
+
+    #[test]
+    fn test_sustain_pedal_release_triggers_damping() {
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true);
+        plugin.note_on(64, 0.8, true);
+        plugin.note_off(60);
+        plugin.note_off(64);
+        // Both should be Sustained
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            2
+        );
+        // Pedal up: release all sustained voices
+        plugin.sustain_held = false;
+        plugin.release_sustained();
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Releasing)
+                .count(),
+            2
+        );
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_sustain_held_voices_still_render() {
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(60);
+        // Sustained voice should produce audio
+        let len = 256;
+        plugin.render_subblock(0, len);
+        let energy: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+        assert!(energy > 0.0, "sustained voice should produce output");
+    }
+
+    #[test]
+    fn test_no_sustain_normal_note_off() {
+        let mut plugin = make_plugin();
+        // sustain_held is false by default
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(60);
+        let slot = plugin.voices.iter().find(|s| s.midi_note == 60).unwrap();
+        assert_eq!(slot.state, VoiceState::Releasing);
+    }
+
+    #[test]
+    fn test_voice_stealing_prefers_sustained_over_held() {
+        let mut plugin = make_plugin();
+        // Fill all voices with notes in the valid range
+        for i in 0..MAX_VOICES {
+            let note = tables::MIDI_LO + (i as u8 % (tables::MIDI_HI - tables::MIDI_LO + 1));
+            plugin.note_on(note, 0.8, true);
+        }
+        // Sustain pedal down, then release a voice — it becomes Sustained
+        let sustained_note = plugin.voices[0].midi_note;
+        plugin.sustain_held = true;
+        plugin.note_off(sustained_note);
+        assert_eq!(plugin.voices[0].state, VoiceState::Sustained);
+        plugin.sustain_held = false;
+        // New note should steal the sustained voice (lower priority than Held)
+        let new_note = tables::MIDI_LO;
+        plugin.note_on(new_note, 0.8, true);
+        // The sustained slot (index 0) should have been stolen
+        assert_eq!(plugin.voices[0].state, VoiceState::Held);
+        assert!(plugin.voices[0].steal_voice.is_some());
+    }
+
+    #[test]
+    fn test_reset_clears_sustain_state() {
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(60);
+        plugin.reset();
+        assert!(!plugin.sustain_held);
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state != VoiceState::Free)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_reattack_releases_sustained_same_note() {
+        // Real 200A has one reed per pitch — re-striking a sustained note
+        // should release the old voice, not accumulate duplicates.
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(60); // → Sustained
+        plugin.note_on(60, 0.8, true); // re-attack same note
+        // Should have exactly one Held (new) and one Releasing (old), no Sustained
+        let sustained = plugin
+            .voices
+            .iter()
+            .filter(|s| s.state == VoiceState::Sustained && s.midi_note == 60)
+            .count();
+        let held = plugin
+            .voices
+            .iter()
+            .filter(|s| s.state == VoiceState::Held && s.midi_note == 60)
+            .count();
+        let releasing = plugin
+            .voices
+            .iter()
+            .filter(|s| s.state == VoiceState::Releasing && s.midi_note == 60)
+            .count();
+        assert_eq!(sustained, 0, "old sustained voice should be released");
+        assert_eq!(held, 1, "new voice should be Held");
+        assert_eq!(releasing, 1, "old voice should be Releasing");
+    }
+
+    #[test]
+    fn test_pedal_down_before_notes() {
+        // Pedal pressed before playing — standard legato technique.
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        // Play and release several notes while pedal is down
+        for note in [60, 64, 67] {
+            plugin.note_on(note, 0.8, true);
+        }
+        for note in [60, 64, 67] {
+            plugin.note_off(note);
+        }
+        // All three should be Sustained
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            3
+        );
+        // All should produce audio
+        let len = 256;
+        plugin.render_subblock(0, len);
+        let energy: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+        assert!(energy > 0.0, "sustained chord should produce audio");
+
+        // Pedal up releases all three
+        plugin.sustain_held = false;
+        plugin.release_sustained();
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Releasing)
+                .count(),
+            3
+        );
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_pedal_up_only_releases_sustained_not_held() {
+        // Player holds some keys while releasing pedal — only the released
+        // notes should damp, held notes should continue ringing.
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true); // C4
+        plugin.note_on(64, 0.8, true); // E4
+        plugin.note_on(67, 0.8, true); // G4
+        plugin.note_off(60); // C4 → Sustained
+        plugin.note_off(64); // E4 → Sustained
+        // G4 still held (key down)
+
+        // Pedal up
+        plugin.sustain_held = false;
+        plugin.release_sustained();
+
+        // C4 and E4 should be Releasing, G4 should remain Held
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Releasing)
+                .count(),
+            2
+        );
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Held)
+                .count(),
+            1
+        );
+        let g4 = plugin
+            .voices
+            .iter()
+            .find(|s| s.midi_note == 67 && s.state == VoiceState::Held);
+        assert!(g4.is_some(), "G4 should still be Held");
+    }
+
+    #[test]
+    fn test_note_held_through_pedal_cycle() {
+        // Key held while pedal goes down and back up — key was never released,
+        // so the pedal cycle shouldn't affect it.
+        let mut plugin = make_plugin();
+        plugin.note_on(60, 0.8, true);
+        plugin.sustain_held = true; // pedal down while key held
+        plugin.sustain_held = false; // pedal up while key still held
+        plugin.release_sustained(); // nothing to release
+        // Voice should still be Held
+        let slot = plugin.voices.iter().find(|s| s.midi_note == 60).unwrap();
+        assert_eq!(slot.state, VoiceState::Held);
+    }
+
+    #[test]
+    fn test_rapid_pedal_toggle() {
+        // Quick pedal pumping — common technique for partial sustain effect.
+        let mut plugin = make_plugin();
+
+        // Play a chord
+        for note in [60, 64, 67] {
+            plugin.note_on(note, 0.8, true);
+        }
+        // Release all keys
+        for note in [60, 64, 67] {
+            plugin.note_off(note);
+        }
+        // All should be Releasing (no pedal)
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Releasing)
+                .count(),
+            3
+        );
+
+        // New chord with pedal
+        plugin.sustain_held = true;
+        for note in [65, 69, 72] {
+            plugin.note_on(note, 0.8, true);
+        }
+        // Release new chord
+        for note in [65, 69, 72] {
+            plugin.note_off(note);
+        }
+        // New chord should be Sustained
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            3
+        );
+
+        // Quick pedal up-down (catch-release technique)
+        plugin.sustain_held = false;
+        plugin.release_sustained();
+        plugin.sustain_held = true;
+        // Old sustained notes now Releasing, pedal back down for new ones
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            0
+        );
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Releasing)
+                .count(),
+            6
+        );
+    }
+
+    #[test]
+    fn test_cc64_threshold_boundary() {
+        // MIDI spec: CC64 >= 64 = on, < 64 = off.
+        // nih-plug normalizes to [0,1] by dividing by 127.
+        let mut plugin = make_plugin();
+        plugin.note_on(60, 0.8, true);
+
+        // Value 63/127 = 0.496 — should be OFF
+        let pedal_down = 63.0 / 127.0 >= 0.5;
+        assert!(!pedal_down, "63/127 should be pedal OFF");
+
+        // Value 64/127 = 0.504 — should be ON
+        let pedal_down = 64.0 / 127.0 >= 0.5;
+        assert!(pedal_down, "64/127 should be pedal ON");
+
+        // Actually apply: set pedal at exactly 64/127
+        plugin.sustain_held = 64.0_f32 / 127.0 >= 0.5;
+        assert!(plugin.sustain_held);
+        plugin.note_off(60);
+        let slot = plugin.voices.iter().find(|s| s.midi_note == 60).unwrap();
+        assert_eq!(slot.state, VoiceState::Sustained);
+    }
+
+    #[test]
+    fn test_sustained_voice_has_no_damper() {
+        // A sustained voice should NOT have its damper active — the reed
+        // rings freely, same as a Held voice.
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(60); // → Sustained (no damper)
+
+        // Render a block to advance time
+        let len = 256;
+        plugin.render_subblock(0, len);
+
+        // Compare energy: sustained voice vs a freshly held voice
+        let sustained_energy: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+
+        let mut plugin2 = make_plugin();
+        plugin2.note_on(60, 0.8, true);
+        // Don't release — stays Held
+        plugin2.render_subblock(0, len);
+        let held_energy: f64 = plugin2.out_buf[..len].iter().map(|s| s * s).sum();
+
+        // Should be very similar (both undamped)
+        let ratio = sustained_energy / held_energy;
+        assert!(
+            (0.95..=1.05).contains(&ratio),
+            "sustained/held energy ratio {ratio:.3} — expected ~1.0 (both undamped)"
+        );
+    }
+
+    #[test]
+    fn test_damper_activates_after_pedal_release() {
+        // After pedal up, sustained voices should start damping (energy decreases).
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(60); // → Sustained
+
+        // Render while sustained (undamped)
+        let len = 1024;
+        plugin.render_subblock(0, len);
+        let sustained_energy: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+
+        // Release pedal → damper engages
+        plugin.sustain_held = false;
+        plugin.release_sustained();
+
+        // Render a bit for damper to take effect (skip transient)
+        plugin.render_subblock(0, len);
+        // Now measure: damping should reduce energy
+        plugin.render_subblock(0, len);
+        let damped_energy: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+
+        assert!(
+            damped_energy < sustained_energy,
+            "energy should decrease after damper: sustained={sustained_energy:.6} damped={damped_energy:.6}"
+        );
+    }
+
+    #[test]
+    fn test_note_off_for_nonexistent_note_is_noop() {
+        // MIDI controller sends note_off for a note that was never played.
+        // Should be harmless.
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(72); // G5 was never played
+        // C4 should still be Held, nothing Sustained
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Held)
+                .count(),
+            1
+        );
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_all_voices_sustained_then_steal() {
+        // Extreme case: all 64 voices sustained, new note must steal.
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        // Fill and sustain all voices
+        for i in 0..MAX_VOICES {
+            let note = tables::MIDI_LO + (i as u8 % (tables::MIDI_HI - tables::MIDI_LO + 1));
+            plugin.note_on(note, 0.8, true);
+            plugin.note_off(note);
+        }
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            MAX_VOICES
+        );
+        // New note should steal oldest sustained (not panic or fail)
+        plugin.note_on(60, 0.8, true);
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Held)
+                .count(),
+            1
+        );
+        // Stolen voice should have crossfade
+        let held = plugin
+            .voices
+            .iter()
+            .find(|s| s.state == VoiceState::Held)
+            .unwrap();
+        assert!(held.steal_voice.is_some());
+    }
+
+    #[test]
+    fn test_double_note_off_with_pedal() {
+        // Some controllers send duplicate note-offs. With pedal down,
+        // first note_off → Sustained, second note_off → no match (already Sustained, not Held).
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(60, 0.8, true);
+        plugin.note_off(60); // → Sustained
+        plugin.note_off(60); // no Held voice for note 60 — should be no-op
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            1
+        );
+        // Voice should still be valid and producin audio
+        let len = 256;
+        plugin.render_subblock(0, len);
+        let energy: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+        assert!(energy > 0.0, "voice should still be producing audio");
+    }
+
+    #[test]
+    fn test_clamped_note_sustain_roundtrip() {
+        // Note 0 → clamped to MIDI_LO on both note_on and note_off.
+        // Verify the sustain path also works with clamped notes.
+        let mut plugin = make_plugin();
+        plugin.sustain_held = true;
+        plugin.note_on(0, 0.8, true); // clamped to MIDI_LO
+        plugin.note_off(0); // clamped to MIDI_LO — should find the voice
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Sustained)
+                .count(),
+            1
+        );
+        // Pedal up
+        plugin.sustain_held = false;
+        plugin.release_sustained();
+        assert_eq!(
+            plugin
+                .voices
+                .iter()
+                .filter(|s| s.state == VoiceState::Releasing)
+                .count(),
+            1
+        );
+    }
+
+    // ── Reinitialization tests ───────────────────────────────────────────
+
+    /// Simulate what initialize() + reset() does, without needing InitContext.
+    fn reinit_at_sample_rate(plugin: &mut OpenWurli, sr: f64) {
+        plugin.sample_rate = sr;
+        plugin.oversample = sr < 88200.0;
+        plugin.os_sample_rate = if plugin.oversample { sr * 2.0 } else { sr };
+        plugin.preamp = DkPreamp::new(plugin.os_sample_rate);
+        plugin.tremolo = Tremolo::new(0.5, plugin.os_sample_rate);
+        plugin.oversampler = Oversampler::new();
+        plugin.power_amp = PowerAmp::new();
+        plugin.speaker = Speaker::new(sr);
+        plugin.reset();
+    }
+
+    #[test]
+    fn test_sound_after_sample_rate_change() {
+        let mut plugin = make_plugin();
+
+        // Verify sound at initial 44100 Hz
+        plugin.note_on(60, 0.8, true);
+        let len = 512;
+        plugin.render_subblock(0, len);
+        let energy_before: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+        assert!(energy_before > 0.0, "no sound before reinit");
+
+        // Reinitialize at 48000 Hz (same oversample path)
+        reinit_at_sample_rate(&mut plugin, 48000.0);
+        plugin.note_on(60, 0.8, true);
+        plugin.render_subblock(0, len);
+        let energy_48k: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+        assert!(energy_48k > 0.0, "silence after reinit to 48kHz");
+
+        // Reinitialize at 96000 Hz (non-oversampled path)
+        reinit_at_sample_rate(&mut plugin, 96000.0);
+        plugin.note_on(60, 0.8, true);
+        plugin.render_subblock(0, len);
+        let energy_96k: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+        assert!(energy_96k > 0.0, "silence after reinit to 96kHz");
+
+        // Back to 44100 Hz
+        reinit_at_sample_rate(&mut plugin, 44100.0);
+        plugin.note_on(60, 0.8, true);
+        plugin.render_subblock(0, len);
+        let energy_back: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+        assert!(energy_back > 0.0, "silence after reinit back to 44.1kHz");
+    }
+
+    #[test]
+    fn test_sound_after_buffer_size_change() {
+        let mut plugin = make_plugin();
+        plugin.note_on(60, 0.8, true);
+        let len = 256;
+        plugin.render_subblock(0, len);
+        let energy_before: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
+        assert!(energy_before > 0.0, "no sound before reinit");
+
+        // Simulate reinit at same SR but different buffer (reset clears voices)
+        reinit_at_sample_rate(&mut plugin, 44100.0);
+        plugin.note_on(60, 0.8, true);
+        let small_len = 64;
+        plugin.render_subblock(0, small_len);
+        let energy_small: f64 = plugin.out_buf[..small_len].iter().map(|s| s * s).sum();
+        assert!(
+            energy_small > 0.0,
+            "silence after reinit with smaller buffer"
         );
     }
 }
