@@ -103,7 +103,33 @@ impl Voice {
 
         // Post-pickup gain: technician voicing (gap adjustment) affects volume
         // without changing the nonlinear displacement fraction y.
-        let post_pickup_gain = tables::output_scale(midi_note, velocity);
+        let base_output_scale = tables::output_scale(midi_note, velocity);
+
+        // MLP ds_correction changes pickup drive, which changes output level as a
+        // side effect (the MLP targets H2/H1 spectral shape, not overall level).
+        // Compensate using the pickup RMS proxy ratio so MLP adjusts timbre only.
+        //
+        // The static proxy (Fourier of 1/(1-y)) overestimates the RC pickup's
+        // response at high ds because charge dynamics self-limit peak excursions.
+        // sqrt of the proxy ratio (= half the dB) matches the RC model's smoothing
+        // behavior: measured at C4 (ds 0.75→0.97, proxy predicts +20 dB, actual
+        // +7.9 dB ≈ half in dB) and C6 (ds 0.39→0.59, proxy +5.8 dB, actual +2.8 dB).
+        let base_ds = tables::pickup_displacement_scale(midi_note);
+        let mlp_level_compensation = if (corrections.ds_correction - 1.0).abs() > 1e-6 {
+            let f0 = tables::midi_to_freq(midi_note);
+            const HPF_FC: f64 = 2312.0;
+            let proxy_base = tables::pickup_rms_proxy(base_ds, f0, HPF_FC);
+            let proxy_corrected = tables::pickup_rms_proxy(corrected_ds, f0, HPF_FC);
+            if proxy_corrected > 1e-10 {
+                (proxy_base / proxy_corrected).sqrt()
+            } else {
+                1.0
+            }
+        } else {
+            1.0
+        };
+
+        let post_pickup_gain = base_output_scale * mlp_level_compensation;
 
         Self {
             reed,

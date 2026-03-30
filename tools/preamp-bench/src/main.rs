@@ -1471,6 +1471,7 @@ fn cmd_render_midi(args: &[String]) {
         eprintln!("  --speaker S      Speaker character 0-1 (default 1.0)");
         eprintln!("  --no-poweramp    Bypass power amp");
         eprintln!("  --tail T         Extra seconds after last note (default 2.0)");
+        eprintln!("  --track N        Only render track N (0-based, default: all tracks)");
         return;
     }
     let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render_midi.wav");
@@ -1478,6 +1479,11 @@ fn cmd_render_midi(args: &[String]) {
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let no_poweramp = has_flag(args, "--no-poweramp");
     let tail_seconds = parse_flag(args, "--tail", 2.0);
+    let track_filter: Option<usize> = if has_flag(args, "--track") {
+        Some(parse_flag(args, "--track", 0.0) as usize)
+    } else {
+        None
+    };
 
     // Parse MIDI file
     let midi_data = std::fs::read(midi_path).expect("Failed to read MIDI file");
@@ -1506,9 +1512,13 @@ fn cmd_render_midi(args: &[String]) {
 
     let mut events: Vec<TimedEvent> = Vec::new();
 
-    for track in &smf.tracks {
+    for (track_idx, track) in smf.tracks.iter().enumerate() {
         let mut tempo: f64 = 500_000.0; // default 120 BPM
         let mut time_s: f64 = 0.0;
+
+        // Always process tempo events from track 0, but skip note events
+        // from non-selected tracks when --track is specified.
+        let emit_notes = track_filter.is_none_or(|t| t == track_idx);
 
         for event in track {
             let delta_ticks = event.delta.as_int() as u64;
@@ -1519,7 +1529,7 @@ fn cmd_render_midi(args: &[String]) {
                 midly::TrackEventKind::Meta(midly::MetaMessage::Tempo(t)) => {
                     tempo = t.as_int() as f64;
                 }
-                midly::TrackEventKind::Midi { message, .. } => match message {
+                midly::TrackEventKind::Midi { message, .. } if emit_notes => match message {
                     midly::MidiMessage::NoteOn { key, vel } => {
                         let v = vel.as_int();
                         if v == 0 {
