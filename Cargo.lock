@@ -452,7 +452,7 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "openwurli"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "nih_plug",
  "openwurli-dsp",
@@ -460,7 +460,7 @@ dependencies = [
 
 [[package]]
 name = "openwurli-dsp"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "melange-primitives",
 ]
@@ -502,7 +502,7 @@ checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "preamp-bench"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "hound",
  "midly",
@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "reed-renderer"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "hound",
  "openwurli-dsp",

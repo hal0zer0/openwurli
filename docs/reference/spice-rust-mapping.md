@@ -206,7 +206,7 @@ fix touches the preamp.
 ### Rust DSP Source
 | File | Purpose |
 |---|---|
-| `crates/openwurli-dsp/src/dk_preamp/` | Feature-toggled preamp (melange 12-node default, legacy 8-node) |
+| `crates/openwurli-dsp/src/dk_preamp/` | Preamp (melange 12-node default; legacy 8-node via --features legacy-preamp) |
 | `crates/openwurli-dsp/src/preamp.rs` | PreampModel trait |
 | `crates/openwurli-dsp/src/pickup.rs` | Electrostatic pickup: 1/(1-y) + HPF |
 | `crates/openwurli-dsp/src/power_amp.rs` | Class AB crossover distortion |

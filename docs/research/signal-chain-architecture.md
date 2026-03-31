@@ -318,7 +318,7 @@ Reed starts at zero displacement (hammer imparts velocity, not displacement). Al
 onset_envelope(t) = 0.5 * (1 - cos(PI * t / T_onset))
 ```
 
-The onset ramp time `T_onset` is register-dependent: `(periods / f0).clamp(2ms, 30ms)`, where `periods` ranges from 2.5 (ff) to 5.0 (pp). The envelope shape is `cosine^(1 + (1-velocity))` -- ff gets a raised cosine, pp gets Hann-squared (softer onset). This models reed mechanical inertia -- bass reeds take more time to reach full amplitude than treble reeds. The raised cosine reaches 90% at 79.5% of T, so 2.5 periods at ff means 90% at cycle 2.0, matching OBM cycle-by-cycle analysis of the real 200A.
+The onset ramp time `T_onset` is register-dependent: `(periods / f0).max(2ms)`, where `periods` ranges from 2.5 (ff) to 5.0 (pp). No upper clamp -- bass reeds are heavy and physically need more cycles to reach full amplitude (C2 ff: 38ms, C2 pp: 77ms). The envelope shape is `cosine^(1 + (1-velocity))` -- ff gets a raised cosine, pp gets Hann-squared (softer onset). This models reed mechanical inertia -- bass reeds take more time to reach full amplitude than treble reeds. The raised cosine reaches 90% at 79.5% of T, so 2.5 periods at ff means 90% at cycle 2.0, matching OBM cycle-by-cycle analysis of the real 200A.
 
 ### Attack Overshoot: Let Physics Handle It
 
@@ -843,7 +843,7 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 
 The gain staging is designed so the power amplifier sees realistic signal levels
 (1-7% of its ±22V headroom at typical dynamics). A post-speaker gain stage
-(+10.5 dB) maps the physical speaker output to DAW-friendly digital levels
+(+19.5 dB) maps the physical speaker output to DAW-friendly digital levels
 without distorting any circuit model — it sits after all analog stages.
 
 | Point in Chain | Level | Notes |
@@ -855,11 +855,10 @@ without distorting any circuit model — it sits after all analog stages.
 | After volume pot (0.50, taper 0.25) | ~1-3% of PA headroom | Single ff note |
 | After power amp | ~0.3-1.4V of ±22V rails | Clean at normal dynamics |
 | After speaker | physics-level output | |
-| After post-speaker gain (+10.5 dB) | -8 dBFS single ff (full vol) | DAW-friendly |
+| After post-speaker gain (+19.5 dB) | -10 to -14 dBFS single ff | DAW-friendly |
 
 Polyphonic headroom (measured, ff at default vol=0.50):
-- 1 voice: -17.4 dBFS, 8 voices: -13.1 dBFS, 16 voices: -10.3 dBFS
-- At full vol: 8 voices: -0.8 dBFS, 16 voices: -1.0 dBFS (clean)
+- ff chords peak ~-3 dBFS (4-6 voices)
 
 ### Input Drive (Historical)
 
@@ -1128,7 +1127,7 @@ Get a playable instrument with correct pitch and basic dynamics:
 1. Voice struct with state machine (FREE/HELD/RELEASING)
 2. Voice allocator with stealing
 3. Modal oscillator (7 modes, interpolated ratios)
-4. Velocity scaling (vel^2, uniform)
+4. Velocity scaling (register-dependent exponent, S-curve)
 5. Gaussian dwell filter
 6. Decay model (base_decay, mode scales, register scaling)
 7. Phase initialization
@@ -1224,7 +1223,7 @@ Key failure patterns from the previous project (40+ tuning rounds without conver
 2. **Gaussian dwell filter only.** Sinc (rectangular pulse) and half-sine models have deep spectral nulls that forced 20x mode amplitude compensation, destroying the attack-to-sustain ratio.
 3. **Miller cap polarity matters.** The cap provides MORE feedback at HF (low impedance), LESS at LF. Inverting this breaks register-dependent distortion.
 4. **No artificial drive scaling.** The DkPreamp uses physical component values. If the sound is wrong, fix the circuit model, not the input scaling.
-5. **No per-mode velocity exponents.** They double-count with the dwell filter's velocity-dependent brightening. Use uniform vel^2 scaling.
+5. **No per-mode velocity exponents.** They double-count with the dwell filter's velocity-dependent brightening. Use a single register-dependent exponent (1.3-1.7).
 6. **DAW state override.** Changing parameter defaults requires users to re-add the plugin. Consider a version check in `stateLoad()`.
 
 ---
@@ -1287,7 +1286,7 @@ Key failure patterns from the previous project (40+ tuning rounds without conver
 
 ### Our Advantage as Open Source Physical Model
 
-1. **No velocity layers** -- continuous vel^2 curve with preamp nonlinearity providing natural timbral transition
+1. **No velocity layers** -- continuous register-dependent velocity curve with pickup nonlinearity providing natural timbral transition
 2. **True half-damping** -- the progressive damper model supports partial key release
 3. **Open source + Linux** -- no iLok, no 80 GB download, full source access
 4. **CLAP native** -- forward-looking plugin format

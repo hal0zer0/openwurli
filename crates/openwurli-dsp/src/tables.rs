@@ -557,27 +557,9 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
     let vel_blend = velocity_norm.powf(1.3);
     let effective_trim = trim * vel_blend;
 
-    // Velocity loudness compensation: the pickup's 1/(1-y) nonlinearity
-    // generates disproportionately more harmonic energy at ff than mf,
-    // creating ~16 dB of velocity dynamic range (real neoprene: ~10 dB).
-    // Partially compensate using C4's proxy ratio (ff vs this velocity)
-    // as a uniform boost, preserving cross-note balance at all velocities.
-    // At ff (vel_scale=1.0), ratio=1 → zero compensation.
-    const VEL_COMP_BLEND: f64 = 0.50;
-    let vel_comp_db = if vel_scale_c4 < 1.0 - 1e-6 {
-        let rms_ref_ff = pickup_rms_proxy(cfg.ds_at_c4, midi_to_freq(60), HPF_FC);
-        if rms_ref > 1e-10 {
-            20.0 * (rms_ref_ff / rms_ref).log10() * VEL_COMP_BLEND
-        } else {
-            0.0
-        }
-    } else {
-        0.0
-    };
-
     f64::powf(
         10.0,
-        (cfg.target_db + flat_db + voicing_db + effective_trim + vel_comp_db) / 20.0,
+        (cfg.target_db + flat_db + voicing_db + effective_trim) / 20.0,
     )
 }
 
@@ -599,10 +581,10 @@ pub fn velocity_exponent(midi: u8) -> f64 {
     let m = midi as f64;
     // Bell curve centered at MIDI 62 (D4, mid-register sweet spot)
     // Peak exponent 1.7 (expanded dynamics)
-    // Edges (A1, C7) at 0.7 (compressed dynamics — heavy bass reeds, light treble)
+    // Edges (A1, C7) at 1.3 (moderate dynamics — heavy bass reeds, light treble)
     let center = 62.0;
     let sigma = 15.0; // Gradual compression onset across keyboard
-    let min_exp = 0.7;
+    let min_exp = 1.3;
     let max_exp = 1.7;
     let t = f64::exp(-0.5 * ((m - center) / sigma).powi(2));
     min_exp + t * (max_exp - min_exp)

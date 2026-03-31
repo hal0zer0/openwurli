@@ -37,15 +37,17 @@ pub fn dwell_time(velocity: f64, fundamental_hz: f64) -> f64 {
 ///   - D4 (294 Hz): 50% at cycle 1, 90% at cycle 2
 ///   - D6 (1175 Hz): near-instant (full by cycle 0-1)
 ///
-/// Formula: 2.5 periods at ff, 5.0 at pp, clamped to [2ms, 30ms].
+/// Formula: 2.5 periods at ff, 5.0 at pp, with 2ms floor.
 /// The raised cosine 0.5*(1-cos(pi*t/T)) reaches 90% at 79.5% of T.
 /// With 2.5 periods at ff: 90% at 0.795 * 2.5 = cycle 1.99 ≈ cycle 2.
-/// Previous 2.0 periods reached 90% at cycle 1.6 — ~2 dB too much onset
-/// overshoot vs OBM recordings (model +2.1 dB mean excess).
+///
+/// No upper clamp — bass reeds are heavy and physically need more cycles
+/// to reach full amplitude. C2 ff: 38ms, C2 pp: 77ms. The velocity
+/// dependence in bass attack timing is audible and correct.
 pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64) -> f64 {
     let period_s = 1.0 / fundamental_hz;
     let periods = 2.5 + 2.5 * (1.0 - velocity);
-    (periods * period_s).clamp(0.002, 0.030)
+    (periods * period_s).max(0.002)
 }
 
 /// Compute per-mode attenuation from the Gaussian dwell filter.
@@ -217,10 +219,10 @@ mod tests {
             "mid onset ({mid:.4}) should exceed treble ({treble:.4})"
         );
 
-        // C2 ff: 2.5 periods of 65 Hz = 38.5ms, clamped to 30ms ceiling
+        // C2 ff: 2.5 periods of 65 Hz = 38.5ms (no ceiling clamp)
         assert!(
-            (bass - 0.030).abs() < 0.001,
-            "C2 ff should be 30ms (clamped), got {bass:.4}"
+            (bass - 2.5 / 65.0).abs() < 0.001,
+            "C2 ff should be ~38.5ms, got {bass:.4}"
         );
         // C6 ff: 2.5 periods of 1047 Hz = 2.39ms (no longer clamped)
         assert!(

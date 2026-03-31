@@ -910,7 +910,7 @@ Systematic comparison of 13 clean OBM single notes (Freesound Pack 5726, MIDI 50
 
 ### Tier Selection
 
-OBM recordings pass through the full real 200A chain (preamp → power amp → speaker → room → mic). Synth renders must match: **always use `--tier3`** (full chain with power amp, speaker, volume 0.40). Tier 2 renders (no power amp, no speaker) produce 39% inflated harmonic distance.
+OBM recordings pass through the full real 200A chain (preamp → power amp → speaker → room → mic). Synth renders must match: **always use `--tier3`** (full chain with power amp, speaker, volume 0.50). Tier 2 renders (no power amp, no speaker) produce 39% inflated harmonic distance.
 
 ### Key Results
 

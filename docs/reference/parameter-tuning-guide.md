@@ -49,12 +49,12 @@ TARGET_DB = -35 dBFS (v0.1.5)
   → speaker tanh operates in linear region (< 8% compression)
   → register trim now calibrated in linear regime (stable)
 
-POST_SPEAKER_GAIN = +10.5 dB (3.35×)
+POST_SPEAKER_GAIN = +19.5 dB (9.44×)
   → applied AFTER all analog stages (speaker.process() output)
-  → maps physical SPL to DAW levels (~-8 dBFS single ff note at max vol)
+  → maps physical SPL to DAW levels (-10 to -14 dBFS single ff at vol=0.50)
   → does NOT interact with any nonlinear circuit model
   → safe to adjust independently without recalibrating trim
-  → 16-voice ff chord at full vol peaks at ~-1 dBFS (clean)
+  → ff chords peak ~-3 dBFS at default vol=0.50
 ```
 
 ### Register trim domain mismatch
@@ -95,8 +95,8 @@ Measurement window: 100-400ms of a 500ms render.
 cargo run -p preamp-bench -- calibrate \
     --notes 36,40,44,48,52,56,60,64,68,72,76,80,84 \
     --velocities 40,80,127 \
-    --ds-at-c4 0.85 \
-    --volume 0.40 --speaker 1.0 \
+    --ds-at-c4 0.75 \
+    --volume 0.50 --speaker 0.0 \
     --zero-trim \
     --output /tmp/calibrate.csv
 ```

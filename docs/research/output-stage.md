@@ -339,7 +339,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 
 **For modeling purposes:** The power amplifier is modeled as a closed-loop negative feedback amplifier. The R-31/R-30 feedback network (loop gain ≈ 275) linearizes the output at normal signal levels. Distortion becomes significant only near the ±22V supply rails. The power amp is NOT a major tonal contributor — the Wurlitzer's characteristic bark comes primarily from the pickup's 1/(1-y) nonlinearity, with the preamp's asymmetric soft-clipping adding further coloring at high dynamics.
 
-**Gain staging:** The voice output_scale uses target_db=-35 dBFS so the power amp sees realistic signal levels: a single ff note uses ~1-3% of the ±22V headroom, matching Brad Avenson's measurements of 2-7 mV at the volume pot (model produces 3 mV RMS). A post-speaker gain of +10.5 dB (applied AFTER the speaker model) maps physical SPL to DAW-friendly digital levels. This separates two concerns: the analog circuit model operates at realistic voltages, while the digital output is set for typical DAW workflows (~-8 dBFS for single ff notes at max volume, ~-1 dBFS for 16-voice ff chords).
+**Gain staging:** The voice output_scale uses target_db=-35 dBFS so the power amp sees realistic signal levels: a single ff note uses ~1-3% of the ±22V headroom, matching Brad Avenson's measurements of 2-7 mV at the volume pot (model produces 3 mV RMS). A post-speaker gain of +19.5 dB (applied AFTER the speaker model) maps physical SPL to DAW-friendly digital levels. This separates two concerns: the analog circuit model operates at realistic voltages, while the digital output is set for typical DAW workflows (-10 to -14 dBFS for single ff notes at vol=0.50, ff chords peak ~-3 dBFS).
 
 ---
 

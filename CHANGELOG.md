@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] "ThisBombsForLovin" - 2026-03-31
+
+### Changed
+- **Velocity dynamics restored to full 30 dB range.** Removed VEL_COMP_BLEND
+  (velocity loudness compensation) — it was compressing dynamics to match other
+  plugins' loudness rather than modeling real 200A physics. The "real neoprene:
+  ~10 dB" code comment had no source and contradicted the project's own
+  documented targets (15-30 dB dynamic range). POST_SPEAKER_GAIN raised from
+  +10.5 dB to +19.5 dB to achieve industry-standard output levels (-10 to
+  -14 dBFS for single ff notes at vol=0.50) without touching any circuit model.
+- **Velocity exponent min_exp reverted from 0.7 to 1.3.** The aggressive
+  compression at keyboard extremes reduced attack/decay timbral contrast by
+  over-driving the pickup at sub-ff velocities, making sustain uniformly thick.
+- **Bass onset ramp ceiling removed.** The 30 ms upper clamp on onset ramp time
+  killed all velocity dependence below ~130 Hz — C2 ff and pp had identical
+  attack timing (both 30 ms). Now the physics formula runs unclamped: C2 ff
+  = 38 ms, C2 pp = 77 ms. Bass attack feels alive again.
+- **MLP level compensation.** Added sqrt-proxy compensation in voice.rs so
+  MLP ds_correction adjusts timbre without shifting output level. Register
+  spread reduced from 10.7 dB to 3.2 dB.
+
+### Added
+- `--track N` flag for `preamp-bench render-midi` to select individual MIDI
+  tracks (0-based).
+
+### Fixed
+- Documentation updated to reflect current gain staging values (PSG +19.5 dB,
+  Tier 3 flags `--volume 0.50 --speaker 0.0`, register-dependent velocity
+  exponent).
+
 ## [0.3.1] "GoodbyeJane" - 2026-03-29
 
 ### Added
@@ -320,7 +350,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/hal0zer0/openwurli/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/hal0zer0/openwurli/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/hal0zer0/openwurli/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/hal0zer0/openwurli/compare/v0.2.3...v0.2.4
