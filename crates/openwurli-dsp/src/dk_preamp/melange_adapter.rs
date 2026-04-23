@@ -1,8 +1,9 @@
 //! Melange-generated DK preamp adapter with shadow pump cancellation.
 //!
-//! Uses SM (Sherman-Morrison) pot correction with max_iter=200 for NR
-//! convergence across the full R_ldr range (1K-1M). No per-sample matrix
-//! rebuild — SM handles the per-sample delta_g smoothly.
+//! LDR resistance is declared as `.runtime R` in the netlist (plugin-
+//! driven, not a user knob). `set_runtime_R_r_ldr` marks matrices dirty;
+//! the next `process_sample` does a lazy rebuild before the NR solve.
+//! max_iter=200 for convergence across the full R_ldr range (1K-1M).
 
 use crate::gen_preamp::{self, CircuitState};
 use crate::preamp::PreampModel;
@@ -56,10 +57,8 @@ impl PreampModel for DkPreamp {
     }
 
     fn set_ldr_resistance(&mut self, r_ldr_path: f64) {
-        // set_pot_0 clamps to [1k, 1M] and marks matrices dirty; the next
-        // process_sample() rebuilds A/S/K before running the NR solve.
-        self.main.set_pot_0(r_ldr_path);
-        self.shadow.set_pot_0(r_ldr_path);
+        self.main.set_runtime_R_r_ldr(r_ldr_path);
+        self.shadow.set_runtime_R_r_ldr(r_ldr_path);
     }
 
     fn reset(&mut self) {

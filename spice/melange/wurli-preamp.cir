@@ -47,9 +47,12 @@ R9    coll2 out    6.8K
 * LDR shunts fb_junct to ground, modulating feedback and thus gain.
 R10   out   fb     56K
 
-* --- Tremolo LDR (dynamic pot) ---
+* --- Tremolo LDR (plugin-driven audio-rate resistor) ---
+* Declared as .runtime R (not .pot) because the LDR resistance is driven
+* by the Tremolo module's envelope, not a user-facing knob. Semantics
+* are identical to .pot R after melange's 2026-04-20 reseed strip.
 R_ldr fb    0      100k
-.pot R_ldr 1k 1Meg "Tremolo"
+.runtime R_ldr 1k 1Meg as r_ldr
 
 * --- Supply ---
 V1    vcc   0      DC 15
