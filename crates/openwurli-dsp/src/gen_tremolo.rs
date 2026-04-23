@@ -13,9 +13,9 @@
 #![allow(clippy::excessive_precision)]
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::too_many_arguments)]
-#![allow(unused_assignments)]
 #![allow(unexpected_cfgs)]
 #![allow(dead_code)]
+#![allow(unused_assignments)]
 
 // =============================================================================
 // CONSTANTS: Compile-time circuit topology (Nodal solver)
@@ -2029,65 +2029,82 @@ impl CircuitState {
 // MATRIX INVERSION (for rebuild_matrices)
 // =============================================================================
 
-/// Invert an N×N matrix using Gauss-Jordan elimination with partial pivoting.
-/// Returns None if the matrix is singular.
+/// Invert an N×N matrix via LU factorization with partial pivoting.
+/// Returns None if the matrix is singular (pivot < 1e-30).
+///
+/// Called three times per `rebuild_matrices` on the nodal path
+/// (S = A^-1, S_be = A_be^-1, S_sub = A_sub^-1), so factor-then-
+/// solve uses ~half the work of the prior Gauss-Jordan on an
+/// augmented [A | I] matrix and halves the stack footprint.
 #[inline(never)]
 fn invert_n(a: &[[f64; N]; N]) -> Option<[[f64; N]; N]> {
-    let mut aug = [[0.0f64; 2 * N]; N];
+    let mut lu = *a;
+    let mut perm = [0usize; N];
     for i in 0..N {
-        for j in 0..N {
-            aug[i][j] = a[i][j];
-        }
-        aug[i][N + i] = 1.0;
+        perm[i] = i;
     }
 
-    for col in 0..N {
-        let mut max_row = col;
-        let mut max_val = aug[col][col].abs();
-        for row in (col + 1)..N {
-            let v = aug[row][col].abs();
+    for k in 0..N {
+        let mut max_row = k;
+        let mut max_val = lu[k][k].abs();
+        for i in (k + 1)..N {
+            let v = lu[i][k].abs();
             if v > max_val {
                 max_val = v;
-                max_row = row;
+                max_row = i;
             }
         }
         if max_val < 1e-30 {
             return None;
         }
-        if max_row != col {
-            aug.swap(col, max_row);
+        if max_row != k {
+            lu.swap(k, max_row);
+            perm.swap(k, max_row);
         }
-        let pivot = aug[col][col];
-        for row in (col + 1)..N {
-            let factor = aug[row][col] / pivot;
-            for j in col..(2 * N) {
-                aug[row][j] -= factor * aug[col][j];
-            }
-        }
-    }
-
-    for col in (0..N).rev() {
-        let pivot = aug[col][col];
-        if pivot.abs() < 1e-30 {
-            return None;
-        }
-        for j in 0..(2 * N) {
-            aug[col][j] /= pivot;
-        }
-        for row in 0..col {
-            let factor = aug[row][col];
-            for j in 0..(2 * N) {
-                aug[row][j] -= factor * aug[col][j];
+        let pivot = lu[k][k];
+        for i in (k + 1)..N {
+            let m = lu[i][k] / pivot;
+            lu[i][k] = m;
+            for j in (k + 1)..N {
+                lu[i][j] -= m * lu[k][j];
             }
         }
     }
 
     let mut result = [[0.0f64; N]; N];
-    for i in 0..N {
-        for j in 0..N {
-            result[i][j] = aug[i][N + j];
+    for col in 0..N {
+        let mut b = [0.0f64; N];
+        let mut start = N;
+        for i in 0..N {
+            if perm[i] == col {
+                b[i] = 1.0;
+                start = i;
+                break;
+            }
+        }
+        for i in (start + 1)..N {
+            let mut sum = b[i];
+            for j in start..i {
+                sum -= lu[i][j] * b[j];
+            }
+            b[i] = sum;
+        }
+        for i in (0..N).rev() {
+            let mut sum = b[i];
+            for j in (i + 1)..N {
+                sum -= lu[i][j] * b[j];
+            }
+            let pivot = lu[i][i];
+            if pivot.abs() < 1e-30 {
+                return None;
+            }
+            b[i] = sum / pivot;
+        }
+        for i in 0..N {
+            result[i][col] = b[i];
         }
     }
+
     Some(result)
 }
 
@@ -2424,13 +2441,17 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
         }
     }
 
+    // NaN/Inf check BEFORE state update — prevents corruption of v_prev/i_nl_prev.
+    // Mirrors the DK-path reset in templates/rust/process_sample.rs.tera (Step 7).
     if !v.iter().all(|x| x.is_finite()) {
         state.v_prev = state.dc_operating_point;
         state.i_nl_prev = DC_NL_I;
         state.i_nl_prev_prev = DC_NL_I;
         state.input_prev = 0.0;
         state.diag_nan_reset_count += 1;
-        return [0.0; NUM_OUTPUTS];
+        let mut nan_out = [0.0f64; NUM_OUTPUTS];
+        nan_out[0] = 4.26480459001615220e0;
+        return nan_out;
     }
 
     // State update

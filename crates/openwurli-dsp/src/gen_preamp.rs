@@ -1844,28 +1844,42 @@ impl CircuitState {
     }
 }
 
-/// Invert an N x N matrix using Gaussian elimination with partial pivoting.
+/// Invert an N x N matrix via LU factorization + N identity-column back-solves.
 ///
 /// Returns `(result, singular)` where `singular` is `true` if the matrix was
 /// detected as singular (pivot below threshold). On singularity, the identity
 /// matrix is returned as a safe fallback; the caller should record the event
 /// via `diag_singular_matrix_count`.
+///
+/// Previously used in-place Gauss-Jordan on an augmented `[A | I]` matrix
+/// (N × 2N, ~2N³ ops, ~28 KB stack at N = 42). The LU path factors `A = LU`
+/// in place (N × N, ~N³/3 ops) and solves `N` back-substitutions
+/// (~N³ total), reducing work and stack use while producing identical
+/// mathematical output for well-conditioned inputs. Singular-pivot behavior
+/// matches the prior implementation byte-for-byte (same 1e-30 threshold,
+/// same identity fallback).
 fn invert_n(a: [[f64; N]; N]) -> ([[f64; N]; N], bool) {
-    let mut aug = [[0.0f64; 2 * N]; N];
+    // --- 1. LU factorization in place with partial pivoting ---
+    //
+    // After this loop, `lu` holds L (below diagonal, unit-lower-triangular
+    // with implicit 1s) and U (diagonal + above). `perm[i]` is the index
+    // of the original row that ended up at row i of LU after pivoting —
+    // equivalent to P·A = L·U.
+    let mut lu = a;
+    let mut perm = [0usize; N];
     for i in 0..N {
-        for j in 0..N {
-            aug[i][j] = a[i][j];
-        }
-        aug[i][N + i] = 1.0;
+        perm[i] = i;
     }
 
-    for col in 0..N {
-        let mut max_row = col;
-        let mut max_val = aug[col][col].abs();
-        for row in (col + 1)..N {
-            if aug[row][col].abs() > max_val {
-                max_val = aug[row][col].abs();
-                max_row = row;
+    for k in 0..N {
+        // Partial pivoting: find the largest |lu[i][k]| for i >= k.
+        let mut max_row = k;
+        let mut max_val = lu[k][k].abs();
+        for i in (k + 1)..N {
+            let v = lu[i][k].abs();
+            if v > max_val {
+                max_val = v;
+                max_row = i;
             }
         }
 
@@ -1877,45 +1891,74 @@ fn invert_n(a: [[f64; N]; N]) -> ([[f64; N]; N], bool) {
             return (result, true);
         }
 
-        if max_row != col {
-            aug.swap(col, max_row);
+        if max_row != k {
+            lu.swap(k, max_row);
+            perm.swap(k, max_row);
         }
 
-        let pivot = aug[col][col];
-        for row in (col + 1)..N {
-            let factor = aug[row][col] / pivot;
-            for j in col..(2 * N) {
-                aug[row][j] -= factor * aug[col][j];
+        // Eliminate column k below the pivot.
+        let pivot = lu[k][k];
+        for i in (k + 1)..N {
+            let m = lu[i][k] / pivot;
+            lu[i][k] = m;
+            for j in (k + 1)..N {
+                lu[i][j] -= m * lu[k][j];
             }
         }
     }
 
-    for col in (0..N).rev() {
-        let pivot = aug[col][col];
-        if pivot.abs() < 1e-30 {
-            let mut result = [[0.0f64; N]; N];
-            for i in 0..N {
-                result[i][i] = 1.0;
-            }
-            return (result, true);
-        }
-        for j in 0..(2 * N) {
-            aug[col][j] /= pivot;
-        }
-        for row in 0..col {
-            let factor = aug[row][col];
-            for j in 0..(2 * N) {
-                aug[row][j] -= factor * aug[col][j];
-            }
-        }
-    }
-
+    // --- 2. Solve `A · result[:, col] = e_col` for each identity column ---
+    //
+    // Equivalent to `L · U · x = P · e_col`. Each back-solve is O(N²), and
+    // `P · e_col` has exactly one nonzero (at the row `i` where
+    // `perm[i] == col`), so forward substitution can skip the leading zeros.
     let mut result = [[0.0f64; N]; N];
-    for i in 0..N {
-        for j in 0..N {
-            result[i][j] = aug[i][N + j];
+    for col in 0..N {
+        // b ← P · e_col
+        let mut b = [0.0f64; N];
+        let mut start = N;
+        for i in 0..N {
+            if perm[i] == col {
+                b[i] = 1.0;
+                start = i;
+                break;
+            }
+        }
+
+        // Forward substitution: L · y = b. L's diagonal is implicit 1.0.
+        // Skip rows before the nonzero since they contribute nothing.
+        for i in (start + 1)..N {
+            let mut sum = b[i];
+            for j in start..i {
+                sum -= lu[i][j] * b[j];
+            }
+            b[i] = sum;
+        }
+
+        // Backward substitution: U · x = y. U is stored on + above diagonal.
+        for i in (0..N).rev() {
+            let mut sum = b[i];
+            for j in (i + 1)..N {
+                sum -= lu[i][j] * b[j];
+            }
+            let pivot = lu[i][i];
+            if pivot.abs() < 1e-30 {
+                // Diagonal became singular during elimination (ill-conditioned
+                // input that passed the column-pivot check but collapses here).
+                let mut fallback = [[0.0f64; N]; N];
+                for k in 0..N {
+                    fallback[k][k] = 1.0;
+                }
+                return (fallback, true);
+            }
+            b[i] = sum / pivot;
+        }
+
+        for i in 0..N {
+            result[i][col] = b[i];
         }
     }
+
     (result, false)
 }
 
