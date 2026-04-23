@@ -123,8 +123,19 @@ fn create_preamp(args: &[String]) -> Box<dyn PreampModel> {
 // ─── Gain measurement ───────────────────────────────────────────────────────
 
 /// Measure preamp gain by running a sine wave through the 2x-oversampled preamp.
-fn measure_gain_at(preamp: &mut dyn PreampModel, freq: f64, amplitude: f64) -> f64 {
+///
+/// Resets the preamp state at entry, then re-applies `r_ldr` before the settle
+/// loop runs. The reset keeps repeated measurements deterministic; re-applying
+/// r_ldr is required because `reset()` restores the cached nominal state
+/// (100 kΩ LDR), which would otherwise clobber the caller's configuration.
+fn measure_gain_at(
+    preamp: &mut dyn PreampModel,
+    freq: f64,
+    amplitude: f64,
+    r_ldr: f64,
+) -> f64 {
     preamp.reset();
+    preamp.set_ldr_resistance(r_ldr);
     let mut os = Oversampler::new();
 
     let n_settle = (BASE_SR * 0.3) as usize;
@@ -164,9 +175,8 @@ fn cmd_gain(args: &[String]) {
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
 
     let mut preamp = create_preamp(args);
-    preamp.set_ldr_resistance(r_ldr);
 
-    let gain = measure_gain_at(preamp.as_mut(), freq, amplitude);
+    let gain = measure_gain_at(preamp.as_mut(), freq, amplitude, r_ldr);
     let gain_db = 20.0 * gain.log10();
 
     let target_db = if r_ldr > 500_000.0 { 6.0 } else { 12.1 };
@@ -192,7 +202,6 @@ fn cmd_sweep(args: &[String]) {
     let csv_path = parse_flag_str(args, "--csv", "");
 
     let mut preamp = create_preamp(args);
-    preamp.set_ldr_resistance(r_ldr);
 
     let log_start = start.ln();
     let log_end = end.ln();
@@ -208,7 +217,7 @@ fn cmd_sweep(args: &[String]) {
         let frac = i as f64 / (points - 1).max(1) as f64;
         let freq = (log_start + frac * (log_end - log_start)).exp();
 
-        let gain = measure_gain_at(preamp.as_mut(), freq, amplitude);
+        let gain = measure_gain_at(preamp.as_mut(), freq, amplitude, r_ldr);
         let gain_db = 20.0 * gain.log10();
 
         println!("{freq:>10.1}  {gain_db:>10.2}");
@@ -316,8 +325,7 @@ fn cmd_tremolo_sweep(args: &[String]) {
         let frac = i as f64 / (steps - 1).max(1) as f64;
         let r_ldr = (log_min + frac * (log_max - log_min)).exp();
 
-        preamp.set_ldr_resistance(r_ldr);
-        let gain = measure_gain_at(preamp.as_mut(), freq, amplitude);
+        let gain = measure_gain_at(preamp.as_mut(), freq, amplitude, r_ldr);
         let gain_db = 20.0 * gain.log10();
 
         println!("{r_ldr:>12.0}  {gain_db:>10.2}");
