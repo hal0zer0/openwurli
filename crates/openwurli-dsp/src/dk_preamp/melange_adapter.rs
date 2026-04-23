@@ -56,9 +56,10 @@ impl PreampModel for DkPreamp {
     }
 
     fn set_ldr_resistance(&mut self, r_ldr_path: f64) {
-        let r = r_ldr_path.max(1000.0);
-        self.main.pot_0_resistance = r;
-        self.shadow.pot_0_resistance = r;
+        // set_pot_0 clamps to [1k, 1M] and marks matrices dirty; the next
+        // process_sample() rebuilds A/S/K before running the NR solve.
+        self.main.set_pot_0(r_ldr_path);
+        self.shadow.set_pot_0(r_ldr_path);
     }
 
     fn reset(&mut self) {

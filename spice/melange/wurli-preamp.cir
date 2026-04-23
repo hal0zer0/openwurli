@@ -1,0 +1,59 @@
+* Wurlitzer 200A Reed-Bar Preamp
+* Two-stage direct-coupled NPN CE amplifier (TR-1, TR-2 = 2N5089)
+* with series-series emitter feedback and LDR tremolo modulation.
+* Flattened from openwurli/spice/subcircuits/preamp.cir for melange codegen.
+*
+* N=10 nodes: in, mid_in, base1, emit1, coll1, emit2a, emit2b, coll2, out, fb
+* M=5 nonlinear dimensions: 2 BJTs (2D each) + 1 diode (1D)
+* C20 (220pF) removed: present on 206A only, NOT 200A.
+
+* --- Input coupling: R1 (22K) in series with Cin (0.022uF) ---
+* R1 is external to the original subcircuit (between pickup and preamp input).
+* Modeled as two components with intermediate node mid_in to preserve
+* the 22K series impedance and ~330 Hz highpass corner.
+R1    in     mid_in  22K
+Cpar  in     0       1P
+Cin   mid_in base1   0.022U
+
+* --- Base1 bias network ---
+* Thevenin: Vth = 15 * 470K / (2M + 470K) = 2.854V
+R2    vcc   base1  2MEG
+R3    base1 0      470K
+
+* --- Protection diode (reverse-biased under normal operation) ---
+D1    0     base1  D1N4148
+
+* --- Stage 1: TR-1 (2N5089 NPN common-emitter) ---
+Q1    coll1 base1 emit1  Q2N5089
+Rc1   vcc   coll1  150K
+Re1   emit1 0      33K
+Ce1   emit1 fb     4.7U
+Cc3   coll1 base1  100P
+
+* --- Stage 2: TR-2 (2N5089 NPN common-emitter) ---
+* Direct-coupled: TR-1 collector = TR-2 base (coll1 node)
+Q2    coll2 coll1 emit2a  Q2N5089
+Rc2   vcc   coll2  1.8K
+Re2a  emit2a emit2b  270
+Ce2   emit2a emit2b  22U
+Re2b  emit2b 0    820
+Cc4   coll2  coll1  100P
+
+* --- Output ---
+R9    coll2 out    6.8K
+
+* --- Global AC negative feedback (series-series / emitter) ---
+* R10 from output to fb_junct; Ce1 AC-couples fb_junct to TR-1 emitter.
+* LDR shunts fb_junct to ground, modulating feedback and thus gain.
+R10   out   fb     56K
+
+* --- Tremolo LDR (dynamic pot) ---
+R_ldr fb    0      100k
+.pot R_ldr 1k 1Meg "Tremolo"
+
+* --- Supply ---
+V1    vcc   0      DC 15
+
+* --- Device models ---
+.model Q2N5089 NPN(IS=3.03e-14 BF=500)
+.model D1N4148 D(IS=2.52e-9 N=1.752)

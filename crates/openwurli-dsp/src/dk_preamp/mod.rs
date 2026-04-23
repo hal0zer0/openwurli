@@ -45,13 +45,13 @@ mod melange_gate_tests {
         for i in 0..ramp {
             let t = i as f64 / ramp as f64;
             let r = r_start + t * (r_ldr - r_start);
-            main.pot_0_resistance = r;
-            shadow.pot_0_resistance = r;
+            main.set_pot_0(r);
+            shadow.set_pot_0(r);
             gen_preamp::process_sample(0.0, &mut main);
             gen_preamp::process_sample(0.0, &mut shadow);
         }
-        main.pot_0_resistance = r_ldr;
-        shadow.pot_0_resistance = r_ldr;
+        main.set_pot_0(r_ldr);
+        shadow.set_pot_0(r_ldr);
 
         // Settle at target
         let settle = (SR * 0.3) as usize;

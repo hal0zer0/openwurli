@@ -1,0 +1,104 @@
+* Wurlitzer 200A Power Amplifier
+* Quasi-complementary Class AB push-pull, ~20W into 8 ohms.
+* Flattened from openwurli/spice/subcircuits/power_amp.cir for melange codegen.
+* Transistor models: full Gummel-Poon from SPICE validation library.
+*
+* Topology: PNP diff pair (TR-7/TR-8) -> NPN VAS (TR-14) ->
+*   Vbe multiplier (TR-9) -> Sziklai output pairs (TR-10/11, TR-12/13)
+*   -> emitter resistors -> output. Negative feedback via R-31/R-30.
+*
+* No variable elements (no pots). Volume pot is upstream.
+
+* --- Input coupling ---
+C8    in     in_ac   4.7U
+C9    in_ac  0       1N
+Cpar  in     0       1P
+
+* --- Input bias ---
+R27   in_ac  0       15K
+
+* --- Differential pair (TR-7, TR-8: PNP 2N5087) ---
+R28   emit_pair  vp    10K
+Q7    coll7    in_ac     emit_pair   Q2N5087
+Q8    coll8    fb_inv    emit_pair   Q2N5087
+
+* --- Collector loads ---
+R29      coll7   vn    1K
+R_coll8  coll8   vn    1m
+
+* --- Negative feedback network ---
+R31   out     fb_inv   15K
+R30   fb_inv  c10_node 220
+C10   c10_node 0       22U
+
+* --- VAS / pre-driver (TR-14: NPN MPSA06) ---
+Q14   drv_bot   coll7    vn   QMPSA06
+
+* --- Miller compensation ---
+C11   drv_bot   coll7   100P
+
+* --- Bootstrapped VAS collector load ---
+R32   vp     boot      1.8K
+R33   boot   vas_out   1.8K
+C12   boot   out       100U
+
+* --- Vbe multiplier / bias control (TR-9: NPN MPSA06) ---
+Q9    vas_out   bias_mid   drv_bot   QMPSA06
+
+R34   vas_out   bias_mid   160
+R35   bias_mid  drv_bot    220
+
+* --- Top Sziklai: TR-10 (NPN driver) + TR-11 (PNP output TIP36C) ---
+Q10   base11   vas_out   nodeC    QMPSA06
+Q11   nodeC    base11    vp       QTIP36C
+R36   base11   vp        270
+
+* --- Bottom Sziklai: TR-12 (PNP driver) + TR-13 (NPN output TIP35C) ---
+Q12   base13   drv_bot   nodeD    QMPSA56
+Q13   nodeD    base13    vn       QTIP35C
+R39   base13   vn        270
+
+* --- Output emitter resistors ---
+R37   nodeC   out   0.47
+R38   nodeD   out   0.47
+
+* --- Speaker load (8 ohm = two 16-ohm in parallel) ---
+R_load out   0   8
+
+* --- Supply ---
+V1    vp   0   DC 22.5
+V2    0    vn  DC 22.5
+
+* --- Device models (full Gummel-Poon from SPICE validation) ---
+
+.model Q2N5087 PNP(IS=3.18e-14 BF=254.8 NF=1.003 VAF=115
++ IKF=0.01 ISE=5.32e-15 NE=1.34 BR=3.56 NR=1.005 VAR=26
++ IKR=0.01 ISC=1.7e-13 NC=1.214 RB=120 RE=0.5 RC=2
++ CJE=3.33e-12 VJE=0.65 MJE=0.33 CJC=1.66e-12 VJC=0.4 MJC=0.33
++ TF=7.2e-10 TR=1e-7 XTB=1.4 EG=1.11 XTI=3)
+
+.model QMPSA06 NPN(IS=1.5e-14 BF=200 NF=1 VAF=100
++ IKF=0.2 ISE=5e-13 NE=1.5 BR=4 NR=1 VAR=20
++ IKR=0.1 RB=10 RE=0.3 RC=0.5
++ CJE=10e-12 VJE=0.7 MJE=0.33 CJC=6e-12 VJC=0.5 MJC=0.33
++ TF=3.5e-10 TR=1e-7 XTB=1.5 EG=1.11 XTI=3)
+
+.model QMPSA56 PNP(IS=1.5e-14 BF=200 NF=1 VAF=100
++ IKF=0.2 ISE=5e-13 NE=1.5 BR=4 NR=1 VAR=20
++ IKR=0.1 RB=10 RE=0.3 RC=0.5
++ CJE=10e-12 VJE=0.7 MJE=0.33 CJC=6e-12 VJC=0.5 MJC=0.33
++ TF=3.5e-10 TR=1e-7 XTB=1.5 EG=1.11 XTI=3)
+
+.model QTIP35C NPN(IS=5e-12 BF=60 NF=1 VAF=80
++ IKF=5 ISE=3e-10 NE=1.8 BR=5 NR=1 VAR=20
++ IKR=1 RB=0.5 RE=0.02 RC=0.05
++ CJE=200e-12 VJE=0.7 MJE=0.33 CJC=150e-12 VJC=0.5 MJC=0.33
++ TF=2e-8 TR=5e-7 XTB=1.5 EG=1.11 XTI=3)
+
+.model QTIP36C PNP(IS=5e-12 BF=40 NF=1 VAF=60
++ IKF=5 ISE=3e-10 NE=1.8 BR=4 NR=1 VAR=20
++ IKR=1 RB=0.5 RE=0.02 RC=0.05
++ CJE=200e-12 VJE=0.7 MJE=0.33 CJC=180e-12 VJC=0.5 MJC=0.33
++ TF=2.5e-8 TR=5e-7 XTB=1.5 EG=1.11 XTI=3)
+
+.linearize Q9
