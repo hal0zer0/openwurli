@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **DI Limiter (new `di_limiter` BoolParam, default ON).** Soft output
+  ceiling at −1 dBFS with a threshold at −6 dBFS and a tanh soft-knee;
+  signals below the threshold pass through bit-exact so single-note and
+  mf playing is never touched. Catches the peak level ff polyphonic
+  chords naturally produce (~+4 dBFS without the limiter) so the DAW
+  doesn't register clipping. Models the ceiling any mic preamp / DI box
+  / A-D converter imposes on a recorded 200A — not part of the analog
+  circuit chain (the preamp, power amp, and speaker models all run
+  identically regardless of this switch). Users who want raw un-limited
+  output for post-processing can turn it off. Implemented as a stateless
+  per-sample branch in the plugin's final output path; passthrough below
+  threshold is a compare + return (no transcendental math), so no audible
+  character on content below peak-chord dynamics.
+
 ### Fixed
 - **Melange power-amp solver divergence causing +20 dBFS spikes during
   continuous polyphonic play (DAW peak-protect muting).** Root cause:
