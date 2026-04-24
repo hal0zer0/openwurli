@@ -497,15 +497,33 @@ release_tau = 50 ms   (slow off)
 
 // CdS LDR resistance model (log-space interpolation)
 log_r = log(R_max) + (log(R_min) - log(R_max)) * drive^gamma
-R_min = 50 ohm, R_max = 1M ohm, gamma = 1.1
-(gamma calibrated to OBM tremolo depth; datasheet range 0.7-0.9)
+R_min = 18 320 ohm, R_max = 1M ohm, gamma = 1.1
+// R_min lands at the preamp's documented 19 kΩ bright calibration point
+// (the preamp's `.runtime R 1k 1Meg` clamp would otherwise waste any value
+// below 1 kΩ, and the CdS datasheet 50 Ω min is never reached in practice
+// at 5.6 Hz oscillator rate anyway given the 50 ms release time constant).
 
 // Total LDR path resistance → DkPreamp::set_ldr_resistance()
-R_ldr_path = R_series + R_ldr
-R_series = 18K + 50K * (1 - depth)
+R_ldr_path = R_SHUNT_SERIES + R_ldr
+R_SHUNT_SERIES = 680 ohm   // LG-1 pin 5 fixed series resistor, constant
 ```
 
-**Depth control:** The vibrato depth pot and trimpot (R-17) control how much of the oscillator signal reaches the LED. At full depth, the preamp gain can approximately double, which at high signal levels causes clipping.
+**Depth control:** The 50 kΩ VIBRATO pot is in the LED drive path only —
+it attenuates how much oscillator voltage reaches the LED and therefore
+sets the LED brightness range. We approximate that with
+`led_drive = oscillator * depth` on the drive signal; the feedback shunt
+resistance is left as `R_SHUNT_SERIES + R_ldr` with no depth-dependent
+contribution. A pre-Apr-2026 version mistakenly mixed
+`18 kΩ + 50 kΩ × (1 − depth)` into the shunt too, which double-counted the
+pot and made depth=1.0 produce *less* modulation than depth=0.75. See
+`memory/known-issues.md` RESOLVED section.
+
+**Output AM depth at depth=1.0:** ~5.7 dB peak-to-peak at the preamp
+output (regression-guarded by
+`dk_preamp::melange_gate_tests::test_tremolo_am_depth_at_full_depth`,
+spec band 4–8 dB). Matches the MEMORY-calibrated 6.1 dB preamp gain
+range with a small loss from the CdS envelope not reaching both
+endpoints within each ~178 ms oscillator cycle.
 
 ### 7.2 Power Amplifier Model
 
