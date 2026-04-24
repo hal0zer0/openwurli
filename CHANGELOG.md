@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Pickup displacement scale retuned "hotter" for more bark.** `DS_AT_C4`
+  0.75 → 0.85 and `DS_CLAMP` upper bound 0.82 → 0.88 after Phase 2 +
+  Phase 4 + the Apr tremolo depth-curve fix nudged the effective working
+  point of the pickup → preamp → output chain cooler. Measured via
+  `preamp-bench bark-audit`: pickup H2/H1 now +0.9 dB at C2 ff
+  (97.1 → 107.7 %), +1.8 dB at C4 ff (63.9 → 78.6 %), +1.5 dB at C5,
+  modest bumps at C3/C6. Max y_peak 0.853 at C2 ff, still comfortably
+  below the `PICKUP_MAX_Y = 0.98` pole. RMS level shift ~+2 dB across
+  the register; peak at ff stays around −17 to −22 dBFS. DS is
+  explicitly a tuning constant — the 200A's real rest gap d₀ has never
+  been published — so this is a recalibration within the documented
+  tuning range, not a physics change. Investigated and rejected a
+  Miessner-style k-exponent on C(y) = C₀/(1-y)^k because the 200A's
+  U-channel side walls contribute a symmetric capacitance that partially
+  cancels any production-design asymmetry (per the docs), and raising k
+  couples H1 and H2 boosts inseparably — net gain but not H2-isolated.
+
+### Added
+- `preamp-bench calibrate --ds-clamp-max <V>` so future DS sweeps can
+  probe bass-clamp headroom without code edits. Default 0.82 (the
+  historical in-tree constant before the Apr retune).
+
 ### Fixed
 - **Tremolo depth → swing curve non-monotonic at top end.** Before this fix,
   depth=1.0 produced *less* modulation (11.25 dB RMS swing) than depth=0.75
