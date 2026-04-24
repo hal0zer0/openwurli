@@ -311,7 +311,7 @@ dependencies = [
 [[package]]
 name = "melange-primitives"
 version = "0.1.0"
-source = "git+https://github.com/hal0zer0/melange?rev=b7f1ba4#b7f1ba44958417db31b1eb7039270113146ca177"
+source = "git+https://github.com/hal0zer0/melange?rev=47b2702#47b27028b4cf1d5254c10480e618b88cd485e34c"
 
 [[package]]
 name = "memchr"
