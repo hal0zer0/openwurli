@@ -1,9 +1,9 @@
-//! Wurlitzer 200A power amplifier — feature-toggled between behavioral and circuit models.
+//! Wurlitzer 200A power amplifier — feature-toggled between circuit and behavioral models.
 //!
-//! Default: behavioral NR model (memoryless, 80 lines).
-//! `--features melange-power-amp`: melange-generated 7-BJT Class AB circuit solver.
+//! Default: melange-generated 7-BJT Class AB circuit solver.
+//! `--features legacy-power-amp`: behavioral closed-loop NR approximation (A/B diagnostics only).
 
-#[cfg(not(feature = "melange-power-amp"))]
+#[cfg(feature = "legacy-power-amp")]
 mod behavioral {
     //! Behavioral closed-loop negative feedback model.
 
@@ -82,10 +82,10 @@ mod behavioral {
     }
 }
 
-#[cfg(not(feature = "melange-power-amp"))]
+#[cfg(feature = "legacy-power-amp")]
 pub use behavioral::PowerAmp;
 
-#[cfg(feature = "melange-power-amp")]
+#[cfg(not(feature = "legacy-power-amp"))]
 mod melange_adapter {
     //! Melange-generated 7-BJT Class AB circuit solver.
 
@@ -150,7 +150,7 @@ mod melange_adapter {
     }
 }
 
-#[cfg(feature = "melange-power-amp")]
+#[cfg(not(feature = "legacy-power-amp"))]
 pub use melange_adapter::PowerAmp;
 
 #[cfg(test)]

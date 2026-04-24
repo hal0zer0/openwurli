@@ -21,7 +21,6 @@ pub mod preamp;
 pub mod tremolo;
 
 // Output stage
-#[cfg(feature = "melange-power-amp")]
 pub mod gen_power_amp;
 #[cfg(not(feature = "legacy-tremolo"))]
 pub mod gen_tremolo;

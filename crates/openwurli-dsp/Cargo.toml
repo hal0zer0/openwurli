@@ -10,7 +10,7 @@ description = "Wurlitzer 200A DSP library — modal synthesis, preamp circuit si
 [features]
 legacy-preamp = []
 legacy-tremolo = []
-melange-power-amp = []
+legacy-power-amp = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(melange_precise_exp)'] }
