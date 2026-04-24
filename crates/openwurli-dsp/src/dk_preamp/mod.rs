@@ -211,4 +211,111 @@ mod melange_gate_tests {
              possible Nyquist limit cycle"
         );
     }
+
+    /// Regression test for the user-visible tremolo depth.
+    ///
+    /// Measured, not just the control variable: feeds a 1 kHz sine through the
+    /// melange preamp while the `Tremolo` adapter drives the LDR at full depth
+    /// (and, separately, at depth=0 to establish the no-tremolo baseline).
+    /// Computes the envelope ratio `trem_on / trem_off` at each 5 ms window and
+    /// reports the 5–95 % percentile spread — that is the effective AM depth
+    /// the player hears, with note decay already factored out.
+    ///
+    /// Target band: **4.0–8.0 dB** peak-to-peak at depth=1.0.
+    ///
+    /// - Lower bound: the MEMORY-calibrated 6.1 dB preamp gain range (19 kΩ
+    ///   bright vs 1 MΩ dim) with a ~2 dB margin for the CdS envelope not
+    ///   reaching both endpoints every cycle.
+    /// - Upper bound: 8 dB catches regressions that would make the tremolo
+    ///   unphysically deep (e.g. accidentally reintroducing the depth-scaled
+    ///   r_series double-count in reverse).
+    ///
+    /// Also verifies the rate is ~5–6 Hz (counts cycles of the envelope-ratio
+    /// zero-crossings around its mean).
+    #[test]
+    fn test_tremolo_am_depth_at_full_depth() {
+        use crate::tremolo::Tremolo;
+
+        const PREAMP_SR: f64 = 88_200.0; // 2x oversampled at 44.1 kHz host rate
+        const TONE_HZ: f64 = 1_000.0;
+        const AMP: f64 = 0.01;
+        const SETTLE_S: f64 = 1.5;
+        const MEASURE_S: f64 = 3.0;
+        const ENV_WIN_S: f64 = 0.005;
+
+        fn render(depth: f64) -> Vec<f64> {
+            let mut preamp = crate::dk_preamp::DkPreamp::new(PREAMP_SR);
+            let mut tremolo = Tremolo::new(depth, PREAMP_SR);
+            tremolo.set_depth(depth);
+
+            let settle = (PREAMP_SR * SETTLE_S) as usize;
+            let measure = (PREAMP_SR * MEASURE_S) as usize;
+            let mut out = Vec::with_capacity(measure);
+
+            for i in 0..(settle + measure) {
+                preamp.set_ldr_resistance(tremolo.process());
+                let t = i as f64 / PREAMP_SR;
+                let y = preamp.process_sample(AMP * (2.0 * PI * TONE_HZ * t).sin());
+                if i >= settle {
+                    out.push(y);
+                }
+            }
+            out
+        }
+
+        let off = render(0.0);
+        let on = render(1.0);
+
+        let win = (PREAMP_SR * ENV_WIN_S) as usize;
+        let env = |x: &[f64]| -> Vec<f64> {
+            (0..x.len() / win)
+                .map(|i| {
+                    let s = i * win;
+                    let rms = x[s..s + win].iter().map(|v| v * v).sum::<f64>() / win as f64;
+                    rms.sqrt()
+                })
+                .collect()
+        };
+        let env_off = env(&off);
+        let env_on = env(&on);
+
+        let mut ratio_db: Vec<f64> = env_on
+            .iter()
+            .zip(env_off.iter())
+            .map(|(a, b)| 20.0 * (a / b.max(1e-12)).log10())
+            .collect();
+        // Sort a copy for percentiles
+        let mut sorted = ratio_db.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p05 = sorted[sorted.len() * 5 / 100];
+        let p95 = sorted[sorted.len() * 95 / 100];
+        let swing = p95 - p05;
+
+        // Cycle count via zero-crossings of the mean-removed ratio
+        let mean: f64 = ratio_db.iter().sum::<f64>() / ratio_db.len() as f64;
+        for v in &mut ratio_db {
+            *v -= mean;
+        }
+        let crossings: usize = ratio_db
+            .windows(2)
+            .filter(|w| w[0] < 0.0 && w[1] >= 0.0)
+            .count();
+        let rate = crossings as f64 / MEASURE_S;
+
+        eprintln!(
+            "tremolo AM at depth=1.0: {swing:.2} dB swing (p05={p05:+.2}, p95={p95:+.2}), \
+             {rate:.2} Hz"
+        );
+
+        assert!(
+            (4.0..=8.0).contains(&swing),
+            "Tremolo AM swing {swing:.2} dB out of spec band 4-8 dB (target ~6.1 dB \
+             from MEMORY preamp gain range). Preamp or tremolo calibration drifted — \
+             investigate before merging."
+        );
+        assert!(
+            (4.5..=7.5).contains(&rate),
+            "Tremolo rate {rate:.2} Hz out of real-200A range 5.3-7 Hz"
+        );
+    }
 }
