@@ -226,20 +226,30 @@ pub fn reed_compliance(midi: u8) -> f64 {
 /// Exponent 0.75 gives steeper bass-to-treble gradient than sqrt(0.5), needed
 /// to match OBM's ~10:1 H2/H1 ratio range (D3 bark ~0.5 vs Bb6 clean ~0.06).
 ///
-/// Calibrated against OBM + polyphonic Wurlitzer 200A recordings.
-/// H2/H1 comparison (high-isolation notes, n=19) showed synth H2 was
-/// -6.4 dB low at DS=0.42 ("sleepy Wurli"). Raised to 0.85 (+102%).
+/// Physical note: the 200A's actual rest gap d₀ between reed and pickup has
+/// never been published — factory records destroyed 1988, no service manual
+/// or patent specifies it for this model. DISPLACEMENT_SCALE absorbs this
+/// unknown. Calibrated by ear + measurement against a moving baseline chain;
+/// not a physics claim. When the chain changes, DS gets re-calibrated to
+/// restore the previous effective working point.
 ///
-/// Approximate values across keyboard:
-///   A1 (MIDI 33): 0.82  (clamped — heavy bass bark/growl)
-///   D3 (MIDI 50): 0.82  (clamped — solid bark)
-///   C4 (MIDI 60): 0.75  (reference, strong bark)
-///   D5 (MIDI 74): 0.52  (moderate bark)
-///   D6 (MIDI 86): 0.39  (lighter)
-///   C7 (MIDI 96): 0.21  (clean, bell-like)
-const DS_AT_C4: f64 = 0.75;
+/// Apr 2026 retune: after Phase 2 (melange power amp), Phase 4 (full
+/// Gummel-Poon 2N5089 junction caps), and the Apr tremolo depth-curve fix,
+/// the effective working point had drifted cooler. Raised DS_AT_C4 0.75 → 0.85
+/// and DS_CLAMP upper 0.82 → 0.88 to recover ~+1 dB H2/H1 across register
+/// without pushing y_peak past ~0.90 (still safely below PICKUP_MAX_Y=0.98).
+/// Measured with `preamp-bench calibrate`; see `memory/calibration-history.md`.
+///
+/// Approximate post-retune values across the keyboard:
+///   A1 (MIDI 33): 0.88  (clamped — heavy bass bark/growl)
+///   D3 (MIDI 50): 0.88  (clamped — solid bark)
+///   C4 (MIDI 60): 0.85  (reference, strong bark)
+///   D5 (MIDI 74): 0.59  (moderate bark)
+///   D6 (MIDI 86): 0.45  (lighter)
+///   C7 (MIDI 96): 0.24  (clean, bell-like)
+const DS_AT_C4: f64 = 0.85;
 const DS_EXPONENT: f64 = 0.75;
-const DS_CLAMP: (f64, f64) = (0.02, 0.82);
+const DS_CLAMP: (f64, f64) = (0.02, 0.88);
 
 /// Runtime-overridable calibration parameters.
 /// All fields default to the current hardcoded constants.

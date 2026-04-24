@@ -954,6 +954,11 @@ fn cmd_calibrate(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,40,44,48,52,56,60,64,68,72,76,80,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
     let ds_at_c4 = parse_flag(args, "--ds-at-c4", 0.75);
+    // Upper clamp on the register-scaled DS (bass reeds get the highest DS; clamp keeps
+    // them from running the 1/(1-y) model too close to its pole). Default 0.82 matches
+    // the in-tree const. Exposed as a CLI flag so sweeps can probe bass headroom without
+    // rebuilds. Lower clamp stays at the default 0.02.
+    let ds_clamp_max = parse_flag(args, "--ds-clamp-max", 0.82);
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let zero_trim = has_flag(args, "--zero-trim");
@@ -962,6 +967,7 @@ fn cmd_calibrate(args: &[String]) {
 
     let cfg = CalibrationConfig {
         ds_at_c4,
+        ds_clamp: (0.02, ds_clamp_max),
         zero_trim,
         ..CalibrationConfig::default()
     };
