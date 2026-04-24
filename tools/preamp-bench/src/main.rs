@@ -409,8 +409,11 @@ fn cmd_render(args: &[String]) {
         let mut tremolo = if tremolo_depth > 0.0 {
             Some(Tremolo::new(tremolo_depth, preamp_sr))
         } else {
-            preamp.set_ldr_resistance(r_ldr);
+            // Order matters: reset() restores the cached nominal state (100 kΩ LDR),
+            // so set_ldr_resistance() must come AFTER reset. Same gotcha as the
+            // measure_gain_at fix (7f33173). Missed for `render` in that commit.
             preamp.reset();
+            preamp.set_ldr_resistance(r_ldr);
             None
         };
 
