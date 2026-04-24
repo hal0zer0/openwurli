@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-melange-primitives = { git = "https://github.com/hal0zer0/melange", rev = "1f46b80" }
+melange-primitives = { git = "https://github.com/hal0zer0/melange", rev = "b7f1ba4" }
 
 [workspace.package]
 edition = "2024"

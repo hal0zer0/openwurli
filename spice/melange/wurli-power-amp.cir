@@ -100,5 +100,3 @@ V2    0    vn  DC 22.5
 + IKR=1 RB=0.5 RE=0.02 RC=0.05
 + CJE=200e-12 VJE=0.7 MJE=0.33 CJC=180e-12 VJC=0.5 MJC=0.33
 + TF=2.5e-8 TR=5e-7 XTB=1.5 EG=1.11 XTI=3)
-
-.linearize Q9
