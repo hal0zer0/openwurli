@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Tremolo depth → swing curve non-monotonic at top end.** Before this fix,
+  depth=1.0 produced *less* modulation (11.25 dB RMS swing) than depth=0.75
+  (12.04 dB) because `set_depth` was mixing the 50 kΩ VIBRATO pot into both
+  the LED drive path (via `led_drive = osc * depth`) AND the feedback shunt
+  path (via `r_series = 18_000 + 50_000 × (1 − depth)`). The double-count
+  made depth=1.0's small r_series (18 kΩ) keep the dim phase partially lit,
+  narrowing the swing at high settings. Fix: removed the depth-dependent
+  r_series field; shunt is now a constant 680 Ω (LDR pin 5 series resistor)
+  + `r_ldr`, and `R_LDR_MIN` raised 50 Ω → 18 320 Ω so the bright phase
+  lands at the documented 19 kΩ bright calibration point instead of diving
+  below the preamp's `.runtime R 1k 1Meg` clamp floor. Post-fix RMS swing
+  curve is monotonic: 9.49 / 9.50 / 9.79 / 12.10 dB at depth
+  0.25 / 0.50 / 0.75 / 1.00. New regression test `test_depth_swing_monotonic`
+  guards the log-swing curve against the double-count bug.
+
 ### Changed
 - **Power amp is now a melange-generated 7-BJT Class AB circuit solver.** The
   behavioral closed-loop NR approximation is preserved behind

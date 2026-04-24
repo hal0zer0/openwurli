@@ -14,9 +14,25 @@ use crate::gen_tremolo;
 /// CdS LDR parameters (shared between behavioral and circuit paths).
 const ATTACK_TAU: f64 = 0.003;
 const RELEASE_TAU: f64 = 0.050;
-const R_LDR_MIN: f64 = 50.0;
+/// LDR bright-phase floor. Set to match the preamp's documented
+/// "tremolo bright" calibration point (19 kΩ total shunt → 12.61 dB gain).
+/// Shunt is `R_SHUNT_SERIES + r_ldr`, so r_ldr_min = 19_000 − 680 ≈ 18 320.
+/// Previously 50 Ω (datasheet CdS min) — but shunt values below about
+/// 1 kΩ clamp at the preamp's `.runtime R 1k 1Meg` floor and waste drive.
+/// Keeping the bright phase at the preamp's documented bright point gives
+/// monotonic depth→swing behavior and hits the 6.1 dB gain-range target.
+const R_LDR_MIN: f64 = 18_320.0;
 const R_LDR_MAX: f64 = 1_000_000.0;
 const GAMMA: f64 = 1.1;
+
+/// Fixed series resistance in the LDR shunt path from fb_junction to GND:
+/// R-??? (680 Ω on LG-1 pin 5) in series with the LDR itself. The 50 kΩ
+/// VIBRATO pot + 18 kΩ are in the LED drive path (controlling LED current
+/// and hence brightness), **not** in this shunt path — see `set_depth`.
+/// Pre-Apr-2026 versions double-counted the pot into both paths, which
+/// flattened the depth→swing curve at high settings (100 % actually milder
+/// than 75 %). See `memory/known-issues.md` for the full write-up.
+const R_SHUNT_SERIES: f64 = 680.0;
 
 /// Twin-T oscillator output voltage range (from ngspice/melange validation).
 #[cfg(not(feature = "legacy-tremolo"))]
@@ -46,7 +62,6 @@ pub struct Tremolo {
     gamma: f64,
     ln_r_max: f64,
     ln_min_minus_max: f64,
-    r_series: f64,
 }
 
 /// Fixed oscillator rate for the legacy behavioral LFO (Hz).
@@ -83,14 +98,11 @@ impl Tremolo {
             gamma: GAMMA,
             ln_r_max: R_LDR_MAX.ln(),
             ln_min_minus_max: R_LDR_MIN.ln() - R_LDR_MAX.ln(),
-            r_series: 18_000.0,
         }
     }
 
     pub fn set_depth(&mut self, depth: f64) {
         self.depth = depth.clamp(0.0, 1.0);
-        let pot_resistance = 50_000.0 * (1.0 - self.depth);
-        self.r_series = 18_000.0 + pot_resistance;
     }
 
     pub fn process(&mut self) -> f64 {
@@ -114,7 +126,7 @@ impl Tremolo {
             self.r_ldr = log_r.exp();
         }
 
-        self.r_series + self.r_ldr
+        R_SHUNT_SERIES + self.r_ldr
     }
 
     /// Get the oscillator's LED drive signal (0..1).
@@ -136,7 +148,7 @@ impl Tremolo {
     }
 
     pub fn current_resistance(&self) -> f64 {
-        self.r_series + self.r_ldr
+        R_SHUNT_SERIES + self.r_ldr
     }
 
     pub fn reset(&mut self) {
@@ -276,6 +288,46 @@ mod tests {
     }
 
     #[test]
+    fn test_depth_swing_monotonic() {
+        // Regression guard against the pre-Apr-2026 bug where `set_depth` mixed
+        // the 50 kΩ VIBRATO pot into both the LED drive path AND the feedback
+        // shunt path. That double-count made depth=1.0 produce *less* swing than
+        // depth=0.75 because the small r_series at high depth raised the dim-
+        // phase floor. Fix: moved the pot out of the shunt (pot only affects
+        // LED drive via the `led_drive = osc * depth` scaling), left the
+        // shunt at R_SHUNT_SERIES + r_ldr. log10(R_max/R_min) must be
+        // monotonically non-decreasing in depth.
+        let sr = 44100.0;
+        let warmup = sr as usize;
+        let measure = (sr * 1.0) as usize;
+        let mut swings = Vec::new();
+        for depth in [0.25, 0.50, 0.75, 1.00] {
+            let mut trem = Tremolo::new(depth, sr);
+            trem.set_depth(depth);
+            for _ in 0..warmup {
+                trem.process();
+            }
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            for _ in 0..measure {
+                let r = trem.process();
+                lo = lo.min(r);
+                hi = hi.max(r);
+            }
+            swings.push((depth, (hi / lo).log10()));
+        }
+        for w in swings.windows(2) {
+            let (d0, s0) = w[0];
+            let (d1, s1) = w[1];
+            assert!(
+                s1 >= s0 - 0.02,
+                "depth→swing non-monotonic: depth={d0} log-swing={s0:.3} > \
+                 depth={d1} log-swing={s1:.3}. Full curve: {swings:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_asymmetric_envelope() {
         let sr = 44100.0;
         let mut trem = Tremolo::new(1.0, sr);
@@ -297,3 +349,4 @@ mod tests {
         );
     }
 }
+
