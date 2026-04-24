@@ -118,6 +118,28 @@ impl Default for OpenWurli {
 }
 
 impl OpenWurli {
+    /// Defensively pin each smoother's current and target value to its param's current value.
+    /// The framework normally does this via `update_smoother(sr, true)` in `activate()` before
+    /// `initialize()` runs, but we call it explicitly inside `initialize()` too so any wrapper
+    /// / DAW path that skips that handshake still lands on the correct starting value. Without
+    /// this, the per-sample `smoothed.next()` consumer in `render_subblock` returns 0.0 forever
+    /// while `.value()` returns the correct default — tremolo / volume stuck silent. See
+    /// `test_tremolo_smoother_does_not_pin_depth_to_zero` for the repro.
+    fn reset_param_smoothers_to_current(&self) {
+        self.params
+            .volume
+            .smoothed
+            .reset(self.params.volume.value());
+        self.params
+            .tremolo_depth
+            .smoothed
+            .reset(self.params.tremolo_depth.value());
+        self.params
+            .speaker_character
+            .smoothed
+            .reset(self.params.speaker_character.value());
+    }
+
     fn note_on(&mut self, note: u8, velocity: f32, mlp_enabled: bool) {
         let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
 
@@ -388,6 +410,8 @@ impl Plugin for OpenWurli {
             self.up_buf.resize(max_samples * 2, 0.0);
             self.out_buf.resize(max_samples, 0.0);
         }
+
+        self.reset_param_smoothers_to_current();
 
         true
     }
@@ -668,6 +692,61 @@ mod tests {
         assert!(
             energy > 0.0,
             "render_subblock produced silence after note-on"
+        );
+    }
+
+    #[test]
+    fn test_tremolo_smoother_does_not_pin_depth_to_zero() {
+        // Regression test: with tremolo_depth default = 0.5, rendering a 4s note should
+        // produce audible amplitude modulation (~6 Hz Twin-T oscillator → ~6 dB swing
+        // through the preamp, amplified by the power amp). Before the smoother fix, the
+        // per-sample `smoothed.next()` consumer returned 0.0 and set the depth to 0 on
+        // every sample, wiping out the modulation.
+        let mut plugin = make_plugin();
+        // The DAW framework calls `update_smoother(sr, true)` on every param before
+        // `initialize()` runs. We mirror that here so the test path matches the real
+        // DAW handshake, then rely on the defensive reset inside `initialize()` (via
+        // `reset_param_smoothers_to_current`) as the belt-and-suspenders guard.
+        plugin.reset_param_smoothers_to_current();
+        plugin.note_on(60, 0.9, true);
+
+        let sr = plugin.sample_rate as usize;
+        let total = sr * 4;
+        let block = 256;
+        let mut samples = Vec::with_capacity(total);
+
+        for start in (0..total).step_by(block) {
+            let len = (total - start).min(block);
+            plugin.render_subblock(0, len);
+            for i in 0..len {
+                let vol = plugin.params.volume.smoothed.next() as f64;
+                let speaker_char = plugin.params.speaker_character.smoothed.next() as f64;
+                plugin.speaker.set_character(speaker_char);
+                let attenuated = plugin.out_buf[i] * vol * vol;
+                let amplified = plugin.power_amp.process(attenuated);
+                let shaped = plugin.speaker.process(amplified);
+                let out = shaped * tables::POST_SPEAKER_GAIN;
+                samples.push(out);
+            }
+        }
+
+        // RMS envelope over 20 ms windows, ignoring the first 0.5 s (attack overshoot).
+        let win = sr / 50;
+        let skip_wins = 25;
+        let n_wins = samples.len() / win;
+        let mut env_db = Vec::with_capacity(n_wins);
+        for i in skip_wins..n_wins {
+            let s = i * win;
+            let e = s + win;
+            let rms = (samples[s..e].iter().map(|x| x * x).sum::<f64>() / win as f64).sqrt();
+            env_db.push(20.0 * (rms + 1e-12).log10());
+        }
+        let env_min = env_db.iter().cloned().fold(f64::INFINITY, f64::min);
+        let env_max = env_db.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let swing = env_max - env_min;
+        assert!(
+            swing > 3.0,
+            "Tremolo should produce > 3 dB RMS swing at default depth 0.5: got {swing:.2} dB (range {env_min:+.2} to {env_max:+.2} dBFS)"
         );
     }
 

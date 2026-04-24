@@ -158,6 +158,54 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
+    fn probe_raw_oscillator() {
+        #[cfg(not(feature = "legacy-tremolo"))]
+        {
+            let sr = 48000.0;
+            let mut s = gen_tremolo::CircuitState::default();
+            if (sr - gen_tremolo::SAMPLE_RATE).abs() > 0.5 {
+                s.set_sample_rate(sr);
+            }
+            for _ in 0..(sr * 2.0) as usize {
+                gen_tremolo::process_sample(0.0, &mut s);
+            }
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            let mut samples = Vec::new();
+            for _ in 0..(sr * 2.0) as usize {
+                let v = gen_tremolo::process_sample(0.0, &mut s)[0];
+                lo = lo.min(v);
+                hi = hi.max(v);
+                samples.push(v);
+            }
+            let mean = samples.iter().sum::<f64>() / samples.len() as f64;
+            let mut crossings = 0;
+            for i in 1..samples.len() {
+                if samples[i - 1] < mean && samples[i] >= mean {
+                    crossings += 1;
+                }
+            }
+            let freq = crossings as f64 / 2.0;
+            eprintln!(
+                "osc raw: low={lo:.3}V high={hi:.3}V mean={mean:.3}V swing={:.3}V freq~{freq:.2}Hz",
+                hi - lo
+            );
+            eprintln!("expected: V_OUT_MIN={V_OUT_MIN:.2} V_OUT_MAX={V_OUT_MAX:.2}");
+
+            // Also probe what led_drive looks like via the mapping
+            let mut ld_min = f64::INFINITY;
+            let mut ld_max = f64::NEG_INFINITY;
+            for v in &samples {
+                let ld = ((V_OUT_MAX - v) / (V_OUT_MAX - V_OUT_MIN)).clamp(0.0, 1.0);
+                ld_min = ld_min.min(ld);
+                ld_max = ld_max.max(ld);
+            }
+            eprintln!("led_drive: min={ld_min:.3} max={ld_max:.3} swing={:.3}", ld_max - ld_min);
+        }
+    }
+
+    #[test]
     fn test_oscillator_frequency() {
         let sr = 44100.0;
         let mut trem = Tremolo::new(1.0, sr);
