@@ -18,6 +18,17 @@ pub struct OpenWurliParams {
     /// MLP per-note corrections: on = apply learned corrections, off = raw physics only.
     #[id = "mlp"]
     pub mlp_enabled: BoolParam,
+
+    /// DI output limiter: soft-limits the final output to −1 dBFS to prevent
+    /// DAW peak-protect muting on loud polyphonic chords. Not a circuit-level
+    /// effect — it models the ceiling that any mic preamp / A-D converter /
+    /// DI interface imposes on a physical 200A recording. Default ON for
+    /// new sessions; turn OFF for raw un-limited output (the physical analog
+    /// chain's rail clipping at ±22 V is preserved in both cases — the
+    /// limiter only catches peaks that would otherwise exceed 0 dBFS in the
+    /// DAW's digital buffer).
+    #[id = "di_limiter"]
+    pub di_limiter: BoolParam,
 }
 
 impl Default for OpenWurliParams {
@@ -50,6 +61,8 @@ impl Default for OpenWurliParams {
             .with_string_to_value(formatters::s2v_f32_percentage()),
 
             mlp_enabled: BoolParam::new("MLP Corrections", true),
+
+            di_limiter: BoolParam::new("DI Limiter", true),
         }
     }
 }

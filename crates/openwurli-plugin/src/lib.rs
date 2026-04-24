@@ -23,6 +23,44 @@ const MAX_BLOCK_SIZE: usize = 8192;
 // → volume pot (attenuator) → power amp (VAS gain + crossover + clip) → speaker.
 // The pickup's 1/(1-y) nonlinearity is the primary source of Wurlitzer bark.
 
+/// DI limiter threshold: samples with |x| < this pass through untouched. Set to
+/// −6 dBFS (0.501) so mf single notes and all typical polyphony below ff-chord
+/// dynamics are entirely bypassed — the limiter only engages on the ff-polyphony
+/// peaks that would otherwise clip in the DAW.
+const DI_LIMITER_THRESHOLD: f64 = 0.501;
+/// DI limiter ceiling: the bound signals are asymptotically compressed toward.
+/// −1 dBFS (0.891) leaves 1 dB of safety margin below the DAW's 0 dBFS clip
+/// point for any downstream processing the host may apply.
+const DI_LIMITER_CEILING: f64 = 0.891;
+
+/// Soft-knee limiter for the DAW-domain output, modeling the ceiling imposed
+/// by any mic preamp / A-D converter / DI interface that every recorded 200A
+/// is captured through. Pure passthrough below −6 dBFS; above the threshold a
+/// tanh-soft compression curve bounds the output asymptotically at −1 dBFS.
+///
+/// Continuity: the knee is chosen so that both the output value and its first
+/// derivative match at the threshold (tanh's slope at 0 is 1, which equals the
+/// passthrough slope), so there's no audible discontinuity when signals cross
+/// the threshold. Stateless and branch-predictable: below-threshold samples
+/// (the common case for single-note and mf playing) take a single compare +
+/// passthrough, no transcendental math.
+///
+/// NOT a physical 200A stage — it lives after POST_SPEAKER_GAIN in the
+/// plugin-level DAW-output path. The analog model's rail clipping at ±22 V
+/// at the power amp and tanh Xmax at the speaker is preserved regardless of
+/// whether this limiter is enabled. Toggled by the `di_limiter` BoolParam
+/// (default ON, defeatable for users who want raw un-limited output).
+#[inline]
+fn di_soft_limit(x: f64) -> f64 {
+    let a = x.abs();
+    if a < DI_LIMITER_THRESHOLD {
+        return x;
+    }
+    let over = (a - DI_LIMITER_THRESHOLD) / (DI_LIMITER_CEILING - DI_LIMITER_THRESHOLD);
+    let compressed = DI_LIMITER_THRESHOLD + (DI_LIMITER_CEILING - DI_LIMITER_THRESHOLD) * over.tanh();
+    compressed.copysign(x)
+}
+
 // ── Voice management ────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -515,6 +553,9 @@ impl Plugin for OpenWurli {
         // Matches real 200A topology: volume pot sits between preamp and power amp.
         // Power amp has internal voltage gain (VAS/driver stages).
 
+        // DI limiter state read once per buffer — it's a discrete on/off.
+        let di_limiter_on = self.params.di_limiter.value();
+
         for (i, mut channel_samples) in buffer.iter_samples().enumerate() {
             let volume = self.params.volume.smoothed.next() as f64;
             // Speaker character smoothed per-sample to prevent biquad coefficient
@@ -528,7 +569,20 @@ impl Plugin for OpenWurli {
             let shaped = self.speaker.process(amplified);
             // Post-speaker gain: maps physical SPL to DAW-friendly levels.
             // Applied after all analog stages — no circuit model distortion.
-            let sample = (shaped * tables::POST_SPEAKER_GAIN) as f32;
+            let post_gain = shaped * tables::POST_SPEAKER_GAIN;
+            // DI limiter: optional soft-limit to −1 dBFS, threshold −6 dBFS.
+            // Models the ceiling imposed by any mic preamp / A-D converter /
+            // DI interface that every recorded Wurli is captured through.
+            // The analog signal chain above is unaffected regardless of this
+            // switch — the limiter only operates on the post-speaker-gain
+            // DAW-domain signal, and only above the −6 dBFS threshold so
+            // mf single notes pass through untouched.
+            let limited = if di_limiter_on {
+                di_soft_limit(post_gain)
+            } else {
+                post_gain
+            };
+            let sample = limited as f32;
             // NaN guard: non-finite samples crash PipeWire/JACK audio engines.
             // If any stage diverged, output silence and reset stateful stages.
             let sample = if sample.is_finite() {
@@ -1646,6 +1700,75 @@ mod tests {
         plugin.render_subblock(0, len);
         let energy_back: f64 = plugin.out_buf[..len].iter().map(|s| s * s).sum();
         assert!(energy_back > 0.0, "silence after reinit back to 44.1kHz");
+    }
+
+    #[test]
+    fn test_di_soft_limit_below_threshold_is_passthrough() {
+        // Signals below the threshold must be bit-exact passthrough so that
+        // mf single notes and normal polyphony are untouched.
+        for &x in &[0.0, 0.05, 0.1, 0.25, 0.4, 0.5] {
+            assert_eq!(di_soft_limit(x), x, "passthrough broken at +{x}");
+            assert_eq!(di_soft_limit(-x), -x, "passthrough broken at -{x}");
+        }
+    }
+
+    #[test]
+    fn test_di_soft_limit_is_continuous_at_threshold() {
+        // The knee is designed so the function value and its first derivative
+        // match at the threshold. Check the function value is continuous
+        // (derivative match is geometric; violating it would be audible).
+        let eps = 1e-9;
+        let below = di_soft_limit(DI_LIMITER_THRESHOLD - eps);
+        let above = di_soft_limit(DI_LIMITER_THRESHOLD + eps);
+        assert!(
+            (above - below).abs() < 1e-6,
+            "threshold discontinuity: below={below} above={above}"
+        );
+    }
+
+    #[test]
+    fn test_di_soft_limit_asymptotes_to_ceiling() {
+        // Any large signal must be bounded by the ceiling, never above.
+        for &x in &[1.0, 2.0, 5.0, 10.0, 100.0, 1000.0] {
+            let y = di_soft_limit(x);
+            assert!(
+                y <= DI_LIMITER_CEILING && y > DI_LIMITER_THRESHOLD,
+                "ceiling breached at +{x}: got {y} (ceiling {DI_LIMITER_CEILING})"
+            );
+            let ny = di_soft_limit(-x);
+            assert!(
+                ny >= -DI_LIMITER_CEILING && ny < -DI_LIMITER_THRESHOLD,
+                "ceiling breached at -{x}: got {ny} (ceiling -{DI_LIMITER_CEILING})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_di_soft_limit_monotonic() {
+        // |output| must be monotonically non-decreasing in |input|, so the
+        // limiter preserves relative loudness ordering of peaks.
+        let mut prev = 0.0;
+        for i in 0..200 {
+            let x = i as f64 * 0.05;
+            let y = di_soft_limit(x);
+            assert!(
+                y >= prev - 1e-12,
+                "non-monotonic at x={x}: prev={prev}, cur={y}"
+            );
+            prev = y;
+        }
+    }
+
+    #[test]
+    fn test_di_limiter_default_is_on() {
+        // Contract: out of the box on a fresh plugin instance, the DI limiter
+        // is enabled so new users don't get clipping on loud chords. Users
+        // who want raw output can turn it off via the parameter.
+        let params = OpenWurliParams::default();
+        assert!(
+            params.di_limiter.default_plain_value(),
+            "DI limiter default must be ON to catch chord peaks on first use"
+        );
     }
 
     #[test]
