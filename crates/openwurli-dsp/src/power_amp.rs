@@ -72,6 +72,17 @@ mod behavioral {
             (f_val, f_deriv)
         }
 
+        /// Behavioral model has no solver, no divergence to detect — returns
+        /// the same clamped result as `process`. Exists only for API parity
+        /// with the melange adapter's diagnostic probe.
+        pub fn diag_raw_process(&mut self, input: f64) -> f64 {
+            self.process(input)
+        }
+
+        pub fn diag_snapshot(&self) -> (u64, u64, f64) {
+            (0, 0, 0.0)
+        }
+
         pub fn reset(&mut self) {}
     }
 
@@ -117,6 +128,9 @@ mod melange_adapter {
     pub struct PowerAmp {
         state: CircuitState,
         sample_rate: f64,
+        /// Last confirmed-good adapter output; used to hold continuity when
+        /// the melange solver diverges and we have to reset.
+        last_good: f64,
     }
 
     impl PowerAmp {
@@ -124,22 +138,78 @@ mod melange_adapter {
             Self {
                 state: init_state(44100.0),
                 sample_rate: 44100.0,
+                last_good: 0.0,
             }
         }
 
         pub fn process(&mut self, input: f64) -> f64 {
             let raw = gen_power_amp::process_sample(input, &mut self.state)[0];
             let result = raw / HEADROOM;
-            if result.is_finite() {
-                result.clamp(-1.0, 1.0)
-            } else {
+
+            // Divergence guard. Under continuous polyphonic playing, the
+            // melange 7-BJT NR solver intermittently fails to converge and
+            // the BE fallback also produces non-physical output (observed
+            // internal node voltages up to 1e272 V on stress tests). The
+            // visible symptom at the output is a clamp-saturated rail slam
+            // that the speaker's HPF/LPF ring on and POST_SPEAKER_GAIN
+            // amplifies to +20 dBFS spikes — enough to trip DAW peak-protect
+            // muting. Three signals we use to detect it:
+            //
+            //   1. Non-finite raw output (NaN/Inf propagation)
+            //   2. NR exhausted MAX_ITER without converging (signals the
+            //      BE fallback ran, which can also silently diverge)
+            //   3. Any internal node voltage above 100 V (physical rails
+            //      are ±22 V + supplies; anything past this is garbage)
+            //
+            // On any signal, reset the solver state to its cached DC
+            // operating point and hold the last confirmed-good output.
+            // Holding (rather than silencing) keeps the waveform continuous
+            // across a divergence burst — otherwise a 25-sample run of
+            // zeros would click audibly. Next sample's NR starts from a
+            // clean state and normally picks up tracking the input.
+            //
+            // Upstream: this is a melange robustness issue with the Class AB
+            // push-pull topology under certain polyphonic transient patterns.
+            // File upstream once a minimal reproducer is extracted.
+            let nr_failed = self.state.last_nr_iterations
+                >= gen_power_amp::MAX_ITER as u32 - 1;
+            let state_insane = self
+                .state
+                .v_prev
+                .iter()
+                .any(|v| !v.is_finite() || v.abs() > 100.0);
+            if !result.is_finite() || nr_failed || state_insane {
                 self.reset();
-                0.0
+                return self.last_good;
             }
+            let clamped = result.clamp(-1.0, 1.0);
+            self.last_good = clamped;
+            clamped
+        }
+
+        /// Raw, pre-clamp output of the melange solver. Audio-unsafe for normal
+        /// use (not bounded), but needed for diagnostic probing of solver
+        /// divergence: if |raw| exceeds the circuit rails (±22 V physically,
+        /// ±1.0 after the HEADROOM normalization), the NR converged to a
+        /// non-physical branch. Not called by the normal plugin path.
+        pub fn diag_raw_process(&mut self, input: f64) -> f64 {
+            gen_power_amp::process_sample(input, &mut self.state)[0] / HEADROOM
+        }
+
+        /// Snapshot of melange NR diagnostics:
+        /// `(clamp_count, nr_max_iter_count, peak_output_volts)`.
+        pub fn diag_snapshot(&self) -> (u64, u64, f64) {
+            (
+                self.state.diag_clamp_count,
+                self.state.diag_nr_max_iter_count,
+                self.state.diag_peak_output,
+            )
         }
 
         pub fn reset(&mut self) {
             self.state = init_state(self.sample_rate);
+            // Do NOT clear last_good — the divergence-guard hold relies on it
+            // surviving the reset. Only `new()` zeros it.
         }
     }
 

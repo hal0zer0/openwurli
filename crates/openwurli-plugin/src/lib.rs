@@ -806,6 +806,243 @@ mod tests {
         render_and_check(&mut plugin, 0.50, "Volume restore");
     }
 
+    /// Regression guard against catastrophic output spikes under continuous
+    /// polyphonic playing. Originally caught a bug where the melange 7-BJT
+    /// power-amp NR solver + BE fallback could silently diverge during chord
+    /// transitions, producing +20 dBFS spikes that tripped DAW peak-protect
+    /// muting. Fixed by the divergence guard in `PowerAmp::process`: detect
+    /// insane state (|v_prev| > 100 V, NR at MAX_ITER, or non-finite output)
+    /// and hold last-good output while resetting the solver state.
+    ///
+    /// Test renders 15 s of actual continuous playing (new chord every 500 ms)
+    /// — long enough to reliably trigger the divergence conditions in the
+    /// unguarded version (first spike was observed at t ≈ 14.6 s) and
+    /// asserts no final sample exceeds +4 dBFS. Pre-fix behavior produced
+    /// peaks of +20 to +22 dBFS, so the 4 dB threshold leaves comfortable
+    /// margin for legitimate loud-chord transients while catching spikes.
+    ///
+    /// Runs in ~5 s release-mode wall time. Not #[ignore]'d — the DAW-muting
+    /// bug is nasty enough to merit a first-class regression test.
+    #[test]
+    fn test_no_catastrophic_output_spikes_under_continuous_play() {
+        let mut plugin = make_plugin();
+        plugin.reset_param_smoothers_to_current();
+        plugin.params.tremolo_depth.smoothed.reset(1.0);
+
+        let sr = plugin.sample_rate as usize;
+        let total = sr * 15; // 15 s — triggers pre-fix divergence reliably
+        let chords: [[u8; 6]; 8] = [
+            [40, 47, 52, 55, 59, 64],
+            [43, 50, 55, 58, 62, 67],
+            [45, 52, 57, 60, 64, 69],
+            [48, 55, 60, 63, 67, 72],
+            [41, 48, 53, 57, 60, 65],
+            [44, 51, 56, 60, 63, 68],
+            [46, 53, 58, 62, 65, 70],
+            [39, 46, 51, 55, 58, 63],
+        ];
+        let note_interval_samples = (sr as f64 * 0.5) as usize;
+        let mut next_note_on = 0usize;
+        let mut chord_idx = 0usize;
+        let block = 256;
+
+        let mut peak_final = 0.0f64;
+        let mut peak_time = 0.0f64;
+
+        for start in (0..total).step_by(block) {
+            while next_note_on >= start && next_note_on < start + block {
+                let active_notes: Vec<u8> = plugin
+                    .voices
+                    .iter()
+                    .filter(|s| s.state == VoiceState::Held)
+                    .map(|s| s.midi_note)
+                    .collect();
+                for n in active_notes {
+                    plugin.note_off(n);
+                }
+                let chord = &chords[chord_idx % chords.len()];
+                for &n in chord {
+                    plugin.note_on(n, 110.0 / 127.0, true);
+                }
+                chord_idx += 1;
+                next_note_on += note_interval_samples;
+            }
+            let len = (total - start).min(block);
+            plugin.render_subblock(0, len);
+            for i in 0..len {
+                let vol = plugin.params.volume.smoothed.next() as f64;
+                let speaker_char = plugin.params.speaker_character.smoothed.next() as f64;
+                plugin.speaker.set_character(speaker_char);
+                let attenuated = plugin.out_buf[i] * vol * vol;
+                let amplified = plugin.power_amp.process(attenuated);
+                let shaped = plugin.speaker.process(amplified);
+                let fin = (shaped * tables::POST_SPEAKER_GAIN).abs();
+                if fin > peak_final {
+                    peak_final = fin;
+                    peak_time = ((start + i) as f64) / plugin.sample_rate;
+                }
+            }
+        }
+
+        let peak_db = 20.0 * peak_final.log10();
+        assert!(
+            peak_db < 4.0,
+            "Catastrophic output spike regression: peak {peak_db:.2} dBFS at t={peak_time:.3}s \
+             (threshold +4 dBFS; pre-fix spikes were +20 dBFS from power-amp solver divergence). \
+             Divergence guard in PowerAmp::process may have regressed."
+        );
+    }
+
+    /// Long-running, verbose version of the stress probe: 60 s, per-second
+    /// peak breakdown, per-event RAIL-clip logging. Use when investigating
+    /// divergence patterns in detail. Ignored by default.
+    #[test]
+    #[ignore]
+    fn probe_peak_per_stage_stress() {
+        let mut plugin = make_plugin();
+        plugin.reset_param_smoothers_to_current();
+        // Drop tremolo to max for worst-case LDR swings.
+        plugin.params.tremolo_depth.smoothed.reset(1.0);
+
+        let sr = plugin.sample_rate as usize;
+        let total = sr * 60; // 60 s
+        // Cycle through 8 chords, ff velocity. Mid-register so we hit the
+        // hottest y_peak region (MIDI 55–72).
+        let chords: [[u8; 6]; 8] = [
+            [40, 47, 52, 55, 59, 64],
+            [43, 50, 55, 58, 62, 67],
+            [45, 52, 57, 60, 64, 69],
+            [48, 55, 60, 63, 67, 72],
+            [41, 48, 53, 57, 60, 65],
+            [44, 51, 56, 60, 63, 68],
+            [46, 53, 58, 62, 65, 70],
+            [39, 46, 51, 55, 58, 63],
+        ];
+        let note_interval_samples = (sr as f64 * 0.5) as usize; // new chord every 500 ms
+        let mut next_note_on = 0usize;
+        let mut chord_idx = 0usize;
+        let block = 256;
+
+        let mut peak_sum = 0.0f64;
+        let mut peak_preamp = 0.0f64;
+        let mut peak_poweramp = 0.0f64;
+        let mut peak_speaker = 0.0f64;
+        let mut peak_final = 0.0f64;
+
+        let mut second_peaks = Vec::new(); // (t_sec, sum, preamp, poweramp, speaker, final)
+        let mut sec_s = 0.0f64;
+        let mut sec_pre = 0.0f64;
+        let mut sec_pa = 0.0f64;
+        let mut sec_sp = 0.0f64;
+        let mut sec_fi = 0.0f64;
+        let mut sec_samples = 0usize;
+
+        for start in (0..total).step_by(block) {
+            // Trigger a new chord every 500 ms (between render blocks is fine)
+            while next_note_on >= start && next_note_on < start + block {
+                // Release previous chord first
+                let active_notes: Vec<u8> = plugin
+                    .voices
+                    .iter()
+                    .filter(|s| s.state == VoiceState::Held)
+                    .map(|s| s.midi_note)
+                    .collect();
+                for n in active_notes {
+                    plugin.note_off(n);
+                }
+                // Strike new chord
+                let chord = &chords[chord_idx % chords.len()];
+                for &n in chord {
+                    plugin.note_on(n, 110.0 / 127.0, true);
+                }
+                chord_idx += 1;
+                next_note_on += note_interval_samples;
+            }
+
+            let len = (total - start).min(block);
+            plugin.render_subblock(0, len);
+            for i in 0..len {
+                let vol = plugin.params.volume.smoothed.next() as f64;
+                let speaker_char = plugin.params.speaker_character.smoothed.next() as f64;
+                plugin.speaker.set_character(speaker_char);
+
+                let s = plugin.sum_buf[i];
+                let pre_out = plugin.out_buf[i];
+                let attenuated = pre_out * vol * vol;
+                let pa_out = plugin.power_amp.process(attenuated);
+                let sp_out = plugin.speaker.process(pa_out);
+                let fin = sp_out * tables::POST_SPEAKER_GAIN;
+
+                let a_s = s.abs();
+                let a_pre = pre_out.abs();
+                let a_pa = pa_out.abs();
+                let a_sp = sp_out.abs();
+                let a_fi = fin.abs();
+
+                peak_sum = peak_sum.max(a_s);
+                peak_preamp = peak_preamp.max(a_pre);
+                peak_poweramp = peak_poweramp.max(a_pa);
+                peak_speaker = peak_speaker.max(a_sp);
+                peak_final = peak_final.max(a_fi);
+
+                sec_s = sec_s.max(a_s);
+                sec_pre = sec_pre.max(a_pre);
+                sec_pa = sec_pa.max(a_pa);
+                sec_sp = sec_sp.max(a_sp);
+                sec_fi = sec_fi.max(a_fi);
+                sec_samples += 1;
+
+                // Log rail-clip events and track whether they came from normal
+                // large input (expected hard clip) or a tiny input (solver
+                // divergence). A "pa/in" ratio > the 69× closed-loop gain + margin
+                // means the melange NR jumped to a non-physical fixed point.
+                if pa_out.abs() >= 0.999 {
+                    let t = ((start + i) as f64) / plugin.sample_rate;
+                    let ratio = if attenuated.abs() > 1e-9 {
+                        pa_out.abs() / attenuated.abs()
+                    } else {
+                        f64::INFINITY
+                    };
+                    let (clamp_n, nr_max_n, peak_v) = plugin.power_amp.diag_snapshot();
+                    eprintln!(
+                        "  RAIL  t={t:7.3}s  atten={attenuated:+.5}  pa={pa_out:+.4}  (pa/|in|={ratio:8.0})  sp={sp_out:+.4}  FIN={fin:+7.3}  diag=(clamp={clamp_n} nr_max={nr_max_n} peak_v={peak_v:+.2})",
+                    );
+                }
+
+                if sec_samples >= plugin.sample_rate as usize {
+                    let t_sec = ((start + i) as f64) / plugin.sample_rate;
+                    second_peaks.push((t_sec, sec_s, sec_pre, sec_pa, sec_sp, sec_fi));
+                    sec_s = 0.0;
+                    sec_pre = 0.0;
+                    sec_pa = 0.0;
+                    sec_sp = 0.0;
+                    sec_fi = 0.0;
+                    sec_samples = 0;
+                }
+            }
+        }
+
+        eprintln!("\n=== 60 s stress probe, 6-voice ff chord + tremolo depth=1.0 ===");
+        eprintln!(
+            "GLOBAL PEAKS: sum={peak_sum:+.3}  preamp={peak_preamp:+.3}  \
+             poweramp={peak_poweramp:+.3}  speaker={peak_speaker:+.3}  \
+             final={peak_final:+.3} ({:+.2} dBFS)",
+            20.0 * peak_final.log10()
+        );
+        eprintln!("\nPer-second peak (t_sec, sum, preamp, poweramp, speaker, final):");
+        for (t, s, pre, pa, sp, fi) in &second_peaks {
+            let db = 20.0 * fi.log10();
+            let flag = if *fi > 1.1 {
+                " !!"
+            } else if *fi > 1.0 {
+                " !"
+            } else {
+                ""
+            };
+            eprintln!("  t={t:5.0}s  sum={s:+6.3}  pre={pre:+6.3}  pa={pa:+6.3}  sp={sp:+6.3}  fin={fi:+6.3}  ({db:+6.2} dBFS){flag}");
+        }
+    }
+
     #[test]
     fn test_output_nan_guard() {
         // Verify the NaN guard catches non-finite power amp / speaker output.
