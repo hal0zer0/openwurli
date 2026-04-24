@@ -737,34 +737,58 @@ The real 200A has a ~18-20W quasi-complementary push-pull Class AB output stage:
 - Emitter degeneration: 0.47 ohm
 - Quiescent bias: ~10 mA
 
-### Closed-Loop NR Feedback Solver
+### Melange-generated 7-BJT Circuit Solver (default since Apr 2026)
 
-The power amp is modeled as a closed-loop feedback amplifier solved by Newton-Raphson iteration:
+The power amp is modeled by a melange-generated DK/Nodal circuit solver compiled
+from `spice/melange/wurli-power-amp.cir`. Every one of the 7 transistors (Q7/Q8
+input diff pair, Q14 VAS, Q9 Vbe multiplier, Q10/Q12 Sziklai drivers, Q11/Q13
+TIP35C/TIP36C output pair) uses a full Gummel-Poon model with datasheet values
+(IS, BF, VAF, IKF, ISE, NE, BR, VAR, IKR, ISC, NC, RB, RE, RC, CJE, VJE, MJE,
+CJC, VJC, MJC, TF). No `.linearize` hints — every nonlinearity is solved exactly
+at runtime by the Newton-Raphson iteration inside the generated code.
 
-```
-// Feedback parameters (from schematic: R-31=15K, R-30=220 ohm)
-A_ol = 19000          // open-loop gain
-beta = 0.01445        // feedback fraction (R-30 / (R-30 + R-31))
-loop_gain T = 275     // A_ol * beta
-closed_loop_gain = A_ol / (1 + T) ≈ 69  // 1 + R-31/R-30 = 37 dB
+**Solver shape (at openwurli pin `47b2702`):** N=20 nodes, M=16 nonlinear
+dimensions, auto-routed to Nodal with Backward Euler integration (ρ = 1.0041
+makes trapezoidal marginally unstable; BE is L-stable). Generated with
+`--output-clamp 30` so melange's post-DC-block limiter passes the natural
+±22 V rail swing instead of hard-clipping at the default ±10 V "Signal Level
+Contract" ceiling.
 
-// Crossover distortion (dead zone between NPN/PNP conduction)
-crossover_vt = 0.013     // thermal voltage; effective dead zone ≈ ±2*vt = ±26 mV
+Adapter divides the raw output by `HEADROOM = 22 V` to give ±1.0-ish output
+for the downstream speaker model. Closed-loop gain, rail clipping, crossover
+suppression, and level-dependent distortion all emerge from the circuit
+simulation — no separate hand-written nonlinearity model.
 
-// Rail clipping: tanh soft-clip (gradual saturation, not hard clamp)
-headroom = 22.0  // ±24V rails minus ~2V Vce_sat
-output = headroom * tanh(input / headroom)
-```
+**Regression-measured behavior** (full tests in `power_amp::tests`):
 
-The crossover model uses a C-infinity Gaussian gain function instead of a piecewise linear dead zone:
-```
-cross_gain = q + (1 - q) * (1 - exp(-v^2 / vt^2))
-```
-where `q = QUIESCENT_GAIN = 0.1` is the residual gain at zero signal (from quiescent bias current) and `vt = 0.013` is the thermal voltage. At v=0 the gain is q (not zero -- physically realistic); at |v| >> vt the gain approaches 1.0. This smooth function avoids NR convergence issues and produces the correct odd-harmonic crossover distortion signature.
+- Closed-loop gain: ~10 dB normalized (≈69× × 22 V / 22 V) at 1 kHz, 0.001 V —
+  matches `1 + R31/R30 = 1 + 15 k/220 = 69×` (37 dB raw) within 1 dB of ngspice
+- Rail clipping: peak ≥ 0.85 normalized (≈18.7 V) at 5 V 100 Hz input, with the
+  bootstrap C12 tracking output above Vp so the VAS can swing the Sziklai
+  rail-to-rail
+- H3 < −30 dB at 440 Hz, 0.001 V — crossover suppression by feedback
+- Output always finite and bounded for any input in ±5 V
 
-The code models crossover/feedback behavior generically, not specific transistor parameters (the TIP35C/TIP36C reference describes the real instrument).
+### Legacy behavioral closed-loop NR model (`--features legacy-power-amp`)
 
-At mf single notes, the power amp is nearly transparent -- the preamp dominates tonal character. At ff polyphonic, the power amp's tanh soft-clip adds compression and gradual saturation (Yeh/Abel/Smith 2007). With aging, bias drifts, increasing crossover distortion (odd harmonics from the dead zone).
+Original approximation kept for A/B diagnostics. Models the loop
+`y = f(A_ol × (input − β × y))` where `f()` = Gaussian-dead-zone crossover
+followed by `rail × tanh(v / rail)`:
+
+| Constant | Value | Derivation |
+|----------|-------|------------|
+| `OPEN_LOOP_GAIN` | 19,000 | Diff pair × VAS × output, from schematic bias-point analysis |
+| `FEEDBACK_BETA` | 0.01445 | R30/(R30+R31) = 220/15 220 |
+| `HEADROOM` | 22.0 V | ±24 V rails − 2 V Vce_sat |
+| `CROSSOVER_VT` | 0.013 V | Thermal voltage at lightly-aged 5–7 mA bias |
+| `QUIESCENT_GAIN` | 0.1 | Output gain at zero signal |
+| `NR_MAX_ITER` | 8 | 2–4 iterations typical |
+
+Crossover uses a C∞ Gaussian `q + (1 − q)(1 − exp(−v² / vt²))` instead of a
+piecewise dead zone so the NR Jacobian is well-defined everywhere. It produces
+physically plausible harmonic content at typical drive levels but can't capture
+level-dependent device nonlinearity that naturally emerges from full Gummel-Poon.
+Enable only when comparing the two paths.
 
 Audio taper volume control: `vol^2` (quadratic), default position 0.50 (effective 0.25).
 

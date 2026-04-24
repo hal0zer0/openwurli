@@ -17,7 +17,7 @@ Each row maps a circuit block from schematic → SPICE netlist → Rust implemen
 | **Input network (Cin, R-1)** | Cin=0.022µF, R-1=22K | `spice/testbench/tb_dk_ac_extract.cir` | `dk_preamp.rs` (bilinear companion, §8.1) | `g_cin = 2C/T`, history source `cin_rhs_prev` | See Cin-R1 bug in §4 below |
 | **Feedback network** | R-10=56K, Ce1=4.7µF, Re1=33K | `spice/testbench/preamp_emitter_fb.cir` | `dk_preamp.rs` (outer loop) | Series-series negative feedback | Ce1 is DC-blocking short at audio freq |
 | **LDR / Tremolo** | LG-1 (CdS LDR), cable-routed | `spice/subcircuits/tremolo_osc.cir`, `spice/testbench/tb_tremolo_osc.cir` | `tremolo.rs` | Rldr shunts fb_junction to GND | Modulates closed-loop gain, not volume |
-| **Power amplifier** | TR-7/TR-8 (142128), Class AB | `spice/subcircuits/power_amp.cir`, `spice/testbench/tb_power_amp.cir` | `power_amp.rs` | Crossover distortion at ~3mV | Transparent at normal signal levels |
+| **Power amplifier** | 7 BJTs (2N5087 diff pair, MPSA06 VAS + drivers, MPSA56 PNP driver, TIP35C/TIP36C outputs), Class AB | `spice/subcircuits/power_amp.cir`, `spice/melange/wurli-power-amp.cir`, `spice/testbench/tb_power_amp.cir` | `gen_power_amp.rs` (melange-generated, default); `power_amp.rs` (adapter + `--features legacy-power-amp` behavioral NR) | Full Gummel-Poon on every transistor; N=20, M=16, Nodal + Backward Euler auto | Crossover suppressed >30 dB by feedback; rail clips ±22 V |
 | **Speaker** | 4×8" oval, 16Ω ceramic | (not modeled in SPICE) | `speaker.rs` | Hammerstein polynomial: a2=0.2, a3=0.6 | Variable HPF/LPF + nonlinearity + tanh Xmax |
 | **Full chain** | End-to-end | `spice/testbench/tb_full_chain.cir` | `voice.rs` → plugin `lib.rs` | — | Integration testbench |
 
@@ -209,8 +209,10 @@ fix touches the preamp.
 | `crates/openwurli-dsp/src/dk_preamp/` | Preamp (melange 12-node default; legacy 8-node via --features legacy-preamp) |
 | `crates/openwurli-dsp/src/preamp.rs` | PreampModel trait |
 | `crates/openwurli-dsp/src/pickup.rs` | Electrostatic pickup: 1/(1-y) + HPF |
-| `crates/openwurli-dsp/src/power_amp.rs` | Class AB crossover distortion |
-| `crates/openwurli-dsp/src/tremolo.rs` | LFO + CdS LDR model |
+| `crates/openwurli-dsp/src/gen_power_amp.rs` | Melange-generated 7-BJT Class AB solver (default) |
+| `crates/openwurli-dsp/src/power_amp.rs` | Adapter + `--features legacy-power-amp` behavioral NR fallback |
+| `crates/openwurli-dsp/src/gen_tremolo.rs` | Melange-generated Twin-T oscillator (default) |
+| `crates/openwurli-dsp/src/tremolo.rs` | Adapter + CdS LDR model; `--features legacy-tremolo` selects sine LFO |
 | `crates/openwurli-dsp/src/speaker.rs` | Hammerstein nonlinearity + HPF/LPF |
 | `crates/openwurli-dsp/src/filters.rs` | Biquad wrapper (backed by melange-primitives) |
 | `crates/openwurli-dsp/src/voice.rs` | Voice assembly (reed→hammer→pickup→preamp→...) |

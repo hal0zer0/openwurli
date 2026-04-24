@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Power amp is now a melange-generated 7-BJT Class AB circuit solver.** The
+  behavioral closed-loop NR approximation is preserved behind
+  `--features openwurli-dsp/legacy-power-amp` for A/B diagnostics only. Every
+  transistor in the power amp stage (2N5087 diff pair, MPSA06 VAS + top Sziklai
+  driver + Vbe multiplier, MPSA56 bottom Sziklai driver, TIP35C/TIP36C outputs)
+  runs full Gummel-Poon at runtime: N=20 nodes, M=16 nonlinear dimensions,
+  Nodal Schur + Backward Euler auto-selected. Rail clipping, crossover
+  suppression, and level-dependent distortion all emerge from the circuit
+  simulation. Closed-loop gain stays at `1 + R31/R30 = 69×` (37 dB) within 1 dB
+  of ngspice on the same netlist.
+- **Melange pin `1f46b80` → `47b2702`.** Picks up upstream fixes for Nodal
+  auto-route on Class AB push-pull topologies (b99f5f3), the new
+  `--output-clamp <V>` CLI flag so power amps with rails above ±10 V don't
+  hit melange's default "Signal Level Contract" ceiling (b7f1ba4), and the
+  plugin-template smoother-priming fix that mirrors our own patch (47b2702).
+  Preamp and tremolo regenerated bit-identically — all circuit-level
+  measurements (sweep, gain, harmonics, bark-audit, tremolo-sweep) diff-empty.
+- **Grapevine A/B vs the behavioral approximation** (210 s, full plugin chain,
+  vol=0.50): sample-rate correlation 0.954, peak identical (both saturating at
+  0 dBFS downstream), RMS −0.39 dB. Physics-correct drift from the closed-loop
+  NR approximation, accepted as-is.
+
+### Fixed
+- **Tremolo stuck silent in DAWs that skip the framework's activate-time
+  smoother priming.** `self.params.X.smoothed.next()` per-sample calls were
+  returning 0.0 forever while `.value()` correctly reported the default, so
+  `tremolo.set_depth(0.0)` was being called on every sample regardless of the
+  visible UI value. Added a defensive `smoothed.reset(.value())` inside
+  `Plugin::initialize()` via `OpenWurli::reset_param_smoothers_to_current`.
+  Idempotent against the normal framework path. New regression test
+  `test_tremolo_smoother_does_not_pin_depth_to_zero`.
+- **`preamp-bench render --ldr`: reset clobbered the LDR setting.** Same bug
+  class as the `measure_gain_at` fix in 7f33173 but missed for `render`.
+  `preamp.set_ldr_resistance(r_ldr)` was called before `preamp.reset()`, so
+  reset restored the cached nominal 100 kΩ state and silently wiped the
+  request. Surfaced while reproducing Dr Dawgg's "tremolo timbral modulation"
+  P0 — the test was running at 100 kΩ for every LDR setting.
+
+### Closed without code changes
+- **Tremolo timbral modulation P0 (Feb 2026) — correct physics.** Remeasured
+  on the full melange stack at v=100 vol=0.60 and v=127 vol=1.0 across
+  LDR = 19K / 100K / 500K / 1M. Gain modulates the expected ~6.1 dB, but
+  H2/H1, H3/H1, etc. stay flat within 0.03 dB across the whole LDR range.
+  Correct — the pickup's 1/(1−y) bark sits *before* the preamp, so LDR's
+  gain scaling multiplies H1 and H2 equally and preserves the ratio. The OBM
+  reference Dr Dawgg was comparing against is a room-coupled speaker
+  recording, not a DI, so any level-dependent harmonic reshape on that side
+  is plausibly speaker + room + mic coloration rather than instrument
+  behavior. No action.
+
 ## [0.4.0] "ThisBombsForLovin" - 2026-03-31
 
 ### Changed

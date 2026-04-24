@@ -63,14 +63,15 @@ crates/
     variation.rs              #   Per-note detuning and amplitude variation
     filters.rs                #   Biquad wrapper (backed by melange-primitives)
     oversampler.rs            #   2x polyphase IIR half-band
-    dk_preamp/                #   Feature-toggled preamp (legacy vs melange)
-    dk_preamp_legacy.rs       #   Hand-written 8-node MNA preamp solver
-    gen_preamp.rs             #   Melange-generated 12-node preamp solver
+    dk_preamp/                #   Feature-toggled preamp (melange default, --features legacy-preamp for A/B)
+    dk_preamp_legacy.rs       #   Hand-written 8-node MNA preamp solver (A/B only)
+    gen_preamp.rs             #   Melange-generated 12-node preamp solver (default)
     mlp_correction.rs         #   Per-note MLP inference (2->8->8->11)
     mlp_weights.rs            #   Trained MLP weights (195 params)
     preamp.rs                 #   PreampModel trait
-    tremolo.rs                #   LFO + CdS LDR (or melange Twin-T oscillator)
-    power_amp.rs              #   Class AB crossover + rail clipping
+    tremolo.rs                #   CdS LDR + melange Twin-T oscillator (--features legacy-tremolo = sine LFO)
+    power_amp.rs              #   Adapter over gen_power_amp; --features legacy-power-amp = behavioral NR
+    gen_power_amp.rs          #   Melange-generated 7-BJT Class AB solver (default)
     speaker.rs                #   HPF/LPF cabinet simulation
   openwurli-plugin/src/       # nih-plug CLAP+VST3 plugin
     lib.rs                    #   Plugin entry, process callback, voice mgmt
