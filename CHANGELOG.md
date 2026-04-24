@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Melange power-amp solver divergence causing +20 dBFS spikes during
+  continuous polyphonic play (DAW peak-protect muting).** Root cause:
+  under continuous chord transitions, the melange 7-BJT Class AB NR
+  solver intermittently failed to converge, the Backward Euler fallback
+  also silently diverged, and internal node state ran away to non-physical
+  values (up to 1e272 V observed). The clamp-saturated rail-slam that
+  produced at the output excited the speaker's HPF/LPF resonance, which
+  POST_SPEAKER_GAIN amplified to +20–22 dBFS spikes — enough to trip DAW
+  peak-protect muting. Fix: new divergence guard in `PowerAmp::process`
+  detects solver failure by three signals (non-finite raw output, NR at
+  MAX_ITER, or any `v_prev` node above 100 V) and resets the solver state
+  while holding the last confirmed-good output. A 23 µs hold burst stays
+  inaudible vs. a zero-silence gap that would click on longer divergence
+  bursts. New regression test
+  `test_no_catastrophic_output_spikes_under_continuous_play` renders 15 s
+  of chord transitions (reliably trips the pre-fix divergence) and
+  asserts no output sample exceeds +4 dBFS. Pre-fix peak: +22 dBFS;
+  post-fix: +2.5 dBFS. The underlying melange solver robustness issue is
+  an upstream bug, to be filed once a minimal reproducer is extracted.
+
 ### Changed
 - **Pickup displacement scale retuned "hotter" for more bark.** `DS_AT_C4`
   0.75 → 0.85 and `DS_CLAMP` upper bound 0.82 → 0.88 after Phase 2 +
