@@ -359,6 +359,7 @@ fn cmd_render(args: &[String]) {
     let no_poweramp = has_flag(args, "--no-poweramp");
     let no_preamp = has_flag(args, "--no-preamp");
     let no_attack_noise = has_flag(args, "--no-attack-noise");
+    let no_mlp = has_flag(args, "--no-mlp");
     let normalize = has_flag(args, "--normalize");
     let disp_scale: Option<f64> = if has_flag(args, "--displacement-scale") {
         Some(parse_flag(args, "--displacement-scale", 0.30))
@@ -379,7 +380,7 @@ fn cmd_render(args: &[String]) {
     let reed_output = {
         let vel_norm = velocity as f64 / 127.0;
         let noise_seed = (note as u32).wrapping_mul(2654435761);
-        let mut voice = Voice::note_on(note, vel_norm, sample_rate, noise_seed, true);
+        let mut voice = Voice::note_on(note, vel_norm, sample_rate, noise_seed, !no_mlp);
         if let Some(scale) = disp_scale {
             voice.set_displacement_scale(scale);
         }

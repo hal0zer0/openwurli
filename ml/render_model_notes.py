@@ -67,6 +67,7 @@ def render_note(midi, velocity, output_path, cargo_features=None):
         "--duration", str(NOTE_DURATION_S),
         "--volume", "1.0",
         "--no-poweramp",
+        "--no-mlp",
         "--speaker", "0.0",
         "--output", output_path,
     ])

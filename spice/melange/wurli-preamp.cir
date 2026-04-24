@@ -58,5 +58,12 @@ R_ldr fb    0      100k
 V1    vcc   0      DC 15
 
 * --- Device models ---
-.model Q2N5089 NPN(IS=3.03e-14 BF=500)
+* 2N5089: full Gummel-Poon. Source: LTspice standard.bjt / ON Semi 2N5089 datasheet.
+* Mirrored in spice/models/transistors.lib and all spice/testbench/*.cir — this is the
+* same model the ngspice testbenches validate against.
+.model Q2N5089 NPN(IS=3.03E-14 BF=1434 NF=1.005 VAF=98.5 IKF=0.01358
++  ISE=2.88E-15 NE=1.262 BR=4.62 NR=1 VAR=22 IKR=0.1 ISC=1.065E-11
++  NC=1.41 RB=57 RE=0.518 RC=2.58 CJE=3.22E-12 VJE=0.65 MJE=0.33
++  TF=5.4E-10 CJC=1.35E-12 VJC=0.4 MJC=0.33 XCJC=0.63 TR=5E-08
++  XTB=1.38 EG=1.11 XTI=3 FC=0.5)
 .model D1N4148 D(IS=2.52e-9 N=1.752)
