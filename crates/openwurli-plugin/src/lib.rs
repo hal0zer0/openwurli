@@ -34,8 +34,7 @@ impl OpenWurli {
     /// smooths the audio-rate ones internally so block-rate refresh is
     /// click-free.
     fn sync_params(&mut self) {
-        self.engine
-            .set_volume(self.params.volume.value() as f64);
+        self.engine.set_volume(self.params.volume.value() as f64);
         self.engine
             .set_tremolo_depth(self.params.tremolo_depth.value() as f64);
         self.engine

@@ -260,7 +260,8 @@ impl WurliEngine {
         // Snap smoothers so a ramp doesn't survive a transport reset.
         self.volume.snap_to(self.volume.target);
         self.tremolo_depth.snap_to(self.tremolo_depth.target);
-        self.speaker_character.snap_to(self.speaker_character.target);
+        self.speaker_character
+            .snap_to(self.speaker_character.target);
     }
 
     pub fn set_sample_rate(&mut self, sr: f64) {
@@ -761,12 +762,10 @@ mod tests {
         let mut loud = vec![0.0f32; 4096];
         e.render(&mut loud);
 
-        let soft_rms: f64 = (soft.iter().map(|s| (*s as f64).powi(2)).sum::<f64>()
-            / soft.len() as f64)
-            .sqrt();
-        let loud_rms: f64 = (loud.iter().map(|s| (*s as f64).powi(2)).sum::<f64>()
-            / loud.len() as f64)
-            .sqrt();
+        let soft_rms: f64 =
+            (soft.iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / soft.len() as f64).sqrt();
+        let loud_rms: f64 =
+            (loud.iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / loud.len() as f64).sqrt();
         assert!(
             loud_rms > soft_rms,
             "ff RMS ({loud_rms}) should exceed pp RMS ({soft_rms})"
@@ -780,7 +779,11 @@ mod tests {
         let mut e = engine();
         e.note_on(0, 0.8); // below MIDI_LO
         e.note_on(127, 0.8); // above MIDI_HI
-        assert_eq!(e.held_voice_count(), 2, "both notes clamped, both allocated");
+        assert_eq!(
+            e.held_voice_count(),
+            2,
+            "both notes clamped, both allocated"
+        );
     }
 
     // ── Sustain pedal ───────────────────────────────────────────────────
@@ -903,7 +906,11 @@ mod tests {
         let mut e = engine();
         e.note_on(60, 0.8);
         e.note_off(72); // never on
-        assert_eq!(e.held_voice_count(), 1, "wrong-note off should not damage state");
+        assert_eq!(
+            e.held_voice_count(),
+            1,
+            "wrong-note off should not damage state"
+        );
     }
 
     // ── NaN / divergence guards ─────────────────────────────────────────
@@ -921,7 +928,10 @@ mod tests {
             e.set_volume(0.5);
             e.render(&mut buf);
         }
-        assert!(buf.iter().all(|s| s.is_finite()), "non-finite sample leaked");
+        assert!(
+            buf.iter().all(|s| s.is_finite()),
+            "non-finite sample leaked"
+        );
     }
 
     #[test]
@@ -932,12 +942,7 @@ mod tests {
         // power-amp adapter so the guard still applies. Asserts no sample
         // exceeds +4 dBFS post-DI-limiter (which clamps to ≈ −1 dBFS).
         let mut e = engine();
-        let chords: [[u8; 3]; 4] = [
-            [60, 64, 67],
-            [62, 65, 69],
-            [64, 67, 71],
-            [65, 69, 72],
-        ];
+        let chords: [[u8; 3]; 4] = [[60, 64, 67], [62, 65, 69], [64, 67, 71], [65, 69, 72]];
         let block = 256;
         let blocks_per_segment = 86; // ~0.5 s per chord at 44.1 k
         let mut buf = vec![0.0f32; block];
@@ -1018,7 +1023,10 @@ mod tests {
         let mut env_db = Vec::with_capacity(n_wins);
         for i in skip..n_wins {
             let s = i * win;
-            let rms = (samples[s..s + win].iter().map(|x| (*x as f64).powi(2)).sum::<f64>()
+            let rms = (samples[s..s + win]
+                .iter()
+                .map(|x| (*x as f64).powi(2))
+                .sum::<f64>()
                 / win as f64)
                 .sqrt();
             env_db.push(20.0 * (rms + 1e-12).log10());
