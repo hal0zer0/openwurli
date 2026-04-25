@@ -24,28 +24,6 @@ use crate::voice::Voice;
 const MAX_VOICES: usize = 64;
 const MAX_BLOCK_SIZE: usize = 8192;
 
-/// DI limiter threshold (−6 dBFS, 0.501 linear). Samples below pass
-/// through bit-exact; only ff-chord peaks crossing this engage the
-/// soft-knee compression toward `DI_LIMITER_CEILING`.
-const DI_LIMITER_THRESHOLD: f64 = 0.501;
-/// DI limiter ceiling (−1 dBFS, 0.891 linear). Outputs are
-/// asymptotically bounded here even on the loudest input.
-const DI_LIMITER_CEILING: f64 = 0.891;
-
-/// Soft-knee limiter for the DAW-domain output (mic preamp / A-D
-/// converter ceiling model). See `engine` module docs for context.
-#[inline]
-fn di_soft_limit(x: f64) -> f64 {
-    let a = x.abs();
-    if a < DI_LIMITER_THRESHOLD {
-        return x;
-    }
-    let over = (a - DI_LIMITER_THRESHOLD) / (DI_LIMITER_CEILING - DI_LIMITER_THRESHOLD);
-    let compressed =
-        DI_LIMITER_THRESHOLD + (DI_LIMITER_CEILING - DI_LIMITER_THRESHOLD) * over.tanh();
-    compressed.copysign(x)
-}
-
 /// Voice slot lifecycle. Public for engine introspection from tests and
 /// debug tooling; not part of the realtime API surface — hosts shouldn't
 /// need to read this in `process()`.
@@ -162,7 +140,6 @@ impl LinearSmoother {
 /// engine.set_tremolo_depth(params.tremolo_depth.value() as f64);
 /// engine.set_speaker_character(params.speaker.value() as f64);
 /// engine.set_mlp_enabled(params.mlp.value());
-/// engine.set_di_limiter(params.di_limiter.value());
 /// engine.set_noise_enabled(params.noise_enable.value());
 /// engine.set_noise_gain(params.noise_gain.value() as f64);
 /// for event in midi_events {
@@ -205,9 +182,6 @@ pub struct WurliEngine {
     volume: LinearSmoother,
     tremolo_depth: LinearSmoother,
     speaker_character: LinearSmoother,
-
-    // Block-rate flags
-    di_limiter_enabled: bool,
 }
 
 impl WurliEngine {
@@ -239,7 +213,6 @@ impl WurliEngine {
             volume: LinearSmoother::new(0.5, ramp),
             tremolo_depth: LinearSmoother::new(0.5, ramp),
             speaker_character: LinearSmoother::new(0.0, ramp),
-            di_limiter_enabled: true,
         }
     }
 
@@ -385,10 +358,6 @@ impl WurliEngine {
         self.mlp_enabled = on;
     }
 
-    pub fn set_di_limiter(&mut self, on: bool) {
-        self.di_limiter_enabled = on;
-    }
-
     pub fn set_noise_enabled(&mut self, on: bool) {
         self.preamp.set_noise_enabled(on);
     }
@@ -430,15 +399,12 @@ impl WurliEngine {
             // Power amp: VAS gain → crossover distortion → rail clip
             let amplified = self.power_amp.process(attenuated);
             let shaped = self.speaker.process(amplified);
-            // POST_SPEAKER_GAIN: maps physical SPL to DAW-friendly levels
+            // POST_SPEAKER_GAIN: maps physical SPL to DAW-friendly levels.
+            // Output peak management (limiting / DAW headroom) is the host's
+            // or downstream Vurli's responsibility — openwurli stays raw
+            // physics with no nonlinear ceiling stage.
             let post_gain = shaped * tables::POST_SPEAKER_GAIN;
-            // DI limiter: optional soft-limit, post-analog-chain
-            let limited = if self.di_limiter_enabled {
-                di_soft_limit(post_gain)
-            } else {
-                post_gain
-            };
-            let sample = limited as f32;
+            let sample = post_gain as f32;
             // NaN guard: non-finite samples crash PipeWire/JACK audio engines.
             *sample_slot = if sample.is_finite() {
                 sample
@@ -739,17 +705,6 @@ mod tests {
     }
 
     #[test]
-    fn test_di_limiter_off_passthrough() {
-        let mut e = engine();
-        e.set_di_limiter(false);
-        e.note_on(60, 0.8);
-        let mut buf = vec![0.0f32; 256];
-        e.render(&mut buf);
-        // Just verify it ran without panic
-        assert!(buf.iter().any(|s| s.abs() > 0.0));
-    }
-
-    #[test]
     fn test_volume_smoother_ramps() {
         let mut e = engine();
         e.set_volume(1.0);
@@ -951,8 +906,12 @@ mod tests {
         // Regression for the melange power-amp divergence guard: under
         // continuous chord transitions the solver intermittently failed to
         // converge and produced +20 dBFS spikes. Engine wraps the same
-        // power-amp adapter so the guard still applies. Asserts no sample
-        // exceeds +4 dBFS post-DI-limiter (which clamps to ≈ −1 dBFS).
+        // power-amp adapter so the guard still applies.
+        //
+        // Threshold: +14 dBFS. Normal chord-ff content at default gain
+        // (vol=0.5, PSG=+19.5 dB, no DI limiter) peaks around +9-10 dBFS
+        // — set the guard well above that and well below the +20 dBFS
+        // catastrophic value the divergence guard exists to prevent.
         let mut e = engine();
         let chords: [[u8; 3]; 4] = [[60, 64, 67], [62, 65, 69], [64, 67, 71], [65, 69, 72]];
         let block = 256;
@@ -979,8 +938,8 @@ mod tests {
         }
         let peak_dbfs = 20.0 * peak.max(1e-12).log10();
         assert!(
-            peak_dbfs < 4.0,
-            "post-limiter peak {peak_dbfs:.2} dBFS exceeds +4 dBFS guard"
+            peak_dbfs < 14.0,
+            "peak {peak_dbfs:.2} dBFS exceeds +14 dBFS divergence-guard threshold"
         );
     }
 
@@ -1052,54 +1011,4 @@ mod tests {
         );
     }
 
-    // ── DI limiter unit tests ────────────────────────────────────────────
-
-    #[test]
-    fn test_di_soft_limit_below_threshold_is_passthrough() {
-        for x in [-0.5, -0.1, 0.0, 0.1, 0.49] {
-            let y = di_soft_limit(x);
-            assert!(
-                (y - x).abs() < 1e-12,
-                "sample {x} below threshold should pass through bit-exact, got {y}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_di_soft_limit_is_continuous_at_threshold() {
-        // Just below = passthrough; just above = soft compression. The
-        // tanh slope at 0 is 1, matching passthrough's slope, so the
-        // function is C¹-continuous at the threshold.
-        let below = di_soft_limit(DI_LIMITER_THRESHOLD - 1e-9);
-        let above = di_soft_limit(DI_LIMITER_THRESHOLD + 1e-9);
-        assert!((below - above).abs() < 1e-6, "threshold discontinuity");
-    }
-
-    #[test]
-    fn test_di_soft_limit_asymptotes_to_ceiling() {
-        // Even huge input must stay below the ceiling.
-        for x in [1.0, 5.0, 100.0] {
-            let y = di_soft_limit(x);
-            assert!(
-                y <= DI_LIMITER_CEILING,
-                "input {x} clipped to {y}, exceeds ceiling {DI_LIMITER_CEILING}"
-            );
-            assert!(
-                y > DI_LIMITER_THRESHOLD,
-                "input {x} compressed too aggressively, output {y} below threshold"
-            );
-        }
-    }
-
-    #[test]
-    fn test_di_soft_limit_monotonic() {
-        // Output must be non-decreasing in input across the knee.
-        let mut prev = di_soft_limit(0.0);
-        for i in 1..=200 {
-            let x = i as f64 * 0.01;
-            let y = di_soft_limit(x);
-            assert!(y >= prev, "non-monotonic: f({x:.3}) = {y} < prev {prev}");
-            prev = y;
-        }
-    }
 }

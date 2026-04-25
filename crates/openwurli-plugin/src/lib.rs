@@ -40,7 +40,6 @@ impl OpenWurli {
         self.engine
             .set_speaker_character(self.params.speaker_character.value() as f64);
         self.engine.set_mlp_enabled(self.params.mlp_enabled.value());
-        self.engine.set_di_limiter(self.params.di_limiter.value());
         self.engine
             .set_noise_enabled(self.params.noise_enable.value());
         self.engine
@@ -210,15 +209,6 @@ mod tests {
         assert!((params.tremolo_depth.default_plain_value() - 0.5).abs() < 0.01);
         assert!((params.speaker_character.default_plain_value()).abs() < 0.01);
         assert!(params.mlp_enabled.default_plain_value());
-    }
-
-    #[test]
-    fn test_di_limiter_default_is_on() {
-        let params = OpenWurliParams::default();
-        assert!(
-            params.di_limiter.default_plain_value(),
-            "DI limiter must default ON for DAW-safe out-of-the-box behavior"
-        );
     }
 
     #[test]

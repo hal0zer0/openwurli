@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **DI limiter — removed entirely.** The soft `tanh`-knee limiter at −1 dBFS
+  ceiling / −6 dBFS threshold was a DAW-domain bandage (mic preamp / ADC
+  ceiling model), not part of the 200A circuit, and `tanh` between the
+  threshold and the ceiling was adding a continuous floor of odd-harmonic
+  distortion on chord-ff content where the limiter engaged. Per openwurli's
+  scope (raw physics and circuit only), output peak management belongs
+  downstream — Vurli will run its own compressor for dynamics; standalone
+  hosts can use the DAW's headroom or limiter. `WurliEngine::set_di_limiter`,
+  the `DI_LIMITER_*` constants, the `di_soft_limit()` helper, the
+  `di_limiter_enabled` field, and the four `di_soft_limit_*` unit tests
+  are gone. The plugin shell drops the `di_limiter` `BoolParam` and the
+  `test_di_limiter_default_is_on` shell test. Saved sessions with
+  `di_limiter` set will lose that setting on reload — was a no-op anyway.
+  **Consequence:** chord-ff peaks at default gain staging may now exceed
+  0 dBFS (~+4 dBFS raw on heavy chords). Single notes and moderate playing
+  stay safely under. Hosts handle the ceiling.
+
 ### Added
 - **Power-amp rail sag — behavioral dynamics for the unregulated ±22 V supply,
   default ON.** New `RailDynamics` in `power_amp.rs` tracks the two rail
