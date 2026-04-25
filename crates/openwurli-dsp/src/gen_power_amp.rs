@@ -10,7 +10,6 @@
 // v3.0 or later. See https://www.gnu.org/licenses/gpl-3.0.html
 // ============================================================================
 
-#![allow(unused_assignments)]
 #![allow(clippy::excessive_precision)]
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::too_many_arguments)]
@@ -34,7 +33,7 @@ pub const N_AUG: usize = 20;
 pub const M: usize = 16;
 
 /// Maximum NR iterations per sample
-pub const MAX_ITER: usize = 200;
+pub const MAX_ITER: usize = 70;
 
 /// Chord method: re-factor Jacobian every N iterations (full LU path only).
 /// Iter 0 always factors. Between refactors, O(N²) back-solve reuses stored LU.
@@ -1421,6 +1420,10 @@ pub struct CircuitState {
     pub device_7_bf: f64,
     /// Device 7 BETA_R (Bjt) — runtime adjustable
     pub device_7_br: f64,
+    /// Runtime value for voltage source V1 (RHS row 18).
+    pub v_rail_pos_offset: f64,
+    /// Runtime value for voltage source V2 (RHS row 19).
+    pub v_rail_neg_offset: f64,
 }
 
 impl Default for CircuitState {
@@ -1495,6 +1498,8 @@ impl Default for CircuitState {
             device_7_vt: DEVICE_7_VT,
             device_7_bf: DEVICE_7_BETA_F,
             device_7_br: DEVICE_7_BETA_R,
+            v_rail_pos_offset: 0.0,
+            v_rail_neg_offset: 0.0,
         };
         state.warmup();
         state
@@ -1562,6 +1567,8 @@ impl CircuitState {
         self.device_7_vt = DEVICE_7_VT;
         self.device_7_bf = DEVICE_7_BETA_F;
         self.device_7_br = DEVICE_7_BETA_R;
+        self.v_rail_pos_offset = 0.0;
+        self.v_rail_neg_offset = 0.0;
         self.warmup();
     }
 
@@ -1900,6 +1907,10 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
     // Input source (backward Euler: V_in * G_in)
     rhs[INPUT_NODE] += input * input_conductance;
     state.input_prev = input;
+
+    // Runtime voltage sources (.runtime directive)
+    rhs[18] += state.v_rail_pos_offset;
+    rhs[19] += state.v_rail_neg_offset;
 
     // Step 2: Linear prediction v_pred = S * rhs (O(N^2))
     let mut v_pred = [0.0f64; N];

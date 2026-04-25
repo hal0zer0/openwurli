@@ -66,8 +66,14 @@ R38   nodeD   out   0.47
 R_load out   0   8
 
 * --- Supply ---
+* Static DC bias is +/-22.5V (nominal service-manual spec). The Rust
+* adapter pushes per-sample offsets via .runtime V to model rail sag
+* (idle ~+/-24.5V, sagging toward +/-22V at rated load). Calibration
+* anchor: docs/research/output-stage.md §4.3.1 + power_supply.cir.
 V1    vp   0   DC 22.5
+.runtime V1 as v_rail_pos_offset
 V2    0    vn  DC 22.5
+.runtime V2 as v_rail_neg_offset
 
 * --- Device models (full Gummel-Poon from SPICE validation) ---
 

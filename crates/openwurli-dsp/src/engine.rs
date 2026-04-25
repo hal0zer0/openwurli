@@ -397,6 +397,18 @@ impl WurliEngine {
         self.preamp.set_thermal_gain(gain);
     }
 
+    /// Enable / disable rail sag modeling on the power amp. On by default
+    /// (correct physics; +0.66 % CPU). Toggle off for bit-compat A/B against
+    /// the pre-rail-sag adapter. See `power_amp.rs` `RailDynamics` and
+    /// `docs/research/output-stage.md` §4.3.1.
+    pub fn set_rail_sag(&mut self, on: bool) {
+        self.power_amp.set_rail_sag(on);
+    }
+
+    pub fn rail_sag_enabled(&self) -> bool {
+        self.power_amp.rail_sag_enabled()
+    }
+
     // ── Render ───────────────────────────────────────────────────────────
 
     /// Render `out.len()` mono samples through the full chain.

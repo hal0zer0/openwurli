@@ -1,0 +1,83 @@
+* Wurlitzer 200A Rail Supply — Standalone Validation
+* ====================================================
+* Tests the wurli_rail_supply subckt against a fixed resistive load,
+* without the power amp. Validates load-line behavior in isolation.
+*
+* Run: ngspice -b tb_power_supply.cir
+*
+* Idle test: light load (10 kohm per rail, ~2.4 mA) — rails at ~+/-24.5V
+* Rated test: heavy load sized to sink ~1.6 A per rail — rails at ~+/-22V
+*
+* Note on DC OP: transformer is AC-only, so DC OP gives 0V rails. We use
+* `.IC` to seed the cap voltages and rely on transient settling. This is
+* normal for bridge-rectifier circuits.
+
+.title Rail Supply Standalone Validation
+
+.include ../models/diodes.lib
+.include ../subcircuits/power_supply.cir
+
+* --- Supply under test ---
+Xsupply  vp  vn  0  wurli_rail_supply
+
+* --- Load resistor (varied per test) ---
+Rload_pos  vp   0   {RLOAD}
+Rload_neg  vn   0   {RLOAD}
+
+.param RLOAD = 10K   ; light load, overridden by .alter
+
+* Initial cap voltages help transient settle quickly
+.IC V(vp)=24.5  V(vn)=-24.5
+
+.options GMIN=1e-10 RELTOL=1e-3 ABSTOL=1e-9 RSHUNT=1e9
+.options ITL1=200 ITL4=100 METHOD=GEAR
+
+.control
+
+set filetype = ascii
+
+echo ""
+echo "=========================================================="
+echo "TEST 1: LIGHT LOAD (10 kohm per rail, ~2.4 mA draw)"
+echo "Target: vp ~+24.5V, vn ~-24.5V, ripple < 0.1 Vpp"
+echo "=========================================================="
+tran 100u 300m 0 100u uic
+meas tran vp_light AVG v(vp) FROM=280m TO=300m
+meas tran vn_light AVG v(vn) FROM=280m TO=300m
+meas tran vp_ripple_light PP v(vp) FROM=280m TO=300m
+meas tran vn_ripple_light PP v(vn) FROM=280m TO=300m
+destroy all
+
+echo ""
+echo "=========================================================="
+echo "TEST 2: CLASS-AB RATED LOAD (~31 ohm per rail, ~0.71 A draw)"
+echo "Target: vp ~+22V, vn ~-22V"
+echo ""
+echo "Why 31 ohm: a Class AB amp at 20W into 8 ohm draws Ipk=2.24A"
+echo "but each rail conducts only on its half-cycle, so average per"
+echo "rail is Ipk/pi = 0.71 A. Resistive proxy: 22V / 0.71A = 31 ohm."
+echo "=========================================================="
+alterparam RLOAD = 31
+reset
+tran 100u 400m 0 100u uic
+meas tran vp_rated AVG v(vp) FROM=380m TO=400m
+meas tran vn_rated AVG v(vn) FROM=380m TO=400m
+meas tran vp_ripple_rated PP v(vp) FROM=380m TO=400m
+meas tran vn_ripple_rated PP v(vn) FROM=380m TO=400m
+destroy all
+
+echo ""
+echo "=========================================================="
+echo "INTERPRETATION"
+echo "=========================================================="
+echo "If vp_light ~24.5V and vp_rated ~22V: RSEC is correct."
+echo "If vp_light != 24.5V: VSEC_RMS in power_supply.cir is wrong."
+echo "If vp_rated < 22V: RSEC too high, lower it."
+echo "If vp_rated > 22V: RSEC too low, raise it."
+echo ""
+echo "Done."
+quit
+
+.endc
+
+.end

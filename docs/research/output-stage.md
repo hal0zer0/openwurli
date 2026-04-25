@@ -251,6 +251,31 @@ From service manual:
 
 **NOTE:** The actual rail voltages are typically 10% higher than the nominal specification (24.5V vs 22V). This is normal for unregulated supplies at light load.
 
+#### 4.3.1 Supply Topology and Rail Sag Model
+
+The ±22 V power-amp rails come from a full-wave center-tapped rectifier feeding 2 × 2200 µF filter caps. Schematic source: #203720-S-3, components extracted Apr 2026 (see `~/dev/schemer/research/openwurli-power-supply-response.md`).
+
+| Refdes | Value | Role |
+|---|---|---|
+| D2-D5 | Wurlitzer #142350 (1N4004 substitute) | Bridge rectifier diodes |
+| C28 / C29 | 2200 µF | Filter cap per rail |
+| F-1 / F-2 | 1.5 A inline fuses | Rail to power-amp input |
+| T-1 (#203715) | secondary CT, ~17.8-0-17.8 VAC RMS *(estimated)* | Power transformer |
+
+**Rail sag mechanism.** Under load, the rails sag from idle (~±24.5 V) toward the nominal ±22 V spec. This compresses chord-ff peaks against the rails *more than* light single notes — a natural compression mechanism that an ideal-rail model misses.
+
+**SPICE model.** `spice/subcircuits/power_supply.cir` provides a `wurli_rail_supply` subckt parameterized as `VSEC_RMS=17.8 RSEC=0.5 FREQ=60`. Validated standalone via `spice/testbench/tb_power_supply.cir`:
+
+| Test condition | Result | Target | Source |
+|---|---|---|---|
+| Light load (10 kΩ/rail, 2.4 mA draw) | vp = 24.39 V | 24.5 V | service manual idle |
+| Class-AB rated load (31 Ω/rail, 0.71 A — equivalent to 20 W into 8 Ω) | vp = 21.997 V | 22.0 V | service manual rated |
+| 120 Hz ripple at rated | 1.97 Vpp | — | (informational) |
+
+**Calibration unknown.** No real 200A hardware was used to verify these numbers — both endpoints of the load line come from the service manual. RSEC = 0.5 Ω is back-solved from the documented sag spec, sitting at the low end of the period-typical 0.5-1.5 Ω range for a 25-30 VA secondary. If a real-instrument measurement of rail voltage under load ever becomes available, RSEC is the one-line tuning knob in `power_supply.cir`. VSEC_RMS is anchored to the documented light-load measurement and shouldn't need adjustment.
+
+**Status.** SPICE-validated only. The melange-generated power-amp solver (`gen_power_amp.rs`) currently still uses ideal ±22 V rails. Promoting rail sag into the production signal chain is a separate task — see PR-2 plan: behavioral rail dynamics in `power_amp.rs` adapter pushed via `.runtime V` into the melange circuit.
+
 ### 4.4 Bootstrap Capacitor (C-12)
 
 > "Capacitor C-12 performs two functions: 1) it acts as a bypass to decouple any power supply ripple from the driver stages, and 2) it is connected as a 'bootstrap' capacitor to provide the drive necessary to pull TR-10 and TR-11 into saturation. The stored voltage of the capacitor (with reference to the output) provides a higher voltage than the normal collector-supply voltage to drive TR-10 and TR-11."

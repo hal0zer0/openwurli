@@ -1,0 +1,66 @@
+* Wurlitzer 200A Power-Amp Rail Supply
+* ======================================
+* Unregulated +/-22V split rails for the power amplifier (TR-7..TR-13).
+* Topology: full-wave center-tapped rectifier, 2200uF filter caps, inline
+* fuses to vp/vn. Source: 200A schematic #203720-S-3, supply section
+* (cross-referenced with 200A_correct_overview.png and power-supply tile).
+*
+* Mapping into power_amp.cir's net naming:
+*   vp = +rail at TR-11 / TR-13 emitter feed (post F-1)
+*   vn = -rail at TR-12 / TR-14 emitter feed (post F-2)
+*
+* Schematic-confirmed values (verbatim from #203720-S-3):
+*   D2..D5  = Wurlitzer #142350 silicon rectifiers (1A Si, modeled as 1N4004)
+*   C28,C29 = 2200uF filter caps (one per rail to chassis ground)
+*   F-1, F-2 = 1.5A inline fuses (modeled as small series R; replace with
+*              fuse subckt if blow behavior is needed)
+*
+* Estimated values (NOT from schematic — flagged):
+*   VSEC_RMS = 17.8 V per half (back-solved: rails at +/-24.5V at light load
+*              -> peak at C28/C29 ~24.5V -> Vsec_pk ~25.2V (allow 0.7V Vd)
+*              -> Vsec_RMS ~17.8V; consistent with documented idle voltage)
+*   RSEC     = 0.5 ohm per half. This is the dominant rail-sag knob.
+*              Tuned in tb_power_supply_sweep.cir against the documented
+*              load line: at the Class-AB-equivalent average current per
+*              rail (Ipk/pi = 0.71 A for 20 W into 8 ohm), this RSEC
+*              produces vp = 21.997 V — within 3 mV of the +/-22 V spec.
+*              Period-typical range is 0.5-1.5 ohm per half for a ~25-30 VA
+*              secondary; 0.5 sits at the low end (consistent with a
+*              well-built unit; aged transformers might be higher).
+*   FREQ     = 60 Hz line frequency (US mains; can be overridden to 50 Hz).
+*
+* Calibration constraint: docs/research/output-stage.md §4.3 specifies
+* +/-22V at "rated load" and +/-24.5V at "light load." With 2200uF caps
+* and these parameters, the rail sag matches the spec.
+*
+* No real 200A hardware available for direct measurement — see
+* docs/research/output-stage.md §"Supply Model" for the calibration note.
+
+.SUBCKT wurli_rail_supply  vp  vn  gnd
++        params: VSEC_RMS=17.8 RSEC=0.5 FREQ=60
+
+* --- Transformer secondary, center-tapped (gnd = CT) ---
+* Two 60Hz AC sources 180 deg out of phase. Each half drives one diode
+* pair via its winding resistance (RSEC).
+Vsec_top   x1_ideal  gnd       SIN(0  {VSEC_RMS*1.4142}  {FREQ})
+Vsec_bot   gnd       x2_ideal  SIN(0  {VSEC_RMS*1.4142}  {FREQ})
+Rsec_top   x1_ideal  x1        {RSEC}
+Rsec_bot   x2_ideal  x2        {RSEC}
+
+* --- Full-wave CT bridge (4x Wurlitzer #142350, modeled as 1N4004) ---
+* D2/D3 rectify negative half-cycles to vn_raw.
+* D4/D5 rectify positive half-cycles to vp_raw.
+D2  vn_raw  x1   D1N4004
+D3  vn_raw  x2   D1N4004
+D4  x1      vp_raw   D1N4004
+D5  x2      vp_raw   D1N4004
+
+* --- Filter capacitors (2200uF each, rail to chassis) ---
+C29  vp_raw  gnd  2200U  IC=22.5
+C28  vn_raw  gnd  2200U  IC=-22.5
+
+* --- Rail fuses (10mohm series; F-1 on +rail, F-2 on -rail) ---
+RF1  vp_raw  vp  10m
+RF2  vn_raw  vn  10m
+
+.ENDS wurli_rail_supply

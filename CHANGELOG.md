@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Power-amp rail sag — behavioral dynamics for the unregulated ±22 V supply,
+  default ON.** New `RailDynamics` in `power_amp.rs` tracks the two rail
+  magnitudes per sample with an asymmetric one-pole RC (8 ms attack / 15 ms
+  release) and a load-line model calibrated to the documented service-manual
+  numbers: idle ±24.5 V, sagging toward ±22 V at rated 20 W into 8 Ω. Drives
+  the melange power-amp solver via two new `.runtime V` directives on V1/V2;
+  `gen_power_amp.rs` regenerated from the updated `wurli-power-amp.cir` (no
+  matrix changes, just two new `f64` fields + RHS additions; MAX_ITER auto-
+  tuned 200 → 70). One-pole alphas precomputed at sample-rate change so
+  audio-rate stepping is 4 muls + 4 adds + 4 compares per sample, no
+  transcendentals. Public API on `WurliEngine`: `set_rail_sag(bool)`,
+  `rail_sag_enabled()`. New SPICE artifacts pin the calibration:
+  `spice/subcircuits/power_supply.cir` (full-wave CT bridge, 2× 2200 µF caps,
+  1.5 A fuses, RSEC=0.5 Ω back-solved from the load line) and
+  `spice/testbench/tb_power_supply.cir` (light-load 24.39 V / rated-load
+  21.997 V, both within 0.5 V of spec). Topology and component values
+  extracted from the schematic by Schemer; see `docs/research/output-stage.md`
+  §4.3.1 and `~/dev/schemer/research/openwurli-power-supply-response.md`.
+  No real 200A hardware was used — both endpoints of the load line come from
+  the service manual; RSEC is the documented one-line tuning knob if a
+  hardware measurement ever surfaces.
+
+  **Honest framing of the audible effect.** Correct physics, small audible
+  delta. Compared to the pre-rail-sag adapter (now toggleable via
+  `set_rail_sag(false)`), rail sag narrows the chord-vs-single dynamic-range
+  ratio at vol=1.0 from 7.87 dB to 7.40 dB (~0.5 dB compression) and gives
+  single notes +0.32 dB more peak headroom (rails sit at ±24.5 V at idle).
+  Effect is bigger at moderate-to-loud volumes where the amp gets closer to
+  its rails; near-zero at low volume where rails barely engage. Compression-
+  for-loudness on chord-ff peaks is largely a downstream concern (e.g., a
+  Vurli-side compressor), not solvable inside the openwurli physics model.
+  CPU cost measured at +0.66 % over a 30 s polyphonic chord render —
+  negligible — so default-ON is the correct-physics choice. Toggle off via
+  `WurliEngine::set_rail_sag(false)` for A/B against ideal rails. Seven new
+  unit tests (`test_rail_sag_*`, `test_rail_dynamics_*`) guard the
+  calibration anchor and the on↔off toggle semantics.
+
 ### Changed
 - **`WurliEngine` extraction — synth engine now lives in `openwurli-dsp`
   instead of locked inside `openwurli-plugin`.** New module
