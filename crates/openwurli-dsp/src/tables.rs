@@ -509,10 +509,18 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// circuit-realistic (power amp uses ~5-10% headroom at ff single notes), but
 /// the raw speaker output is too quiet for a DAW. This gain compensates without
 /// distorting any nonlinear circuit model — it's applied AFTER all analog stages.
-pub const POST_SPEAKER_GAIN_DB: f64 = 19.5;
+///
+/// Lowered from +19.5 dB → +14.5 dB on 2026-04-25 after the DI-limiter
+/// removal (5fbc4a1, 220a5aa). Old value was sized assuming the limiter
+/// would catch chord-ff peaks at ~+4 dBFS; without the limiter, +14.5 dB
+/// keeps chord-ff at vol=0.5 around −6 dBFS and chord-ff at vol=0.7 near
+/// 0 dBFS — the "purer alternative" from `memory/project_di_limiter_tradeoff.md`.
+/// Single ff notes at default vol=0.5 land near −26 dBFS; users boost in
+/// the DAW (or via Vurli) to taste.
+pub const POST_SPEAKER_GAIN_DB: f64 = 14.5;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 9.440_608_762_859_233; // 10^(19.5/20)
+pub const POST_SPEAKER_GAIN: f64 = 5.308_844_442_309_884; // 10^(14.5/20)
 
 /// Per-note output scaling to balance the keyboard.
 ///

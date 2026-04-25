@@ -909,7 +909,7 @@ mod tests {
         // power-amp adapter so the guard still applies.
         //
         // Threshold: +14 dBFS. Normal chord-ff content at default gain
-        // (vol=0.5, PSG=+19.5 dB, no DI limiter) peaks around +9-10 dBFS
+        // (vol=0.5, PSG=+14.5 dB, no DI limiter) peaks around +5 dBFS
         // — set the guard well above that and well below the +20 dBFS
         // catastrophic value the divergence guard exists to prevent.
         let mut e = engine();

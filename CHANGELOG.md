@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **POST_SPEAKER_GAIN lowered +19.5 dB → +14.5 dB.** The original +19.5 dB
+  was sized assuming the DI limiter would catch chord-ff peaks at ~+4 dBFS;
+  with the limiter removed, that staging put chord-ff into DAW clipping
+  territory at any volume above 0.5–0.6. The new +14.5 dB is the "purer
+  alternative" recorded in `memory/project_di_limiter_tradeoff.md` since
+  the limiter was first added — it lands chord-ff at vol=0.5 around
+  −6 dBFS and chord-ff at vol=0.7 near 0 dBFS, with no nonlinear ceiling
+  stage. Single ff notes at vol=0.5 sit ~5 dB quieter than before
+  (~−26 dBFS); users boost in the DAW (or via Vurli) to taste. This is
+  honest gain staging — the loudest moment fits under 0 dBFS at the
+  sweet-spot volume, quiet playing is genuinely quieter.
+
 ### Removed
 - **DI limiter — removed entirely.** The soft `tanh`-knee limiter at −1 dBFS
   ceiling / −6 dBFS threshold was a DAW-domain bandage (mic preamp / ADC
