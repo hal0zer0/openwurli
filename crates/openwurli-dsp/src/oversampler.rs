@@ -234,6 +234,63 @@ mod tests {
     }
 
     #[test]
+    fn test_downsample_white_noise_gain() {
+        // Diagnostic: feed unit-variance white noise at the 2x rate through
+        // downsample_2x and compare RMS in dB.
+        //
+        // Each branch is allpass (|H|=1 everywhere). The
+        // `(a + down_delay) * 0.5` averages two uncorrelated
+        // unit-variance streams: variance = (1+1)/4 = 0.5 → RMS drops by
+        // exactly sqrt(0.5) = 3.01 dB. The half-band frequency
+        // selectivity comes from the polyphase structure cancelling
+        // Nyquist content after decimation, but the power budget is
+        // already paid by the averager. Expected ≈ 3 dB on broadband
+        // noise; measured 3.07 dB.
+        let mut os = Oversampler::new();
+        let n_out = 4096;
+        let n_in = n_out * 2;
+
+        // Tiny xorshift64 PRNG; map to uniform [-sqrt(3), sqrt(3)] -> unit variance.
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next_u64 = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut next_unit = || {
+            // 53-bit float in [0,1)
+            let bits = next_u64() >> 11;
+            let u = (bits as f64) * (1.0 / ((1u64 << 53) as f64));
+            // map to [-sqrt(3), sqrt(3)]; var of uniform on [-a,a] = a^2/3
+            (u - 0.5) * (12.0_f64).sqrt()
+        };
+
+        let input: Vec<f64> = (0..n_in).map(|_| next_unit()).collect();
+        let mut output = vec![0.0f64; n_out];
+        os.downsample_2x(&input, &mut output);
+
+        // Skip filter settling (first 64 samples)
+        let skip = 64;
+        let in_rms = {
+            let s: f64 = input[skip * 2..].iter().map(|x| x * x).sum();
+            (s / (input.len() - skip * 2) as f64).sqrt()
+        };
+        let out_rms = {
+            let s: f64 = output[skip..].iter().map(|x| x * x).sum();
+            (s / (output.len() - skip) as f64).sqrt()
+        };
+
+        let in_db = 20.0 * in_rms.log10();
+        let out_db = 20.0 * out_rms.log10();
+        let drop_db = in_db - out_db;
+        println!("white-noise downsample diagnostic:");
+        println!("  input  RMS = {in_rms:.6}  ({in_db:+.3} dBFS)");
+        println!("  output RMS = {out_rms:.6}  ({out_db:+.3} dBFS)");
+        println!("  drop       = {drop_db:.3} dB  (theory ≈ 9 dB)");
+    }
+
+    #[test]
     fn test_passband_flat() {
         let mut os = Oversampler::new();
         let n = 4096;

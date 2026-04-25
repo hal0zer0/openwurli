@@ -32,6 +32,8 @@ pub struct DkPreamp {
     main: CircuitState,
     shadow: CircuitState,
     sample_rate: f64,
+    noise_enabled: bool,
+    thermal_gain: f64,
 }
 
 impl DkPreamp {
@@ -40,7 +42,29 @@ impl DkPreamp {
             main: init_state(sample_rate),
             shadow: init_state(sample_rate),
             sample_rate,
+            noise_enabled: false,
+            thermal_gain: 1.0,
         }
+    }
+
+    /// Enable/disable authentic Johnson-Nyquist thermal noise on the preamp
+    /// resistors. Only the `main` state draws noise — the `shadow` state
+    /// stays noiseless so pump subtraction cancels R_ldr DC drift without
+    /// also cancelling the noise we just added.
+    pub fn set_noise_enabled(&mut self, on: bool) {
+        self.noise_enabled = on;
+        self.main.set_noise_enabled(on);
+    }
+
+    /// Scale thermal noise amplitude. `1.0` = physics-honest full noise
+    /// (empirically lands at ~−11 dBFS at the DAW with default volume/PSG,
+    /// which is much louder than a real 200A DI recording's noise floor
+    /// because commercial captures are masked by the mic-preamp/ADC floor).
+    /// The plugin default of `0.05` puts the noise floor near −37 dBFS:
+    /// audibly present when idle, fully masked during any playing.
+    pub fn set_thermal_gain(&mut self, gain: f64) {
+        self.thermal_gain = gain;
+        self.main.set_thermal_gain(gain);
     }
 }
 
@@ -64,5 +88,7 @@ impl PreampModel for DkPreamp {
     fn reset(&mut self) {
         self.main = init_state(self.sample_rate);
         self.shadow = init_state(self.sample_rate);
+        self.main.set_noise_enabled(self.noise_enabled);
+        self.main.set_thermal_gain(self.thermal_gain);
     }
 }

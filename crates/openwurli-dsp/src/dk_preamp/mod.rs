@@ -318,4 +318,122 @@ mod melange_gate_tests {
             "Tremolo rate {rate:.2} Hz out of real-200A range 5.3-7 Hz"
         );
     }
+
+    /// Phase 5 RAW noise measurement — bypasses the shadow subtraction
+    /// entirely. Just calls `gen_preamp::process_sample(0.0, &mut state)`
+    /// with `noise_enabled=true` on a single CircuitState. Compare against
+    /// Mr Schemey's analytical target of ~34 µV at the output node.
+    ///
+    ///   cargo test -p openwurli-dsp --release -- --ignored --nocapture phase5_raw_noise
+    #[test]
+    #[ignore]
+    fn phase5_raw_noise() {
+        for sr in [48_000.0_f64, 88_200.0, 176_400.0] {
+            // Two states: one runs with noise OFF (deterministic baseline =
+            // pure DC + zero-input drift). The other runs with noise ON.
+            // Both are seeded identically and start from the same settled
+            // bias point, so subtracting them gives the pure noise
+            // contribution without any DC bias or shadow-divergence
+            // artifacts.
+            let mut s_off = gen_preamp::CircuitState::default();
+            if (sr - gen_preamp::SAMPLE_RATE).abs() > 0.5 {
+                s_off.set_sample_rate(sr);
+            }
+            for _ in 0..(sr as usize) {
+                gen_preamp::process_sample(0.0, &mut s_off);
+            }
+            // Snapshot the settled state and clone it for the noise-on run.
+            let mut s_on = s_off.clone();
+            s_on.set_noise_enabled(true);
+            // Settle the noise-on state briefly so the RNG is past startup.
+            for _ in 0..((sr as usize) / 4) {
+                gen_preamp::process_sample(0.0, &mut s_off);
+                gen_preamp::process_sample(0.0, &mut s_on);
+            }
+            let n = (10.0 * sr) as usize;
+            // ── Method A: twin-state subtraction (y_on - y_off). ──
+            // Susceptible to BJT nonlinearity amplifying state divergence.
+            let mut ss_twin = 0.0f64;
+            let mut sum_off = 0.0f64;
+            let mut sum_on = 0.0f64;
+            // ── Method B: single-state with running DC removal. ──
+            // The noise RMS = sqrt(E[(y - E[y])²]) computed in one pass
+            // using a Welford-style running variance to avoid catastrophic
+            // cancellation between giant DC and tiny noise.
+            let mut mean_on = 0.0f64;
+            let mut m2_on = 0.0f64; // sum of squared deviations
+            let mut k_on = 0usize;
+            for _ in 0..n {
+                let y_off = gen_preamp::process_sample(0.0, &mut s_off)[0];
+                let y_on = gen_preamp::process_sample(0.0, &mut s_on)[0];
+                let diff = y_on - y_off;
+                ss_twin += diff * diff;
+                sum_off += y_off;
+                sum_on += y_on;
+                k_on += 1;
+                let delta = y_on - mean_on;
+                mean_on += delta / k_on as f64;
+                let delta2 = y_on - mean_on;
+                m2_on += delta * delta2;
+            }
+            let rms_twin = (ss_twin / n as f64).sqrt();
+            let dc_off = sum_off / n as f64;
+            let dc_on = sum_on / n as f64;
+            let var_single = m2_on / n as f64;
+            let rms_single = var_single.sqrt();
+            eprintln!(
+                "phase5_raw_noise sr={:>7.0} Hz | twin: rms={:.3e} V ({:+.2} dBV) | single (Welford): rms={:.3e} V ({:+.2} dBV) | DC_off={:.4} V, DC_on={:.4} V",
+                sr,
+                rms_twin,
+                20.0 * rms_twin.max(1e-18).log10(),
+                rms_single,
+                20.0 * rms_single.max(1e-18).log10(),
+                dc_off,
+                dc_on,
+            );
+        }
+    }
+
+    /// Phase 5 noise-floor measurement (manual run):
+    ///   cargo test -p openwurli-dsp --release -- --ignored --nocapture phase5_noise_floor
+    ///
+    /// Prints preamp-output RMS/peak with noise ON vs OFF. Not an assertion —
+    /// a measurement scaffold for tuning thermal_gain if the idle hiss ends up
+    /// too loud or too quiet when auditioned through the full plugin chain.
+    #[test]
+    #[ignore]
+    fn phase5_noise_floor() {
+        use crate::dk_preamp::DkPreamp;
+        use crate::preamp::PreampModel;
+
+        const SR: f64 = 88_200.0;
+        const SETTLE: usize = 44_100;
+        const MEASURE: usize = 882_000; // 10 s
+
+        for noise_on in [false, true] {
+            let mut preamp = DkPreamp::new(SR);
+            preamp.set_noise_enabled(noise_on);
+            for _ in 0..SETTLE {
+                preamp.process_sample(0.0);
+            }
+            let mut sum_sq = 0.0;
+            let mut peak = 0.0f64;
+            for _ in 0..MEASURE {
+                let y = preamp.process_sample(0.0);
+                sum_sq += y * y;
+                peak = peak.max(y.abs());
+            }
+            let rms = (sum_sq / MEASURE as f64).sqrt();
+            let rms_dbv = 20.0 * rms.max(1e-18).log10();
+            let peak_dbv = 20.0 * peak.max(1e-18).log10();
+            eprintln!(
+                "phase5_noise_floor noise={:<3}: rms={:.3e} V ({:+.2} dBV), peak={:.3e} V ({:+.2} dBV)",
+                if noise_on { "ON" } else { "OFF" },
+                rms,
+                rms_dbv,
+                peak,
+                peak_dbv,
+            );
+        }
+    }
 }

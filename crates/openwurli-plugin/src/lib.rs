@@ -57,7 +57,8 @@ fn di_soft_limit(x: f64) -> f64 {
         return x;
     }
     let over = (a - DI_LIMITER_THRESHOLD) / (DI_LIMITER_CEILING - DI_LIMITER_THRESHOLD);
-    let compressed = DI_LIMITER_THRESHOLD + (DI_LIMITER_CEILING - DI_LIMITER_THRESHOLD) * over.tanh();
+    let compressed =
+        DI_LIMITER_THRESHOLD + (DI_LIMITER_CEILING - DI_LIMITER_THRESHOLD) * over.tanh();
     compressed.copysign(x)
 }
 
@@ -484,6 +485,14 @@ impl Plugin for OpenWurli {
         let trem_depth = self.params.tremolo_depth.value() as f64;
         self.tremolo.set_depth(trem_depth);
 
+        // Authentic preamp noise: forwarded once per buffer. Turning it on
+        // mid-session is cheap — the preamp adapter just toggles a branch
+        // in the generated noise stamp; OFF is bit-identical to pre-Phase-5.
+        self.preamp
+            .set_noise_enabled(self.params.noise_enable.value());
+        self.preamp
+            .set_thermal_gain(self.params.noise_gain.value() as f64);
+
         // Event-splitting process loop: split at each MIDI event for sample-accuracy
         let mut next_event = context.next_event();
         let mut block_start: usize = 0;
@@ -804,6 +813,105 @@ mod tests {
         );
     }
 
+    /// Phase 5 idle-noise measurement through the full plugin chain
+    /// (preamp → vol² → power amp → speaker → PSG). Sweeps `thermal_gain`
+    /// so we can pick a default that lands in the audible band after the
+    /// power amp's Class AB crossover dead zone and Hammerstein speaker.
+    /// Manual run:
+    ///   cargo test -p openwurli --release -- --ignored --nocapture phase5_chain_noise
+    #[test]
+    #[ignore]
+    fn phase5_chain_noise_floor() {
+        use openwurli_dsp::preamp::PreampModel as _;
+        let mut plugin = make_plugin();
+        plugin.reset_param_smoothers_to_current();
+        plugin.preamp.set_noise_enabled(true);
+
+        let sr = plugin.sample_rate as usize;
+        let os_sr = plugin.os_sample_rate as usize;
+        let block = 512;
+        let settle_blocks = sr / block; // 1 s
+        let measure_blocks = 10 * sr / block; // 10 s
+
+        // Direct probe: call the preamp at os-rate with zero input, no
+        // oversampler/downsampler. This isolates whether the chain loss
+        // comes from downsampling or somewhere else.
+        for gain in [0.05_f64, 1.00] {
+            plugin.preamp.set_thermal_gain(gain);
+            let mut ss = 0.0f64;
+            let mut pk = 0.0f64;
+            let n = os_sr; // 1 s at os rate
+            for _ in 0..n {
+                let y = plugin.preamp.process_sample(0.0);
+                ss += y * y;
+                pk = pk.max(y.abs());
+            }
+            let rms = (ss / n as f64).sqrt();
+            eprintln!(
+                "phase5_preamp_direct gain={:>5.2}: rms={:.3e} V ({:+.2} dBV), peak={:.3e} V ({:+.2} dBV)",
+                gain,
+                rms,
+                20.0 * rms.max(1e-18).log10(),
+                pk,
+                20.0 * pk.max(1e-18).log10(),
+            );
+        }
+
+        for gain in [0.01_f64, 0.05, 0.10, 0.30, 1.00, 3.00, 10.00] {
+            plugin.preamp.set_thermal_gain(gain);
+            plugin.preamp.reset();
+            plugin.power_amp.reset();
+            plugin.speaker.reset();
+
+            for _ in 0..settle_blocks {
+                plugin.render_subblock(0, block);
+                for i in 0..block {
+                    let vol = plugin.params.volume.smoothed.next() as f64;
+                    let sc = plugin.params.speaker_character.smoothed.next() as f64;
+                    plugin.speaker.set_character(sc);
+                    let a = plugin.out_buf[i] * vol * vol;
+                    let b = plugin.power_amp.process(a);
+                    let c = plugin.speaker.process(b);
+                    let _ = c * tables::POST_SPEAKER_GAIN;
+                }
+            }
+
+            let mut sum_sq = 0.0f64;
+            let mut peak = 0.0f64;
+            let mut pre_sum_sq = 0.0f64;
+            let mut pre_peak = 0.0f64;
+            let mut n = 0usize;
+            for _ in 0..measure_blocks {
+                plugin.render_subblock(0, block);
+                for i in 0..block {
+                    let pre = plugin.out_buf[i];
+                    pre_sum_sq += pre * pre;
+                    pre_peak = pre_peak.max(pre.abs());
+                    let vol = plugin.params.volume.smoothed.next() as f64;
+                    let sc = plugin.params.speaker_character.smoothed.next() as f64;
+                    plugin.speaker.set_character(sc);
+                    let a = pre * vol * vol;
+                    let b = plugin.power_amp.process(a);
+                    let c = plugin.speaker.process(b);
+                    let out = c * tables::POST_SPEAKER_GAIN;
+                    sum_sq += out * out;
+                    peak = peak.max(out.abs());
+                    n += 1;
+                }
+            }
+            let rms = (sum_sq / n as f64).sqrt();
+            let pre_rms = (pre_sum_sq / n as f64).sqrt();
+            let rms_dbfs = 20.0 * rms.max(1e-18).log10();
+            let pre_rms_dbv = 20.0 * pre_rms.max(1e-18).log10();
+            let peak_dbfs = 20.0 * peak.max(1e-18).log10();
+            let pre_peak_dbv = 20.0 * pre_peak.max(1e-18).log10();
+            eprintln!(
+                "phase5_chain_noise gain={:>5.2}: pre_rms={:.3e}V ({:+7.2} dBV), pre_peak={:.3e}V ({:+7.2} dBV) | chain_rms={:.3e} ({:+7.2} dBFS), chain_peak={:.3e} ({:+7.2} dBFS)",
+                gain, pre_rms, pre_rms_dbv, pre_peak, pre_peak_dbv, rms, rms_dbfs, peak, peak_dbfs,
+            );
+        }
+    }
+
     #[test]
     fn test_reset_clears_all_voices() {
         let mut plugin = make_plugin();
@@ -1093,7 +1201,9 @@ mod tests {
             } else {
                 ""
             };
-            eprintln!("  t={t:5.0}s  sum={s:+6.3}  pre={pre:+6.3}  pa={pa:+6.3}  sp={sp:+6.3}  fin={fi:+6.3}  ({db:+6.2} dBFS){flag}");
+            eprintln!(
+                "  t={t:5.0}s  sum={s:+6.3}  pre={pre:+6.3}  pa={pa:+6.3}  sp={sp:+6.3}  fin={fi:+6.3}  ({db:+6.2} dBFS){flag}"
+            );
         }
     }
 
