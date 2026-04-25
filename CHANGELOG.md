@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 5: Authentic preamp noise (new `noise_enable` BoolParam,
+  default OFF; new `noise_gain` FloatParam, range 0–30×, default 1.0×).**
+  Wires melange's Johnson-Nyquist thermal noise stamping into the 12-node
+  DK preamp solver. Each of the 11 fixed resistors contributes the
+  `sqrt(4·k_B·T·R·BW)` voltage density predicted by ngspice `.NOISE`
+  on the same netlist; the noise is shaped by the full two-stage
+  feedback transfer function and modulated by the LDR loop gain
+  (tremolo-bright = louder noise). Default OFF means existing users
+  hear no change; flip ON for the character of a real 200A preamp at
+  idle. `noise_gain` is a multiplier on top of the physics-correct
+  level: `1.0×` = ngspice-validated (~8 µV at preamp out, ~−86 dBFS at
+  DAW with default volume — mostly inaudible, like a clean DI of a
+  real 200A); raise toward `30×` for an audible "vintage hiss" floor
+  without changing the spectral shape. Required upstream melange fix
+  (`a5dff8c`): two-draw thermal stamp `i_n = w_new + w_prev` to zero
+  the Nyquist pole that single-draw injection was exciting at every
+  resistor-only node, which would otherwise produce a ~200× hot,
+  fs-scaling artifact instead of the band-limited audio-rate noise
+  the kTC test guarantees on simpler topologies. Verified post-fix:
+  raw preamp output at 88.2 kHz matches ngspice's 8.08 µV within 2 %,
+  and the fs-scaling now follows the gentle √fs curve expected from
+  bandwidth growth instead of linear-fs growth. New ignored
+  measurement tests: `phase5_raw_noise` (preamp standalone),
+  `phase5_chain_noise_floor` (full plugin chain at multiple gains).
 - **DI Limiter (new `di_limiter` BoolParam, default ON).** Soft output
   ceiling at −1 dBFS with a threshold at −6 dBFS and a tanh soft-knee;
   signals below the threshold pass through bit-exact so single-note and
