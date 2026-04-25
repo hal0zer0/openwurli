@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`WurliEngine` extraction — synth engine now lives in `openwurli-dsp`
+  instead of locked inside `openwurli-plugin`.** New module
+  `openwurli_dsp::engine::WurliEngine` owns voice management (slots,
+  allocation, stealing with 5 ms crossfade, sustain pedal), the shared
+  signal chain (preamp → vol² → power amp → speaker → POST_SPEAKER_GAIN
+  → DI limiter), parameter smoothing for the audio-rate user controls
+  (vol, tremolo depth, speaker character — internal LinearSmoother over
+  ~5 ms), and the NaN guard. Framework-agnostic by design: the engine
+  has no nih-plug dependency, so any host (oomox/Vurli, custom DAW
+  integrations, headless CLI tools) can wrap it without copying glue
+  code. The OpenWurli plugin shell is now what it should be — parameter
+  declarations, MIDI event splitting, stereo channel fan-out — and
+  collapses from ~1,900 to ~250 lines. Behaviorally identical to the
+  pre-extraction plugin: same defaults, same dynamics, same DI-limiter
+  ceiling. All 23 high-value voice/sustain/NaN/divergence-guard tests
+  ported from the plugin's inline test module to `engine::tests`
+  against the new public API; the plugin retains 5 shell-level tests
+  (instantiate, default-param values, di_limiter / noise_enable /
+  noise_gain defaults). Background motivation: oomox is building Vurli,
+  an oomox-native Wurlitzer plugin that consumes OpenWurli as a library
+  rather than forking its DSP — see `docs/vurli-plan.md` in the oomox
+  repo for the full division-of-labor sketch.
+
 ### Added
 - **Phase 5: Authentic preamp noise (new `noise_enable` BoolParam,
   default OFF; new `noise_gain` FloatParam, range 0–30×, default 1.0×).**
