@@ -46,8 +46,11 @@ fn di_soft_limit(x: f64) -> f64 {
     compressed.copysign(x)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum VoiceState {
+/// Voice slot lifecycle. Public for engine introspection from tests and
+/// debug tooling; not part of the realtime API surface — hosts shouldn't
+/// need to read this in `process()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VoiceState {
     Free,
     Held,
     /// Key released while sustain pedal was down — reed rings undamped.
@@ -596,6 +599,31 @@ impl WurliEngine {
             .iter()
             .any(|s| s.midi_note == note && s.steal_voice.is_some())
     }
+
+    #[doc(hidden)]
+    pub fn count_voices_in_state(&self, state: VoiceState) -> usize {
+        self.voices.iter().filter(|s| s.state == state).count()
+    }
+
+    #[doc(hidden)]
+    pub fn count_voices_with_note_in_state(&self, note: u8, state: VoiceState) -> usize {
+        self.voices
+            .iter()
+            .filter(|s| s.state == state && s.midi_note == note)
+            .count()
+    }
+
+    /// Forces sustain state directly — bypasses the pedal release damping
+    /// path. Test-only; production code should use `set_sustain`.
+    #[doc(hidden)]
+    pub fn force_sustain_held(&mut self, held: bool) {
+        self.sustain_held = held;
+    }
+
+    #[doc(hidden)]
+    pub fn is_sustain_held(&self) -> bool {
+        self.sustain_held
+    }
 }
 
 fn ramp_samples_for_rate(sample_rate: f64) -> u32 {
@@ -743,5 +771,315 @@ mod tests {
             loud_rms > soft_rms,
             "ff RMS ({loud_rms}) should exceed pp RMS ({soft_rms})"
         );
+    }
+
+    // ── Note clamping ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_note_clamps_to_valid_range() {
+        let mut e = engine();
+        e.note_on(0, 0.8); // below MIDI_LO
+        e.note_on(127, 0.8); // above MIDI_HI
+        assert_eq!(e.held_voice_count(), 2, "both notes clamped, both allocated");
+    }
+
+    // ── Sustain pedal ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_sustain_pedal_release_triggers_damping() {
+        // Hold pedal, play note, release key (→ Sustained), release pedal
+        // (→ Releasing). Voice should be damping, not still ringing.
+        let mut e = engine();
+        e.set_sustain(true);
+        e.note_on(60, 0.8);
+        e.note_off(60);
+        assert_eq!(e.sustained_voice_count(), 1);
+        e.set_sustain(false);
+        // Sustained voice transitions to Releasing on pedal release.
+        assert_eq!(e.sustained_voice_count(), 0);
+        assert_eq!(e.count_voices_in_state(VoiceState::Releasing), 1);
+    }
+
+    #[test]
+    fn test_sustain_held_voices_still_render() {
+        // After pedal-up triggers damping, the voice should still produce
+        // output during the release tail (not abruptly silenced).
+        let mut e = engine();
+        e.set_sustain(true);
+        e.note_on(60, 0.8);
+        let mut buf = vec![0.0f32; 1024];
+        e.render(&mut buf);
+        e.note_off(60);
+        e.render(&mut buf);
+        e.set_sustain(false);
+        e.render(&mut buf);
+        let energy: f64 = buf.iter().map(|s| (*s as f64).powi(2)).sum();
+        assert!(energy > 0.0, "voice silenced too soon after pedal release");
+    }
+
+    #[test]
+    fn test_no_sustain_normal_note_off() {
+        // Pedal up: note_off transitions Held → Releasing immediately.
+        let mut e = engine();
+        e.note_on(60, 0.8);
+        e.note_off(60);
+        assert_eq!(e.held_voice_count(), 0);
+        assert_eq!(e.count_voices_in_state(VoiceState::Releasing), 1);
+    }
+
+    #[test]
+    fn test_voice_stealing_prefers_sustained_over_held() {
+        // Fill all slots: half Held, half Sustained. Stealing should target
+        // a Sustained slot first (less disruptive than a key-down note).
+        let mut e = engine();
+        e.set_sustain(true);
+        for n in 0..(MAX_VOICES / 2) {
+            e.note_on((36 + n) as u8, 0.8);
+            e.note_off((36 + n) as u8); // → Sustained
+        }
+        for n in (MAX_VOICES / 2)..MAX_VOICES {
+            e.note_on((36 + n) as u8, 0.8); // → Held
+        }
+        let sustained_before = e.sustained_voice_count();
+        let held_before = e.held_voice_count();
+        assert_eq!(sustained_before + held_before, MAX_VOICES);
+
+        e.note_on(127, 0.8); // forces a steal
+        // The new voice replaces a Sustained slot; held count unchanged.
+        assert_eq!(e.held_voice_count(), held_before + 1);
+        assert_eq!(e.sustained_voice_count(), sustained_before - 1);
+    }
+
+    #[test]
+    fn test_reattack_releases_sustained_same_note() {
+        // Real 200A has one reed per pitch — re-striking a sustained note
+        // releases the old voice rather than accumulating duplicates.
+        let mut e = engine();
+        e.set_sustain(true);
+        e.note_on(60, 0.8);
+        e.note_off(60); // → Sustained
+        e.note_on(60, 0.8); // re-attack same note
+        assert_eq!(
+            e.count_voices_with_note_in_state(60, VoiceState::Sustained),
+            0,
+            "old sustained voice should be released on re-attack"
+        );
+        assert_eq!(
+            e.count_voices_with_note_in_state(60, VoiceState::Held),
+            1,
+            "new voice should be Held"
+        );
+    }
+
+    #[test]
+    fn test_pedal_up_only_releases_sustained_not_held() {
+        // Pedal release should ONLY affect Sustained voices; voices the
+        // player is still holding stay Held.
+        let mut e = engine();
+        e.set_sustain(true);
+        e.note_on(60, 0.8);
+        e.note_off(60); // → Sustained
+        e.note_on(64, 0.8); // → Held (key still down)
+        assert_eq!(e.sustained_voice_count(), 1);
+        assert_eq!(e.held_voice_count(), 1);
+        e.set_sustain(false);
+        assert_eq!(e.sustained_voice_count(), 0);
+        assert_eq!(e.held_voice_count(), 1, "held voice must survive pedal up");
+    }
+
+    #[test]
+    fn test_reset_clears_sustain_state() {
+        let mut e = engine();
+        e.set_sustain(true);
+        e.note_on(60, 0.8);
+        e.note_off(60);
+        e.reset();
+        assert!(!e.is_sustain_held(), "sustain flag must clear on reset");
+        assert_eq!(e.active_voice_count(), 0);
+    }
+
+    #[test]
+    fn test_note_off_for_nonexistent_note_is_noop() {
+        let mut e = engine();
+        e.note_on(60, 0.8);
+        e.note_off(72); // never on
+        assert_eq!(e.held_voice_count(), 1, "wrong-note off should not damage state");
+    }
+
+    // ── NaN / divergence guards ─────────────────────────────────────────
+
+    #[test]
+    fn test_volume_zero_and_back_no_nan() {
+        // Regression: sweeping volume to zero and back caused NaN that
+        // crashed PipeWire. The engine smoother + chain must be NaN-free.
+        let mut e = engine();
+        e.note_on(60, 0.8);
+        let mut buf = vec![0.0f32; 512];
+        for _ in 0..4 {
+            e.set_volume(0.0);
+            e.render(&mut buf);
+            e.set_volume(0.5);
+            e.render(&mut buf);
+        }
+        assert!(buf.iter().all(|s| s.is_finite()), "non-finite sample leaked");
+    }
+
+    #[test]
+    fn test_no_catastrophic_output_spikes_under_continuous_play() {
+        // Regression for the melange power-amp divergence guard: under
+        // continuous chord transitions the solver intermittently failed to
+        // converge and produced +20 dBFS spikes. Engine wraps the same
+        // power-amp adapter so the guard still applies. Asserts no sample
+        // exceeds +4 dBFS post-DI-limiter (which clamps to ≈ −1 dBFS).
+        let mut e = engine();
+        let chords: [[u8; 3]; 4] = [
+            [60, 64, 67],
+            [62, 65, 69],
+            [64, 67, 71],
+            [65, 69, 72],
+        ];
+        let block = 256;
+        let blocks_per_segment = 86; // ~0.5 s per chord at 44.1 k
+        let mut buf = vec![0.0f32; block];
+        let mut peak = 0.0f32;
+        for (i, chord) in chords.iter().cycle().take(8).enumerate() {
+            for n in chord {
+                e.note_on(*n, 1.0);
+            }
+            for _ in 0..blocks_per_segment {
+                e.render(&mut buf);
+                peak = peak.max(buf.iter().map(|s| s.abs()).fold(0.0f32, f32::max));
+            }
+            for n in chord {
+                e.note_off(*n);
+            }
+            // Small drain between chords
+            if i % 2 == 1 {
+                for _ in 0..5 {
+                    e.render(&mut buf);
+                }
+            }
+        }
+        let peak_dbfs = 20.0 * peak.max(1e-12).log10();
+        assert!(
+            peak_dbfs < 4.0,
+            "post-limiter peak {peak_dbfs:.2} dBFS exceeds +4 dBFS guard"
+        );
+    }
+
+    // ── Sample-rate / buffer-size changes ───────────────────────────────
+
+    #[test]
+    fn test_sound_after_sample_rate_change() {
+        let mut e = engine();
+        e.set_sample_rate(48_000.0);
+        e.note_on(60, 0.8);
+        let mut buf = vec![0.0f32; 1024];
+        e.render(&mut buf);
+        let energy: f64 = buf.iter().map(|s| (*s as f64).powi(2)).sum();
+        assert!(energy > 0.0, "no output after sample-rate change");
+    }
+
+    #[test]
+    fn test_buffer_capacity_grows_to_render() {
+        // Engine should auto-grow its internal scratch buffers when render
+        // is called with a larger output slice than initial allocation.
+        let mut e = engine();
+        e.note_on(60, 0.8);
+        let mut big_buf = vec![0.0f32; 16_384]; // > MAX_BLOCK_SIZE default
+        e.render(&mut big_buf);
+        assert!(big_buf.iter().all(|s| s.is_finite()));
+    }
+
+    // ── Tremolo smoothing ────────────────────────────────────────────────
+
+    #[test]
+    fn test_tremolo_smoother_does_not_pin_depth_to_zero() {
+        // Regression for the legacy nih-plug smoother bug where
+        // smoothed.next() returned 0 forever before host init. Engine
+        // smoother snaps to its construction default, so even without an
+        // explicit set_tremolo_depth() call the depth is the constructor's
+        // value (0.5), and a 4 s render must produce audible AM.
+        let mut e = engine();
+        e.note_on(60, 0.9);
+        let sr = 44_100_usize;
+        let total = sr * 4;
+        let block = 256;
+        let mut samples = Vec::with_capacity(total);
+        let mut buf = vec![0.0f32; block];
+        for _ in 0..(total / block) {
+            e.render(&mut buf);
+            samples.extend_from_slice(&buf);
+        }
+        // RMS envelope over 20 ms windows, ignoring the first 0.5 s.
+        let win = sr / 50;
+        let skip = 25;
+        let n_wins = samples.len() / win;
+        let mut env_db = Vec::with_capacity(n_wins);
+        for i in skip..n_wins {
+            let s = i * win;
+            let rms = (samples[s..s + win].iter().map(|x| (*x as f64).powi(2)).sum::<f64>()
+                / win as f64)
+                .sqrt();
+            env_db.push(20.0 * (rms + 1e-12).log10());
+        }
+        let env_min = env_db.iter().cloned().fold(f64::INFINITY, f64::min);
+        let env_max = env_db.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let swing = env_max - env_min;
+        assert!(
+            swing > 3.0,
+            "Tremolo should produce > 3 dB RMS swing at default depth 0.5: got {swing:.2} dB"
+        );
+    }
+
+    // ── DI limiter unit tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_di_soft_limit_below_threshold_is_passthrough() {
+        for x in [-0.5, -0.1, 0.0, 0.1, 0.49] {
+            let y = di_soft_limit(x);
+            assert!(
+                (y - x).abs() < 1e-12,
+                "sample {x} below threshold should pass through bit-exact, got {y}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_di_soft_limit_is_continuous_at_threshold() {
+        // Just below = passthrough; just above = soft compression. The
+        // tanh slope at 0 is 1, matching passthrough's slope, so the
+        // function is C¹-continuous at the threshold.
+        let below = di_soft_limit(DI_LIMITER_THRESHOLD - 1e-9);
+        let above = di_soft_limit(DI_LIMITER_THRESHOLD + 1e-9);
+        assert!((below - above).abs() < 1e-6, "threshold discontinuity");
+    }
+
+    #[test]
+    fn test_di_soft_limit_asymptotes_to_ceiling() {
+        // Even huge input must stay below the ceiling.
+        for x in [1.0, 5.0, 100.0] {
+            let y = di_soft_limit(x);
+            assert!(
+                y <= DI_LIMITER_CEILING,
+                "input {x} clipped to {y}, exceeds ceiling {DI_LIMITER_CEILING}"
+            );
+            assert!(
+                y > DI_LIMITER_THRESHOLD,
+                "input {x} compressed too aggressively, output {y} below threshold"
+            );
+        }
+    }
+
+    #[test]
+    fn test_di_soft_limit_monotonic() {
+        // Output must be non-decreasing in input across the knee.
+        let mut prev = di_soft_limit(0.0);
+        for i in 1..=200 {
+            let x = i as f64 * 0.01;
+            let y = di_soft_limit(x);
+            assert!(y >= prev, "non-monotonic: f({x:.3}) = {y} < prev {prev}");
+            prev = y;
+        }
     }
 }
