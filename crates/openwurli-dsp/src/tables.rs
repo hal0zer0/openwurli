@@ -511,16 +511,24 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// distorting any nonlinear circuit model — it's applied AFTER all analog stages.
 ///
 /// Lowered from +19.5 dB → +14.5 dB on 2026-04-25 after the DI-limiter
-/// removal (5fbc4a1, 220a5aa). Old value was sized assuming the limiter
-/// would catch chord-ff peaks at ~+4 dBFS; without the limiter, +14.5 dB
-/// keeps chord-ff at vol=0.5 around −6 dBFS and chord-ff at vol=0.7 near
-/// 0 dBFS — the "purer alternative" from `memory/project_di_limiter_tradeoff.md`.
-/// Single ff notes at default vol=0.5 land near −26 dBFS; users boost in
-/// the DAW (or via Vurli) to taste.
-pub const POST_SPEAKER_GAIN_DB: f64 = 14.5;
+/// removal (5fbc4a1, 220a5aa).
+///
+/// Lowered again from +14.5 dB → +10.5 dB on 2026-04-26 to size headroom
+/// against the WORST documented case (chord-ff at vol=1.0, MLP on, tremolo
+/// bright) landing under 1.0 with margin. The previous +14.5 dB sized
+/// headroom against vol=0.5 chord-ff sitting at −6 dBFS but allowed
+/// vol=1.0 chord-ff to clip at +3.1 dBFS (peak 1.43) — physically real
+/// BJT harmonic stacking in the rail-clip region (per SPICE: H3 jumps
+/// 0.013% → 18.6% from vol=0.7 to vol=1.0). New invariant: engine output
+/// peak ≤ 1.0 across the entire volume range, even with tremolo bright
+/// (which adds ~0.7 dB to the chord-ff peak via LDR feedback shunting).
+/// Tradeoff: vol=0.5 chord-ff drops from −8.4 to −12.4 dBFS; users push
+/// to vol=0.7 to recover loudness within the safe range. Regression-
+/// guarded by `engine::tests::test_engine_peak_below_unity_at_vol_1`.
+pub const POST_SPEAKER_GAIN_DB: f64 = 10.5;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 5.308_844_442_309_884; // 10^(14.5/20)
+pub const POST_SPEAKER_GAIN: f64 = 3.349_654_391_578_277; // 10^(10.5/20)
 
 /// Per-note output scaling to balance the keyboard.
 ///

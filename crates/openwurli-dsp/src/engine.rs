@@ -760,6 +760,57 @@ mod tests {
     }
 
     #[test]
+    fn test_engine_peak_below_unity_at_vol_1() {
+        // PSG sizing invariant (2026-04-26): the worst documented case —
+        // chord-ff at vol=1.0 with MLP on, tremolo bright — must produce
+        // engine output peak ≤ 1.0. Guards against PSG drift re-introducing
+        // post-power-amp clipping in downstream hosts. See tables.rs
+        // POST_SPEAKER_GAIN_DB rationale.
+        let mut e = engine();
+        e.ensure_buffer_capacity(1024);
+        e.set_volume(1.0);
+        e.set_tremolo_depth(1.0);
+        e.set_speaker_character(0.0);
+        e.set_mlp_enabled(true);
+        e.set_noise_enabled(false);
+
+        // Settle the volume smoother (~220 samples) before the chord hits.
+        let mut warmup = vec![0.0f32; 1024];
+        for _ in 0..6 {
+            e.render(&mut warmup);
+        }
+
+        // Canonical worst-case chord (the same one used to diagnose the
+        // crackle in 2026-04-25/26): C minor 7 voicing across the register.
+        for &n in &[48u8, 55, 60, 63, 67, 70] {
+            e.note_on(n, 0.95);
+        }
+
+        // Capture 1.0 s — covers the attack envelope peak AND ~5.6 tremolo
+        // cycles (at 5.63 Hz) so a bright-tremolo phase aligns with the
+        // still-loud sustain region.
+        let total = (44_100.0 * 1.0) as usize;
+        let mut out = Vec::with_capacity(total);
+        let mut buf = vec![0.0f32; 1024];
+        let mut pos = 0;
+        while pos < total {
+            let len = 1024.min(total - pos);
+            e.render(&mut buf[..len]);
+            out.extend_from_slice(&buf[..len]);
+            pos += len;
+        }
+
+        let peak = out.iter().fold(0.0f32, |a, &s| a.max(s.abs()));
+        // Slack of 0.02 leaves room for harmless f32 rounding / minor
+        // stochastic per-voice variation. Crackle threshold is well above 1.0.
+        assert!(
+            peak <= 1.02,
+            "engine peak {peak:.4} exceeds 1.0 + slack at vol=1.0 chord-ff \
+             (PSG drift suspected — see tables.rs::POST_SPEAKER_GAIN_DB)"
+        );
+    }
+
+    #[test]
     fn test_higher_velocity_louder() {
         let mut e = engine();
         e.set_volume(0.5);
