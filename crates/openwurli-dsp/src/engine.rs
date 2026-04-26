@@ -1,8 +1,8 @@
 //! WurliEngine — synth engine extracted from `openwurli-plugin`.
 //!
-//! Owns voice management (slots, allocation, stealing, sustain pedal),
-//! the shared signal chain (preamp → vol² → power amp → speaker → PSG),
-//! and the optional DAW-domain DI limiter. Framework-agnostic so any host
+//! Owns voice management (slots, allocation, stealing, sustain pedal)
+//! and the shared signal chain (preamp → fixed circuit drive → power amp
+//! → speaker → PSG × user volume). Framework-agnostic so any host
 //! (nih-plug, custom DAW integration, oomox/Vurli) can wrap it without
 //! copying voice or signal-chain code.
 //!
@@ -416,11 +416,14 @@ impl WurliEngine {
             let speaker_char = self.speaker_character.next();
             self.speaker.set_character(speaker_char);
             let shaped = self.speaker.process(self.out_buf[i]);
-            // POST_SPEAKER_GAIN: maps physical SPL to DAW-friendly levels.
-            // Output peak management (limiting / DAW headroom) is the host's
-            // or downstream Vurli's responsibility — openwurli stays raw
-            // physics with no nonlinear ceiling stage.
-            let post_gain = shaped * tables::POST_SPEAKER_GAIN;
+            // User volume is applied here as a linear post-amp multiplier
+            // (decoupled from circuit drive — see tables::FIXED_CIRCUIT_DRIVE).
+            // POST_SPEAKER_GAIN maps the fixed-drive amp output to DAW-friendly
+            // levels; user_vol scales linearly inside that envelope. No
+            // nonlinear ceiling — output peak management belongs in the host
+            // / Vurli per project scope rules.
+            let user_vol = self.volume.next();
+            let post_gain = shaped * tables::POST_SPEAKER_GAIN * user_vol;
             let sample = post_gain as f32;
             // NaN guard: non-finite samples crash PipeWire/JACK audio engines.
             *sample_slot = if sample.is_finite() {
@@ -508,18 +511,18 @@ impl WurliEngine {
             for i in 0..len {
                 let depth = self.tremolo_depth.next();
                 self.tremolo.set_depth(depth);
-                let volume = self.volume.next();
-                let v2 = volume * volume;
 
                 for j in 0..2 {
                     let idx = i * 2 + j;
                     let r_ldr = self.tremolo.process();
                     self.preamp.set_ldr_resistance(r_ldr);
                     let preamp_out = self.preamp.process_sample(self.up_buf[idx]);
-                    // Volume pot attenuates before the power amp (3K audio
-                    // taper: vol²); power amp returns normalized [-1, 1]
-                    // (raw / HEADROOM with divergence-guard clamp).
-                    self.up_buf[idx] = self.power_amp.process(preamp_out * v2);
+                    // Pin BJT drive at the clean operating point. User volume
+                    // is applied post-amp in render() as a linear multiplier
+                    // (decoupled from circuit drive — see FIXED_CIRCUIT_DRIVE).
+                    self.up_buf[idx] = self
+                        .power_amp
+                        .process(preamp_out * tables::FIXED_CIRCUIT_DRIVE);
                 }
             }
 
@@ -534,9 +537,10 @@ impl WurliEngine {
                 let r_ldr = self.tremolo.process();
                 self.preamp.set_ldr_resistance(r_ldr);
                 let preamp_out = self.preamp.process_sample(self.sum_buf[i]);
-                let volume = self.volume.next();
-                let v2 = volume * volume;
-                self.out_buf[offset + i] = self.power_amp.process(preamp_out * v2);
+                // Drive pinned; user volume applied post-amp in render().
+                self.out_buf[offset + i] = self
+                    .power_amp
+                    .process(preamp_out * tables::FIXED_CIRCUIT_DRIVE);
             }
         }
     }
@@ -807,6 +811,52 @@ mod tests {
             peak <= 1.02,
             "engine peak {peak:.4} exceeds 1.0 + slack at vol=1.0 chord-ff \
              (PSG drift suspected — see tables.rs::POST_SPEAKER_GAIN_DB)"
+        );
+    }
+
+    #[test]
+    fn test_user_volume_scales_output_linearly() {
+        // DECOUPLING INVARIANT (2026-04-26): user volume is applied post-amp
+        // as a linear multiplier (see tables::FIXED_CIRCUIT_DRIVE). Render
+        // the same content at vol=0.5 and vol=1.0; output peak must scale
+        // exactly 2.0× — proves the BJT operating point is identical and
+        // user volume is doing nothing but linear attenuation. If this
+        // regresses, someone re-coupled drive to user volume somewhere.
+        let render_at = |vol: f64| -> f32 {
+            let mut e = engine();
+            e.ensure_buffer_capacity(1024);
+            e.set_volume(vol);
+            e.set_tremolo_depth(0.0);
+            e.set_speaker_character(0.0);
+            e.set_mlp_enabled(true);
+            e.set_noise_enabled(false);
+            let mut warmup = vec![0.0f32; 1024];
+            for _ in 0..6 {
+                e.render(&mut warmup);
+            }
+            e.note_on(60, 0.95);
+            let total = (44_100.0 * 0.5) as usize;
+            let mut out = Vec::with_capacity(total);
+            let mut buf = vec![0.0f32; 1024];
+            let mut pos = 0;
+            while pos < total {
+                let len = 1024.min(total - pos);
+                e.render(&mut buf[..len]);
+                out.extend_from_slice(&buf[..len]);
+                pos += len;
+            }
+            out.iter().fold(0.0f32, |a, &s| a.max(s.abs()))
+        };
+        let p_05 = render_at(0.5);
+        let p_10 = render_at(1.0);
+        let ratio = p_10 / p_05;
+        // Pure linear scaling would be ratio=2.0. Per-voice OU jitter and
+        // MLP per-engine determinism allow ±2% slack.
+        assert!(
+            (1.96..=2.04).contains(&ratio),
+            "user volume should scale linearly: ratio {ratio:.3} (p_05={p_05:.4}, \
+             p_10={p_10:.4}). Drive may have been re-coupled to user vol — see \
+             tables::FIXED_CIRCUIT_DRIVE."
         );
     }
 
@@ -1105,5 +1155,4 @@ mod tests {
             "Tremolo should produce > 3 dB RMS swing at default depth 0.5: got {swing:.2} dB"
         );
     }
-
 }

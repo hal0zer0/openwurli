@@ -513,22 +513,39 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// Lowered from +19.5 dB → +14.5 dB on 2026-04-25 after the DI-limiter
 /// removal (5fbc4a1, 220a5aa).
 ///
-/// Lowered again from +14.5 dB → +10.5 dB on 2026-04-26 to size headroom
-/// against the WORST documented case (chord-ff at vol=1.0, MLP on, tremolo
-/// bright) landing under 1.0 with margin. The previous +14.5 dB sized
-/// headroom against vol=0.5 chord-ff sitting at −6 dBFS but allowed
-/// vol=1.0 chord-ff to clip at +3.1 dBFS (peak 1.43) — physically real
-/// BJT harmonic stacking in the rail-clip region (per SPICE: H3 jumps
-/// 0.013% → 18.6% from vol=0.7 to vol=1.0). New invariant: engine output
-/// peak ≤ 1.0 across the entire volume range, even with tremolo bright
-/// (which adds ~0.7 dB to the chord-ff peak via LDR feedback shunting).
-/// Tradeoff: vol=0.5 chord-ff drops from −8.4 to −12.4 dBFS; users push
-/// to vol=0.7 to recover loudness within the safe range. Regression-
-/// guarded by `engine::tests::test_engine_peak_below_unity_at_vol_1`.
-pub const POST_SPEAKER_GAIN_DB: f64 = 10.5;
+/// 2026-04-26 (later): final value lands after the user-volume / circuit-
+/// drive DECOUPLING (see FIXED_CIRCUIT_DRIVE below). With drive pinned at
+/// 0.25, the amp output peak (chord-ff + tremolo bright) is constant
+/// regardless of user volume; PSG is sized so that user_vol=1.0 puts the
+/// worst documented case at engine peak ≤ 1.0, and user_vol=0.5 lands
+/// near −6 dBFS (chord-ff). Mid-session iterations: was 19.5 dB pre-Apr-25
+/// (DI-limiter era), 14.5 dB Apr 25, 10.5 dB Apr 26 (vol²-pre-amp era).
+/// Regression-guarded by `engine::tests::test_engine_peak_below_unity_at_vol_1`.
+pub const POST_SPEAKER_GAIN_DB: f64 = 22.0;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 3.349_654_391_578_277; // 10^(10.5/20)
+pub const POST_SPEAKER_GAIN: f64 = 12.589_254_117_941_673; // 10^(22.0/20)
+
+/// Fixed circuit-drive level — multiplier applied between preamp output
+/// and power amp input. Historically this was `vol²` (3K audio-taper pot,
+/// physically faithful per docs/research/output-stage.md §3), but coupling
+/// user volume to BJT drive produced an unusable transition: SPICE drive
+/// sweep shows THD jumps from 0.034% at Vin=295 mV to 0.228% at 300 mV
+/// (rail-clip onset is binary, no graceful middle). Real players sit at
+/// vol≈0.1–0.3 (Avenson's 2–7 mV at pot output measurement) where the amp
+/// is essentially a linear 69× gain stage anyway.
+///
+/// 2026-04-26: decoupled drive from user volume. Pin drive at 0.25 — the
+/// value previous calibration was already balanced against (= old vol²
+/// at vol=0.5). Apply user volume as a linear post-amp multiplier instead.
+/// Result: monotonic, predictable, clip-free across the full vol range.
+/// Loses: vol-dependent rail-clip character at high vol (was crackle, not
+/// music) and crossover-region grit at very low vol (rarely visited in
+/// real play). Preserves: every nonlinearity that defines the 200A sound —
+/// pickup 1/(1-y) bark, preamp asymmetric clipping, tremolo loop-gain
+/// shunt, MLP per-note corrections, rail sag, divergence guard. The BJT
+/// solver still runs every sample; it just runs at one operating point.
+pub const FIXED_CIRCUIT_DRIVE: f64 = 0.25;
 
 /// Per-note output scaling to balance the keyboard.
 ///
