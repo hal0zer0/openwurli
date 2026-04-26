@@ -197,6 +197,12 @@ mod behavioral {
             }
         }
 
+        /// Behavioral model is rate-independent (closed-form `tanh`, no integrator).
+        /// Argument is accepted for API parity with the melange path.
+        pub fn new_at_sample_rate(_sample_rate: f64) -> Self {
+            Self::new()
+        }
+
         pub fn process(&mut self, input: f64) -> f64 {
             let mut y = (input * self.closed_loop_gain)
                 .clamp(-self.rail_limit + NR_TOL, self.rail_limit - NR_TOL);
@@ -313,11 +319,24 @@ mod melange_adapter {
 
     impl PowerAmp {
         pub fn new() -> Self {
+            Self::new_at_sample_rate(44100.0)
+        }
+
+        /// Construct at a specific sample rate. The melange BE integrator's
+        /// per-sample timestep is `1 / sample_rate`; running it at the engine's
+        /// upsampled rate (88.2 kHz at 44.1k host) instead of the base rate
+        /// halves the integration error per harmonic order, which is critical
+        /// for keeping the high-order harmonics realistic on harmonic-rich
+        /// inputs (the pickup pumps content past Nyquist into the amp at ff
+        /// playing). See `engine.rs` `render_voices_to_preamp_out` — the
+        /// power amp is now run inside the same upsample/downsample block as
+        /// the preamp.
+        pub fn new_at_sample_rate(sample_rate: f64) -> Self {
             Self {
-                state: init_state(44100.0),
-                sample_rate: 44100.0,
+                state: init_state(sample_rate),
+                sample_rate,
                 last_good: 0.0,
-                rails: super::RailDynamics::new(44100.0),
+                rails: super::RailDynamics::new(sample_rate),
                 // Rail sag is correct physics with negligible CPU cost (+0.66%
                 // measured) and a small audible effect (~0.5 dB chord
                 // compression, ~+0.3 dB single-note headroom). Default ON.

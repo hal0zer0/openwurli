@@ -205,7 +205,12 @@ impl WurliEngine {
             preamp: DkPreamp::new(os_sr),
             tremolo: Tremolo::new(0.5, os_sr),
             oversampler: Oversampler::new(),
-            power_amp: PowerAmp::new(),
+            // Power amp runs at the oversampled rate alongside the preamp so
+            // the BE integrator inside the melange-generated solver gets a
+            // small enough timestep to avoid manufacturing high-order harmonics
+            // on harmonic-rich inputs. Speaker stays at base rate (linear,
+            // doesn't benefit from oversampling).
+            power_amp: PowerAmp::new_at_sample_rate(os_sr),
             speaker: Speaker::new(sample_rate),
             voice_buf: vec![0.0; MAX_BLOCK_SIZE],
             sum_buf: vec![0.0; MAX_BLOCK_SIZE],
@@ -251,7 +256,7 @@ impl WurliEngine {
         self.preamp = DkPreamp::new(self.os_sample_rate);
         self.tremolo = Tremolo::new(self.tremolo_depth.target, self.os_sample_rate);
         self.oversampler = Oversampler::new();
-        self.power_amp = PowerAmp::new();
+        self.power_amp = PowerAmp::new_at_sample_rate(self.os_sample_rate);
         self.speaker = Speaker::new(sr);
         let ramp = ramp_samples_for_rate(sr);
         self.volume.set_ramp_samples(ramp);
@@ -385,6 +390,14 @@ impl WurliEngine {
         self.power_amp.rail_sag_enabled()
     }
 
+    /// Power-amp diagnostic snapshot:
+    /// `(clamp_count, nr_max_iter_count, peak_output_volts)`.
+    /// Use during diagnostic renders to see if the divergence guard is
+    /// firing, NR is failing, or the amp is producing unphysical voltages.
+    pub fn power_amp_diag(&self) -> (u64, u64, f64) {
+        self.power_amp.diag_snapshot()
+    }
+
     // ── Render ───────────────────────────────────────────────────────────
 
     /// Render `out.len()` mono samples through the full chain.
@@ -395,17 +408,14 @@ impl WurliEngine {
         }
         self.ensure_buffer_capacity(len);
 
+        // After this call, out_buf holds the post-power-amp signal at base rate
+        // (preamp + vol² + power amp ran inside the OS bus together).
         self.render_voices_to_preamp_out(0, len);
 
         for (i, sample_slot) in out.iter_mut().enumerate() {
-            let volume = self.volume.next();
             let speaker_char = self.speaker_character.next();
             self.speaker.set_character(speaker_char);
-            // Volume pot attenuates before power amp (3K audio taper: vol²)
-            let attenuated = self.out_buf[i] * volume * volume;
-            // Power amp: VAS gain → crossover distortion → rail clip
-            let amplified = self.power_amp.process(attenuated);
-            let shaped = self.speaker.process(amplified);
+            let shaped = self.speaker.process(self.out_buf[i]);
             // POST_SPEAKER_GAIN: maps physical SPL to DAW-friendly levels.
             // Output peak management (limiting / DAW headroom) is the host's
             // or downstream Vurli's responsibility — openwurli stays raw
@@ -490,17 +500,26 @@ impl WurliEngine {
             self.oversampler
                 .upsample_2x(&self.sum_buf[..len], &mut self.up_buf[..len * 2]);
 
-            // Per base-rate sample: advance tremolo depth smoother once,
-            // run the preamp twice (for the two oversampled samples).
+            // Per base-rate sample: advance tremolo depth + volume smoothers
+            // once. Run the preamp + power amp twice (once per OS sample) so
+            // both nonlinear stages see 88.2 kHz timestep — critical for the
+            // melange BE integrator inside the power amp not to manufacture
+            // high-order harmonics from the harmonic-rich pickup output.
             for i in 0..len {
                 let depth = self.tremolo_depth.next();
                 self.tremolo.set_depth(depth);
+                let volume = self.volume.next();
+                let v2 = volume * volume;
 
                 for j in 0..2 {
                     let idx = i * 2 + j;
                     let r_ldr = self.tremolo.process();
                     self.preamp.set_ldr_resistance(r_ldr);
-                    self.up_buf[idx] = self.preamp.process_sample(self.up_buf[idx]);
+                    let preamp_out = self.preamp.process_sample(self.up_buf[idx]);
+                    // Volume pot attenuates before the power amp (3K audio
+                    // taper: vol²); power amp returns normalized [-1, 1]
+                    // (raw / HEADROOM with divergence-guard clamp).
+                    self.up_buf[idx] = self.power_amp.process(preamp_out * v2);
                 }
             }
 
@@ -514,7 +533,10 @@ impl WurliEngine {
                 self.tremolo.set_depth(depth);
                 let r_ldr = self.tremolo.process();
                 self.preamp.set_ldr_resistance(r_ldr);
-                self.out_buf[offset + i] = self.preamp.process_sample(self.sum_buf[i]);
+                let preamp_out = self.preamp.process_sample(self.sum_buf[i]);
+                let volume = self.volume.next();
+                let v2 = volume * volume;
+                self.out_buf[offset + i] = self.power_amp.process(preamp_out * v2);
             }
         }
     }
