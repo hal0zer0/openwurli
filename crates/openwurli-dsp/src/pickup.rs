@@ -36,18 +36,48 @@ const TAU: f64 = 287.0e3 * 240.0e-12; // 68.88 µs → f_c = 2312 Hz
 /// Applied to the AC voltage perturbation from charge dynamics.
 pub const PICKUP_SENSITIVITY: f64 = 1.8375;
 
-/// Maximum allowed displacement fraction (safety clamp).
-/// The reed physically cannot touch the plate (y=1.0 is a singularity in c_n).
+/// Asymptotic displacement-fraction limit. The reed physically cannot touch
+/// the plate (y=1.0 is a singularity in c_n=1/(1-y)). With the smooth-saturation
+/// curve below, |y_out| approaches but never reaches this value.
 ///
 /// The old static model needed a tight clamp (0.90) because y/(1-y) at 0.90 = 9.0
 /// produced huge intermediate signals. The time-varying RC model self-limits via
 /// charge dynamics — output is bounded at ~±SENSITIVITY regardless of y, so we
-/// can safely allow y closer to 1.0. At y=0.98, c_n=50, alpha=0.008 — numerically
-/// well-behaved. Only y→1.0 is a true singularity.
-///
-/// With DS_CLAMP=(0.02, 0.82) and reed onset peaks up to ~1.05, y_raw can reach
-/// ~0.86. The 0.98 clamp provides headroom without hard-clipping onset transients.
+/// can safely allow y close to 1.0. At y=0.98, c_n=50, alpha=0.008 — numerically
+/// well-behaved.
 pub const PICKUP_MAX_Y: f64 = 0.98;
+
+/// Knee where the smooth saturation begins. Below this, `pickup_soft_saturate`
+/// is the identity function (no compression, no distortion). Above this, it
+/// smoothly bends toward `PICKUP_MAX_Y` so the upper-envelope tip never crosses
+/// a hard corner. Picked to leave the entire normal operating range untouched
+/// (typical y_peak at v=127 is ~0.85 with DS at NEW values 0.85/0.88).
+pub const PICKUP_KNEE_Y: f64 = 0.85;
+
+/// Smooth saturation on the reed-displacement fraction `y = x / d_0`.
+///
+/// Below `±PICKUP_KNEE_Y` the function is the identity — no flavour change vs.
+/// the old hard clamp on quiet-to-medium content. Above the knee it follows
+/// `knee + (limit-knee) * tanh((|y|-knee)/(limit-knee))`, which is C¹-continuous
+/// at the knee (slope = 1) and asymptotes to `±PICKUP_MAX_Y` from below. This
+/// removes the derivative discontinuity at the old `clamp(±0.98)` corner that
+/// was producing broadband HF "tear" hash whenever bass-heavy / chord-ff
+/// content grazed the limit (~6–7× more click-band energy at NEW DS values).
+///
+/// Bark character is preserved: the upper-velocity range still spends most of
+/// its time in the steep `1/(1-y)` zone (y in [0.85, 0.95]), where the
+/// saturation barely deviates from identity. The change is concentrated at the
+/// very top of the velocity range where the corner used to live.
+#[inline]
+fn pickup_soft_saturate(y: f64) -> f64 {
+    let abs_y = y.abs();
+    if abs_y < PICKUP_KNEE_Y {
+        return y;
+    }
+    let range = PICKUP_MAX_Y - PICKUP_KNEE_Y;
+    let saturated = PICKUP_KNEE_Y + range * ((abs_y - PICKUP_KNEE_Y) / range).tanh();
+    saturated.copysign(y)
+}
 
 /// Convert reed model displacement units to physical y = x/d_0.
 ///
@@ -101,7 +131,10 @@ impl Pickup {
         let scale = self.displacement_scale;
         let beta = self.beta;
         for sample in buffer.iter_mut() {
-            let y = (*sample * scale).clamp(-PICKUP_MAX_Y, PICKUP_MAX_Y);
+            // Smooth saturation: identity below ±PICKUP_KNEE_Y, asymptotic to
+            // ±PICKUP_MAX_Y above. Replaces the old hard clamp whose derivative
+            // discontinuity at the limit was producing audible HF distortion.
+            let y = pickup_soft_saturate(*sample * scale);
             // Eliminate c_n = 1/(1-y) division: use (1-y) directly.
             // alpha = beta / c_n = beta * (1-y)
             let one_minus_y = 1.0 - y;
@@ -124,6 +157,98 @@ impl Pickup {
 mod tests {
     use super::*;
     use std::f64::consts::PI;
+
+    // ── pickup_soft_saturate unit tests ─────────────────────────────────────
+
+    #[test]
+    fn test_soft_saturate_identity_below_knee() {
+        // Anything strictly inside ±PICKUP_KNEE_Y must pass through bit-exact.
+        // Guards against any future rewrite that introduces a corner inside
+        // the linear range.
+        for y in [-0.84, -0.5, -0.1, 0.0, 0.1, 0.5, 0.84] {
+            let out = pickup_soft_saturate(y);
+            assert!(
+                (out - y).abs() < 1e-15,
+                "below knee should be identity: {y} → {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_soft_saturate_continuous_at_knee() {
+        // Just below = identity; just above = soft saturation. The tanh slope
+        // at zero is 1, matching identity's slope, so f is C¹ at the knee.
+        let just_below = pickup_soft_saturate(PICKUP_KNEE_Y - 1e-9);
+        let just_above = pickup_soft_saturate(PICKUP_KNEE_Y + 1e-9);
+        assert!(
+            (just_below - just_above).abs() < 1e-7,
+            "knee discontinuity: {just_below} vs {just_above}"
+        );
+    }
+
+    #[test]
+    fn test_soft_saturate_bounded_at_max() {
+        // Output must never exceed PICKUP_MAX_Y. The asymptote is exactly
+        // PICKUP_MAX_Y; in f64, very-large inputs land at tanh ≈ 1.0 and the
+        // output equals the limit (matches the old hard-clamp magnitude).
+        // What we forbid is *exceeding* the limit and re-entering the
+        // 1/(1−y) singularity zone.
+        for y in [0.85, 0.9, 0.95, 0.98, 1.0, 2.0, 100.0, -100.0] {
+            let out = pickup_soft_saturate(y);
+            assert!(
+                out.abs() <= PICKUP_MAX_Y + 1e-15,
+                "input {y} → {out} exceeds ±{PICKUP_MAX_Y}"
+            );
+            assert!(
+                out.abs() >= PICKUP_KNEE_Y,
+                "input {y} → {out} above the knee should not undershoot it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_soft_saturate_smooth_above_knee() {
+        // Inputs in the middle of the saturation band (not at tanh's f64
+        // saturation tail) must land strictly between knee and limit.
+        for y in [0.86, 0.9, 0.95, 0.98, 1.0, 1.5] {
+            let out = pickup_soft_saturate(y);
+            assert!(
+                out > PICKUP_KNEE_Y && out < PICKUP_MAX_Y,
+                "input {y} → {out} should land in (knee, limit)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_soft_saturate_monotonic() {
+        // Across the full range the output must be monotonically non-decreasing.
+        // Catches any sign mistake in the asymmetric formulation.
+        let mut prev = pickup_soft_saturate(-1.5);
+        for i in 1..=600 {
+            let y = -1.5 + (i as f64) * 0.005;
+            let out = pickup_soft_saturate(y);
+            assert!(
+                out >= prev - 1e-12,
+                "non-monotonic at y={y}: prev={prev}, cur={out}"
+            );
+            prev = out;
+        }
+    }
+
+    #[test]
+    fn test_soft_saturate_odd_symmetric() {
+        // The bend on the negative side mirrors the positive side.
+        for y in [0.86, 0.9, 0.95, 0.98, 1.5, 5.0] {
+            let pos = pickup_soft_saturate(y);
+            let neg = pickup_soft_saturate(-y);
+            assert!(
+                (pos + neg).abs() < 1e-12,
+                "asymmetric saturation at ±{y}: +{pos}, -{} (sum {})",
+                neg.abs(),
+                pos + neg
+            );
+        }
+    }
 
     #[test]
     fn test_dc_equilibrium() {

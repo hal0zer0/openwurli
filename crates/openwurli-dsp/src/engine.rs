@@ -182,6 +182,12 @@ pub struct WurliEngine {
     volume: LinearSmoother,
     tremolo_depth: LinearSmoother,
     speaker_character: LinearSmoother,
+
+    // Diagnostic counter — increments each time the NaN guard in
+    // render_voices_to_preamp_out zeroes a block. A non-zero value at the
+    // end of a render run means at least one voice produced non-finite
+    // output and was force-freed without a release ramp.
+    nan_guard_fires: u64,
 }
 
 impl WurliEngine {
@@ -213,6 +219,7 @@ impl WurliEngine {
             volume: LinearSmoother::new(0.5, ramp),
             tremolo_depth: LinearSmoother::new(0.5, ramp),
             speaker_character: LinearSmoother::new(0.0, ramp),
+            nan_guard_fires: 0,
         }
     }
 
@@ -456,6 +463,7 @@ impl WurliEngine {
         // Once NaN enters IIR allpass filter state, it persists and causes
         // per-sample preamp resets (expensive full_dc_solve) → xruns → frozen audio.
         if self.sum_buf[..len].iter().any(|s| !s.is_finite()) {
+            self.nan_guard_fires += 1;
             self.sum_buf[..len].fill(0.0);
             for slot in &mut self.voices {
                 if slot.state == VoiceState::Free && slot.steal_voice.is_none() {
@@ -600,6 +608,20 @@ impl WurliEngine {
     }
 
     #[doc(hidden)]
+    /// Number of times the NaN guard has zeroed a block since construction
+    /// or the last `reset_nan_guard_count()`. Use for diagnostics — a
+    /// non-zero value means at least one voice produced non-finite output
+    /// and was force-freed without a release ramp.
+    pub fn nan_guard_fires(&self) -> u64 {
+        self.nan_guard_fires
+    }
+
+    /// Reset the NaN-guard fire counter to zero. Useful when scoping a
+    /// counter to a specific MIDI passage rather than the engine lifetime.
+    pub fn reset_nan_guard_count(&mut self) {
+        self.nan_guard_fires = 0;
+    }
+
     pub fn is_sustain_held(&self) -> bool {
         self.sustain_held
     }

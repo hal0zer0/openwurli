@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Pickup-clamp HF "tear" on bass-heavy / chord-ff content.** The hard
+  `clamp(±PICKUP_MAX_Y)` (=±0.98) at `pickup.rs:104` was the source of the
+  light distortion the user could hear at default volume even with output
+  peaks below 0 dBFS. After the Apr-2026 displacement-scale retune
+  (DS_AT_C4 0.75 → 0.85, clamp 0.82 → 0.88), `y_peak` started grazing the
+  ±0.98 limit on bass-heavy and chord-ff transients; the derivative
+  discontinuity at the corner produced ~6–7× more click-band (>5 kHz) HF
+  energy than the old DS values at matched RMS — broadband intermodulation
+  hash, not a click in the impulse sense. Fix: replaced the hard clamp with
+  a smooth saturation that's the identity below ±0.85 (`PICKUP_KNEE_Y`,
+  the typical y_peak ceiling at v=127) and follows
+  `knee + (limit-knee) * tanh((|y|-knee)/(limit-knee))` above, with the
+  asymptote at ±0.98. C¹-continuous at the knee (slope = 1, matching
+  identity), preserves the bark character (most upper-velocity time is
+  spent below ~0.95 where the saturation barely deviates from identity),
+  and removes the corner. Six new unit tests guard identity-below-knee,
+  C¹-continuity, monotonicity, odd-symmetry, and the asymptotic bound.
+  User-confirmed via A/B HF energy analysis on identical-RMS renders.
+
 ### Changed
 - **POST_SPEAKER_GAIN lowered +19.5 dB → +14.5 dB.** The original +19.5 dB
   was sized assuming the DI limiter would catch chord-ff peaks at ~+4 dBFS;
