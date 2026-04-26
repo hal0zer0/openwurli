@@ -357,6 +357,7 @@ fn cmd_render(args: &[String]) {
     let tremolo_depth = parse_flag(args, "--tremolo-depth", 0.0);
     let sample_rate = parse_flag(args, "--sample-rate", BASE_SR);
     let no_poweramp = has_flag(args, "--no-poweramp");
+    let no_rail_sag = has_flag(args, "--no-rail-sag");
     let no_preamp = has_flag(args, "--no-preamp");
     let no_attack_noise = has_flag(args, "--no-attack-noise");
     let no_mlp = has_flag(args, "--no-mlp");
@@ -455,6 +456,9 @@ fn cmd_render(args: &[String]) {
 
     // Output stage: volume → power amp (gain + crossover + clip) → speaker
     let mut power_amp = PowerAmp::new();
+    if no_rail_sag {
+        power_amp.set_rail_sag(false);
+    }
     let mut speaker = Speaker::new(sample_rate);
     speaker.set_character(speaker_char);
 

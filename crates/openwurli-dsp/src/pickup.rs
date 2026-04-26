@@ -164,8 +164,10 @@ mod tests {
     fn test_soft_saturate_identity_below_knee() {
         // Anything strictly inside ±PICKUP_KNEE_Y must pass through bit-exact.
         // Guards against any future rewrite that introduces a corner inside
-        // the linear range.
-        for y in [-0.84, -0.5, -0.1, 0.0, 0.1, 0.5, 0.84] {
+        // the linear range. Bracket scaled by knee so the test follows
+        // PICKUP_KNEE_Y if it changes.
+        let edge = PICKUP_KNEE_Y - 0.001;
+        for y in [-edge, -edge * 0.5, -0.1, 0.0, 0.1, edge * 0.5, edge] {
             let out = pickup_soft_saturate(y);
             assert!(
                 (out - y).abs() < 1e-15,

@@ -34,23 +34,50 @@ const RAIL_TAU_ATTACK: f64 = 0.008;
 /// (8.3 ms apart at 60 Hz), so recovery is gated by line cycle.
 const RAIL_TAU_RELEASE: f64 = 0.015;
 
+/// Current-averaging envelope time constant. The rail target depends on the
+/// *average* output current, not the instantaneous value — physically, filter
+/// caps integrate audio-rate ripple. 2200 µF at audio frequencies has
+/// ~0.07 Ω impedance vs ~8 Ω load, so the cap supplies audio-rate current
+/// with negligible rail-voltage change; only the slow envelope of |v_out|
+/// matters. 30 ms cleanly suppresses anything above ~5 Hz reaching the rails,
+/// killing the AM-IM artifacts that audio-rate target updates would generate
+/// at H7+ of upper-register notes (8–12 kHz click band).
+const RAIL_TAU_I_AVG: f64 = 0.030;
+
 /// Behavioral rail sag dynamics. Tracks the two unregulated rail magnitudes
-/// based on instantaneous load current, asymmetric one-pole. See module-level
-/// docs and `docs/research/output-stage.md` §4.3.1 for the calibration rationale.
+/// based on the *averaged* output current (not instantaneous), asymmetric one-pole.
+/// See module-level docs and `docs/research/output-stage.md` §4.3.1 for the
+/// calibration rationale.
 ///
-/// Per-sample cost: 4 muls, 4 adds, 4 compares, 1 reciprocal-divide; no
-/// transcendentals. The exp()-based one-pole coefficients are precomputed in
-/// `set_sample_rate` so audio-rate stepping stays branch-light.
+/// Two-stage filtering:
+/// 1. Current envelope follower (30 ms tau) — models filter-cap audio-rate
+///    integration. The target current the rail sees has no audio-rate content.
+/// 2. Rail dynamics (8 ms attack / 15 ms release) — models how fast the cap
+///    voltage actually moves toward the new target.
+///
+/// Result: rails respond to the slow envelope of load (note attacks, sustained
+/// chord, release) but never AM-modulate the amp at audio rate. Removes the
+/// click-band IM artifacts (H7+) that an instantaneous-target implementation
+/// produced.
+///
+/// Per-sample cost: 6 muls, 6 adds, 4 compares — no transcendentals.
 #[derive(Debug, Clone, Copy)]
 pub struct RailDynamics {
     /// Current positive rail magnitude [V]. Idle ~+24.5 V, sags toward +22 V at rated load.
     v_rail_pos: f64,
     /// Current negative rail magnitude [V] (positive number).
     v_rail_neg: f64,
+    /// Smoothed magnitude of positive output current (envelope). Audio-rate
+    /// content has been integrated out — only sub-audio load envelope remains.
+    i_avg_pos: f64,
+    /// Smoothed magnitude of negative output current.
+    i_avg_neg: f64,
     /// Precomputed `1 - exp(-dt / tau_attack)` — fast attack toward the load-line target.
     alpha_attack: f64,
     /// Precomputed `1 - exp(-dt / tau_release)` — slower release back toward V_OPEN.
     alpha_release: f64,
+    /// Precomputed `1 - exp(-dt / tau_i_avg)` — current-averaging envelope coefficient.
+    alpha_i_avg: f64,
 }
 
 impl RailDynamics {
@@ -63,8 +90,11 @@ impl RailDynamics {
         let mut s = Self {
             v_rail_pos: RAIL_DC_BIAS,
             v_rail_neg: RAIL_DC_BIAS,
+            i_avg_pos: 0.0,
+            i_avg_neg: 0.0,
             alpha_attack: 0.0,
             alpha_release: 0.0,
+            alpha_i_avg: 0.0,
         };
         s.set_sample_rate(sample_rate);
         s
@@ -74,11 +104,14 @@ impl RailDynamics {
         let dt = 1.0 / sample_rate;
         self.alpha_attack = 1.0 - (-dt / RAIL_TAU_ATTACK).exp();
         self.alpha_release = 1.0 - (-dt / RAIL_TAU_RELEASE).exp();
+        self.alpha_i_avg = 1.0 - (-dt / RAIL_TAU_I_AVG).exp();
     }
 
     pub fn reset(&mut self) {
         self.v_rail_pos = RAIL_DC_BIAS;
         self.v_rail_neg = RAIL_DC_BIAS;
+        self.i_avg_pos = 0.0;
+        self.i_avg_neg = 0.0;
     }
 
     /// Rail magnitudes as `(positive, negative)`, both as positive numbers.
@@ -88,12 +121,25 @@ impl RailDynamics {
 
     /// Step one sample. `v_out` is the previous output voltage in volts (raw,
     /// pre-normalization). Positive output draws from +rail, negative from −rail.
+    /// Audio-rate content in v_out is integrated out by the current envelope
+    /// follower before reaching the rail target — physical filter caps don't
+    /// see audio-rate ripple as net charge change.
     #[inline]
     pub fn step(&mut self, v_out: f64) {
+        // Stage 1: instantaneous current magnitude per rail (only the conducting one)
         let i_pos = (v_out / SPEAKER_LOAD_OHMS).max(0.0);
         let i_neg = (-v_out / SPEAKER_LOAD_OHMS).max(0.0);
-        let target_pos = RAIL_V_OPEN - i_pos * RAIL_R_EFF;
-        let target_neg = RAIL_V_OPEN - i_neg * RAIL_R_EFF;
+
+        // Stage 2: average via 30 ms envelope follower — models filter-cap
+        // audio-rate integration. After this, i_avg has no audio-rate content.
+        self.i_avg_pos += self.alpha_i_avg * (i_pos - self.i_avg_pos);
+        self.i_avg_neg += self.alpha_i_avg * (i_neg - self.i_avg_neg);
+
+        // Stage 3: rail target from the smoothed (sub-audio) average current.
+        let target_pos = RAIL_V_OPEN - self.i_avg_pos * RAIL_R_EFF;
+        let target_neg = RAIL_V_OPEN - self.i_avg_neg * RAIL_R_EFF;
+
+        // Stage 4: rail follows target with attack (sag) / release (recovery).
         let alpha_p = if target_pos < self.v_rail_pos {
             self.alpha_attack
         } else {
@@ -670,13 +716,14 @@ mod tests {
 
     #[test]
     fn test_rail_dynamics_unit() {
-        // Pure RailDynamics test, no melange. Verifies the one-pole math.
+        // Pure RailDynamics test, no melange. Verifies the two-stage filter
+        // (current envelope + rail dynamics).
         let mut rails = RailDynamics::new(SR);
         // Initialized at DC bias 22.5 V (matches cached melange state)
         let (vp, _) = rails.rail_voltages();
         assert!((vp - 22.5).abs() < 1e-9);
 
-        // No load: rails should ramp toward 24.5 V.
+        // No load: rails should ramp toward 24.5 V (release tau = 15 ms).
         for _ in 0..(SR as usize / 4) {
             rails.step(0.0);
         }
@@ -687,7 +734,9 @@ mod tests {
         );
 
         // Step with v_out=8V → I_pos = 1A → target_pos = 24.5 - 1.0*3.5 = 21.0 V
-        for _ in 0..(SR as usize / 10) {
+        // Now requires longer settling: i_avg envelope (30 ms) + rail (8 ms),
+        // so 300 ms = 10 τ_i_avg ensures convergence.
+        for _ in 0..(SR * 0.3) as usize {
             rails.step(8.0);
         }
         let (vp, vn) = rails.rail_voltages();
@@ -716,8 +765,9 @@ mod tests {
         assert!((off_pos - 2.0).abs() < 0.05);
         assert!((off_neg - 2.0).abs() < 0.05);
 
-        // Settle under load
-        for _ in 0..(SR as usize / 5) {
+        // Settle under load — requires 5+ τ_i_avg = 150+ ms for the envelope
+        // to fully average, plus rail attack settling.
+        for _ in 0..(SR * 0.3) as usize {
             rails.step(8.0); // I_pos = 1.0 A
         }
         let (off_pos, off_neg) = rails.offsets();
