@@ -126,8 +126,10 @@ impl MlpCorrections {
         }
 
         // ds_correction: displacement scale multiplier from H2/H1 ratio.
-        // Clamped to [0.7, 1.5] to prevent bark suppression (v1 learned 0.50).
-        let raw_ds = raw[DS_IDX].clamp(0.7, 1.5);
+        // Upper clamp at 1.2 prevents pickup pole-stress at high amplitudes:
+        // ds * displacement near y=0.85 makes 1/(1-y) corner steepness audible
+        // as crackle on chord-ff content. 1.2 was 1.5 before Apr 25 2026.
+        let raw_ds = raw[DS_IDX].clamp(0.7, 1.2);
         let ds_correction = 1.0 + (raw_ds - 1.0) * fade;
 
         Self {
@@ -191,7 +193,7 @@ mod tests {
                     );
                 }
                 assert!(
-                    (0.7..=1.5).contains(&c.ds_correction),
+                    (0.7..=1.2).contains(&c.ds_correction),
                     "ds clamp violated: {}",
                     c.ds_correction
                 );
