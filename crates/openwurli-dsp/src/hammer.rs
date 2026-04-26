@@ -89,10 +89,23 @@ pub fn dwell_attenuation(
 /// Duration: ~15 ms. Center frequency tracks the note (5× fundamental,
 /// clamped 200–2000 Hz) so the noise sits within the harmonic neighborhood
 /// rather than in a spectrally disconnected band.
+/// Number of samples for the attack-noise envelope to fade IN from 0 to full
+/// amplitude. Without this, sample 0 of every burst contributes the bandpass
+/// biquad's first output (≈ b0 × noise[0]) at full amplitude — a step
+/// discontinuity. Multiple voices firing simultaneously sum these steps,
+/// producing audible cusps at chord-attack moments. 16 samples ≈ 0.36 ms at
+/// 44.1 kHz — inaudible delay but eliminates the step. See diagnostic in
+/// `memory/chord-attack-cusps-oversampler.md` (the cause turned out to be
+/// here, not the halfband filter).
+const NOISE_FADE_IN_SAMPLES: u32 = 16;
+
 pub struct AttackNoise {
     amplitude: f64,
     decay_per_sample: f64,
     remaining: u32,
+    /// Counts down from `NOISE_FADE_IN_SAMPLES` to 0 during the burst's
+    /// initial fade-in. Once 0, the noise plays at full envelope.
+    fade_in_remaining: u32,
     bpf: Biquad,
     rng_state: u32,
 }
@@ -120,6 +133,7 @@ impl AttackNoise {
             amplitude: noise_amp,
             decay_per_sample,
             remaining: duration_samples,
+            fade_in_remaining: NOISE_FADE_IN_SAMPLES,
             bpf: Biquad::bandpass(center, 0.7, sample_rate),
             rng_state: seed,
         }
@@ -130,15 +144,30 @@ impl AttackNoise {
     pub fn render(&mut self, output: &mut [f64]) -> usize {
         let count = (self.remaining as usize).min(output.len());
         let mut amp = self.amplitude;
+        let mut fade_in = self.fade_in_remaining;
 
         for sample in &mut output[..count] {
+            // Raised-cosine fade-in for the first NOISE_FADE_IN_SAMPLES samples
+            // of the burst. Forces the contribution to exactly 0 at the first
+            // sample, eliminating the step discontinuity that chord-stab
+            // attacks produced when multiple voices' bandpass biquads
+            // simultaneously emitted nonzero `b0 * noise[0]` first samples.
+            let env = if fade_in > 0 {
+                let pos = NOISE_FADE_IN_SAMPLES - fade_in;
+                let t = pos as f64 / NOISE_FADE_IN_SAMPLES as f64;
+                fade_in -= 1;
+                0.5 * (1.0 - (std::f64::consts::PI * t).cos())
+            } else {
+                1.0
+            };
             let noise = self.next_noise();
             let filtered = self.bpf.process(noise);
-            *sample += amp * filtered;
+            *sample += amp * env * filtered;
             amp *= self.decay_per_sample;
         }
 
         self.amplitude = amp;
+        self.fade_in_remaining = fade_in;
         self.remaining -= count as u32;
         count
     }
