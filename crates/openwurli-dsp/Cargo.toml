@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Wurlitzer 200A DSP library — modal synthesis, preamp circuit simulation, tremolo"
+description = "Wurlitzer 200A DSP library — modal synthesis, preamp circuit simulation, tremolo, and a framework-agnostic WurliEngine for plugin/CLI/embedded hosts"
 
 [features]
 legacy-preamp = []
@@ -30,3 +30,7 @@ unnecessary_cast = "allow"
 
 [dependencies]
 melange-primitives.workspace = true
+
+[dev-dependencies]
+hound = "3.5"
+midly = "0.5"

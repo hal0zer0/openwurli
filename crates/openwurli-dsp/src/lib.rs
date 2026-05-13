@@ -30,3 +30,10 @@ pub mod speaker;
 // Synth engine — voice management + signal chain assembly. Library-friendly
 // API for hosts (nih-plug, oomox, custom) to wrap without copying glue.
 pub mod engine;
+
+// Re-exports for ergonomic single-import use:
+//
+//     use openwurli_dsp::{WurliEngine, VoiceState};
+//
+// Without these, callers would need `openwurli_dsp::engine::WurliEngine`.
+pub use engine::{VoiceState, WurliEngine};
