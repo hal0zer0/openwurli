@@ -44,6 +44,7 @@ Usage:
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 import cv2
@@ -677,7 +678,11 @@ def main() -> None:
     p_detect.add_argument("--rect", help="Custom rect as x0,y0,x1,y1 (normalized 0-1)")
     p_detect.add_argument("--dpi", type=int, help="Override DPI")
     p_detect.add_argument("--page", type=int, default=0, help="PDF page number (default: 0)")
-    p_detect.add_argument("--output-dir", default="/tmp/detect_text", help="Output directory")
+    p_detect.add_argument(
+        "--output-dir",
+        default=str(Path(tempfile.gettempdir()) / "detect_text"),
+        help="Output directory (default: $TMPDIR/detect_text)",
+    )
     p_detect.add_argument("--kernel-w", type=int, default=15, help="Dilation kernel width (default: 15)")
     p_detect.add_argument("--kernel-h", type=int, default=5, help="Dilation kernel height (default: 5)")
     p_detect.add_argument("--min-area", type=int, default=100, help="Min region area in pixels (default: 100)")

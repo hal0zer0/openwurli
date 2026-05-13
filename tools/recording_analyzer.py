@@ -20,6 +20,7 @@ Usage:
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 import librosa
@@ -594,8 +595,11 @@ def main():
     parser.add_argument("mode", choices=["extract", "stats", "full"],
                         help="extract=Tier 1, stats=Tier 2, full=both")
     parser.add_argument("files", nargs="+", help="Audio files to analyze")
-    parser.add_argument("-o", "--output", default="/tmp/wurli_extracted",
-                        help="Output directory for extracted notes")
+    parser.add_argument(
+        "-o", "--output",
+        default=str(Path(tempfile.gettempdir()) / "wurli_extracted"),
+        help="Output directory for extracted notes (default: $TMPDIR/wurli_extracted)",
+    )
     parser.add_argument("--min-isolation", type=float, default=0.4,
                         help="Minimum isolation score (0-1, default 0.4)")
     parser.add_argument("--min-duration", type=float, default=0.3,

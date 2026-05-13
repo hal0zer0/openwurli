@@ -21,9 +21,11 @@ Circuit analysis, physics models, and DSP derivations for the 200A signal chain.
 | [Pickup System](research/pickup-system.md) | Electrostatic pickup: 1/(1-y) nonlinearity, RC high-pass, capacitive coupling |
 | [Reed and Hammer Physics](research/reed-and-hammer-physics.md) | Modal synthesis: Euler-Bernoulli beam theory, tip mass, dwell filter |
 
-## Agent Reference (`reference/`)
+## Reference (`reference/`)
 
-Working docs for AI agents and developers modifying the codebase.
+Working docs for contributors modifying the codebase: test pyramids, calibration
+workflows, SPICE-to-Rust mapping, parameter tuning. Useful for humans and
+AI assistants alike.
 
 | Document | Description |
 |----------|-------------|

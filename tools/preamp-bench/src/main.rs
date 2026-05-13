@@ -103,6 +103,16 @@ fn has_flag(args: &[String], flag: &str) -> bool {
     args.iter().any(|a| a == flag)
 }
 
+/// Build a default output path inside the system temp directory.
+/// Uses `std::env::temp_dir()` so the CLI works cross-platform; users can
+/// always override with `--output <path>`.
+fn temp_default(filename: &str) -> String {
+    std::env::temp_dir()
+        .join(filename)
+        .to_string_lossy()
+        .into_owned()
+}
+
 // ─── Model selection ────────────────────────────────────────────────────────
 
 fn create_preamp(args: &[String]) -> Box<dyn PreampModel> {
@@ -128,12 +138,7 @@ fn create_preamp(args: &[String]) -> Box<dyn PreampModel> {
 /// loop runs. The reset keeps repeated measurements deterministic; re-applying
 /// r_ldr is required because `reset()` restores the cached nominal state
 /// (100 kΩ LDR), which would otherwise clobber the caller's configuration.
-fn measure_gain_at(
-    preamp: &mut dyn PreampModel,
-    freq: f64,
-    amplitude: f64,
-    r_ldr: f64,
-) -> f64 {
+fn measure_gain_at(preamp: &mut dyn PreampModel, freq: f64, amplitude: f64, r_ldr: f64) -> f64 {
     preamp.reset();
     preamp.set_ldr_resistance(r_ldr);
     let mut os = Oversampler::new();
@@ -367,7 +372,8 @@ fn cmd_render(args: &[String]) {
     } else {
         None
     };
-    let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render.wav");
+    let default_out = temp_default("preamp_render.wav");
+    let output_path = parse_flag_str(args, "--output", &default_out);
 
     // Conditional oversampling: skip at >= 88.2 kHz (Nyquist above preamp BW)
     let do_oversample = sample_rate < 88200.0;
@@ -967,7 +973,8 @@ fn cmd_calibrate(args: &[String]) {
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let zero_trim = has_flag(args, "--zero-trim");
     let mlp = has_flag(args, "--mlp");
-    let output_path = parse_flag_str(args, "--output", "/tmp/calibrate.csv");
+    let default_out = temp_default("calibrate.csv");
+    let output_path = parse_flag_str(args, "--output", &default_out);
 
     let cfg = CalibrationConfig {
         ds_at_c4,
@@ -1217,7 +1224,8 @@ fn cmd_sensitivity(args: &[String]) {
         scale_mode_raw
     };
     let mlp = has_flag(args, "--mlp");
-    let output_path = parse_flag_str(args, "--output", "/tmp/sensitivity.csv");
+    let default_out = temp_default("sensitivity.csv");
+    let output_path = parse_flag_str(args, "--output", &default_out);
 
     let total = ds_values.len() * notes.len() * velocities.len();
     eprintln!(
@@ -1289,7 +1297,8 @@ fn cmd_render_poly(args: &[String]) {
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
     let no_poweramp = has_flag(args, "--no-poweramp");
     let normalize = has_flag(args, "--normalize");
-    let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render_poly.wav");
+    let default_out = temp_default("preamp_render_poly.wav");
+    let output_path = parse_flag_str(args, "--output", &default_out);
 
     // Pad velocities to match notes if needed
     let velocities: Vec<u8> = notes
@@ -1496,7 +1505,8 @@ fn cmd_render_midi(args: &[String]) {
         eprintln!("  --track N        Only render track N (0-based, default: all tracks)");
         return;
     }
-    let output_path = parse_flag_str(args, "--output", "/tmp/preamp_render_midi.wav");
+    let default_out = temp_default("preamp_render_midi.wav");
+    let output_path = parse_flag_str(args, "--output", &default_out);
     let volume = parse_flag(args, "--volume", 0.60);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let no_poweramp = has_flag(args, "--no-poweramp");

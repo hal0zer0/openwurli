@@ -31,6 +31,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 
@@ -446,8 +447,11 @@ def main():
     )
     parser.add_argument("extraction_dirs", nargs="+",
                         help="Directories with extraction_metadata.json from recording_analyzer")
-    parser.add_argument("-o", "--output", default="/tmp/wurli_comparison",
-                        help="Output directory for comparison results")
+    parser.add_argument(
+        "-o", "--output",
+        default=str(Path(tempfile.gettempdir()) / "wurli_comparison"),
+        help="Output directory for comparison results (default: $TMPDIR/wurli_comparison)",
+    )
     parser.add_argument("--top-per-pitch", type=int, default=1,
                         help="Number of best notes to compare per pitch (default: 1)")
     parser.add_argument("--notes", type=str, default=None,
