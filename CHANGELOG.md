@@ -7,7 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] "HereIGo" - 2026-04-26
+
 ### Fixed
+- **Chord-ff "mildly blown speaker" crackle traced to MLP per-note
+  `ds_correction`.** Diagnosis chain confirmed the artifact is NOT power
+  amp clipping (PA voltage stays under 3V, well below ±22V rails), NOT
+  divergence guard (zero fires), NOT rail sag — it's the MLP boosting
+  pickup displacement into the steep region of `1/(1−y)` (`d/dy` jumps
+  from 4 at y=0.5 to 44 at y=0.85). The MLP weights were over-correcting
+  against stale physics (Phase 4 junction caps, pickup smooth saturation,
+  rail sag, PSG drop all landed since the PR-4 retrain). Fix: wiped the
+  old `ml_data/`, full retrain with hyperparameter sweep over hidden ∈
+  {8,12,16} × seeds {7,42,123,999}. Winner h16_s42: loss 0.0513 (vs
+  PR-4's 0.1135), `ds_corr` MAE 0.06, chord-ff dV/dt > 0.1 spikes 8→0,
+  gain-matched norm spikes 11→0. Bigger MLP captures per-note variance
+  without over-correcting on average. Also tightened the inference-time
+  `ds_correction` clamp `[0.7, 1.5] → [0.7, 1.2]` as defense-in-depth
+  against future retrains. Net: MLP now produces fewer norm-spikes than
+  MLP-off — went from "source of crackle" to slight smoothness
+  improvement via `freq_offsets` de-correlating modal beating. Restores
+  `ml/score_isolation.py` which the cleanup commit `4c20b28` had
+  removed but `pipeline.py:57` still imported, breaking stage 2 of any
+  retrain. Detail: `memory/mlp-crackle-source.md`.
+
+- **Voice-step cusps at chord-attack instants** — a +0.012 step
+  discontinuity in the summed voice signal at moments when multiple
+  voices fire simultaneously, traced to each voice's `AttackNoise`
+  burst emitting its bandpass biquad's first output (`b0 * noise[0]`)
+  at full amplitude on sample 0. With 6 voices firing together those
+  nonzero first samples sum into a step that the downstream chain
+  amplifies (and the halfband filter rings on). Fix: 16-sample
+  raised-cosine fade-in on the noise burst envelope in
+  `hammer.rs::AttackNoise::render`. Forces sample 0 to exactly zero;
+  ramps to full amp over 0.36 ms at 44.1 kHz — inaudible delay,
+  eliminates the step. User-confirmed audible reduction on Mercy
+  chord-stab content.
+
+- **Power amp at OS rate kills sustained click-band aliasing.** Power
+  amp solver was running at base rate while preamp ran at OS rate;
+  moving the power amp to OS rate eliminated a sustained HF aliasing
+  band on continuous polyphonic content.
+
 - **Pickup-clamp HF "tear" on bass-heavy / chord-ff content.** The hard
   `clamp(±PICKUP_MAX_Y)` (=±0.98) at `pickup.rs:104` was the source of the
   light distortion the user could hear at default volume even with output
@@ -28,6 +69,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   User-confirmed via A/B HF energy analysis on identical-RMS renders.
 
 ### Changed
+- **POST_SPEAKER_GAIN +14.5 dB → +22.0 dB after drive/volume decoupling.**
+  Multi-iteration tune across this release cycle: started at +19.5 dB
+  (DI-limiter era), dropped to +14.5 dB when the DI limiter was removed,
+  dropped again to +10.5 dB to cap engine peak at 1.0 with the vol²
+  pre-amp topology, then bumped to +22.0 dB after the architectural
+  drive/volume decoupling (below). Final value sized so vol=1.0 chord-ff
+  + tremolo bright lands ≤ 1.0 — the new architectural invariant. Mercy
+  at vol=0.5 ≈ −7 dBFS; vol=1.0 ≈ −1 dBFS. Regression-guarded by
+  `engine::tests::test_engine_peak_below_unity_at_vol_1`.
+
+- **Drive/volume decoupling — user volume is now a LINEAR post-amp
+  multiplier, BJT drive is pinned at the clean operating point.** Three
+  iterative PSG drops + an MLP retrain didn't fix the structural
+  problem: with vol² applied between preamp and power amp (physically
+  faithful to the 200A's 3K audio-taper pot), any PSG that put vol=0.5
+  at a healthy mixable level made vol > 0.7 drive the BJT into rail
+  clipping; any PSG safe at vol=1.0 made the default too quiet.
+  Multi-agent review (Mr Schemey topology check + Circuit Spice SPICE
+  drive sweep + DSP architect) converged: real 200A players sit at
+  8–11 o'clock pot rotation (Avenson's 2–7 mV at amp input
+  measurement), and the BJT's THD curve has no graceful middle —
+  sub-0.04% below 295 mV input, 0.228% at 300 mV, 18.6% at 500 mV.
+  Going hotter doesn't buy musical character; it buys sawtooth crackle.
+  Fix: `tables::FIXED_CIRCUIT_DRIVE = 0.25` (= old vol²=0.25 sweet
+  spot) pinned between preamp and power amp; `user_vol` applied as a
+  linear multiplier alongside PSG at the very end of the chain. Result:
+  monotonic, predictable, clip-free across the full vol range. New
+  regression test `test_user_volume_scales_output_linearly` catches
+  anyone silently re-coupling drive to user volume. Lost: vol-dependent
+  rail-clip "drive" at high vol (was crackle, not music) and
+  crossover-region grit at very low vol (real players never operate
+  there). Kept: every nonlinearity that defines the 200A sound —
+  pickup `1/(1−y)`, preamp asymmetric clipping, tremolo loop-gain
+  shunt, MLP per-note corrections, rail sag, divergence guard. The
+  melange BJT solver still runs every sample at OS rate; it just runs
+  at one operating point. Detail: `memory/volume-decoupling-2026-04-26.md`.
+
+- **MLP architecture h=8 → h=16; 195 → 507 parameters.** Bigger hidden
+  layer captures per-note variance better. Methodology fix: stage 4
+  rendering now uses `preamp-bench render --no-mlp` so training residuals
+  are pure-physics (prior training had MLP-on during render, hiding ~1 dB
+  of the true physics gap). Inference cost still trivial (per-note, runs
+  once at note-on, <30 µs). MLP plugin parameter unchanged (default ON).
+
+- **Melange codegen cleanup landed upstream + regenerated
+  `gen_power_amp.rs`.** Two dead-code emissions in melange's
+  `nodal_emitter.rs` and `nr_helpers.rs` were triggering clippy
+  `unused_assignments` in every Nodal-solver codegen output. The
+  emitter was producing `let mut converged = false;` before the NR loop
+  and `converged = true;` inside the convergence check, but every
+  post-loop path immediately shadowed with `let converged =
+  state.last_nr_iterations < MAX_ITER as u32;`, making both unreachable.
+  Removed the dead emissions upstream; regenerated `gen_power_amp.rs`
+  against the openwurli-pinned `wurli-power-amp.cir`. SPICE-parity
+  unchanged.
+
+### Code hygiene
+- **Portable temp-file defaults.** `preamp-bench` now uses
+  `std::env::temp_dir()` for its `--output` defaults via a new
+  `temp_default()` helper; Python tools (`recording_analyzer.py`,
+  `wurli_compare.py`, `schematic_preprocess.py`) use
+  `tempfile.gettempdir()`. CLI overrides via `--output <path>` work
+  unchanged. The plugin and engine were never affected.
+
+- **`WurliEngine` public API re-exports.** `lib.rs` exports
+  `WurliEngine` and `VoiceState` at the crate root so hosts can write
+  `use openwurli_dsp::WurliEngine;` instead of the nested path. Added
+  `hound` + `midly` as dev-dependencies so the offline example renderers
+  build without touching the production dependency graph.
+
+- **Documentation language cleanup.** Removed "AI agents" framing from
+  `docs/README.md`; reference docs are for contributors generally.
+
+- **`.gitignore` tightened** to exclude `*.flac`, `baseline/`,
+  `crates/openwurli-dsp/examples/` (ad-hoc diagnostic harnesses), and
+  the local-only `tb_power_amp_harmonics.cir` testbench.
+
+### Changed (earlier-in-cycle, superseded)
 - **POST_SPEAKER_GAIN lowered +19.5 dB → +14.5 dB.** The original +19.5 dB
   was sized assuming the DI limiter would catch chord-ff peaks at ~+4 dBFS;
   with the limiter removed, that staging put chord-ff into DAW clipping
@@ -613,7 +732,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/hal0zer0/openwurli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/hal0zer0/openwurli/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/hal0zer0/openwurli/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/hal0zer0/openwurli/compare/v0.2.4...v0.3.0
