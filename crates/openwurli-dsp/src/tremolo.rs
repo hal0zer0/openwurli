@@ -213,7 +213,10 @@ mod tests {
                 ld_min = ld_min.min(ld);
                 ld_max = ld_max.max(ld);
             }
-            eprintln!("led_drive: min={ld_min:.3} max={ld_max:.3} swing={:.3}", ld_max - ld_min);
+            eprintln!(
+                "led_drive: min={ld_min:.3} max={ld_max:.3} swing={:.3}",
+                ld_max - ld_min
+            );
         }
     }
 
@@ -349,4 +352,3 @@ mod tests {
         );
     }
 }
-

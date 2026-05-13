@@ -583,7 +583,10 @@ mod tests {
         // rail_sag_enabled() is hard-wired to false (no separable rail model).
         let pa = PowerAmp::new();
         #[cfg(not(feature = "legacy-power-amp"))]
-        assert!(pa.rail_sag_enabled(), "Default should be ON on melange path");
+        assert!(
+            pa.rail_sag_enabled(),
+            "Default should be ON on melange path"
+        );
         #[cfg(feature = "legacy-power-amp")]
         assert!(
             !pa.rail_sag_enabled(),
