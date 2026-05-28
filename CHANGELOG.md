@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] "SweetDevotion" - 2026-05-28
+
 ### Performance
 - **CPU regression in v0.5.0 — power amp default reverted to behavioral
   model.** v0.5.0 shipped with the melange 7-BJT Class AB Gummel-Poon
@@ -81,8 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forward-active-reduced (K_eff is correctly skipped, which was the
   earlier `k[3][3]` out-of-bounds panic, fixed by `6b10374`). The
   power-amp codegen is byte-identical to `47b2702` save a
-  `non_snake_case` lint-allow header. Diagnosis tooling lives in
-  `~/dev/melange-repro/` (preamp + tremolo repro harnesses).
+  `non_snake_case` lint-allow header.
 
 ## [0.5.0] "HereIGo" - 2026-04-26
 
@@ -809,7 +810,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/hal0zer0/openwurli/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/hal0zer0/openwurli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/hal0zer0/openwurli/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/hal0zer0/openwurli/compare/v0.3.0...v0.3.1
