@@ -8,6 +8,7 @@ authors.workspace = true
 description = "Wurlitzer 200A virtual instrument — CLAP and VST3 plugin"
 
 [features]
+default = ["legacy-power-amp"]
 legacy-power-amp = ["openwurli-dsp/legacy-power-amp"]
 
 [lib]

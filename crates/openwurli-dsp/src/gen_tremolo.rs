@@ -10,12 +10,16 @@
 // v3.0 or later. See https://www.gnu.org/licenses/gpl-3.0.html
 // ============================================================================
 
-#![allow(unused_assignments)]
 #![allow(clippy::excessive_precision)]
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::too_many_arguments)]
 #![allow(unexpected_cfgs)]
 #![allow(dead_code)]
+// `.runtime R <name> as <field>` emits `set_runtime_R_<field>` (capital R), and
+// other directive-derived identifiers may not be snake_case. Generated code is
+// not hand-edited, so silence the lint to keep downstream `clippy -D warnings`
+// green.
+#![allow(non_snake_case)]
 
 // =============================================================================
 // CONSTANTS: Compile-time circuit topology (Nodal solver)
@@ -206,8 +210,8 @@ const C: [[f64; N]; N] = [
 /// Default A matrix: A = G + (2/T)*C (trapezoidal, at SAMPLE_RATE)
 const A_DEFAULT: [[f64; N]; N] = [
     [
-        5.97438454668210162e-3,
-        -5.75999999999999950e-3,
+        1.17344325466821019e-2,
+        -1.15199999999999990e-2,
         0.00000000000000000e0,
         -1.47058823529411773e-6,
         0.00000000000000000e0,
@@ -215,9 +219,9 @@ const A_DEFAULT: [[f64; N]; N] = [
         0.00000000000000000e0,
     ],
     [
-        -5.75999999999999950e-3,
-        1.15570370380370362e-2,
-        -5.75999999999999950e-3,
+        -1.15199999999999990e-2,
+        2.30770370380370335e-2,
+        -1.15199999999999990e-2,
         0.00000000000000000e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
@@ -225,8 +229,8 @@ const A_DEFAULT: [[f64; N]; N] = [
     ],
     [
         0.00000000000000000e0,
-        -5.75999999999999950e-3,
-        5.76294117747058743e-3,
+        -1.15199999999999990e-2,
+        1.15229411774705869e-2,
         -1.47058823529411773e-6,
         0.00000000000000000e0,
         0.00000000000000000e0,
@@ -236,7 +240,7 @@ const A_DEFAULT: [[f64; N]; N] = [
         -1.47058823529411773e-6,
         0.00000000000000000e0,
         -1.47058823529411773e-6,
-        5.76294117747058743e-3,
+        1.15229411774705869e-2,
         0.00000000000000000e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
@@ -273,27 +277,18 @@ const A_DEFAULT: [[f64; N]; N] = [
 /// Default A_neg matrix: A_neg = (2/T)*C - G (trapezoidal history, at SAMPLE_RATE)
 const A_NEG_DEFAULT: [[f64; N]; N] = [
     [
-        5.76004799999999938e-3,
-        -5.75999999999999950e-3,
+        1.13057594533178957e-2,
+        -1.15199999999999990e-2,
         0.00000000000000000e0,
+        1.47058823529411773e-6,
         0.00000000000000000e0,
-        0.00000000000000000e0,
-        0.00000000000000000e0,
-        0.00000000000000000e0,
-    ],
-    [
-        -5.75999999999999950e-3,
-        1.15199999999999990e-2,
-        -5.75999999999999950e-3,
-        0.00000000000000000e0,
-        0.00000000000000000e0,
-        0.00000000000000000e0,
+        2.12765957446808509e-4,
         0.00000000000000000e0,
     ],
     [
-        0.00000000000000000e0,
-        -5.75999999999999950e-3,
-        5.75999999999999950e-3,
+        -1.15199999999999990e-2,
+        2.30029629619629625e-2,
+        -1.15199999999999990e-2,
         0.00000000000000000e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
@@ -301,18 +296,18 @@ const A_NEG_DEFAULT: [[f64; N]; N] = [
     ],
     [
         0.00000000000000000e0,
-        0.00000000000000000e0,
-        0.00000000000000000e0,
-        5.75999999999999950e-3,
+        -1.15199999999999990e-2,
+        1.15170588225294111e-2,
+        1.47058823529411773e-6,
         0.00000000000000000e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
     ],
     [
+        1.47058823529411773e-6,
         0.00000000000000000e0,
-        0.00000000000000000e0,
-        0.00000000000000000e0,
-        0.00000000000000000e0,
+        1.47058823529411773e-6,
+        1.15170588225294111e-2,
         0.00000000000000000e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
@@ -322,9 +317,18 @@ const A_NEG_DEFAULT: [[f64; N]; N] = [
         0.00000000000000000e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
+        -1.00000001000000001e-4,
+        0.00000000000000000e0,
+        0.00000000000000000e0,
+    ],
+    [
+        2.12765957446808509e-4,
         0.00000000000000000e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
+        0.00000000000000000e0,
+        -2.12765958446808505e-4,
+        -1.00000000000000000e0,
     ],
     [
         0.00000000000000000e0,
@@ -560,40 +564,40 @@ pub const N_I: [[f64; M]; N] = [
 /// S matrix: A^{-1} (precomputed inverse, trapezoidal, at SAMPLE_RATE)
 const S_DEFAULT: [[f64; N]; N] = [
     [
-        3.93570275366110354e3,
-        3.90857617515149968e3,
-        3.90658190297344890e3,
-        2.00119543106913866e0,
+        3.93281167441902562e3,
+        3.91921109711729196e3,
+        3.91821086447520429e3,
+        1.00196826512492865e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
-        8.37383564608745412e-1,
+        8.36768441365750015e-1,
     ],
     [
-        3.90857617515149923e3,
-        4.05405106129103888e3,
-        4.05198255218077566e3,
-        2.03137662701616328e0,
+        3.91921109711729241e3,
+        3.99216291412435066e3,
+        3.99114406183457413e3,
+        1.00954045105229717e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
-        8.31611952159893475e-1,
+        8.33874701514317529e-1,
     ],
     [
-        3.90658190297344800e3,
-        4.05198255218077520e3,
-        4.22343761665034799e3,
-        2.07461965862331743e0,
+        3.91821086447520338e3,
+        3.99114406183457368e3,
+        4.07690886982150096e3,
+        1.02035833038986956e0,
         0.00000000000000000e0,
         0.00000000000000000e0,
-        8.31187638930520833e-1,
+        8.33661886058553958e-1,
     ],
     [
-        2.00119543106913866e0,
-        2.03137662701616328e0,
-        2.07461965862331743e0,
-        1.73523546926889310e2,
+        1.00196826512492865e0,
+        1.00954045105229695e0,
+        1.02035833038986934e0,
+        8.67836569334298105e1,
         0.00000000000000000e0,
         0.00000000000000000e0,
-        4.25786261929603921e-4,
+        2.13184737260623100e-4,
     ],
     [
         0.00000000000000000e0,
@@ -614,28 +618,28 @@ const S_DEFAULT: [[f64; N]; N] = [
         1.00000000000000000e0,
     ],
     [
-        8.37383564608745412e-1,
-        8.31611952159893364e-1,
-        8.31187638930520833e-1,
-        4.25786261929603921e-4,
+        8.36768441365750015e-1,
+        8.33874701514317418e-1,
+        8.33661886058553958e-1,
+        2.13184737260623127e-4,
         0.00000000000000000e0,
         1.00000000000000000e0,
-        -3.45992425726073782e-5,
+        -3.47301198583510151e-5,
     ],
 ];
 
 /// K matrix: N_v * S * N_i (nonlinear kernel, trapezoidal, at SAMPLE_RATE)
 const K_DEFAULT: [[f64; M]; M] = [
     [
-        -1.39065818029734492e4,
-        -1.42234375166503487e4,
-        -3.90658190297344800e3,
+        -1.39182107644752032e4,
+        -1.40769087698215008e4,
+        -3.91821086447520338e3,
         9.99999990000000071e3,
     ],
     [
-        2.91208506876555475e1,
-        -3.16855713676899086e2,
-        2.91208506876555475e1,
+        1.46008099438222416e1,
+        -1.58698005346296668e2,
+        1.46008099438222416e1,
         0.00000000000000000e0,
     ],
     [
@@ -645,9 +649,9 @@ const K_DEFAULT: [[f64; M]; M] = [
         -9.99999990000000071e3,
     ],
     [
-        1.39357026536611047e4,
-        1.39065818029734492e4,
-        3.93570275366110354e3,
+        1.39328115744190254e4,
+        1.39182107644752050e4,
+        3.93281167441902562e3,
         -9.99999990000000071e3,
     ],
 ];
@@ -655,27 +659,27 @@ const K_DEFAULT: [[f64; M]; M] = [
 /// S_NI matrix: S * N_i (precomputed for final voltage recovery, N x M)
 const S_NI_DEFAULT: [[f64; M]; N] = [
     [
-        -3.93570275366110354e3,
-        -3.90658190297344890e3,
-        -3.93570275366110354e3,
+        -3.93281167441902562e3,
+        -3.91821086447520429e3,
+        -3.93281167441902562e3,
         0.00000000000000000e0,
     ],
     [
-        -3.90857617515149923e3,
-        -4.05198255218077566e3,
-        -3.90857617515149923e3,
+        -3.91921109711729241e3,
+        -3.99114406183457413e3,
+        -3.91921109711729241e3,
         0.00000000000000000e0,
     ],
     [
-        -3.90658190297344800e3,
-        -4.22343761665034799e3,
-        -3.90658190297344800e3,
+        -3.91821086447520338e3,
+        -4.07690886982150096e3,
+        -3.91821086447520338e3,
         0.00000000000000000e0,
     ],
     [
-        -2.00119543106913866e0,
-        -2.07461965862331743e0,
-        -2.00119543106913866e0,
+        -1.00196826512492865e0,
+        -1.02035833038986934e0,
+        -1.00196826512492865e0,
         0.00000000000000000e0,
     ],
     [
@@ -691,9 +695,9 @@ const S_NI_DEFAULT: [[f64; M]; N] = [
         0.00000000000000000e0,
     ],
     [
-        -8.37383564608745412e-1,
-        -8.31187638930520833e-1,
-        -8.37383564608745412e-1,
+        -8.36768441365750015e-1,
+        -8.33661886058553958e-1,
+        -8.36768441365750015e-1,
         0.00000000000000000e0,
     ],
 ];
@@ -2133,14 +2137,14 @@ impl CircuitState {
     /// Called by set_sample_rate, set_pot, and set_switch.
     /// Includes O(N^3) matrix inversion for Schur complement NR.
     pub fn rebuild_matrices(&mut self, internal_rate: f64) {
-        let alpha = internal_rate; // backward Euler: alpha = 1/T
+        let alpha = 2.0 * internal_rate; // trapezoidal: alpha = 2/T
         let alpha_be = internal_rate;
         let alpha_sub = 4.0 * internal_rate; // trap at 2× rate
 
         for i in 0..N {
             for j in 0..N {
                 self.a[i][j] = G[i][j] + alpha * C[i][j];
-                self.a_neg[i][j] = alpha * C[i][j];
+                self.a_neg[i][j] = alpha * C[i][j] - G[i][j];
                 self.a_be[i][j] = G[i][j] + alpha_be * C[i][j];
                 self.a_neg_be[i][j] = alpha_be * C[i][j];
             }
@@ -2364,16 +2368,31 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
     let mut rhs = RHS_CONST;
     rhs[0] += state.a_neg[0][0] * state.v_prev[0];
     rhs[0] += state.a_neg[0][1] * state.v_prev[1];
+    rhs[0] += state.a_neg[0][3] * state.v_prev[3];
+    rhs[0] += state.a_neg[0][5] * state.v_prev[5];
     rhs[1] += state.a_neg[1][0] * state.v_prev[0];
     rhs[1] += state.a_neg[1][1] * state.v_prev[1];
     rhs[1] += state.a_neg[1][2] * state.v_prev[2];
     rhs[2] += state.a_neg[2][1] * state.v_prev[1];
     rhs[2] += state.a_neg[2][2] * state.v_prev[2];
+    rhs[2] += state.a_neg[2][3] * state.v_prev[3];
+    rhs[3] += state.a_neg[3][0] * state.v_prev[0];
+    rhs[3] += state.a_neg[3][2] * state.v_prev[2];
     rhs[3] += state.a_neg[3][3] * state.v_prev[3];
+    rhs[4] += state.a_neg[4][4] * state.v_prev[4];
+    rhs[5] += state.a_neg[5][0] * state.v_prev[0];
+    rhs[5] += state.a_neg[5][5] * state.v_prev[5];
+    rhs[5] += state.a_neg[5][6] * state.v_prev[6];
+    rhs[0] += N_I[0][0] * state.i_nl_prev[0];
+    rhs[0] += N_I[0][2] * state.i_nl_prev[2];
+    rhs[2] += N_I[2][1] * state.i_nl_prev[1];
+    rhs[4] += N_I[4][0] * state.i_nl_prev[0];
+    rhs[4] += N_I[4][1] * state.i_nl_prev[1];
+    rhs[4] += N_I[4][3] * state.i_nl_prev[3];
 
     let input_conductance = 1.0 / INPUT_RESISTANCE;
-    // Input source (backward Euler: V_in * G_in)
-    rhs[INPUT_NODE] += input * input_conductance;
+    // Input source (trapezoidal: (V_in + V_in_prev) * G_in)
+    rhs[INPUT_NODE] += (input + state.input_prev) * input_conductance;
     state.input_prev = input;
 
     // Step 2: Linear prediction v_pred = S * rhs (O(N^2))
@@ -2399,7 +2418,6 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
     for i in 0..M {
         i_nl[i] = 2.0 * state.i_nl_prev[i] - state.i_nl_prev_prev[i];
     }
-    let mut converged = false;
     state.last_nr_iterations = MAX_ITER as u32;
 
     for iter in 0..MAX_ITER {
@@ -2572,19 +2590,38 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 + state.k[3][2] * i_trial2
                 + state.k[3][3] * i_trial3;
             let mut any_limited = false;
-            let v_lim0 = pnjlim(v_trial0, v_d0, state.device_0_vt, DEVICE_0_VCRIT);
-            let v_lim1 = pnjlim(v_trial1, v_d1, state.device_0_vt, DEVICE_0_VCRIT);
-            let v_lim2 = pnjlim(v_trial2, v_d2, state.device_1_vt, DEVICE_1_VCRIT);
-            let v_lim3 = pnjlim(v_trial3, v_d3, state.device_1_vt, DEVICE_1_VCRIT);
+            let dv_trial0 = v_trial0 - v_d0;
+            let v_lim0 = if dv_trial0.abs() > 1e-4 {
+                pnjlim(v_trial0, v_d0, state.device_0_vt, DEVICE_0_VCRIT)
+            } else {
+                v_trial0
+            };
+            let dv_trial1 = v_trial1 - v_d1;
+            let v_lim1 = if dv_trial1.abs() > 1e-4 {
+                pnjlim(v_trial1, v_d1, state.device_0_vt, DEVICE_0_VCRIT)
+            } else {
+                v_trial1
+            };
+            let dv_trial2 = v_trial2 - v_d2;
+            let v_lim2 = if dv_trial2.abs() > 1e-4 {
+                pnjlim(v_trial2, v_d2, state.device_1_vt, DEVICE_1_VCRIT)
+            } else {
+                v_trial2
+            };
+            let dv_trial3 = v_trial3 - v_d3;
+            let v_lim3 = if dv_trial3.abs() > 1e-4 {
+                pnjlim(v_trial3, v_d3, state.device_1_vt, DEVICE_1_VCRIT)
+            } else {
+                v_trial3
+            };
             let mut global_alpha = 1.0_f64;
             {
-                let dv_full = v_trial0 - v_d0;
                 let dv_lim = v_lim0 - v_d0;
-                if dv_full.abs() > 1e-15 {
-                    let r = if dv_full * dv_lim < 0.0 {
+                if dv_trial0.abs() > 1e-15 {
+                    let r = if dv_trial0 * dv_lim < 0.0 {
                         0.0
                     } else {
-                        (dv_lim / dv_full).clamp(0.0, 1.0)
+                        (dv_lim / dv_trial0).clamp(0.0, 1.0)
                     };
                     if r < global_alpha {
                         global_alpha = r;
@@ -2593,13 +2630,12 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 }
             }
             {
-                let dv_full = v_trial1 - v_d1;
                 let dv_lim = v_lim1 - v_d1;
-                if dv_full.abs() > 1e-15 {
-                    let r = if dv_full * dv_lim < 0.0 {
+                if dv_trial1.abs() > 1e-15 {
+                    let r = if dv_trial1 * dv_lim < 0.0 {
                         0.0
                     } else {
-                        (dv_lim / dv_full).clamp(0.0, 1.0)
+                        (dv_lim / dv_trial1).clamp(0.0, 1.0)
                     };
                     if r < global_alpha {
                         global_alpha = r;
@@ -2608,13 +2644,12 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 }
             }
             {
-                let dv_full = v_trial2 - v_d2;
                 let dv_lim = v_lim2 - v_d2;
-                if dv_full.abs() > 1e-15 {
-                    let r = if dv_full * dv_lim < 0.0 {
+                if dv_trial2.abs() > 1e-15 {
+                    let r = if dv_trial2 * dv_lim < 0.0 {
                         0.0
                     } else {
-                        (dv_lim / dv_full).clamp(0.0, 1.0)
+                        (dv_lim / dv_trial2).clamp(0.0, 1.0)
                     };
                     if r < global_alpha {
                         global_alpha = r;
@@ -2623,13 +2658,12 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 }
             }
             {
-                let dv_full = v_trial3 - v_d3;
                 let dv_lim = v_lim3 - v_d3;
-                if dv_full.abs() > 1e-15 {
-                    let r = if dv_full * dv_lim < 0.0 {
+                if dv_trial3.abs() > 1e-15 {
+                    let r = if dv_trial3 * dv_lim < 0.0 {
                         0.0
                     } else {
-                        (dv_lim / dv_full).clamp(0.0, 1.0)
+                        (dv_lim / dv_trial3).clamp(0.0, 1.0)
                     };
                     if r < global_alpha {
                         global_alpha = r;
@@ -2638,11 +2672,11 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 }
             }
             {
-                let max_dv = ((v_trial0 - v_d0) * global_alpha)
+                let max_dv = (dv_trial0 * global_alpha)
                     .abs()
-                    .max(((v_trial1 - v_d1) * global_alpha).abs())
-                    .max(((v_trial2 - v_d2) * global_alpha).abs())
-                    .max(((v_trial3 - v_d3) * global_alpha).abs());
+                    .max((dv_trial1 * global_alpha).abs())
+                    .max((dv_trial2 * global_alpha).abs())
+                    .max((dv_trial3 * global_alpha).abs());
                 if max_dv > 3.500000 {
                     global_alpha *= (3.500000 / max_dv).max(0.1);
                     any_limited = true;
@@ -2657,28 +2691,28 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
             if !any_limited {
                 let mut nr_converged = true;
                 {
-                    let dv = (v_trial0 - v_d0) * global_alpha;
+                    let dv = dv_trial0 * global_alpha;
                     let threshold = 1e-3 * v_d0.abs().max((v_d0 + dv).abs()) + 1e-6;
                     if dv.abs() > threshold {
                         nr_converged = false;
                     }
                 }
                 {
-                    let dv = (v_trial1 - v_d1) * global_alpha;
+                    let dv = dv_trial1 * global_alpha;
                     let threshold = 1e-3 * v_d1.abs().max((v_d1 + dv).abs()) + 1e-6;
                     if dv.abs() > threshold {
                         nr_converged = false;
                     }
                 }
                 {
-                    let dv = (v_trial2 - v_d2) * global_alpha;
+                    let dv = dv_trial2 * global_alpha;
                     let threshold = 1e-3 * v_d2.abs().max((v_d2 + dv).abs()) + 1e-6;
                     if dv.abs() > threshold {
                         nr_converged = false;
                     }
                 }
                 {
-                    let dv = (v_trial3 - v_d3) * global_alpha;
+                    let dv = dv_trial3 * global_alpha;
                     let threshold = 1e-3 * v_d3.abs().max((v_d3 + dv).abs()) + 1e-6;
                     if dv.abs() > threshold {
                         nr_converged = false;
@@ -2686,7 +2720,6 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 }
                 if nr_converged {
                     state.last_nr_iterations = iter as u32;
-                    converged = true;
                     break;
                 }
             }
@@ -2926,7 +2959,7 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                     + state.k_be[3][3] * delta3);
                 let mut alpha = [1.0_f64; 4];
                 let mut any_limited = false;
-                if dv0.abs() > 1e-15 {
+                if dv0.abs() > 1e-4 {
                     let v_lim = pnjlim(v_d0 + dv0, v_d0, state.device_0_vt, DEVICE_0_VCRIT);
                     let ratio = ((v_lim - v_d0) / dv0).max(0.01);
                     if ratio < alpha[0] {
@@ -2936,7 +2969,7 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                         }
                     }
                 }
-                if dv1.abs() > 1e-15 {
+                if dv1.abs() > 1e-4 {
                     let v_lim = pnjlim(v_d1 + dv1, v_d1, state.device_0_vt, DEVICE_0_VCRIT);
                     let ratio = ((v_lim - v_d1) / dv1).max(0.01);
                     if ratio < alpha[1] {
@@ -2946,7 +2979,7 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                         }
                     }
                 }
-                if dv2.abs() > 1e-15 {
+                if dv2.abs() > 1e-4 {
                     let v_lim = pnjlim(v_d2 + dv2, v_d2, state.device_1_vt, DEVICE_1_VCRIT);
                     let ratio = ((v_lim - v_d2) / dv2).max(0.01);
                     if ratio < alpha[2] {
@@ -2956,7 +2989,7 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                         }
                     }
                 }
-                if dv3.abs() > 1e-15 {
+                if dv3.abs() > 1e-4 {
                     let v_lim = pnjlim(v_d3 + dv3, v_d3, state.device_1_vt, DEVICE_1_VCRIT);
                     let ratio = ((v_lim - v_d3) / dv3).max(0.01);
                     if ratio < alpha[3] {

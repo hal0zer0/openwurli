@@ -15,6 +15,10 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(unexpected_cfgs)]
 #![allow(dead_code)]
+// `.runtime R <name> as <field>` emits `set_runtime_R_<field>` (capital R), and
+// other directive-derived identifiers may not be snake_case. Generated code is
+// not hand-edited, so silence the lint to keep downstream `clippy -D warnings`
+// green.
 #![allow(non_snake_case)]
 
 // =============================================================================
@@ -1731,8 +1735,14 @@ pub struct CircuitState {
     /// Per-source previous-draw buffer for the two-draw Nyquist-anti-alias
     /// scheme. Each thermal stamp uses `w_new + w_prev` where w_new is the
     /// current draw (amplitude scale/2) and w_prev is the previous draw.
-    /// Zeroed at default() and reset(). See NOISE.md 'Nyquist anti-aliasing'.
+    /// Zeroed at default(), reset(), and set_seed(). See NOISE.md 'Nyquist anti-aliasing'.
     pub noise_thermal_w_prev: [f64; NOISE_THERMAL_N],
+    /// Per-source last-stamped `i_n` cache. Populated by the trap rhs
+    /// stamp; replayed by the BE-fallback stamp so BE samples carry the
+    /// same noise content as the trap solve they replaced (no audible
+    /// dropout during BE cooldowns; same RNG sequence regardless of how
+    /// many samples trip BE).
+    pub noise_thermal_last_i_n: [f64; NOISE_THERMAL_N],
 }
 
 impl Default for CircuitState {
@@ -1805,6 +1815,7 @@ impl Default for CircuitState {
             noise_fs: fs_internal,
             noise_thermal_sqrt_inv_r: NOISE_THERMAL_SQRT_INV_R_DEFAULT,
             noise_thermal_w_prev: [0.0; NOISE_THERMAL_N],
+            noise_thermal_last_i_n: [0.0; NOISE_THERMAL_N],
         }
     }
 }
@@ -1858,8 +1869,9 @@ impl CircuitState {
         // be re-updated by any subsequent set_pot_N / set_runtime_R call;
         // this mirrors how reset() restores pot_<i>_resistance to nominal.
         self.noise_thermal_sqrt_inv_r = NOISE_THERMAL_SQRT_INV_R_DEFAULT;
-        // Clear two-draw buffer so silence after reset produces true zero output.
+        // Clear two-draw buffer + BE-replay cache so silence after reset is true zero.
         self.noise_thermal_w_prev = [0.0; NOISE_THERMAL_N];
+        self.noise_thermal_last_i_n = [0.0; NOISE_THERMAL_N];
     }
 
     /// Set DC operating point (call after DC analysis)
@@ -2083,6 +2095,8 @@ impl CircuitState {
         self.noise_master_seed = master;
         self.noise_rng = seed_noise_rngs::<NOISE_THERMAL_N>(master);
         self.noise_gaussian_cache = [None; NOISE_THERMAL_N];
+        self.noise_thermal_w_prev = [0.0; NOISE_THERMAL_N];
+        self.noise_thermal_last_i_n = [0.0; NOISE_THERMAL_N];
     }
 }
 
@@ -3106,7 +3120,7 @@ fn extract_controlling_voltages(v_pred: &[f64; N]) -> [f64; M] {
 /// where p = N_v * v_pred is the linear prediction
 #[inline(always)]
 fn solve_nonlinear(p: &[f64; M], state: &mut CircuitState) -> [f64; M] {
-    const MAX_ITER: usize = 200;
+    const MAX_ITER: usize = 265;
     const TOL: f64 = 1.00000000000000006e-9;
     const SINGULARITY_THRESHOLD: f64 = 1e-15;
 
@@ -3213,7 +3227,7 @@ fn solve_nonlinear(p: &[f64; M], state: &mut CircuitState) -> [f64; M] {
             let dv2 = -(state.k[2][0] * delta0 + state.k[2][1] * delta1 + state.k[2][2] * delta2);
             let mut alpha = [1.0_f64; 3];
             let mut any_limited = false;
-            if dv0.abs() > 1e-15 {
+            if dv0.abs() > 1e-4 {
                 let v_lim = pnjlim(v_d0 + dv0, v_d0, state.device_0_n_vt, DEVICE_0_VCRIT);
                 let ratio = ((v_lim - v_d0) / dv0).max(0.01);
                 if ratio < alpha[0] {
@@ -3223,7 +3237,7 @@ fn solve_nonlinear(p: &[f64; M], state: &mut CircuitState) -> [f64; M] {
                     }
                 }
             }
-            if dv1.abs() > 1e-15 {
+            if dv1.abs() > 1e-4 {
                 let v_lim = pnjlim(v_d1 + dv1, v_d1, state.device_1_vt, DEVICE_1_VCRIT);
                 let ratio = ((v_lim - v_d1) / dv1).max(0.01);
                 if ratio < alpha[1] {
@@ -3233,7 +3247,7 @@ fn solve_nonlinear(p: &[f64; M], state: &mut CircuitState) -> [f64; M] {
                     }
                 }
             }
-            if dv2.abs() > 1e-15 {
+            if dv2.abs() > 1e-4 {
                 let v_lim = pnjlim(v_d2 + dv2, v_d2, state.device_2_vt, DEVICE_2_VCRIT);
                 let ratio = ((v_lim - v_d2) / dv2).max(0.01);
                 if ratio < alpha[2] {
@@ -3243,7 +3257,7 @@ fn solve_nonlinear(p: &[f64; M], state: &mut CircuitState) -> [f64; M] {
                     }
                 }
             }
-            let alpha_scalar = alpha.iter().copied().fold(1.0_f64, f64::min);
+            let alpha_scalar = alpha[0].min(alpha[1].min(alpha[2]));
             if alpha_scalar < 1.0 {
                 any_limited = true;
             }
@@ -3425,6 +3439,7 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 let w_new = scale_half * state.noise_thermal_sqrt_inv_r[k] * g;
                 let i_n = w_new + state.noise_thermal_w_prev[k];
                 state.noise_thermal_w_prev[k] = w_new;
+                state.noise_thermal_last_i_n[k] = i_n;
                 let ni = NOISE_THERMAL_NODE_I[k];
                 let nj = NOISE_THERMAL_NODE_J[k];
                 if ni > 0 {
@@ -3434,7 +3449,15 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                     rhs[nj - 1] -= i_n;
                 }
             }
+        } else {
+            // scale==0 (gain or thermal_gain muted): clear cache so BE replay
+            // doesn't re-inject the last enabled-mode i_n.
+            state.noise_thermal_last_i_n = [0.0; NOISE_THERMAL_N];
         }
+    } else {
+        // noise_enabled=false: clear caches so a future BE replay during a
+        // disabled-noise span doesn't re-inject the last enabled-mode i_n.
+        state.noise_thermal_last_i_n = [0.0; NOISE_THERMAL_N];
     }
 
     // Step 2: Linear prediction: v_pred = S * rhs
@@ -3457,7 +3480,7 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
     // exceeds supply rails (trapezoidal ringing artifact), OR (c) previous sample
     // used BE (cooldown: stay on BE until ringing decays).
     // BE is L-stable and damps all oscillatory modes that trapezoidal preserves.
-    let nr_failed = state.last_nr_iterations >= 200_u32;
+    let nr_failed = state.last_nr_iterations >= 265_u32;
     let ringing = v.iter().take(11).any(|&x| x.abs() > 5.50000000000000000e1);
     let need_be = nr_failed || ringing || force_be;
     let (v, i_nl) = if need_be {
@@ -3470,7 +3493,19 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
             state.be_cooldown = 64;
         }
         state.diag_be_fallback_count += 1;
-        // Rebuild RHS with backward Euler matrices
+        // Rebuild RHS with backward Euler matrices.
+        //
+        // This is the per-sample BE *fallback* inside a trapezoidal-primary
+        // solver — NOT a BE-primary integrator. The surrounding solver keeps
+        // `i_nl_prev` on the trap convention: every trap `build_rhs` consumes
+        // `N_I * i_nl_prev` (baked into v_pred). A fallback sample rebuilds the
+        // RHS from scratch, so it must consume `i_nl_prev` the same way or the
+        // previous sample's nonlinear charge is dropped — injecting a transient
+        // on every fallback (e.g. ~3× hot output where the fallback is
+        // load-bearing, and the `.runtime R` modulation pump). The "BE omits
+        // N_I*i_nl_prev" rule applies only to BE-*primary* codegen (every sample
+        // BE, i_nl_prev never trap-split), gated separately in
+        // dk_emitter::emit_build_rhs.
         let mut rhs_be = [0.0f64; N];
         for i in 0..N {
             let mut sum = RHS_CONST_BE[i];
@@ -3483,6 +3518,22 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
             rhs_be[i] = sum;
         }
         rhs_be[INPUT_NODE] += input / INPUT_RESISTANCE;
+
+        // BE-fallback noise replay (re-stamps cached trap-stamp i_n into rhs_be).
+        if state.noise_enabled {
+            for k in 0..NOISE_THERMAL_N {
+                let i_n = state.noise_thermal_last_i_n[k];
+                let ni = NOISE_THERMAL_NODE_I[k];
+                let nj = NOISE_THERMAL_NODE_J[k];
+                if ni > 0 {
+                    rhs_be[ni - 1] += i_n;
+                }
+                if nj > 0 {
+                    rhs_be[nj - 1] -= i_n;
+                }
+            }
+        }
+
         // BE linear prediction: v_pred_be = S_be * rhs_be
         let mut v_pred_be = [0.0f64; N];
         for i in 0..N {
@@ -3571,6 +3622,9 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
         state.pot_0_resistance = 9.99999999999999854e4;
         state.pot_0_resistance_prev = 9.99999999999999854e4;
         state.be_cooldown = 0;
+        // Noise: clear two-draw lag + BE-replay caches (RNG seed preserved).
+        state.noise_thermal_w_prev = [0.0; NOISE_THERMAL_N];
+        state.noise_thermal_last_i_n = [0.0; NOISE_THERMAL_N];
         state.diag_nan_reset_count += 1;
         // Return DC operating point output instead of zero to avoid discontinuity
         let mut dc_output = [0.0f64; NUM_OUTPUTS];
@@ -3589,7 +3643,7 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
 
     // (NaN check already done in Step 7, before state update)
 
-    if state.last_nr_iterations >= 200_u32 {
+    if state.last_nr_iterations >= 265_u32 {
         state.diag_nr_max_iter_count += 1;
     }
 

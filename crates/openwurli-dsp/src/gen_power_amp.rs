@@ -15,6 +15,11 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(unexpected_cfgs)]
 #![allow(dead_code)]
+// `.runtime R <name> as <field>` emits `set_runtime_R_<field>` (capital R), and
+// other directive-derived identifiers may not be snake_case. Generated code is
+// not hand-edited, so silence the lint to keep downstream `clippy -D warnings`
+// green.
+#![allow(non_snake_case)]
 
 // =============================================================================
 // CONSTANTS: Compile-time circuit topology (Nodal solver)

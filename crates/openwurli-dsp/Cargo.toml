@@ -8,6 +8,7 @@ authors.workspace = true
 description = "Wurlitzer 200A DSP library — modal synthesis, preamp circuit simulation, tremolo, and a framework-agnostic WurliEngine for plugin/CLI/embedded hosts"
 
 [features]
+default = ["legacy-power-amp"]
 legacy-preamp = []
 legacy-tremolo = []
 legacy-power-amp = []

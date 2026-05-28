@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- **CPU regression in v0.5.0 — power amp default reverted to behavioral
+  model.** v0.5.0 shipped with the melange 7-BJT Class AB Gummel-Poon
+  solver as the default power amp, running inside the 2× oversample
+  loop. The combination produced a ~2.2× full-chain CPU regression vs
+  v0.4.0 (and ~19× on the isolated power-amp segment). Triangulated by
+  four independent agents (commit forensics, static hot-path scan, A/B
+  worktree benchmark, melange-side review). The OS-rate move (`00168ca`)
+  was a deliberate fidelity-vs-CPU trade — fixed an 8–12 kHz click-band
+  aliasing artifact (H7–H11 plateau at −58 dBc on C6 ff content). The
+  v0.5.1 hotfix reverts to the behavioral closed-form `tanh` model that
+  was production through v0.1.x–v0.3.x and stayed available behind
+  `--features legacy-power-amp` since v0.4. Documented A/B against the
+  Phase-2 melange path: correlation 0.954, peak identical, RMS −0.39 dB
+  vs Grapevine reference — sonic delta accepted as acceptable for a hot
+  CPU fix. The melange 7-BJT path remains accessible via
+  `cargo build --no-default-features`.
+
+  Measured wall-clock (median of 3 runs, release build) closing the
+  regression:
+
+  | Benchmark              | v0.4.0 | v0.5.0 | v0.5.1 |
+  |------------------------|-------:|-------:|-------:|
+  | render 30 s single     | 1.67 s | 3.73 s | 0.87 s |
+  | render-poly 3-note 10 s| 2.22 s | 4.73 s | 1.15 s |
+  | reed-renderer 60 s     | 0.12 s | 0.09 s | 0.08 s |
+
+  v0.5.1 is faster than v0.4.0 because unrelated improvements in the
+  v0.4 → v0.5 window (preamp solver tuning, reed-loop optimizations) get
+  to stay — only the power-amp default was reverted.
+
+  A second optimization was explored — batching the per-OS-sample
+  `set_ldr_resistance` writes that dirty the DK preamp's 12-node matrix
+  — and rejected. The CdS τ ≫ batch-period argument that motivated it
+  did not survive testing: even a 1-sample-stale matrix shifts the BJT
+  Newton-Raphson into a different state attractor, producing a −9.7 dB
+  RMS delta vs the per-sample baseline. Any future revisit needs to live
+  in melange-side codegen (threshold the dirty flag in
+  `gen_preamp::set_runtime_R_r_ldr`) since the per-sample
+  `set_runtime_R_r_ldr` call is the right contract for solver
+  consistency at the openwurli API boundary.
+
+### Changed
+- **Melange pin bumped `47b2702 → de9dc81`; all three solvers
+  regenerated.** Functionally a stay-current bump: all three circuits
+  reproduce v0.4 behavior exactly (tremolo AM 5.67 dB, preamp gain
+  6.51/12.61 dB at the LDR endpoints, engine peak < 1.0). No runtime
+  change — the v0.5.1 CPU win is entirely the behavioral power-amp
+  default above. The intermediate melange revisions had introduced two
+  regressions, both caught and fixed here before shipping, each
+  invisible to static gain checks (6.10 dB range unchanged) and only
+  visible in the dynamic `.runtime R` tremolo path:
+    - **Preamp pump.** A new auto-BE discriminator over-promoted the
+      low-gain wurli-preamp (ρ=1.0000) from trapezoidal to BE-primary,
+      and BE-primary pumps under per-sample `.runtime R` (raw pump
+      7.96 → 32 dB; audible tremolo 5.67 → 2.61 dB). Fixed by melange's
+      gain-aware discriminator (`d7f5f0f`) keeping low-gain marginal
+      circuits on trapezoidal (preamp → Trap, MAX_ITER 265) while
+      genuinely-stiff high-gain circuits stay BE. The preamp's residual
+      fs/2 mode is µV (gain ~4), inaudible (`test_no_nyquist_limit_cycle`:
+      −146 dBFS).
+    - **Tremolo collapse.** The new codegen added a 5 Hz output DC-block
+      HPF; on the Twin-T LFO that strips the oscillator DC offset the CdS
+      follower rides on, collapsing the r_ldr range (354k → 39k Ω) and
+      the AM to 2.61 dB. Fixed by regenerating the tremolo (and preamp)
+      with `--no-dc-block` — an HPF on an oscillator output is never
+      wanted, and the preamp has `Ce` output coupling + shadow-pump
+      cancellation that already handle DC.
+  Note: the K_eff parasitic-BJT absorption that landed upstream in this
+  window is a DK-path optimization and reaches **neither** openwurli
+  circuit — the power amp is a nodal solver, and the preamp's BJTs are
+  forward-active-reduced (K_eff is correctly skipped, which was the
+  earlier `k[3][3]` out-of-bounds panic, fixed by `6b10374`). The
+  power-amp codegen is byte-identical to `47b2702` save a
+  `non_snake_case` lint-allow header. Diagnosis tooling lives in
+  `~/dev/melange-repro/` (preamp + tremolo repro harnesses).
+
 ## [0.5.0] "HereIGo" - 2026-04-26
 
 ### Fixed
