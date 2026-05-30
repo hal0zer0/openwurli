@@ -46,6 +46,8 @@ fn main() {
         "pump-sweep" => cmd_pump_sweep(&args[2..]),
         "pump-trace" => cmd_pump_trace(&args[2..]),
         "pump-spike" => cmd_pump_spike(&args[2..]),
+        "pump-step" => cmd_pump_step(&args[2..]),
+        "pump-sinusoid" => cmd_pump_sinusoid(&args[2..]),
         "calibrate" => cmd_calibrate(&args[2..]),
         "sensitivity" => cmd_sensitivity(&args[2..]),
         "centroid-track" => cmd_centroid_track(&args[2..]),
@@ -77,6 +79,8 @@ fn print_usage() {
     eprintln!(
         "  pump-spike      Investigate ~47.5kΩ NR resonance (width, SR-dep, audio-dep, slew)"
     );
+    eprintln!("  pump-step       Step response: settle at R_a, snap to R_b, capture pump (CSV)");
+    eprintln!("  pump-sinusoid   Sinusoidal log-R modulation (tremolo-like), capture pump (CSV)");
     eprintln!("  calibrate       Measure gain chain at 5 tap points → CSV");
     eprintln!("  sensitivity     Multi-DS grid sweep → CSV");
     eprintln!("  centroid-track  Spectral centroid tracking over time");
@@ -2786,4 +2790,269 @@ fn cmd_pump_spike(args: &[String]) {
     }
 
     eprintln!("pump-spike: all 4 tests complete.");
+}
+
+// =============================================================================
+// pump-step — step-response capture for IIR fitting
+// =============================================================================
+//
+// Step 2 of the pump-model replacement plan: characterize how the shadow
+// pump responds to instantaneous R_ldr changes. Settle at R_a, snap to R_b,
+// record the full trajectory at the production sample rate. The static LUT
+// from Step 1 covers the steady-state value at each R; this captures the
+// transient between values, which Step-1 Test 4 showed can diverge from
+// the static curve by up to 1.1 V mid-slew.
+//
+// Output CSV columns:
+//   sample      Sample index relative to the step (0 = first sample at R_b)
+//   pump_v      Raw pump output (contains the Nyquist 2-cycle)
+//   pump_avg2   Pair-mean (y[2k]+y[2k+1])/2; samples 0,2,4,... carry pairs;
+//               odd rows hold the same value as the prior even row for plot
+//               convenience.
+fn cmd_pump_step(args: &[String]) {
+    use openwurli_dsp::gen_preamp::{self, CircuitState};
+
+    if has_flag(args, "--help") {
+        eprintln!("Usage: pump-step [options]");
+        eprintln!("  --ldr-from R       Starting R_ldr (Ω, default 1000000)");
+        eprintln!("  --ldr-to R         Target R_ldr (Ω, default 19000)");
+        eprintln!("  --sample-rate F    Internal preamp SR (Hz, default 88200)");
+        eprintln!("  --settle N         Warmup samples at R_from (default 750000)");
+        eprintln!("  --samples N        Trace samples after step (default 720000 ≈ 8 s @ 88.2k)");
+        eprintln!(
+            "  --csv FILE         Output CSV (default {})",
+            temp_default("pump_step.csv")
+        );
+        return;
+    }
+
+    let r_from = parse_flag(args, "--ldr-from", 1_000_000.0);
+    let r_to = parse_flag(args, "--ldr-to", 19_000.0);
+    let sample_rate = parse_flag(args, "--sample-rate", 88_200.0);
+    let settle = parse_flag(args, "--settle", 750_000.0) as usize;
+    let samples = parse_flag(args, "--samples", 720_000.0) as usize;
+    let default_csv = temp_default("pump_step.csv");
+    let csv_path = parse_flag_str(args, "--csv", &default_csv);
+
+    let mut state = CircuitState::default();
+    if (sample_rate - gen_preamp::SAMPLE_RATE).abs() > 0.5 {
+        state.set_sample_rate(sample_rate);
+    }
+    state.set_runtime_R_r_ldr(r_from);
+
+    eprintln!(
+        "pump-step: R_from={r_from:.0} Ω → R_to={r_to:.0} Ω  SR={sample_rate:.0} Hz  settle={settle}  samples={samples} ({:.3} s)",
+        samples as f64 / sample_rate
+    );
+
+    let t0 = std::time::Instant::now();
+    for _ in 0..settle {
+        let _ = gen_preamp::process_sample(0.0, &mut state);
+    }
+    let settled = gen_preamp::process_sample(0.0, &mut state)[0];
+    eprintln!("  settled value at R_from: {settled:+.6} V");
+
+    // Snap to R_to; lazy rebuild happens on the first process_sample call.
+    state.set_runtime_R_r_ldr(r_to);
+
+    // Capture trajectory. Pair-mean cancels the Nyquist 2-cycle and reveals
+    // the underlying smooth dynamics; raw retained for diagnostics.
+    let mut buf = Vec::with_capacity(samples);
+    for _ in 0..samples {
+        buf.push(gen_preamp::process_sample(0.0, &mut state)[0]);
+    }
+    let trace_secs = t0.elapsed().as_secs_f64();
+
+    // Summary stats on the pair-mean tail (last 10% of capture). If this
+    // RMS is small, we caught steady state; if large, settle longer or
+    // capture longer.
+    let tail_start = (samples * 9 / 10) & !1;
+    let tail = &buf[tail_start..];
+    let pairs = tail.len() / 2;
+    let mut s = 0.0_f64;
+    let mut ss = 0.0_f64;
+    for k in 0..pairs {
+        let pm = 0.5 * (tail[2 * k] + tail[2 * k + 1]);
+        s += pm;
+        ss += pm * pm;
+    }
+    let tail_mean = s / pairs as f64;
+    let tail_std = ((ss / pairs as f64 - tail_mean * tail_mean).max(0.0)).sqrt();
+
+    let initial = 0.5 * (buf[0] + buf[1]);
+    let total_swing = tail_mean - initial;
+
+    // Write CSV.
+    let mut file = std::fs::File::create(csv_path).expect("create CSV");
+    writeln!(
+        file,
+        "# pump-step  r_from={r_from:.6e}  r_to={r_to:.6e}  sr={sample_rate:.0}  settled_at_from={settled:.9e}"
+    )
+    .unwrap();
+    writeln!(file, "sample,pump_v,pump_avg2").unwrap();
+    for i in (0..samples).step_by(2) {
+        let p = if i + 1 < samples {
+            0.5 * (buf[i] + buf[i + 1])
+        } else {
+            buf[i]
+        };
+        writeln!(file, "{i},{:.9e},{p:.9e}", buf[i]).unwrap();
+        if i + 1 < samples {
+            writeln!(file, "{},{:.9e},{p:.9e}", i + 1, buf[i + 1]).unwrap();
+        }
+    }
+
+    eprintln!("  initial (pair-mean after step):  {initial:+.6} V");
+    eprintln!("  tail (last 10% pair-mean):       mean={tail_mean:+.6} V  std={tail_std:.3e} V");
+    eprintln!(
+        "  total swing:                     {total_swing:+.6} V  ({} samples = {:.3} s of capture)",
+        samples,
+        samples as f64 / sample_rate
+    );
+    eprintln!("pump-step: done in {trace_secs:.1}s → {csv_path}");
+}
+
+// =============================================================================
+// pump-sinusoid — sinusoidal log-R modulation (operational regime)
+// =============================================================================
+//
+// Drives R_ldr as a sinusoid in log space between [ldr-min, ldr-max] at the
+// given frequency for N cycles, capturing pump per sample. This matches the
+// operational regime: live tremolo slews R smoothly (the Twin-T LFO drives
+// an asymmetric CdS envelope into log-spaced R). Per Step-1 Test 4 + the
+// pump-step bifurcation scan, slewed-R trajectories are smooth (no NR
+// bifurcations) — making this the right characterization input for IIR
+// fitting.
+//
+// R(t) = exp( 0.5·(ln(R_max)+ln(R_min)) + 0.5·(ln(R_max)-ln(R_min))·cos(2πft) )
+//      → starts at R_max (cos(0)=+1), troughs at R_min (cos=-1) at half-period.
+//        Settle runs at R_max so the cosine starts continuously from steady state.
+//
+// CSV columns: sample, r_ldr, pump_v, pump_avg2
+fn cmd_pump_sinusoid(args: &[String]) {
+    use openwurli_dsp::gen_preamp::{self, CircuitState};
+
+    if has_flag(args, "--help") {
+        eprintln!("Usage: pump-sinusoid [options]");
+        eprintln!("  --ldr-min R         Sinusoid trough R_ldr (Ω, default 19000)");
+        eprintln!("  --ldr-max R         Sinusoid peak R_ldr (Ω, default 1000000)");
+        eprintln!("  --freq F            Sinusoid frequency (Hz, default 5.6 = tremolo)");
+        eprintln!("  --cycles N          Cycles to capture (default 10)");
+        eprintln!("  --sample-rate F     Internal preamp SR (Hz, default 88200)");
+        eprintln!("  --settle N          Warmup samples at R_max (default 750000)");
+        eprintln!(
+            "  --csv FILE          Output CSV (default {})",
+            temp_default("pump_sinusoid.csv")
+        );
+        return;
+    }
+
+    let ldr_min = parse_flag(args, "--ldr-min", 19_000.0);
+    let ldr_max = parse_flag(args, "--ldr-max", 1_000_000.0);
+    let freq = parse_flag(args, "--freq", 5.6);
+    let cycles = parse_flag(args, "--cycles", 10.0);
+    let sample_rate = parse_flag(args, "--sample-rate", 88_200.0);
+    let settle = parse_flag(args, "--settle", 750_000.0) as usize;
+    let default_csv = temp_default("pump_sinusoid.csv");
+    let csv_path = parse_flag_str(args, "--csv", &default_csv);
+
+    let ln_mid = 0.5 * (ldr_max.ln() + ldr_min.ln());
+    let ln_amp = 0.5 * (ldr_max.ln() - ldr_min.ln());
+    let dt = 1.0 / sample_rate;
+    let omega = 2.0 * PI * freq;
+    let samples = (cycles * sample_rate / freq) as usize;
+
+    let mut state = CircuitState::default();
+    if (sample_rate - gen_preamp::SAMPLE_RATE).abs() > 0.5 {
+        state.set_sample_rate(sample_rate);
+    }
+    state.set_runtime_R_r_ldr(ldr_max);
+
+    eprintln!(
+        "pump-sinusoid: R = exp({ln_mid:.3} + {ln_amp:.3}·cos(2π·{freq}·t))  R ∈ [{ldr_min:.0}, {ldr_max:.0}] Ω"
+    );
+    eprintln!(
+        "  SR={sample_rate:.0} Hz  cycles={cycles}  samples={samples} ({:.3} s)  settle={settle}",
+        samples as f64 / sample_rate
+    );
+
+    let t0 = std::time::Instant::now();
+    for _ in 0..settle {
+        let _ = gen_preamp::process_sample(0.0, &mut state);
+    }
+
+    let mut r_buf = Vec::with_capacity(samples);
+    let mut y_buf = Vec::with_capacity(samples);
+    let mut max_step_dr = 0.0_f64;
+    let mut max_step_dy = 0.0_f64;
+    let mut prev_r = ldr_max;
+    let mut prev_y = gen_preamp::process_sample(0.0, &mut state)[0];
+    for k in 0..samples {
+        let t = k as f64 * dt;
+        let r = (ln_mid + ln_amp * (omega * t).cos()).exp();
+        state.set_runtime_R_r_ldr(r);
+        let y = gen_preamp::process_sample(0.0, &mut state)[0];
+        r_buf.push(r);
+        y_buf.push(y);
+        let dr = (r - prev_r).abs();
+        let dy = (y - prev_y).abs();
+        if dr > max_step_dr {
+            max_step_dr = dr;
+        }
+        if dy > max_step_dy {
+            max_step_dy = dy;
+        }
+        prev_r = r;
+        prev_y = y;
+    }
+    let secs = t0.elapsed().as_secs_f64();
+
+    // Bifurcation detector: count pair-mean steps > 0.1 V (per Step-1 the
+    // smoothed live trajectory peaks at ~1.5 mV/sample, so > 100 mV/sample
+    // is a clear bifurcation signature).
+    let mut bifurcs = 0usize;
+    let mut prev_pm = 0.5 * (y_buf[0] + y_buf[1]);
+    for i in (2..samples).step_by(2) {
+        let pm = 0.5
+            * (y_buf[i]
+                + if i + 1 < samples {
+                    y_buf[i + 1]
+                } else {
+                    y_buf[i]
+                });
+        if (pm - prev_pm).abs() > 0.1 {
+            bifurcs += 1;
+        }
+        prev_pm = pm;
+    }
+
+    let mut file = std::fs::File::create(csv_path).expect("create CSV");
+    writeln!(
+        file,
+        "# pump-sinusoid  ldr_min={ldr_min:.6e}  ldr_max={ldr_max:.6e}  freq={freq:.6}  sr={sample_rate:.0}  cycles={cycles}"
+    )
+    .unwrap();
+    writeln!(file, "sample,r_ldr,pump_v,pump_avg2").unwrap();
+    for i in 0..samples {
+        let pm = if i % 2 == 0 && i + 1 < samples {
+            0.5 * (y_buf[i] + y_buf[i + 1])
+        } else if i > 0 {
+            0.5 * (y_buf[i - 1] + y_buf[i])
+        } else {
+            y_buf[i]
+        };
+        writeln!(file, "{i},{:.6e},{:.9e},{pm:.9e}", r_buf[i], y_buf[i]).unwrap();
+    }
+
+    let y_min = y_buf.iter().cloned().fold(f64::INFINITY, f64::min);
+    let y_max = y_buf.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    eprintln!(
+        "  pump range: [{:.3}, {:.3}] V (span {:.3} V)",
+        y_min,
+        y_max,
+        y_max - y_min
+    );
+    eprintln!("  max sample-to-sample step:  dR={max_step_dr:.2} Ω  dY={max_step_dy:.4} V");
+    eprintln!("  bifurcation events (pair-step > 0.1 V): {bifurcs}  (expect 0 for slewed-R)");
+    eprintln!("pump-sinusoid: done in {secs:.1}s → {csv_path}");
 }
