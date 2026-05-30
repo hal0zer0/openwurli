@@ -43,6 +43,9 @@ fn main() {
         "bark-audit" => cmd_bark_audit(&args[2..]),
         "intermod-audit" => cmd_intermod_audit(&args[2..]),
         "alias-audit" => cmd_alias_audit(&args[2..]),
+        "pump-sweep" => cmd_pump_sweep(&args[2..]),
+        "pump-trace" => cmd_pump_trace(&args[2..]),
+        "pump-spike" => cmd_pump_spike(&args[2..]),
         "calibrate" => cmd_calibrate(&args[2..]),
         "sensitivity" => cmd_sensitivity(&args[2..]),
         "centroid-track" => cmd_centroid_track(&args[2..]),
@@ -69,6 +72,11 @@ fn print_usage() {
     eprintln!("  bark-audit      Measure H2/H1 at each signal chain stage");
     eprintln!("  intermod-audit  Detect inharmonic intermodulation beating risk");
     eprintln!("  alias-audit     Detect power-amp click-band aliasing (H6-H11 plateau + HF hash)");
+    eprintln!("  pump-sweep      Steady-state shadow-preamp pump vs R_ldr (CSV)");
+    eprintln!("  pump-trace      Time-series shadow pump at fixed R_ldr (CSV)");
+    eprintln!(
+        "  pump-spike      Investigate ~47.5kΩ NR resonance (width, SR-dep, audio-dep, slew)"
+    );
     eprintln!("  calibrate       Measure gain chain at 5 tap points → CSV");
     eprintln!("  sensitivity     Multi-DS grid sweep → CSV");
     eprintln!("  centroid-track  Spectral centroid tracking over time");
@@ -1002,16 +1010,21 @@ fn cmd_alias_audit(args: &[String]) {
     }
 
     println!("Click-band alias audit");
-    println!("  Stimulus:   note={} vel={} vol={:.2}",
-        note, velocity, alias_audit::STIMULUS_VOLUME
+    println!(
+        "  Stimulus:   note={} vel={} vol={:.2}",
+        note,
+        velocity,
+        alias_audit::STIMULUS_VOLUME
     );
-    println!("  Render:     {:.2}s @ {:.0} Hz, analyzing last {:.2}s",
+    println!(
+        "  Render:     {:.2}s @ {:.0} Hz, analyzing last {:.2}s",
         alias_audit::STIMULUS_RENDER_SECONDS,
         alias_audit::STIMULUS_SAMPLE_RATE,
         alias_audit::STIMULUS_ANALYZE_SECONDS
     );
     println!();
-    println!("  Detected f0:  {:.3} Hz  (nominal {:.3} Hz)",
+    println!(
+        "  Detected f0:  {:.3} Hz  (nominal {:.3} Hz)",
         r.f0_hz,
         440.0 * 2f64.powf((note as f64 - 69.0) / 12.0)
     );
@@ -1030,13 +1043,17 @@ fn cmd_alias_audit(args: &[String]) {
     }
     println!("                  (* = harmonics in plateau-detection band)");
     println!();
-    println!("  max_step_up_db:  {:+.2} dB  (worst rise: H{} → H{})",
+    println!(
+        "  max_step_up_db:  {:+.2} dB  (worst rise: H{} → H{})",
         r.max_step_up_db,
         r.max_step_up_from_harmonic,
         r.max_step_up_from_harmonic + 1
     );
     println!("                   target: ≤ 0 dB (monotonic descent); gate: ≤ +1.0");
-    println!("  hf_band_dbc:     {:.2} dBc  (5–18 kHz RMS rel. to H1)", r.hf_band_dbc);
+    println!(
+        "  hf_band_dbc:     {:.2} dBc  (5–18 kHz RMS rel. to H1)",
+        r.hf_band_dbc
+    );
     println!("                   target: track baseline; gate: ≤ baseline + 2.0 dB");
 }
 
@@ -2301,4 +2318,472 @@ fn cmd_bench_reed(args: &[String]) {
     println!("  Realtime ratio:  {realtime_ratio:.1}x");
     println!("  Samples/sec:     {samples_per_sec:.0}");
     println!("  Build:           v{}", env!("CARGO_PKG_VERSION"));
+}
+
+// =============================================================================
+// pump-sweep — steady-state shadow-preamp pump characterization
+// =============================================================================
+//
+// Drives `gen_preamp::process_sample(0.0, &mut state)` (the shadow path) at
+// `--points` log-spaced R_ldr values from `--ldr-min` to `--ldr-max`, settles
+// each with `--settle` warmup samples, then averages over `--avg` samples to
+// flatten any residual ripple. Outputs CSV: `r_ldr,pump_v,pump_std`.
+//
+// Step 1 of the pump-model replacement plan: characterize the curve we're
+// trying to replace, decide on poly/LUT model form.
+fn cmd_pump_sweep(args: &[String]) {
+    use openwurli_dsp::gen_preamp::{self, CircuitState};
+
+    if has_flag(args, "--help") {
+        eprintln!("Usage: pump-sweep [options]");
+        eprintln!("  --ldr-min R    Min R_ldr (Ω, default 1000)");
+        eprintln!("  --ldr-max R    Max R_ldr (Ω, default 1000000)");
+        eprintln!("  --points N     Log-spaced points (default 256)");
+        eprintln!("  --settle N     Warmup samples per point (default 60000)");
+        eprintln!(
+            "  --avg N        Samples averaged after settle (default 4096, even cancels Nyquist 2-cycle)"
+        );
+        eprintln!("  --sample-rate F  Internal preamp SR (Hz, default 48000; prod = 88200+)");
+        eprintln!(
+            "  --csv FILE     Output CSV (default {})",
+            temp_default("pump_sweep.csv")
+        );
+        return;
+    }
+
+    let ldr_min = parse_flag(args, "--ldr-min", 1_000.0);
+    let ldr_max = parse_flag(args, "--ldr-max", 1_000_000.0);
+    let points = parse_flag(args, "--points", 256.0) as usize;
+    let settle = parse_flag(args, "--settle", 60_000.0) as usize;
+    let avg = parse_flag(args, "--avg", 4_096.0) as usize;
+    let sample_rate = parse_flag(args, "--sample-rate", 48_000.0);
+    let default_csv = temp_default("pump_sweep.csv");
+    let csv_path = parse_flag_str(args, "--csv", &default_csv);
+
+    assert!(ldr_min > 0.0 && ldr_max > ldr_min);
+    assert!(points >= 2);
+
+    let ln_min = ldr_min.ln();
+    let ln_max = ldr_max.ln();
+    let step = (ln_max - ln_min) / (points - 1) as f64;
+
+    let mut file = std::fs::File::create(csv_path).expect("create CSV");
+    writeln!(file, "r_ldr,pump_v,pump_std,pump_min,pump_max").unwrap();
+
+    eprintln!(
+        "pump-sweep: {} points from {:.0} Ω to {:.0} Ω (log), settle={}, avg={}, SR={:.0} Hz",
+        points, ldr_min, ldr_max, settle, avg, sample_rate
+    );
+
+    let start = std::time::Instant::now();
+    for i in 0..points {
+        let r = (ln_min + step * i as f64).exp();
+        let mut state = CircuitState::default();
+        if (sample_rate - gen_preamp::SAMPLE_RATE).abs() > 0.5 {
+            state.set_sample_rate(sample_rate);
+        }
+        state.set_runtime_R_r_ldr(r);
+
+        for _ in 0..settle {
+            let _ = gen_preamp::process_sample(0.0, &mut state);
+        }
+
+        let mut sum = 0.0_f64;
+        let mut sum_sq = 0.0_f64;
+        let mut vmin = f64::INFINITY;
+        let mut vmax = f64::NEG_INFINITY;
+        for _ in 0..avg {
+            let y = gen_preamp::process_sample(0.0, &mut state)[0];
+            sum += y;
+            sum_sq += y * y;
+            if y < vmin {
+                vmin = y;
+            }
+            if y > vmax {
+                vmax = y;
+            }
+        }
+        let mean = sum / avg as f64;
+        let var = (sum_sq / avg as f64 - mean * mean).max(0.0);
+        let std = var.sqrt();
+
+        writeln!(file, "{r:.6e},{mean:.9e},{std:.6e},{vmin:.9e},{vmax:.9e}").unwrap();
+
+        if i % 32 == 0 || i + 1 == points {
+            eprintln!(
+                "  [{i:3}/{points}] R_ldr = {r:10.0} Ω  pump = {mean:+.6e} V  (σ = {std:.2e}, span = {:.2e})",
+                vmax - vmin
+            );
+        }
+    }
+    let elapsed = start.elapsed();
+    eprintln!(
+        "pump-sweep: done in {:.1}s → {}",
+        elapsed.as_secs_f64(),
+        csv_path
+    );
+}
+
+// =============================================================================
+// pump-trace — time-series capture of shadow pump at fixed R_ldr
+// =============================================================================
+//
+// Drives the shadow preamp at one R_ldr value, settles, then records N
+// samples of the pump output. Used to diagnose whether the residual ripple
+// after long settle is (a) numerical limit-cycle chatter, (b) genuine
+// sub-audio circuit dynamics, or (c) a true DC value we just hadn't reached.
+fn cmd_pump_trace(args: &[String]) {
+    use openwurli_dsp::gen_preamp::{self, CircuitState};
+
+    if has_flag(args, "--help") {
+        eprintln!("Usage: pump-trace [options]");
+        eprintln!("  --ldr R        R_ldr (Ω, default 1000000)");
+        eprintln!("  --settle N     Warmup samples (default 400000)");
+        eprintln!("  --samples N    Trace samples (default 131072 ≈ 2.7s @ 48k)");
+        eprintln!(
+            "  --csv FILE     Output CSV (default {})",
+            temp_default("pump_trace.csv")
+        );
+        return;
+    }
+
+    let r = parse_flag(args, "--ldr", 1_000_000.0);
+    let settle = parse_flag(args, "--settle", 400_000.0) as usize;
+    let samples = parse_flag(args, "--samples", 131_072.0) as usize;
+    let default_csv = temp_default("pump_trace.csv");
+    let csv_path = parse_flag_str(args, "--csv", &default_csv);
+
+    let mut state = CircuitState::default();
+    state.set_runtime_R_r_ldr(r);
+
+    eprintln!(
+        "pump-trace: R_ldr = {:.0} Ω, settle = {}, samples = {} ({:.3} s @ 48 kHz)",
+        r,
+        settle,
+        samples,
+        samples as f64 / 48_000.0
+    );
+    let start = std::time::Instant::now();
+    for _ in 0..settle {
+        let _ = gen_preamp::process_sample(0.0, &mut state);
+    }
+
+    let mut buf = Vec::with_capacity(samples);
+    for _ in 0..samples {
+        buf.push(gen_preamp::process_sample(0.0, &mut state)[0]);
+    }
+
+    // Summary stats
+    let mean = buf.iter().sum::<f64>() / samples as f64;
+    let mut sum_sq = 0.0_f64;
+    let mut vmin = f64::INFINITY;
+    let mut vmax = f64::NEG_INFINITY;
+    for &y in &buf {
+        sum_sq += (y - mean).powi(2);
+        if y < vmin {
+            vmin = y;
+        }
+        if y > vmax {
+            vmax = y;
+        }
+    }
+    let std = (sum_sq / samples as f64).sqrt();
+
+    // DC-blocked variant for spectral-band estimate via simple naive 1-pole HPF
+    // at ~1 Hz, just to gauge whether content is at sub-Hz vs Hz vs audio.
+    let dt = 1.0 / 48_000.0;
+    let bands = [0.1_f64, 1.0, 10.0, 100.0, 1_000.0];
+    let mut band_rms = [0.0_f64; 5];
+    for (bi, &fc) in bands.iter().enumerate() {
+        let rc = 1.0 / (2.0 * PI * fc);
+        let a = rc / (rc + dt);
+        let mut hpf_prev_y = 0.0;
+        let mut hpf_prev_x = buf[0];
+        let mut sum_sq_band = 0.0_f64;
+        for &x in &buf {
+            let y = a * (hpf_prev_y + x - hpf_prev_x);
+            hpf_prev_y = y;
+            hpf_prev_x = x;
+            sum_sq_band += y * y;
+        }
+        band_rms[bi] = (sum_sq_band / samples as f64).sqrt();
+    }
+
+    let mut file = std::fs::File::create(csv_path).expect("create CSV");
+    writeln!(file, "sample,pump_v").unwrap();
+    for (i, y) in buf.iter().enumerate() {
+        writeln!(file, "{i},{y:.9e}").unwrap();
+    }
+
+    let elapsed = start.elapsed();
+    eprintln!("  mean   = {mean:+.9e} V");
+    eprintln!("  std    = {std:.6e} V");
+    eprintln!(
+        "  span   = {:.6e} V  (min {vmin:+.6e}, max {vmax:+.6e})",
+        vmax - vmin
+    );
+    eprintln!("  HPF RMS above:");
+    for (i, &fc) in bands.iter().enumerate() {
+        eprintln!("    {fc:>7.1} Hz : {:.6e} V", band_rms[i]);
+    }
+    eprintln!(
+        "pump-trace: done in {:.1}s → {}",
+        elapsed.as_secs_f64(),
+        csv_path
+    );
+}
+
+// =============================================================================
+// pump-spike — characterize the 47.5kΩ NR resonance on 4 axes
+// =============================================================================
+//
+// Step-1 sweep revealed a single-grid-point spike near R_ldr ≈ 47.5 kΩ: σ
+// jumps from ~3e-2 V to ~8e-1 V at that one point. Hypothesis: the trap NR
+// finds a bifurcating fixed point at exactly that operating point. This
+// subcommand tests four hypotheses to decide whether the pump-model needs
+// to special-case it:
+//
+//   1. WIDTH — densify the log sweep at 47k–48k to bracket the spike.
+//      A single grid point = pinpoint singularity. Several points = real
+//      narrow band.
+//
+//   2. SAMPLE-RATE DEPENDENCE — repeat at 44.1k / 48k / 88.2k SR. If the
+//      spike R moves with SR, it's pure integrator timing (numerical).
+//      If it stays at the same R, it's tied to a physical resonance.
+//
+//   3. AUDIO-INPUT DEPENDENCE — run with a 1 kHz sine at typical input
+//      level instead of zero input. Does the spike still trip? If shadow
+//      has it but audio-driven main doesn't, our `main - shadow`
+//      cancellation injects a spurious 0.5 V at that R.
+//
+//   4. SLEW IMMUNITY — drive R as a linear ramp through 30k → 60k over
+//      a few seconds (simulating tremolo at ~6 Hz). If fast slewing
+//      prevents NR from locking onto the bad fixed point, the spike is
+//      operationally harmless.
+//
+// All four write CSVs to /tmp by default; the summary verdict lands in stderr.
+fn cmd_pump_spike(args: &[String]) {
+    use openwurli_dsp::gen_preamp::{self, CircuitState};
+
+    if has_flag(args, "--help") {
+        eprintln!("Usage: pump-spike [options]");
+        eprintln!("  --csv-prefix PFX   Output prefix (default /tmp/pump_spike)");
+        eprintln!("  --settle N         Warmup samples per point (default 400000)");
+        eprintln!("  --avg N            Samples averaged (default 8192, must be even)");
+        return;
+    }
+    let settle = parse_flag(args, "--settle", 400_000.0) as usize;
+    let avg = parse_flag(args, "--avg", 8_192.0) as usize;
+    let prefix = parse_flag_str(args, "--csv-prefix", "/tmp/pump_spike");
+    assert!(avg % 2 == 0, "--avg must be even to cancel Nyquist 2-cycle");
+
+    // Pair-averaged stats over the post-settle window (cancels Nyquist 2-cycle
+    // exactly; remaining spread is real low-frequency residual).
+    fn measure(
+        state: &mut CircuitState,
+        input_fn: &mut dyn FnMut(usize) -> f64,
+        settle: usize,
+        avg: usize,
+    ) -> (f64, f64, f64) {
+        for i in 0..settle {
+            let _ = gen_preamp::process_sample(input_fn(i), state);
+        }
+        // Pair-mean: average each (y[2k] + y[2k+1])/2, then stats over pairs.
+        let pairs = avg / 2;
+        let mut sum = 0.0_f64;
+        let mut sum_sq = 0.0_f64;
+        let mut raw_sum_sq = 0.0_f64;
+        let mut raw_sum = 0.0_f64;
+        for k in 0..pairs {
+            let y0 = gen_preamp::process_sample(input_fn(settle + 2 * k), state)[0];
+            let y1 = gen_preamp::process_sample(input_fn(settle + 2 * k + 1), state)[0];
+            let pm = 0.5 * (y0 + y1);
+            sum += pm;
+            sum_sq += pm * pm;
+            raw_sum += y0 + y1;
+            raw_sum_sq += y0 * y0 + y1 * y1;
+        }
+        let mean = sum / pairs as f64;
+        let pair_std = ((sum_sq / pairs as f64 - mean * mean).max(0.0)).sqrt();
+        let raw_mean = raw_sum / (2 * pairs) as f64;
+        let raw_std = ((raw_sum_sq / (2 * pairs) as f64 - raw_mean * raw_mean).max(0.0)).sqrt();
+        (mean, pair_std, raw_std)
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 1: WIDTH — densify 46.5k–48.5k Ω, 256 log points (Δlog R ≈ 0.0002)
+    // -------------------------------------------------------------------------
+    let width_path = format!("{prefix}_width.csv");
+    {
+        let mut file = std::fs::File::create(&width_path).unwrap();
+        writeln!(file, "r_ldr,pump_v,pair_std,raw_std").unwrap();
+
+        let r_min = 46_500.0_f64;
+        let r_max = 48_500.0_f64;
+        let n = 256usize;
+        let ln_min = r_min.ln();
+        let step = (r_max.ln() - ln_min) / (n - 1) as f64;
+
+        eprintln!("[1/4] WIDTH: 256 points in [{r_min:.0}, {r_max:.0}] Ω …");
+        let mut suspicious = Vec::new();
+        for i in 0..n {
+            let r = (ln_min + step * i as f64).exp();
+            let mut state = CircuitState::default();
+            state.set_runtime_R_r_ldr(r);
+            let mut zero = |_: usize| 0.0;
+            let (mean, pair_std, raw_std) = measure(&mut state, &mut zero, settle, avg);
+            writeln!(file, "{r:.6e},{mean:.9e},{pair_std:.6e},{raw_std:.6e}").unwrap();
+            if raw_std > 0.1 {
+                suspicious.push((r, mean, raw_std));
+            }
+        }
+        eprintln!(
+            "  → {} points with raw_std > 0.1 V (spike candidates):",
+            suspicious.len()
+        );
+        for (r, mean, std) in &suspicious {
+            eprintln!("      R={r:.1} Ω  pump={mean:+.4} V  raw_std={std:.4} V");
+        }
+        eprintln!("  CSV: {width_path}");
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 2: SAMPLE-RATE DEPENDENCE — same 64 log-spaced points at 3 SRs
+    // -------------------------------------------------------------------------
+    let sr_path = format!("{prefix}_samplerate.csv");
+    {
+        let mut file = std::fs::File::create(&sr_path).unwrap();
+        writeln!(file, "sample_rate,r_ldr,pump_v,raw_std").unwrap();
+
+        let rates = [44_100.0_f64, 48_000.0, 88_200.0, 96_000.0];
+        let r_min = 30_000.0_f64;
+        let r_max = 70_000.0_f64;
+        let n = 64usize;
+        let ln_min = r_min.ln();
+        let step = (r_max.ln() - ln_min) / (n - 1) as f64;
+
+        for &sr in &rates {
+            eprintln!("[2/4] SR={sr:.0} Hz: 64 points in [{r_min:.0}, {r_max:.0}] Ω …");
+            let mut hits = Vec::new();
+            for i in 0..n {
+                let r = (ln_min + step * i as f64).exp();
+                let mut state = CircuitState::default();
+                state.set_sample_rate(sr);
+                state.set_runtime_R_r_ldr(r);
+                let mut zero = |_: usize| 0.0;
+                // Settle proportional to SR (constant wall-time settle would
+                // under-settle at high SR; under-time-settle at low SR. Use
+                // ~8 s of audio at each rate.)
+                let settle_sr = (settle as f64 * sr / 48_000.0) as usize;
+                let (mean, _ps, raw_std) = measure(&mut state, &mut zero, settle_sr, avg);
+                writeln!(file, "{sr:.0},{r:.6e},{mean:.9e},{raw_std:.6e}").unwrap();
+                if raw_std > 0.1 {
+                    hits.push((r, mean, raw_std));
+                }
+            }
+            if hits.is_empty() {
+                eprintln!("  → NO SPIKE at SR={sr:.0}");
+            } else {
+                for (r, m, s) in &hits {
+                    eprintln!("  → spike: R={r:.1} Ω  pump={m:+.4} V  raw_std={s:.4} V");
+                }
+            }
+        }
+        eprintln!("  CSV: {sr_path}");
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 3: AUDIO-INPUT DEPENDENCE — 1 kHz sine at typical preamp input
+    //   level (5 mV — the post-pickup signal hovers around there at moderate
+    //   playing). Compare to silent shadow.
+    // -------------------------------------------------------------------------
+    let audio_path = format!("{prefix}_audio.csv");
+    {
+        let mut file = std::fs::File::create(&audio_path).unwrap();
+        writeln!(file, "input_amp,r_ldr,pump_v,raw_std").unwrap();
+
+        let amps = [0.0_f64, 0.001, 0.005, 0.020, 0.100];
+        let f_in = 1000.0_f64;
+        let sr = 48_000.0;
+        let r_min = 30_000.0_f64;
+        let r_max = 70_000.0_f64;
+        let n = 64usize;
+        let ln_min = r_min.ln();
+        let step = (r_max.ln() - ln_min) / (n - 1) as f64;
+        let two_pi_dt = 2.0 * PI * f_in / sr;
+
+        for &amp in &amps {
+            eprintln!(
+                "[3/4] AUDIO amp={amp:.4} V @1 kHz: 64 points in [{r_min:.0}, {r_max:.0}] Ω …"
+            );
+            let mut hits = Vec::new();
+            for i in 0..n {
+                let r = (ln_min + step * i as f64).exp();
+                let mut state = CircuitState::default();
+                state.set_runtime_R_r_ldr(r);
+                let mut sine = |k: usize| amp * (two_pi_dt * k as f64).sin();
+                let (mean, _ps, raw_std) = measure(&mut state, &mut sine, settle, avg);
+                writeln!(file, "{amp:.6e},{r:.6e},{mean:.9e},{raw_std:.6e}").unwrap();
+                if raw_std > 0.1 {
+                    hits.push((r, mean, raw_std));
+                }
+            }
+            if hits.is_empty() {
+                eprintln!("  → NO SPIKE at amp={amp:.4}");
+            } else {
+                for (r, m, s) in &hits {
+                    eprintln!("  → spike: R={r:.1} Ω  pump={m:+.4} V  raw_std={s:.4} V");
+                }
+            }
+        }
+        eprintln!("  CSV: {audio_path}");
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 4: SLEW IMMUNITY — drive R as a linear ramp 30k → 70k Ω over 1 s
+    //   while sampling pump at full audio rate. If fast slewing prevents
+    //   NR from locking onto the bad fixed point, we expect no spike;
+    //   only the smooth steady-state curve.
+    // -------------------------------------------------------------------------
+    let slew_path = format!("{prefix}_slew.csv");
+    {
+        let mut file = std::fs::File::create(&slew_path).unwrap();
+        writeln!(file, "sample,r_ldr,pump_v").unwrap();
+
+        // Settle at start R first so we begin at steady state.
+        let r_start = 30_000.0_f64;
+        let r_end = 70_000.0_f64;
+        let sr = 48_000.0;
+        let ramp_seconds = 1.0_f64;
+        let n_ramp = (ramp_seconds * sr) as usize;
+        eprintln!(
+            "[4/4] SLEW: R ramps {r_start:.0} → {r_end:.0} Ω over {ramp_seconds} s ({n_ramp} samples) …"
+        );
+
+        let mut state = CircuitState::default();
+        state.set_runtime_R_r_ldr(r_start);
+        for _ in 0..settle {
+            let _ = gen_preamp::process_sample(0.0, &mut state);
+        }
+        let mut max_step = 0.0_f64;
+        let mut prev = gen_preamp::process_sample(0.0, &mut state)[0];
+        for k in 0..n_ramp {
+            let t = k as f64 / (n_ramp - 1) as f64;
+            let r = r_start + (r_end - r_start) * t;
+            state.set_runtime_R_r_ldr(r);
+            let y = gen_preamp::process_sample(0.0, &mut state)[0];
+            writeln!(file, "{k},{r:.6e},{y:.9e}").unwrap();
+            let step = (y - prev).abs();
+            if step > max_step {
+                max_step = step;
+            }
+            prev = y;
+        }
+        eprintln!(
+            "  → max sample-to-sample step during slew: {max_step:.4} V (compare to ~0.5 V static-R spike)"
+        );
+        eprintln!("  CSV: {slew_path}");
+    }
+
+    eprintln!("pump-spike: all 4 tests complete.");
 }
