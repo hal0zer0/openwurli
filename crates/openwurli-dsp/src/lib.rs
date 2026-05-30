@@ -31,6 +31,11 @@ pub mod speaker;
 // API for hosts (nih-plug, oomox, custom) to wrap without copying glue.
 pub mod engine;
 
+// Click-band alias detector — shared between preamp-bench `alias-audit`
+// and the engine-level regression test that guards against re-introducing
+// the v0.4.0-era power-amp aliasing.
+pub mod alias_audit;
+
 // Re-exports for ergonomic single-import use:
 //
 //     use openwurli_dsp::{WurliEngine, VoiceState};

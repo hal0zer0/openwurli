@@ -42,6 +42,7 @@ fn main() {
         "render" => cmd_render(&args[2..]),
         "bark-audit" => cmd_bark_audit(&args[2..]),
         "intermod-audit" => cmd_intermod_audit(&args[2..]),
+        "alias-audit" => cmd_alias_audit(&args[2..]),
         "calibrate" => cmd_calibrate(&args[2..]),
         "sensitivity" => cmd_sensitivity(&args[2..]),
         "centroid-track" => cmd_centroid_track(&args[2..]),
@@ -67,6 +68,7 @@ fn print_usage() {
     eprintln!("  render          Reed -> preamp -> WAV output");
     eprintln!("  bark-audit      Measure H2/H1 at each signal chain stage");
     eprintln!("  intermod-audit  Detect inharmonic intermodulation beating risk");
+    eprintln!("  alias-audit     Detect power-amp click-band aliasing (H6-H11 plateau + HF hash)");
     eprintln!("  calibrate       Measure gain chain at 5 tap points → CSV");
     eprintln!("  sensitivity     Multi-DS grid sweep → CSV");
     eprintln!("  centroid-track  Spectral centroid tracking over time");
@@ -955,6 +957,87 @@ fn process_oversampled(input: &[f64], preamp: &mut dyn PreampModel) -> Vec<f64> 
         out[i] = down[0];
     }
     out
+}
+
+// ─── Alias audit subcommand ────────────────────────────────────────────────
+
+/// Detect re-introduction of the v0.5.0-era power-amp click-band tear.
+///
+/// Renders the canonical stimulus (C6 v=120, vol=0.5 — exactly what commit
+/// `00168ca` measured against) through `WurliEngine`, then reports two
+/// numbers any CPU/structural change must not regress:
+///   * `max_step_up_db` over H6..H11 — alias plateau fingerprint
+///   * `hf_band_dbc` (5 kHz–18 kHz RMS vs H1) — broadband alias hash
+fn cmd_alias_audit(args: &[String]) {
+    use openwurli_dsp::alias_audit;
+    let want_json = has_flag(args, "--json");
+    let note = parse_flag(args, "--note", alias_audit::STIMULUS_NOTE as f64) as u8;
+    let velocity = parse_flag(args, "--velocity", alias_audit::STIMULUS_VELOCITY as f64) as u8;
+
+    let r = alias_audit::run_with_note(note, velocity);
+
+    if want_json {
+        // Tiny hand-rolled JSON to avoid a serde_json dep just for this.
+        let mut s = String::new();
+        s.push_str("{\n");
+        s.push_str(&format!("  \"f0_hz\": {:.4},\n", r.f0_hz));
+        s.push_str(&format!("  \"h1_dbfs\": {:.3},\n", r.h1_dbfs));
+        s.push_str("  \"harmonic_dbc\": [");
+        for (i, &v) in r.harmonic_dbc.iter().enumerate() {
+            if i > 0 {
+                s.push_str(", ");
+            }
+            s.push_str(&format!("{v:.3}"));
+        }
+        s.push_str("],\n");
+        s.push_str(&format!("  \"max_step_up_db\": {:.3},\n", r.max_step_up_db));
+        s.push_str(&format!(
+            "  \"max_step_up_from_harmonic\": {},\n",
+            r.max_step_up_from_harmonic
+        ));
+        s.push_str(&format!("  \"hf_band_dbc\": {:.3}\n", r.hf_band_dbc));
+        s.push_str("}");
+        println!("{s}");
+        return;
+    }
+
+    println!("Click-band alias audit");
+    println!("  Stimulus:   note={} vel={} vol={:.2}",
+        note, velocity, alias_audit::STIMULUS_VOLUME
+    );
+    println!("  Render:     {:.2}s @ {:.0} Hz, analyzing last {:.2}s",
+        alias_audit::STIMULUS_RENDER_SECONDS,
+        alias_audit::STIMULUS_SAMPLE_RATE,
+        alias_audit::STIMULUS_ANALYZE_SECONDS
+    );
+    println!();
+    println!("  Detected f0:  {:.3} Hz  (nominal {:.3} Hz)",
+        r.f0_hz,
+        440.0 * 2f64.powf((note as f64 - 69.0) / 12.0)
+    );
+    println!("  H1:           {:.2} dBFS", r.h1_dbfs);
+    println!();
+    println!("  Harmonic envelope (dBc relative to H1):");
+    for (i, &dbc) in r.harmonic_dbc.iter().enumerate() {
+        let marker = if i + 1 >= alias_audit::PLATEAU_FIRST_HARMONIC
+            && i + 1 <= alias_audit::PLATEAU_LAST_HARMONIC
+        {
+            " *"
+        } else {
+            "  "
+        };
+        println!("    H{:<2} {} {:>8.2} dBc", i + 1, marker, dbc);
+    }
+    println!("                  (* = harmonics in plateau-detection band)");
+    println!();
+    println!("  max_step_up_db:  {:+.2} dB  (worst rise: H{} → H{})",
+        r.max_step_up_db,
+        r.max_step_up_from_harmonic,
+        r.max_step_up_from_harmonic + 1
+    );
+    println!("                   target: ≤ 0 dB (monotonic descent); gate: ≤ +1.0");
+    println!("  hf_band_dbc:     {:.2} dBc  (5–18 kHz RMS rel. to H1)", r.hf_band_dbc);
+    println!("                   target: track baseline; gate: ≤ baseline + 2.0 dB");
 }
 
 // ─── Calibrate subcommand ──────────────────────────────────────────────────
