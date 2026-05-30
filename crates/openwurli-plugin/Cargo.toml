@@ -10,6 +10,9 @@ description = "Wurlitzer 200A virtual instrument — CLAP and VST3 plugin"
 [features]
 default = ["legacy-power-amp"]
 legacy-power-amp = ["openwurli-dsp/legacy-power-amp"]
+# Opt-in melange 12-node DK preamp solver. Default uses the legacy 8-node
+# solver for ~1.6-7× CPU win with no audible tone difference.
+melange-preamp = ["openwurli-dsp/melange-preamp"]
 
 [lib]
 crate-type = ["cdylib", "lib"]

@@ -258,8 +258,9 @@ impl DkState {
 impl DkPreamp {
     /// No-op in the legacy preamp — authentic circuit noise is a
     /// melange-only feature. The hand-written MNA solver has no noise
-    /// model. Method mirrored here so plugin code compiles under
-    /// `--features legacy-preamp`.
+    /// model. Method mirrored here so the plugin compiles regardless of
+    /// which preamp is selected (default = this; `--features melange-preamp`
+    /// = melange solver).
     pub fn set_noise_enabled(&mut self, _on: bool) {}
 
     /// No-op in the legacy preamp — see `set_noise_enabled`.

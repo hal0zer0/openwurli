@@ -508,8 +508,8 @@ This is the most complex processing stage. The preamp adds harmonic coloring at 
 ### DECISION: Trait-Based A/B Architecture
 
 The preamp implements a `PreampModel` trait with `process_sample()`, `set_ldr_resistance()`, `reset()`. Two implementations exist behind this interface:
-1. **DkPreamp** (melange-generated 12-node MNA solver using the DK method) — the shipping implementation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `dk-preamp-derivation.md`.
-2. **DkPreampLegacy** (`dk_preamp_legacy.rs`, `--features legacy-preamp`) — hand-written 8-node solver. Retained for comparison only; not used in production. The former `EbersMollPreamp` was deleted in v0.3.0.
+1. **DkPreampLegacy** (`dk_preamp_legacy.rs`) — hand-written 8-node MNA solver. **Default since v0.5.2.** Measured (v0.5.2 A/B) to be tonally indistinguishable from the melange solver (±0.18 dB gain offset, identical THD/H2/H3, identical tremolo range 6.10 dB) while being 1.6-7× faster depending on workload. The former `EbersMollPreamp` was deleted in v0.3.0.
+2. **DkPreamp** (melange-generated 12-node MNA solver using the DK method, `--features melange-preamp`) — full-precision implementation with shadow-pump cancellation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `dk-preamp-derivation.md`. Retained for full-precision DC-pump characterization studies; opt-in if a future analysis surfaces a tonal difference the v0.5.2 A/B missed.
 
 ### Oversampling Wrapper
 

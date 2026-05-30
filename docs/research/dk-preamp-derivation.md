@@ -328,7 +328,7 @@ gm_eff = gm_raw · sech²(Ic_raw / Ic_max)     // = gm_raw · (1 - tanh²(...))
 
 ## 14. Per-Sample Algorithm
 
-`DkPreamp` implements the `PreampModel` trait (defined in `preamp.rs`), which provides `process_sample()`, `set_ldr_resistance()`, and `reset()`. This trait-based design allows A/B comparison with `dk_preamp_legacy.rs` (`--features legacy-preamp`). The `EbersMollPreamp` was deleted in v0.3.0.
+`DkPreamp` implements the `PreampModel` trait (defined in `preamp.rs`), which provides `process_sample()`, `set_ldr_resistance()`, and `reset()`. This trait-based design allows A/B comparison between the legacy 8-node solver (`dk_preamp_legacy.rs`, default since v0.5.2) and the melange 12-node solver (`--features melange-preamp`). The `EbersMollPreamp` was deleted in v0.3.0.
 
 ```
 function process_sample(Vin):

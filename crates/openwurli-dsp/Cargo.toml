@@ -9,7 +9,12 @@ description = "Wurlitzer 200A DSP library — modal synthesis, preamp circuit si
 
 [features]
 default = ["legacy-power-amp"]
-legacy-preamp = []
+# Opt-in melange 12-node DK preamp solver. Default (no feature) uses the
+# hand-written 8-node legacy solver — same tonal character within 0.18 dB
+# and identical THD/harmonic profile (v0.5.2 A/B), but 1.6-7× faster
+# depending on workload. Melange is retained for full-precision DC-pump
+# cancellation studies.
+melange-preamp = []
 legacy-tremolo = []
 legacy-power-amp = []
 

@@ -206,7 +206,7 @@ fix touches the preamp.
 ### Rust DSP Source
 | File | Purpose |
 |---|---|
-| `crates/openwurli-dsp/src/dk_preamp/` | Preamp (melange 12-node default; legacy 8-node via --features legacy-preamp) |
+| `crates/openwurli-dsp/src/dk_preamp/` | Preamp (legacy 8-node default since v0.5.2; melange 12-node via --features melange-preamp) |
 | `crates/openwurli-dsp/src/preamp.rs` | PreampModel trait |
 | `crates/openwurli-dsp/src/pickup.rs` | Electrostatic pickup: 1/(1-y) + HPF |
 | `crates/openwurli-dsp/src/gen_power_amp.rs` | Melange-generated 7-BJT Class AB solver (default) |

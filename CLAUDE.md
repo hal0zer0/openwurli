@@ -63,9 +63,9 @@ crates/
     variation.rs              #   Per-note detuning and amplitude variation
     filters.rs                #   Biquad wrapper (backed by melange-primitives)
     oversampler.rs            #   2x polyphase IIR half-band
-    dk_preamp/                #   Feature-toggled preamp (melange default, --features legacy-preamp for A/B)
-    dk_preamp_legacy.rs       #   Hand-written 8-node MNA preamp solver (A/B only)
-    gen_preamp.rs             #   Melange-generated 12-node preamp solver (default)
+    dk_preamp/                #   Feature-toggled preamp (legacy 8-node default; --features melange-preamp for 12-node)
+    dk_preamp_legacy.rs       #   Hand-written 8-node MNA preamp solver (default since v0.5.2)
+    gen_preamp.rs             #   Melange-generated 12-node preamp solver (opt-in via --features melange-preamp)
     mlp_correction.rs         #   Per-note MLP inference (2->8->8->11)
     mlp_weights.rs            #   Trained MLP weights (195 params)
     preamp.rs                 #   PreampModel trait

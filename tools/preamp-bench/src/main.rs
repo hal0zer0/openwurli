@@ -133,12 +133,14 @@ fn create_preamp(args: &[String]) -> Box<dyn PreampModel> {
     let model = parse_flag_str(args, "--model", "dk");
     match model {
         "dk" => Box::new(DkPreamp::new(OVERSAMPLED_SR)),
-        #[cfg(feature = "legacy-preamp")]
+        // Legacy 8-node solver is always available regardless of cargo
+        // features, since the module is always compiled in (it backs the
+        // default `dk` selection when `--features melange-preamp` is OFF).
         "dk-legacy" => Box::new(openwurli_dsp::dk_preamp_legacy::DkPreamp::new(
             OVERSAMPLED_SR,
         )),
         other => {
-            eprintln!("Unknown model '{other}'. Use 'dk'.");
+            eprintln!("Unknown model '{other}'. Use 'dk' or 'dk-legacy'.");
             std::process::exit(1);
         }
     }
