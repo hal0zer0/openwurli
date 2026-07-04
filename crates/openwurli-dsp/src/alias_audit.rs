@@ -12,14 +12,14 @@
 //! render (C6 v=120, vol=0.5 — exactly what the original fix commit
 //! diagnosed against):
 //!
-//! * `max_step_up_db`  — largest positive delta between adjacent harmonics
-//!                       in H6..H11. Real harmonic decay is monotonically
-//!                       descending; alias-folded energy creates a plateau
-//!                       or bump. Pre-fix: +5 dB. Post-fix: −1 dB.
-//! * `hf_band_dbc`     — RMS of the 5 kHz–18 kHz band of the rendered
-//!                       output, expressed in dB relative to the fundamental
-//!                       (H1) magnitude. Broadband insurance against alias
-//!                       hash that doesn't land on integer-harmonic bins.
+//! * `max_step_up_db` — largest positive delta between adjacent harmonics
+//!   in H6..H11. Real harmonic decay is monotonically descending;
+//!   alias-folded energy creates a plateau or bump. Pre-fix: +5 dB.
+//!   Post-fix: −1 dB.
+//! * `hf_band_dbc` — RMS of the 5 kHz–18 kHz band of the rendered output,
+//!   expressed in dB relative to the fundamental (H1) magnitude. Broadband
+//!   insurance against alias hash that doesn't land on integer-harmonic
+//!   bins.
 
 use crate::WurliEngine;
 use crate::filters::Biquad;
@@ -241,7 +241,11 @@ fn dft_magnitude(signal: &[f64], freq: f64, sr: f64) -> f64 {
 }
 
 fn mag_to_db(mag: f64) -> f64 {
-    if mag > 0.0 { 20.0 * mag.log10() } else { -200.0 }
+    if mag > 0.0 {
+        20.0 * mag.log10()
+    } else {
+        -200.0
+    }
 }
 
 /// Scan DFT magnitude in a ±5 Hz window around `nominal_f0` at 0.1 Hz steps

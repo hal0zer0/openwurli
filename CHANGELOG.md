@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- **Preamp default flipped to the legacy 8-node MNA solver — closes the
+  remaining CPU regression vs v0.3.0.** v0.5.1 reverted only the power
+  amp; the melange 12-node full-Gummel-Poon preamp (which landed in
+  v0.5.0 alongside it) stayed default, and it runs twice per OS sample
+  (main + shadow pump cancellation) with a per-sample `.runtime R`
+  matrix update from the tremolo LDR. That made the regression
+  tremolo-specific — invisible on the no-tremolo benchmarks the v0.5.1
+  hotfix was validated against, and exactly the workload users play.
+  Cross-version wall-clock (median of 3, release builds):
+
+  | Benchmark                    | v0.3.0 | v0.4.0 | v0.5.1 | now    |
+  |------------------------------|-------:|-------:|-------:|-------:|
+  | render 30 s single, no trem  | 1.61 s | 1.63 s | 0.79 s | 0.46 s |
+  | render 30 s single + trem    | 3.36 s | 3.24 s | 7.18 s | 1.03 s |
+  | render-poly 6-note 10 s      | 3.74 s | 3.74 s | 1.78 s | 1.13 s |
+
+  (v0.4.0 changed no solver code — timings identical to v0.3.0. User
+  reports blaming 0.4.0 were misattribution; the whole regression
+  shipped in 0.5.0.)
+
+  Tonal delta vs melange, measured before the flip: ±0.18 dB flat gain
+  offset, identical tremolo range (6.10 dB), THD identical to 4
+  decimals, per-1/3-octave bands within ±0.15 dB, per-WAV residual
+  after RMS normalization at −75 dBFS. Tremolo verified end-to-end
+  post-flip: full-chain C4 render shows 5.88 dB p-p AM at 5.56 Hz vs
+  5.87 dB on v0.5.1 — identical to 0.01 dB. The melange preamp remains
+  available via `--features melange-preamp` for full-precision DC-pump
+  studies. Alias-audit regression gate passes with the legacy default.
+
+### Added
+- **Shadow-pump characterization diagnostics in `preamp-bench`**
+  (`pump-sweep`, `pump-trace`, `pump-spike`, `pump-step`,
+  `pump-sinusoid`) plus `tools/analyze_pump_dynamics.py`. Byproduct of
+  the investigation into replacing the shadow preamp with an analytical
+  pump model — concluded infeasible at reasonable complexity (the pump
+  under sinusoidal LDR modulation swings 8.8 V p-p with 3.5×
+  directional asymmetry and a multi-second envelope transient; best
+  linear IIR fit misses by three orders of magnitude). The legacy-
+  solver default above makes the shadow cost moot; tools retained for
+  any future revisit.
+
+### Code hygiene
+- **fmt + clippy fixes for rustc 1.96 / rustfmt 1.9** (new
+  `doc_overindented_list_items` lint and single-line `if` formatting):
+  doc-comment reflow in `alias_audit.rs`, four mechanical lint fixes in
+  `preamp-bench`. No behavior change.
+
 ## [0.5.1] "SweetDevotion" - 2026-05-28
 
 ### Performance

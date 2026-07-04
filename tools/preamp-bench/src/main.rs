@@ -1010,7 +1010,7 @@ fn cmd_alias_audit(args: &[String]) {
             r.max_step_up_from_harmonic
         ));
         s.push_str(&format!("  \"hf_band_dbc\": {:.3}\n", r.hf_band_dbc));
-        s.push_str("}");
+        s.push('}');
         println!("{s}");
         return;
     }
@@ -1039,7 +1039,7 @@ fn cmd_alias_audit(args: &[String]) {
     println!("  Harmonic envelope (dBc relative to H1):");
     for (i, &dbc) in r.harmonic_dbc.iter().enumerate() {
         let marker = if i + 1 >= alias_audit::PLATEAU_FIRST_HARMONIC
-            && i + 1 <= alias_audit::PLATEAU_LAST_HARMONIC
+            && i < alias_audit::PLATEAU_LAST_HARMONIC
         {
             " *"
         } else {
@@ -1691,15 +1691,15 @@ fn cmd_render_midi(args: &[String]) {
                             evt: MidiEvt::NoteOff { note: key.as_int() },
                         });
                     }
-                    midly::MidiMessage::Controller { controller, value } => {
-                        if controller.as_int() == 64 {
-                            events.push(TimedEvent {
-                                time_s,
-                                evt: MidiEvt::Pedal {
-                                    on: value.as_int() >= 64,
-                                },
-                            });
-                        }
+                    midly::MidiMessage::Controller { controller, value }
+                        if controller.as_int() == 64 =>
+                    {
+                        events.push(TimedEvent {
+                            time_s,
+                            evt: MidiEvt::Pedal {
+                                on: value.as_int() >= 64,
+                            },
+                        });
                     }
                     _ => {}
                 },
@@ -2581,7 +2581,10 @@ fn cmd_pump_spike(args: &[String]) {
     let settle = parse_flag(args, "--settle", 400_000.0) as usize;
     let avg = parse_flag(args, "--avg", 8_192.0) as usize;
     let prefix = parse_flag_str(args, "--csv-prefix", "/tmp/pump_spike");
-    assert!(avg % 2 == 0, "--avg must be even to cancel Nyquist 2-cycle");
+    assert!(
+        avg.is_multiple_of(2),
+        "--avg must be even to cancel Nyquist 2-cycle"
+    );
 
     // Pair-averaged stats over the post-settle window (cancels Nyquist 2-cycle
     // exactly; remaining spread is real low-frequency residual).
