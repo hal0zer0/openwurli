@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] "YouTreatedMeCruel" - 2026-07-04
+
 ### Performance
 - **Preamp default flipped to the legacy 8-node MNA solver — closes the
   remaining CPU regression vs v0.3.0.** v0.5.1 reverted only the power
@@ -38,6 +40,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   studies. Alias-audit regression gate passes with the legacy default.
 
 ### Added
+- **Click-band alias detector + locked regression gate.** New
+  `alias_audit` module renders a canonical three-note stimulus set
+  (C5/C6/G6, v=120) through the full `WurliEngine` chain and measures
+  two indicators of the historical v0.5.0 click-band tear: the largest
+  positive step between adjacent harmonics in H6–H11 (real harmonic
+  decay is monotonic; alias-folded energy plateaus) and broadband
+  5–18 kHz energy relative to H1. Baseline captured against v0.5.1 in
+  `tests/baselines/alias_audit_v0_5_1.json`; the integration test
+  fails any change that raises `max_step_up_db` more than 1.5 dB or
+  `hf_band_dbc` more than 2.0 dB over baseline. Bit-deterministic
+  (0.000 dB run-to-run). CLI: `preamp-bench alias-audit
+  [--note N --velocity V --json]`. This gate is what cleared the
+  legacy-preamp default flip above (step_up within 0.14 dB of
+  baseline, hf_band identical).
 - **Shadow-pump characterization diagnostics in `preamp-bench`**
   (`pump-sweep`, `pump-trace`, `pump-spike`, `pump-step`,
   `pump-sinusoid`) plus `tools/analyze_pump_dynamics.py`. Byproduct of
@@ -858,7 +874,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/hal0zer0/openwurli/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/hal0zer0/openwurli/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/hal0zer0/openwurli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/hal0zer0/openwurli/compare/v0.3.1...v0.4.0
