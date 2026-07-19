@@ -34,7 +34,7 @@ Measured physical pickup slot widths from EP-Forum thread (140B/200 series, simi
 
 **Patent design specification (US 2,919,616, Andersen, 1960):** The pickup slot is specified as **"0.005 inch greater than the width of the associated reed, thereby providing a normal clearance gap of about 0.0025 inch on either side of the reed."** The patent also references spacing tools of ".002, .0025, .003 inch etc." for adjusting pickup sensitivity. The 0.0025"/side (0.064mm) design specification is tighter than the community-measured values above (0.002"-0.012"), likely reflecting manufacturing tolerances and differences between patent ideals and production reality.
 
-**Critical note:** These are **slot widths** (lateral clearance), not the vertical gap between the reed face and the bottom of the slot. The vertical gap is not documented in any patent or service manual. Service manual procedures describe adjusting reed height relative to the pickup by bending the pickup tabs, but no specific vertical gap dimension has been found. The only published d₀ value is Pfeifle's 1.5mm (EP300 model, DAFx-17, 2017) — not directly applicable to the 200A. See [Memory: DISPLACEMENT_SCALE absorbs this unknown](../CLAUDE.md).
+**Critical note:** These are **slot widths** (lateral clearance), not the vertical gap between the reed face and the bottom of the slot. The vertical gap (d₀) is **not documented in any patent, service manual, or academic source** — confirmed by a 99-agent adversarial deep-research pass (2026-07). Service manual procedures describe voicing only qualitatively (reed flat-face coplanar with the pickup face; the over-loud remedy bends the pickup ends up 1/32″–1/16″), with no absolute gap dimension. **Correction:** an earlier version of this doc cited "Pfeifle's 1.5 mm (EP300)" as the only published d₀ — that is a **misattribution**. The Pfeifle DAFx-17 (2017) paper models the **EP200** (not EP300, not 200A), contains no "1.5 mm" and no rest-gap value at all, and reports its instrument's polarizing voltage as 170 V manual / 130 V measured. There is **no published d₀ for any Wurlitzer** that survives verification. The full provenance and the reason d₀ is *structurally* underdetermined (not merely unfound) live in **[Reed–Pickup Displacement](reed-pickup-displacement.md)**; `DISPLACEMENT_SCALE` absorbs the unknown as an OBM-calibrated constant.
 
 ### 1.4 Slot Width Ratios
 
@@ -278,14 +278,14 @@ For a treble reed (smaller area, narrower gap):
 
 ### 3.6 Total System Capacitance
 
-GroupDIY reports a measured pickup capacitance of **~240 pF** ("reed pickup capacitance was measured at 240pF").
+A single GroupDIY forum post reports **~240 pF** ("reed pickup capacitance was measured at 240pF"). **Confidence: LOW.** The 2026-07 deep-research pass adversarially **refuted** this figure as unverifiable single-source forum hearsay — no primary source (patent, service manual, or academic paper) gives any pickup-capacitance value for the 200A. We retain 240 pF as the model's `C_total` because (a) it is the only number available and (b) it is geometrically plausible (see below), but it is an **assumption, not a measurement**, and the pickup RC corner (TAU = 68.88 µs, f_c ≈ 2312 Hz) inherits that low confidence. An LCR-meter reading of a real reed bar would settle it. See [Reed–Pickup Displacement §5](reed-pickup-displacement.md).
 
-This cannot be per-reed capacitance (64 reeds at 240 pF each = 15.4 nF, impossibly large). It is the **total system capacitance** at the preamp input node, comprising:
+240 pF cannot be per-reed (64 reeds × 240 pF = 15.4 nF, impossibly large); if real it is the **total system capacitance** at the preamp input node, comprising:
 - 64 reed-to-plate capacitors in parallel: 64 x 2-4 pF = ~130-250 pF
 - Wiring capacitance (reed bar to preamp board): ~10-50 pF
 - Stray/parasitic capacitance: ~10-30 pF
 
-The geometric estimate (130-250 pF for 64 reeds) is consistent with the measured 240 pF.
+The geometric estimate (130-250 pF for 64 reeds) is consistent with the ~240 pF figure — which is why we retain it despite the sourcing being weak.
 
 ### 3.7 RC Time Constant and Cutoff Frequency
 
