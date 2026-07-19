@@ -60,6 +60,11 @@ pub struct Tremolo {
     osc_state: gen_tremolo::CircuitState,
 
     // --- Shared LDR model ---
+    /// Oscillator/processing sample rate — retained so `reset()` can re-settle
+    /// the Twin-T oscillator to its steady amplitude (a host `reset()` that
+    /// zeroed it without re-settling left the tremolo silent, since the
+    /// oscillator needs ~2 s to build up).
+    sample_rate: f64,
     depth: f64,
     r_ldr: f64,
     ldr_envelope: f64,
@@ -96,6 +101,7 @@ impl Tremolo {
                 s
             },
 
+            sample_rate,
             depth,
             r_ldr: R_LDR_MAX,
             ldr_envelope: 0.0,
@@ -189,7 +195,21 @@ impl Tremolo {
         }
         #[cfg(not(feature = "legacy-tremolo"))]
         {
-            self.osc_state.reset();
+            // Rebuild the Twin-T oscillator exactly as `new()` does, then settle
+            // it to steady amplitude. `CircuitState::reset()` sets v_prev to the
+            // DC operating point — the oscillator's *unstable equilibrium* — so a
+            // clean solver started there never begins oscillating; the tremolo
+            // stays silent after any host `reset()`. `default()` carries the tiny
+            // startup perturbation that kicks the oscillation off. The settle
+            // touches only the cheap LFO solver, not the preamp chain.
+            let mut s = gen_tremolo::CircuitState::default();
+            if (self.sample_rate - gen_tremolo::SAMPLE_RATE).abs() > 0.5 {
+                s.set_sample_rate(self.sample_rate);
+            }
+            for _ in 0..(self.sample_rate * 2.0) as usize {
+                gen_tremolo::process_sample(0.0, &mut s);
+            }
+            self.osc_state = s;
         }
         self.ldr_envelope = 0.0;
         self.r_ldr = self.r_ldr_max;
@@ -275,6 +295,36 @@ mod tests {
         assert!(
             crossings >= 8 && crossings <= 14,
             "Expected ~11 oscillations in 2s, got {crossings}"
+        );
+    }
+
+    #[test]
+    fn test_oscillator_survives_reset() {
+        // Regression guard: a host `reset()` (called before playback) must NOT
+        // leave the tremolo silent. `CircuitState::reset()` parks the Twin-T at
+        // its DC operating point (unstable equilibrium) where a clean solver
+        // never starts oscillating — that shipped the tremolo dead in DAWs while
+        // offline renders (fresh `Tremolo::new`) looked fine. `Tremolo::reset()`
+        // must rebuild + re-settle the oscillator so modulation persists.
+        let sr = 44100.0;
+        let mut trem = Tremolo::new(1.0, sr);
+        trem.reset();
+
+        let n = (sr * 2.0) as usize;
+        let mut lo = f64::INFINITY;
+        let mut hi = f64::NEG_INFINITY;
+        for _ in 0..n {
+            let r = trem.process();
+            lo = lo.min(r);
+            hi = hi.max(r);
+        }
+        // After reset the shunt must still swing meaningfully (dead oscillator
+        // would pin it to a single value → ratio ≈ 1.0).
+        let swing_db = 20.0 * (hi / lo).log10();
+        assert!(
+            swing_db > 6.0,
+            "Tremolo shunt barely moves after reset() ({swing_db:.1} dB, R∈[{lo:.0},{hi:.0}]) \
+             — oscillator likely dead (reset parked it at the DC equilibrium)"
         );
     }
 
