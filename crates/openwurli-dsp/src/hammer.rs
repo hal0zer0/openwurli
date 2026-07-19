@@ -37,16 +37,22 @@ pub fn dwell_time(velocity: f64, fundamental_hz: f64) -> f64 {
 ///   - D4 (294 Hz): 50% at cycle 1, 90% at cycle 2
 ///   - D6 (1175 Hz): near-instant (full by cycle 0-1)
 ///
-/// Formula: 2.5 periods at ff, 5.0 at pp, with 2ms floor.
-/// The raised cosine 0.5*(1-cos(pi*t/T)) reaches 90% at 79.5% of T.
-/// With 2.5 periods at ff: 90% at 0.795 * 2.5 = cycle 1.99 ≈ cycle 2.
+/// Formula: 1.0 period at ff, 2.0 at pp, with 2ms floor.
 ///
-/// No upper clamp — bass reeds are heavy and physically need more cycles
-/// to reach full amplitude. C2 ff: 38ms, C2 pp: 77ms. The velocity
-/// dependence in bass attack timing is audible and correct.
+/// 2026-07: shortened from 2.5/5.0 periods. The old ramp made the low bass
+/// *swell in* over ~38 ms (C2 ff) — the growl faded up instead of the hammer
+/// cracking, so the bass "never seemed to growl even when slammed" and had no
+/// percussive thump (user-confirmed). The physical anchor is the hammer contact
+/// (dwell ≈ 0.75 cycle, Miessner): the reed reaches near-peak by the end of
+/// contact, ~1 cycle — not cycle 2. The old "90% at cycle 2" target came from
+/// room-coupled OBM whose smeared attack over-reads the rise time; the ear
+/// (final gate) wants the crack. Because the ramp is period-scaled, this
+/// primarily speeds up the bass (C2 ff 38 → ~15 ms); treble already sits at the
+/// 2 ms floor and is unchanged. The raised cosine reaches 90% at 79.5% of T, so
+/// 1.0 period ⇒ 90% by ~cycle 0.8.
 pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64) -> f64 {
     let period_s = 1.0 / fundamental_hz;
-    let periods = 2.5 + 2.5 * (1.0 - velocity);
+    let periods = 1.0 + 1.0 * (1.0 - velocity);
     (periods * period_s).max(0.002)
 }
 
@@ -248,20 +254,20 @@ mod tests {
             "mid onset ({mid:.4}) should exceed treble ({treble:.4})"
         );
 
-        // C2 ff: 2.5 periods of 65 Hz = 38.5ms (no ceiling clamp)
+        // C2 ff: 1.0 period of 65 Hz = 15.4ms (percussive bass crack)
         assert!(
-            (bass - 2.5 / 65.0).abs() < 0.001,
-            "C2 ff should be ~38.5ms, got {bass:.4}"
+            (bass - 1.0 / 65.0).abs() < 0.001,
+            "C2 ff should be ~15.4ms, got {bass:.4}"
         );
-        // C6 ff: 2.5 periods of 1047 Hz = 2.39ms (no longer clamped)
+        // C6 ff: 1.0/1047 = 0.95ms → clamped to the 2ms floor
         assert!(
-            (treble - 2.5 / 1047.0).abs() < 0.0001,
-            "C6 ff should be ~2.4ms, got {treble:.6}"
+            (treble - 0.002).abs() < 0.0001,
+            "C6 ff should hit the 2ms floor, got {treble:.6}"
         );
-        // C4 ff: 2.5/262 = 9.5ms (unclamped)
+        // C4 ff: 1.0/262 = 3.8ms
         assert!(
-            (mid - 2.5 / 262.0).abs() < 0.001,
-            "C4 ff should be ~9.5ms, got {mid:.4}"
+            (mid - 1.0 / 262.0).abs() < 0.001,
+            "C4 ff should be ~3.8ms, got {mid:.4}"
         );
     }
 
@@ -272,9 +278,9 @@ mod tests {
         let pp = onset_ramp_time(0.0, 262.0);
 
         assert!(pp > ff, "pp onset ({pp:.4}) should exceed ff ({ff:.4})");
-        // ff = 2.5 periods, pp = 5.0 periods
-        let expected_ff = 2.5 / 262.0;
-        let expected_pp = 5.0 / 262.0;
+        // ff = 1.0 period, pp = 2.0 periods (softer hit = longer contact/ramp)
+        let expected_ff = 1.0 / 262.0;
+        let expected_pp = 2.0 / 262.0;
         assert!((ff - expected_ff).abs() < 0.001);
         assert!((pp - expected_pp).abs() < 0.001);
     }

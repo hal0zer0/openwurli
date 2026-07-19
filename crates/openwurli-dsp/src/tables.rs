@@ -249,7 +249,7 @@ pub fn reed_compliance(midi: u8) -> f64 {
 ///   C7 (MIDI 96): 0.24  (clean, bell-like)
 const DS_AT_C4: f64 = 0.85;
 const DS_EXPONENT: f64 = 0.75;
-const DS_CLAMP: (f64, f64) = (0.02, 0.88);
+const DS_CLAMP: (f64, f64) = (0.02, 0.95);
 
 /// Runtime-overridable calibration parameters.
 /// All fields default to the current hardcoded constants.
@@ -631,14 +631,22 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
 /// Gives ~18-22 dB mid-register range, ~10-12 dB at extremes.
 pub fn velocity_exponent(midi: u8) -> f64 {
     let m = midi as f64;
-    // Bell curve centered at MIDI 62 (D4, mid-register sweet spot)
-    // Peak exponent 1.7 (expanded dynamics)
-    // Edges (A1, C7) at 1.3 (moderate dynamics — heavy bass reeds, light treble)
+    // Bell centered at MIDI 62 (D4). Peak 1.7 (expanded mid dynamics), treble
+    // edge 1.3. The BASS edge is compressed to ~0.55 (2026-07): a lower exponent
+    // raises the reed amplitude at moderate velocity (ff, at scurve=1.0, is
+    // unchanged), so the reed drives close to the pickup and the 1/(1−y) bark
+    // spikes appear at moderate playing — not only when slammed. The real 200A
+    // bass growls when played moderately; the old symmetric 1.3 edge kept the
+    // bass too clean until ff. The intentional cost is reduced bass dynamic
+    // range — acceptable here (openwurli models circuit authenticity; loudness/
+    // dynamics balancing is Vurli's job, per the scope split).
     let center = 62.0;
-    let sigma = 15.0; // Gradual compression onset across keyboard
-    let min_exp = 1.3;
+    let sigma = 15.0;
     let max_exp = 1.7;
+    let treble_min = 1.3;
+    let bass_min = 0.55;
     let t = f64::exp(-0.5 * ((m - center) / sigma).powi(2));
+    let min_exp = if m < center { bass_min } else { treble_min };
     min_exp + t * (max_exp - min_exp)
 }
 

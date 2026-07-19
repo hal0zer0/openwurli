@@ -52,7 +52,7 @@ pub const PICKUP_MAX_Y: f64 = 0.98;
 /// smoothly bends toward `PICKUP_MAX_Y` so the upper-envelope tip never crosses
 /// a hard corner. Picked to leave the entire normal operating range untouched
 /// (typical y_peak at v=127 is ~0.85 with DS at NEW values 0.85/0.88).
-pub const PICKUP_KNEE_Y: f64 = 0.85;
+pub const PICKUP_KNEE_Y: f64 = 0.94;
 
 /// Smooth saturation on the reed-displacement fraction `y = x / d_0`.
 ///
@@ -195,7 +195,7 @@ mod tests {
         // output equals the limit (matches the old hard-clamp magnitude).
         // What we forbid is *exceeding* the limit and re-entering the
         // 1/(1−y) singularity zone.
-        for y in [0.85, 0.9, 0.95, 0.98, 1.0, 2.0, 100.0, -100.0] {
+        for y in [0.95, 0.96, 0.98, 1.0, 2.0, 100.0, -100.0] {
             let out = pickup_soft_saturate(y);
             assert!(
                 out.abs() <= PICKUP_MAX_Y + 1e-15,
@@ -212,7 +212,7 @@ mod tests {
     fn test_soft_saturate_smooth_above_knee() {
         // Inputs in the middle of the saturation band (not at tanh's f64
         // saturation tail) must land strictly between knee and limit.
-        for y in [0.86, 0.9, 0.95, 0.98, 1.0, 1.5] {
+        for y in [0.95, 0.96, 0.97, 0.98, 1.0, 1.5] {
             let out = pickup_soft_saturate(y);
             assert!(
                 out > PICKUP_KNEE_Y && out < PICKUP_MAX_Y,

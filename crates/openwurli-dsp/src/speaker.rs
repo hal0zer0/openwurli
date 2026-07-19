@@ -20,7 +20,17 @@
 use crate::filters::Biquad;
 
 /// HPF cutoff at fully authentic position.
-const HPF_AUTHENTIC_HZ: f64 = 95.0;
+///
+/// 2026-07: lowered 95 → 30 Hz. The old 95 Hz stripped the fundamental of the
+/// low bass (A1 = 55 Hz, C2 = 65 Hz), leaving harmonics with no body — the
+/// low end sounded thin and never "growled" even when slammed (user-confirmed).
+/// The 95 Hz roll-off is the small 4×8" speaker's own bass limit, i.e. cabinet
+/// coloration — which per the openwurli/Vurli scope split belongs downstream in
+/// Vurli, not in the raw-physics circuit model. The circuit's genuine bass
+/// roll-off (power-amp output coupling caps) is already modeled upstream. 30 Hz
+/// here is subsonic protection only, preserving the full musical bass the
+/// circuit produces; Vurli can impose an authentic speaker roll-off on top.
+const HPF_AUTHENTIC_HZ: f64 = 30.0;
 /// HPF Q (slightly underdamped for speaker resonance bump).
 const HPF_Q: f64 = 0.75;
 /// LPF cutoff at fully authentic position.
@@ -148,18 +158,28 @@ mod tests {
     }
 
     #[test]
-    fn test_authentic_bass_rolloff() {
+    fn test_authentic_bass_preserved_subsonic_removed() {
+        // 2026-07: the speaker HPF is now subsonic-only (30 Hz) — the cabinet's
+        // own 95 Hz bass roll-off is Vurli's domain (see HPF_AUTHENTIC_HZ). So
+        // musical bass (A1 = 55 Hz, C2 = 65 Hz) must pass nearly intact, while
+        // deep subsonic (< 20 Hz) is still rolled off for DC/rumble protection.
         let sr = 44100.0;
         let mut speaker = Speaker::new(sr);
         speaker.set_character(1.0);
 
         let mid = measure_response(&mut speaker, 500.0, sr);
-        let bass = measure_response(&mut speaker, 50.0, sr);
+        let bass = measure_response(&mut speaker, 55.0, sr); // A1 fundamental
+        let subsonic = measure_response(&mut speaker, 12.0, sr);
 
-        let atten_db = 20.0 * (bass / mid).log10();
+        let bass_db = 20.0 * (bass / mid).log10();
+        let sub_db = 20.0 * (subsonic / mid).log10();
         assert!(
-            atten_db < -6.0,
-            "50Hz should be attenuated: {atten_db:.1} dB"
+            bass_db > -3.0,
+            "A1 (55 Hz) fundamental must be preserved, got {bass_db:.1} dB"
+        );
+        assert!(
+            sub_db < -6.0,
+            "subsonic (12 Hz) must still roll off, got {sub_db:.1} dB"
         );
     }
 
