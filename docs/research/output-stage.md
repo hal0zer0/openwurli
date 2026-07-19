@@ -43,7 +43,7 @@ The Wurlitzer 200A service manual explicitly states:
 
 > "The reed bar signal is modulated by inserting the vibrato voltage into the feedback loop of the high impedance preamp. A divider is formed by the feedback resistor R-10, and the light dependent resistor of LG-1. The L.D.R., in conjunction with the light emitting diode in the same package, creates a variable leg in the feedback divider and makes possible amplitude modulation of the reed bar voltage."
 
-R-10 (56K) feeds back from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD coupling cap) AC-couples fb_junct to TR-1's **emitter**. This is **series-series (emitter) NEGATIVE feedback**. Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO pot → 18K → LG-1 LED. When the LDR resistance changes, it diverts feedback current away from the emitter, modulating the preamp's closed-loop gain.
+R-10 (56K) feeds back from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD coupling cap) AC-couples fb_junct to TR-1's **emitter**. This is **series-series (emitter) NEGATIVE feedback**. Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (top terminal = fb_junct, bottom terminal = ground, wiper → the LDR branch), with an 18K resistor bridging top→wiper and R18 (680 Ω) in series with the LDR off the wiper. Front-panel depth = wiper position. When the LDR resistance changes, it diverts feedback current away from the emitter, modulating the preamp's closed-loop gain. (The old "fb_junct → 50K pot → 18K → LG-1 series chain" reading was corrected 2026-07-19 to this loaded divider — see §2.3.)
 
 **Implications for modeling:**
 - Tremolo modulates preamp GAIN via emitter feedback, which means the distortion character changes with the tremolo cycle
@@ -90,7 +90,7 @@ Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vc
 
 **Waveform:** The real twin-T oscillator produces a mildly distorted sinusoid (estimated THD 3-10%). The OpenWurli implementation now uses a melange-generated Twin-T circuit oscillator as the default, which models the real waveform shape including the mild distortion. The behavioral sine LFO is still available behind `--features legacy-tremolo`.
 
-**LED drive path:** Node G → R17 (4.7K) → LG-1 pin 1 (LED cathode) → LED → pin 2 (LED anode) → return to Vcc via cable. The LG-1 LED symbol points downward on the schematic (anode=pin 2 at top, cathode=pin 1 at bottom).
+**LED drive path:** Node G → R17 (4.7K) → LG-1 pin 1 (LED cathode) → LED → pin 2 (LED anode) → return to Vcc via cable. The LG-1 LED symbol points downward on the schematic (anode=pin 2 at top, cathode=pin 1 at bottom). The LED runs at a **fixed ~0.84 mA** set by R17 — front-panel depth does **NOT** scale the LED drive. Depth lives entirely in the shunt divider (§2.3), not in the LED brightness.
 
 **SPICE netlist:** `spice/subcircuits/tremolo_osc.cir` (validated in `spice/testbench/tb_tremolo_osc.cir`)
 
@@ -113,26 +113,34 @@ Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vc
 
 CdS devices exhibit strongly asymmetric time constants (fast on, slow off). This produces the characteristic "choppy" tremolo quality of the 200A.
 
-**CdS nonlinearity:** Resistance follows a power law. Datasheet values for gamma are typically 0.7-0.9, but the OpenWurli implementation uses gamma = 1.1, calibrated to match OBM tremolo depth measurements. The code uses a log-space interpolation model: `log_r = log_max + (log_min - log_max) * drive^gamma` (see `tremolo.rs`), rather than the simpler `R = R_dark * illumination^(-gamma)` formula.
+**CdS nonlinearity:** Resistance follows a power law. The OpenWurli implementation uses the datasheet-typical **gamma = 0.9** (VTL5C-class) over a weakly-driven cell range of **~9 kΩ bright ↔ ~1 MΩ dark** — the fixed ~0.84 mA LED keeps the cell in the kΩ regime and never reaches its datasheet ~50 Ω floor. The code uses a log-space interpolation model: `log_r = log_max + (log_min - log_max) * drive^gamma` (see `tremolo.rs`), rather than the simpler `R = R_dark * illumination^(-gamma)` formula. (Earlier docs cited gamma = 1.1 with an 18,320 Ω bright floor; that floor was really the 18 kΩ + R18 divider network folded into a fake cell minimum — now modeled explicitly as the shunt divider, §2.3.)
 
 ### 2.3 Feedback Divider Operation
 
-R-10 (56K) feeds from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter -- series-series negative feedback. The LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO pot → 18K → LG-1. The LDR path diverts feedback current away from the emitter.
+R-10 (56K) feeds from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter -- series-series negative feedback. The LDR (LG-1) shunts fb_junct to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (top = fb_junct, bottom = ground, wiper → LDR branch); an 18K resistor bridges top→wiper and R18 (680 Ω) is in series with the LDR off the wiper. The shunt impedance seen by fb_junct is:
 
-- When LDR resistance is LOW (LED on/bright): fb_junct is shunted to ground → feedback cannot reach emitter → emitter AC-grounded via Ce1 → **HIGHER** preamp gain
-- When LDR resistance is HIGH (LED off/dim): full feedback reaches emitter via Ce1 → strong emitter degeneration → **LOWER** preamp gain
-- R-17 trimpot adjusts modulation depth
-- Front panel vibrato pot: 50K (in the cable path between fb_junct and LG-1)
+```
+Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ (680 Ω + R_ldr))
+    R_upper = 50 kΩ·(1 − depth),  R_lower = 50 kΩ·depth
+```
 
-This is consistent with the EP-Forum "6 dB gain boost" measurement — tremolo boosts average gain above the no-tremolo baseline because the LDR periodically weakens emitter feedback.
+- When LDR resistance is LOW (LED on/bright): the LDR branch pulls the shunt impedance down → feedback cannot reach emitter → emitter AC-grounded via Ce1 → **HIGHER** preamp gain
+- When LDR resistance is HIGH (LED off/dim): the LDR branch goes high-Z, but the **50K/18K divider still loads fb_junct** → partial feedback reaches emitter via Ce1 → emitter degeneration → **LOWER** preamp gain
+- Modulation depth is set by the front-panel **50K VIBRATO pot wired as a divider** (wiper position), NOT by an LED-drive trimpot. R17 (4.7K) sets a fixed LED current; depth does not scale it.
+- The pot part is labeled "50K VIBRATO 203697" on schematic #203720-S-3; some sources cite part 201812 — 203697 is what the drawing shows.
 
-**Gain modulation depth:**
-- Without vibrato (LDR dark, Rldr_path ≈ 1M): gain = **6.0 dB (2.0x)**
-- With vibrato at maximum depth, bright phase (Rldr_path ≈ 19K): gain = **12.1 dB (4.0x)**
-- **Modulation range: 6.1 dB** — matches EP-Forum "6 dB gain boost" measurement exactly
-- Bandwidth decreases with gain: ~11.8 kHz (no trem) → ~9.7 kHz (trem bright). GBW is NOT constant (scales with gain) -- captured by the DK MNA solver
-- Excessive depth causes rail clipping in the power amp (distortion at high vibrato settings is a known issue)
-- Typical depth in practice: 3-6 dB of gain modulation
+Because the pot **always loads fb_junct** (at depth = 0 the wiper grounds the LDR branch and fb_junct still sees 50K ∥ 18K ≈ 13 kΩ), the shunt never reaches the ~1 MΩ raw cell resistance. This bounds the tremolo AM swing (~7 dB peak-to-peak at full depth) — the same order of magnitude as the EP-Forum "6 dB gain boost" measurement.
+
+**Gain modulation depth (corrected 2026-07-19):**
+
+Keep two things separate:
+
+1. **Gain as a function of the shunt R seen by fb_junct** (SPICE lookup, *still valid*): ~34 dB at 500 Ω, 19.6 dB at 5 kΩ, 15.3 dB at 10 kΩ, 12.1 dB at 19 kΩ, 8.8 dB at 50 kΩ, 6.0 dB at 1 MΩ (full sweep in preamp-circuit.md §7.3).
+2. **The shunt R the divider actually presents** (*this is what changed*): the loaded 50K/18K divider caps the range. No-vibrato point ≈ **13 kΩ (~14 dB)**; full-depth swing ≈ **8 kΩ bright ↔ 48 kΩ dark**, giving **~7 dB peak-to-peak AM**. The circuit **never reaches 1 MΩ**, so the old "6.0 dB no-tremolo baseline" does not occur — it was an artifact of a simplified model that assumed the shunt goes dark to 1 MΩ.
+
+- Measured AM vs depth: **0 / 1.3 / 2.5 / 3.8 / 7.3 dB** at depth 0 / 0.25 / 0.50 / 0.75 / 1.0 — monotonic and well-spread; clean off at depth 0. Rust DSP 7.33 dB matches an independent ngspice arbiter's 7.31 dB at full depth.
+- Bandwidth decreases with gain: GBW is NOT constant (scales with gain) — captured by the DK MNA solver.
+- Excessive depth causes rail clipping in the power amp (distortion at high vibrato settings is a known issue).
 
 ### 2.4 Tremolo Character: 200 vs 200A
 
@@ -364,7 +372,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 
 **For modeling purposes:** The power amplifier is modeled as a closed-loop negative feedback amplifier. The R-31/R-30 feedback network (loop gain ≈ 275) linearizes the output at normal signal levels. Distortion becomes significant only near the ±22V supply rails. The power amp is NOT a major tonal contributor — the Wurlitzer's characteristic bark comes primarily from the pickup's 1/(1-y) nonlinearity, with the preamp's asymmetric soft-clipping adding further coloring at high dynamics.
 
-**Gain staging:** The voice output_scale uses target_db=-35 dBFS so the power amp sees realistic signal levels: a single ff note uses ~1-3% of the ±22V headroom, matching Brad Avenson's measurements of 2-7 mV at the volume pot (model produces 3 mV RMS). A post-speaker gain of +19.5 dB (applied AFTER the speaker model) maps physical SPL to DAW-friendly digital levels. This separates two concerns: the analog circuit model operates at realistic voltages, while the digital output is set for typical DAW workflows (-10 to -14 dBFS for single ff notes at vol=0.50, ff chords peak ~-3 dBFS).
+**Gain staging:** The voice output_scale uses target_db=-35 dBFS so the power amp sees realistic signal levels: a single ff note uses ~1-3% of the ±22V headroom, matching Brad Avenson's measurements of 2-7 mV at the volume pot (model produces 3 mV RMS). A post-speaker gain of +17.5 dB (applied AFTER the speaker model; current value — see CHANGELOG for history, most recently 22.0 → 17.5 dB after the 2026-07 tremolo-divider correction raised the accurate preamp gain) maps physical SPL to DAW-friendly digital levels. This separates two concerns: the analog circuit model operates at realistic voltages, while the digital output is set for typical DAW workflows (-10 to -14 dBFS for single ff notes at vol=0.50, ff chords peak ~-3 dBFS).
 
 ---
 
@@ -511,44 +519,53 @@ This cascade produced ~30 dB/oct rolloff below 70 Hz, which proved too aggressiv
 ```
 // Oscillator (tremolo.rs) — default: melange Twin-T circuit oscillator
 rate = ~5.6 Hz (fixed by Twin-T RC network; no rate parameter)
-waveform: real oscillator circuit output, half-wave rectified for LED drive
+waveform: real oscillator circuit output, half-wave rectified for LED drive.
+// LED drive is FIXED (~0.84 mA via R17 = 4.7 kΩ off the oscillator collector);
+// front-panel depth does NOT scale it — depth lives in the shunt divider below.
 // --features legacy-tremolo: behavioral sine LFO at 5.63 Hz (phase.sin())
 
-// LDR time constants (VTL5C3-like, tuned to match perceived tremolo
-// character of real 200A instruments. CdS time constants vary significantly
-// between individual devices; datasheet: 2.5 ms / 18-35 ms)
-attack_tau = 3.0 ms  (fast on)
-release_tau = 50 ms   (slow off)
+// CdS LDR time constants (VTL5C-class, datasheet-typical)
+attack_tau  = 2.5 ms  (fast on)
+release_tau = 35 ms   (slow off)
 
 // CdS LDR resistance model (log-space interpolation)
 log_r = log(R_max) + (log(R_min) - log(R_max)) * drive^gamma
-R_min = 18 320 ohm, R_max = 1M ohm, gamma = 1.1
-// R_min lands at the preamp's documented 19 kΩ bright calibration point
-// (the preamp's `.runtime R 1k 1Meg` clamp would otherwise waste any value
-// below 1 kΩ, and the CdS datasheet 50 Ω min is never reached in practice
-// at 5.6 Hz oscillator rate anyway given the 50 ms release time constant).
+R_min = 9 000 ohm (bright), R_max = 1 000 000 ohm (dark), gamma = 0.9
+// Weakly-driven cell: the fixed ~0.84 mA LED keeps it in the kΩ regime and
+// never reaches the datasheet ~50 Ω min. (An earlier model fudged R_min = 18,320 Ω
+// to fake a 19 kΩ shunt endpoint — that was really the 18 kΩ + R18 divider folded
+// into the cell floor; the divider is now modeled explicitly below.)
 
-// Total LDR path resistance → DkPreamp::set_ldr_resistance()
-R_ldr_path = R_SHUNT_SERIES + R_ldr
-R_SHUNT_SERIES = 680 ohm   // LG-1 pin 5 fixed series resistor, constant
+// Shunt impedance seen by fb_junct → DkPreamp::set_ldr_resistance().
+// The 50 kΩ VIBRATO pot is a 3-terminal divider (top = fb_junct, bottom = GND,
+// wiper → LDR branch); 18 kΩ bridges top→wiper; R18 = 680 Ω in series in the
+// LDR branch off the wiper:
+//   Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ (680 Ω + R_ldr))
+//   R_upper = 50 kΩ·(1 − depth),  R_lower = 50 kΩ·depth
+// depth = 1.0 → wiper at fb end (max depth); depth = 0 → LDR branch grounded
+// (vibrato off; fb_junct still sees 50 kΩ ∥ 18 kΩ ≈ 13 kΩ).
 ```
 
-**Depth control:** The 50 kΩ VIBRATO pot is in the LED drive path only —
-it attenuates how much oscillator voltage reaches the LED and therefore
-sets the LED brightness range. We approximate that with
-`led_drive = oscillator * depth` on the drive signal; the feedback shunt
-resistance is left as `R_SHUNT_SERIES + R_ldr` with no depth-dependent
-contribution. A pre-Apr-2026 version mistakenly mixed
-`18 kΩ + 50 kΩ × (1 − depth)` into the shunt too, which double-counted the
-pot and made depth=1.0 produce *less* modulation than depth=0.75. See
-`memory/known-issues.md` RESOLVED section.
+**Depth control (corrected 2026-07-19, per schematic #203720-S-3):** The 50 kΩ
+VIBRATO pot is **not** in the LED drive path — it is a **3-terminal divider in the
+fb_junct→LDR shunt leg** (see the `Z = …` formula above). Depth is the wiper
+position: depth = 1.0 puts the wiper at the fb end (max shunt swing), depth = 0
+grounds the LDR branch (vibrato off, fb_junct sees a fixed 50 kΩ ∥ 18 kΩ ≈ 13 kΩ).
+The LED is driven at a fixed ~0.84 mA current — depth does **not** scale it.
 
-**Output AM depth at depth=1.0:** ~5.7 dB peak-to-peak at the preamp
-output (regression-guarded by
-`dk_preamp::melange_gate_tests::test_tremolo_am_depth_at_full_depth`,
-spec band 4–8 dB). Matches the MEMORY-calibrated 6.1 dB preamp gain
-range with a small loss from the CdS envelope not reaching both
-endpoints within each ~178 ms oscillator cycle.
+Two earlier models were wrong here and are both superseded: (a) a pre-Apr-2026
+version mixed `18 kΩ + 50 kΩ × (1 − depth)` into a simple series shunt, and (b) the
+melange-era version scaled the LED drive with depth (`led_drive = oscillator *
+depth`), which made depth 0.25–0.75 nearly inert. The real mechanism is the shunt
+divider, and the depth→AM curve is now monotonic (0 / 1.3 / 2.5 / 3.8 / 7.3 dB at
+depth 0 / .25 / .5 / .75 / 1.0).
+
+**Output AM depth at depth=1.0:** **~7.3 dB peak-to-peak** at the preamp output
+(Rust DSP 7.33 dB vs an independent ngspice arbiter's 7.31 dB), regression-guarded by
+`dk_preamp::melange_gate_tests::test_tremolo_am_depth_at_full_depth`. The full-depth
+divider swings the shunt ~8 kΩ bright ↔ ~48 kΩ dark. POST_SPEAKER_GAIN was dropped
+22.0 → 17.5 dB to keep the vol = 1.0 engine peak ≤ 1.0 given the higher (accurate)
+preamp gain.
 
 ### 7.2 Power Amplifier Model
 

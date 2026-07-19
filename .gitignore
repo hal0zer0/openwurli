@@ -29,8 +29,8 @@ __pycache__/
 *.pyc
 venv/
 
-# Copyrighted reference materials (obtain separately, see docs/SCHEMATIC_SOURCE.md)
-docs/verified_wurlitzer_200A_series_schematic.pdf
+# Copyrighted reference materials — schematic PDFs (obtain separately, see docs/SCHEMATIC_SOURCE.md)
+docs/*.pdf
 *.mid
 midi/
 midis/

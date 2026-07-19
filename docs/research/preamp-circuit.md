@@ -35,7 +35,7 @@ The Wurlitzer 200A reed-bar preamp is a **two-stage direct-coupled NPN common-em
 
 3. **Collector-base feedback capacitors** (C-3 = 100 pF, C-4 = 100 pF): Frequency-dependent negative feedback via the Miller effect on both stages. These, combined with global emitter feedback through R-10 (via Ce1), reduce the very high open-loop gain (~900x) to a moderate closed-loop gain.
 
-4. **Tremolo integration**: R-10 (56K) feeds back from the preamp output to TR-1's emitter via Ce1 (4.7 MFD coupling cap). The LDR (LG-1) shunts the feedback junction (between R-10 and Ce1) to ground via the cable, modulating how much feedback reaches the emitter and thus the closed-loop gain.
+4. **Tremolo integration**: R-10 (56K) feeds back from the preamp output to TR-1's emitter via Ce1 (4.7 MFD coupling cap). The LDR (LG-1) shunts the feedback junction (between R-10 and Ce1) to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (front-panel depth control), modulating how much feedback reaches the emitter and thus the closed-loop gain. See §7.2 for the divider topology.
 
 5. **Supply voltage**: +15V DC regulated, derived from the main power supply.
 
@@ -98,6 +98,8 @@ Reed vibration
                                                           |
                                                          GND
 ```
+
+> **Tremolo shunt topology (corrected 2026-07-19):** the "50K VIBRATO → 18K → LG-1 → GND" series chain sketched above is a simplification. The real network is the 50K VIBRATO pot wired as a **3-terminal divider** in the fb_junct→LDR shunt leg (top = fb_junct, bottom = ground, wiper → LDR branch), with 18K bridging top→wiper and R18 (680 Ω) in series with LG-1's LDR off the wiper. See §7.2 for the corrected diagram and shunt-impedance formula. The pot is labeled "50K VIBRATO 203697" on schematic #203720-S-3 (some sources cite part 201812).
 
 ### 2.2 Component Values Table
 
@@ -349,18 +351,19 @@ We use **Av_open ~ 900** as a round figure for the combined open-loop gain.
 
 Brad Avenson (professional audio designer who built a replacement Wurlitzer preamp) measured the total preamp gain at **approximately 15 dB (voltage gain approximately 5.6x)**. He stated: "the preamp really only needs 15 dB." Volume pot output was measured at **2-7 mV AC**.
 
-**SPICE-measured gain (corrected emitter feedback topology):**
-- **No tremolo (Rldr_path = 1M):** 6.0 dB (2.0x) at 1 kHz
-- **Tremolo bright (Rldr_path = 19K):** 12.1 dB (4.0x) at 1 kHz
-- **Tremolo modulation range:** 6.1 dB
+**SPICE gain as a function of the shunt R seen by fb_junct (valid lookup):**
+- Shunt ≈ 1 MΩ: 6.0 dB (2.0x) at 1 kHz
+- Shunt ≈ 19 kΩ: 12.1 dB (4.0x) at 1 kHz
 
-**Reconciliation with Avenson's "15 dB" measurement:** Avenson measured ~15 dB (5.6x) for his replacement preamp design (which uses 499K instead of 1M for R_feed and may have different feedback topology). The original 200A with corrected emitter feedback gives **6 dB (2x) without tremolo** and up to **12 dB (4x) at tremolo peak**. The 15 dB figure does NOT match the original circuit — it's either Avenson's replacement design or a measurement with tremolo active at bright peak.
+> **Correction (2026-07-19):** The rows above are gain-vs-shunt-R lookups and remain valid. What the earlier docs got wrong was *which* shunt R the circuit reaches. The 50K VIBRATO pot is a divider (§7.2) that **always loads fb_junct**, so the shunt never reaches 1 MΩ. The real **no-vibrato operating point is ≈ 13 kΩ (~14 dB)**, not 6.0 dB; full-depth vibrato swings the shunt ≈ 8 kΩ bright ↔ 48 kΩ dark (~7 dB peak-to-peak AM; measured 7.33 dB Rust vs 7.31 dB ngspice). Throughout §5 below, read every "Rldr_path = 1M / no tremolo" label as a shunt-R lookup point, **not** the circuit's actual idle gain.
+
+**Reconciliation with Avenson's "15 dB" measurement:** With the corrected divider-loaded shunt, the 200A's **no-vibrato gain is ≈ 14 dB (~5x)** (shunt ≈ 13 kΩ) — which actually **agrees well** with Avenson's ~15 dB (5.6x) measurement, rather than contradicting it. The old "6 dB without tremolo" figure came from assuming the shunt goes dark to 1 MΩ, which the loaded divider never does. (Avenson's replacement design also uses 499K instead of 1M for R_feed and may differ elsewhere.) Vibrato adds gain modulation on top, riding across the tremolo cycle at full depth.
 
 **Gain structure:**
 - Maximum open-loop gain (fb_junct grounded, Re1 bypassed via Ce1): ~900 (59 dB)
 - Combined degenerated gain (Ce1 open, DC): 4.5 * 2.2 = 9.9 (20 dB)
-- SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo
-- The strong emitter feedback (loop gain ≈ 900/2.0 = 450, or 53 dB) provides excellent gain stability and linearization.
+- SPICE closed-loop gain at a 1 MΩ shunt: 6.0 dB (2.0x). But the loaded 50K/18K divider never reaches 1 MΩ — the **actual no-vibrato point is ≈ 13 kΩ, giving ≈ 14 dB (~5x)** (see §7.3 correction).
+- The strong emitter feedback (loop gain ≈ 900/5 ≈ 180, or 45 dB, at the ~14 dB no-vibrato point) provides excellent gain stability and linearization.
 
 ---
 
@@ -373,7 +376,7 @@ The pickup system delivers millivolt-level signals to the preamp input. Based on
 | Condition | Estimated Preamp Input Level | Notes |
 |-----------|------------------------------|-------|
 | C4 at pp (vel=0.3) | ~0.1-0.5 mV peak | Electrostatic calculation |
-| C4 at mf (vel=0.7) | ~1-5 mV peak | Avenson measured 2-7 mV at output on his replacement design (15 dB gain); original 200A gain is 6.0 dB (2.0x) |
+| C4 at mf (vel=0.7) | ~1-5 mV peak | Avenson measured 2-7 mV at output on his replacement design (15 dB gain); original 200A no-vibrato gain is ≈ 14 dB (~5x, divider-loaded — see §7.3) |
 | C4 at ff (vel=0.95) | ~5-15 mV peak | |
 | Bass (A1 at mf) | ~0.05-0.2 mV peak | Heavily attenuated by pickup RC HPF |
 | Treble (C6 at mf) | ~5-20 mV peak | Less attenuation, smaller displacement |
@@ -608,7 +611,7 @@ R_ldr=120K (the original netlist default) and R_ldr=19K respectively.
 
 **Closed-loop gain at key frequencies (SPICE-measured):**
 
-The emitter feedback (R-10 via Ce1) holds the gain at ~2.0x (6.0 dB) without tremolo. The -3 dB bandwidth is ~11.8 kHz (full-chain; preamp-only is ~15.5 kHz). Above this, gain rolls off as the open-loop gain drops below the closed-loop target.
+The emitter feedback (R-10 via Ce1) holds the gain at ~2.0x (6.0 dB) *for a 1 MΩ shunt* — but the loaded divider never reaches 1 MΩ, so the actual no-vibrato gain is ≈ 14 dB (shunt ≈ 13 kΩ; see §7.3 correction). The -3 dB bandwidth is ~11.8 kHz (full-chain; preamp-only is ~15.5 kHz). Above this, gain rolls off as the open-loop gain drops below the closed-loop target.
 
 | Frequency | Closed-Loop Gain | Closed-Loop (dB) | Notes |
 |-----------|-----------------|-------------------|-------|
@@ -785,8 +788,9 @@ TR-2 Collector
          |
        R-10 (56K)
          |
-       fb_junct ---------> Pin 1 (cable) --> 50K VIBRATO --> 18K --> LG-1 LED
-         |
+       fb_junct ---------> 50K VIBRATO pot (3-terminal divider)
+         |                    top = fb_junct, wiper -> LDR branch, bottom = GND
+         |                    18K bridges top->wiper; R18 (680) + LG-1 LDR off wiper
        Ce1 (4.7 MFD coupling cap)
          |
        TR-1 Emitter
@@ -799,8 +803,8 @@ TR-2 Collector
 Key topology details:
 - **Ce1 is a feedback coupling cap**, NOT a bypass cap. It AC-couples the feedback junction (fb_junct) to TR-1's emitter.
 - **Re1 (33K)** provides the separate DC path from emitter to ground. DC operating point is unaffected by the feedback network (Ce1 blocks DC).
-- **fb_junct** connects via cable Pin 1 to the LDR tremolo shunt circuit: GRY JACKET → 50K VIBRATO pot → 18K → LG-1 pin 2 (LED).
-- The LDR (LG-1) shunts the feedback junction to ground, diverting feedback current away from the emitter.
+- **fb_junct** is shunted to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (top = fb_junct, bottom = GND, wiper → LDR branch), with 18K bridging top→wiper and R18 (680 Ω) in series with LG-1's LDR off the wiper. Front-panel depth = wiper position. Shunt impedance: `Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ (680 Ω + R_ldr))` with `R_upper = 50 kΩ·(1 − depth)`, `R_lower = 50 kΩ·depth`. The pot is labeled "50K VIBRATO 203697" on schematic #203720-S-3 (some sources cite part 201812).
+- The LDR (LG-1) modulates that divider output, diverting more or less feedback current away from the emitter. Because the pot always loads fb_junct, the shunt never reaches the raw ~1 MΩ dark-cell resistance.
 
 **SPICE-validated DC operating point:**
 | Node | Schematic | SPICE |
@@ -820,25 +824,26 @@ When LDR path impedance is **LOW** (bright phase): fb_junct is shunted to ground
 
 When LDR path impedance is **HIGH** (dark phase): fb_junct carries the full R-10 feedback signal → Ce1 delivers feedback to emitter → emitter degeneration from feedback → **LOWER overall gain** (strong negative feedback)
 
-**SPICE-measured LDR sweep:**
+**SPICE-measured gain vs. shunt R at fb_junct** (a *valid lookup* — gain the preamp produces for a given shunt impedance):
 
-| Rldr_path | Gain @ 1kHz (dB) | Gain (x) | -3dB BW high (Hz) | Scenario |
+| Shunt R (fb_junct) | Gain @ 1kHz (dB) | Gain (x) | -3dB BW high (Hz) | Where the divider actually sits |
 |-----------|------------------|----------|-------------------|----------|
-| 500 Ω | 34.2 | 51x | 1,749 | Unrealistic (minimum path > 18K) |
-| 5 KΩ | 19.6 | 9.5x | 5,900 | |
-| 10 KΩ | 15.3 | 5.8x | 7,327 | |
-| **19 KΩ** | **12.1** | **4.0x** | **8,334** | **Tremolo bright peak** (18K + 50Ω LDR + ~1K wiring) |
-| 50 KΩ | 8.8 | 2.8x | 9,246 | Tremolo half-depth |
-| 120 KΩ | 7.2 | 2.3x | 9,639 | Moderate LDR |
-| **1 MΩ** | **6.0** | **2.0x** | **9,913** | **No tremolo (LDR dark)** |
-| 10 MΩ | 5.9 | 2.0x | 9,948 | LDR fully dark |
+| 500 Ω | 34.2 | 51x | 1,749 | Below the divider floor — not reachable |
+| 5 KΩ | 19.6 | 9.5x | 5,900 | Brighter than the divider reaches |
+| 10 KΩ | 15.3 | 5.8x | 7,327 | ≈ full-depth **bright** phase (divider min ~8 kΩ) |
+| 19 KΩ | 12.1 | 4.0x | 8,334 | Just dark of the **no-vibrato** point |
+| 50 KΩ | 8.8 | 2.8x | 9,246 | ≈ full-depth **dark** phase (divider max ~48 kΩ) |
+| 120 KΩ | 7.2 | 2.3x | 9,639 | Beyond the divider's reach |
+| 1 MΩ | 6.0 | 2.0x | 9,913 | Raw dark cell — **NOT reached** (pot caps the shunt) |
+| 10 MΩ | 5.9 | 2.0x | 9,948 | Raw dark cell — not reached |
+
+> **What this table is, and what changed (2026-07-19):** The table gives **gain as a function of the shunt R seen by fb_junct** — a still-valid SPICE lookup. What the earlier docs got wrong is **which shunt R the circuit actually reaches.** The 50K VIBRATO pot is a 3-terminal divider (§7.2) that always loads fb_junct, so the shunt is bounded: the **no-vibrato point is ≈ 13 kΩ (~14 dB)** — the circuit **never reaches 1 MΩ** — and full-depth vibrato swings it ≈ **8 kΩ bright ↔ 48 kΩ dark**, giving **~7 dB peak-to-peak AM** (measured 0 / 1.3 / 2.5 / 3.8 / 7.3 dB at depth 0 / .25 / .5 / .75 / 1.0; Rust DSP 7.33 dB vs ngspice arbiter 7.31 dB). The "6.0 dB no-tremolo baseline" in older revisions was an artifact of assuming the shunt goes dark to 1 MΩ.
 
 **Key findings:**
-- **No tremolo (baseline):** Gain = 6.0 dB (2.0x) — strong emitter feedback from R-10 reaching emitter
-- **Tremolo bright peak** (Rldr_path ≈ 19K): Gain = 12.1 dB (4.0x)
-- **Modulation range: 6.1 dB** — matches EP-Forum "6 dB gain boost" measurement exactly
-- **Full-chain bandwidth decreases with gain:** 9.9 kHz at 2x gain → 8.3 kHz at 4x gain (full-chain measurement including input coupling network loading; preamp-only BW is ~15.5 kHz, nearly constant — see Section 5.5.1)
-- **Gain is remarkably constant with input level** (2.007x from 0.5mV to 200mV) — the strong feedback linearizes the circuit, producing very low THD (0.0004% at mf, 0.04% at extreme 200mV)
+- **No-vibrato operating point:** shunt ≈ 13 kΩ → gain ≈ **14 dB** (the loaded divider's idle point; *not* 6.0 dB — see note above)
+- **Full-depth vibrato:** shunt swings ≈ 8 kΩ bright ↔ 48 kΩ dark → **~7 dB peak-to-peak AM** (same order as the EP-Forum "6 dB gain boost" measurement)
+- **Full-chain bandwidth decreases with gain** (GBW is NOT constant — it scales with gain; preamp-only BW is ~15.5 kHz, nearly constant — see Section 5.5.1)
+- **Gain is remarkably constant with input level** — the strong feedback linearizes the circuit, producing very low THD (0.0004% at mf, 0.04% at extreme 200mV)
 
 The distortion character changes through the tremolo cycle: at the gain peak (LDR low, weak feedback), the preamp's higher gain amplifies the pickup-generated harmonics more and pushes the preamp closer to its own saturation, producing more apparent H2 and "bark." At the gain trough (LDR high, strong feedback), the preamp operates more linearly. This creates a subtle but important **timbral modulation** that distinguishes the real 200A tremolo from simple volume modulation.
 
@@ -850,19 +855,22 @@ The distortion character changes through the tremolo cycle: at the gain peak (LD
 | Topology | Twin-T (parallel-T) oscillator (notch filter feedback) |
 | Frequency | 5.63 Hz (calculated from twin-T RC values); approximately 6 Hz (service manual); measured 5.3-7 Hz |
 | Waveform | Approximately sinusoidal (mild distortion from twin-T topology, est. THD 3-10%) |
-| Depth control | Front panel vibrato pot (50K) |
+| Depth control | Front panel 50K VIBRATO pot wired as a 3-terminal divider in the fb_junct shunt leg (wiper = depth); labeled "203697" on schematic #203720-S-3 |
 
 ### 7.5 Implications for Modeling
 
 The tremolo should be implemented as a **modulation of the emitter feedback amount**, not as a post-preamp volume multiplier. The LDR path impedance controls how much of the R-10 feedback signal reaches TR-1's emitter:
 
 ```
-// LDR path: fb_junct -> Pin 1 -> 50K VIBRATO -> 18K -> LG-1 -> GND
-// Total LDR path impedance = 50K*depth + 18K + R_ldr
-// R_ldr varies with the tremolo oscillator's LED drive
+// fb_junct -> 50K VIBRATO pot (3-terminal divider) -> LDR branch (R18 680 + R_ldr)
+// Shunt impedance = (R_upper ∥ 18K) + (R_lower ∥ (680 + R_ldr))
+//   R_upper = 50K*(1 - depth), R_lower = 50K*depth   // depth = wiper position
+// R_ldr (~9K bright ↔ ~1M dark) varies with the FIXED-drive LED; depth does NOT
+// scale the LED. The pot always loads fb_junct, so the shunt is bounded
+// (~8K bright ↔ ~48K dark at full depth; ~13K at no-vibrato).
 
-// When LDR path impedance is low: emitter is AC-grounded through Ce1 -> higher gain
-// When LDR path impedance is high: R-10 feedback reaches emitter -> lower gain
+// When the shunt impedance is low: emitter is AC-grounded through Ce1 -> higher gain
+// When the shunt impedance is high: R-10 feedback reaches emitter -> lower gain
 // The feedback modifies the effective emitter degeneration of Stage 1
 ```
 
@@ -948,7 +956,7 @@ For a perceptually accurate Wurlitzer 200A preamp model, the minimum implementat
 1. **Stage 1 exponential** with gm1 = 2.54-2.80 mA/V (Ic1 = 66-73 uA)
 2. **Asymmetric soft-clip** with satLimit = 10.9V, cutoffLimit = 2.05V (Stage 1)
 3. **Frequency-dependent feedback** via C-3 (100 pF) Miller effect — dominant pole at ~23 Hz. CORRECT polarity: less feedback at LF (more gain/distortion), more feedback at HF (less gain/distortion)
-4. **Closed-loop gain** of ~6 dB (2.0x) without tremolo, up to ~12 dB (4.0x) at tremolo peak, set by R-10 emitter feedback via Ce1
+4. **Closed-loop gain**: no-vibrato ≈ **14 dB** (shunt ≈ 13 kΩ, divider-loaded — *not* 6 dB; see §7.3), with ~7 dB peak-to-peak AM across a full-depth tremolo cycle, set by R-10 emitter feedback via Ce1 and the 50K VIBRATO divider
 5. **Closed-loop bandwidth** — preamp-only target ~15.5 kHz (nearly constant with R_ldr). Full-chain BW is ~11.8 kHz no-trem / ~9.7 kHz trem-bright due to input network Miller loading. See Section 5.5.1 for nested-loop analysis.
 6. **Direct coupling** to Stage 2 (can be instantaneous coupling for simplicity)
 7. **Stage 2** with Av = 2.2, nearly symmetric soft-clip (satLimit = 6.2V, cutoffLimit = 5.3V)
@@ -1099,7 +1107,11 @@ R_9 = 6.8K (series output resistor)
 
 // Feedback network (tremolo)
 R_10 = 56K (feedback resistor)
-LG_1 = CdS LDR (variable, tremolo modulation)
+LG_1 = CdS LDR (variable, tremolo modulation); ~9K bright ↔ ~1M dark, gamma 0.9
+// Tremolo shunt (corrected 2026-07-19): 50K VIBRATO pot as a 3-terminal divider
+//   Z = (R_upper ∥ 18K) + (R_lower ∥ (680 + R_ldr))
+//   R_upper = 50K*(1 - depth), R_lower = 50K*depth   // depth = wiper position
+// R18 = 680 ohm in series in the LDR branch; LED fixed ~0.84 mA via R17 (4.7K)
 
 // Input coupling (.022 uF, corner ~19 Hz with 380K bias network)
 C_input = .022 uF
@@ -1115,9 +1127,12 @@ R_3 = 470K (to ground)
 // Pump level after subtraction: < −120 dBFS.
 
 // Overall closed-loop (emitter feedback via R-10/Ce1)
-total_closed_loop_gain_no_trem = 6.0 dB (2.0x) [Rldr_path = 1M]
-total_closed_loop_gain_trem_bright = 12.1 dB (4.0x) [Rldr_path = 19K]
-tremolo_modulation_range = 6.1 dB
+// Gain-vs-shunt-R lookups (valid): 6.0 dB @ 1MΩ, 8.8 dB @ 50kΩ, 12.1 dB @ 19kΩ,
+//   15.3 dB @ 10kΩ (see §7.3 table)
+// Shunt R the loaded divider actually reaches (corrected 2026-07-19):
+gain_no_vibrato = ~14 dB [shunt ≈ 13 kΩ; NOT 6.0 dB — circuit never reaches 1 MΩ]
+full_depth_shunt_swing = ~8 kΩ bright ↔ ~48 kΩ dark
+tremolo_AM_full_depth = ~7 dB peak-to-peak [measured 7.33 dB Rust vs 7.31 dB ngspice]
 
 // Bandwidth — TWO NESTED FEEDBACK LOOPS (see Section 5.5.1):
 // Inner loop (C-3/C-4 Miller) dominates BW at ~15.5 kHz, nearly constant.
