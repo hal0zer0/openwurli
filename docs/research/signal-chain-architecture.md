@@ -122,7 +122,7 @@ MIDI note-on (key, velocity, channel, note_id)
      -> 2x Downsample (matching allpass polyphase IIR)
      [I] Volume Control (real attenuator, audio taper, between preamp and power amp)
      [K] Power Amplifier (Class AB, crossover distortion at low signal levels)
-     [L] Speaker Cabinet (variable: bypass to authentic HPF 95 Hz + LPF 5.5 kHz)
+     [L] Speaker Cabinet (variable: bypass to authentic HPF 30 Hz subsonic + LPF 5.5 kHz)
      [M] Output (no separate limiter — handled by power amp tanh and speaker tanh Xmax)
      -> Mono to Stereo duplication
      -> float32 output buffers
@@ -318,7 +318,7 @@ Reed starts at zero displacement (hammer imparts velocity, not displacement). Al
 onset_envelope(t) = 0.5 * (1 - cos(PI * t / T_onset))
 ```
 
-The onset ramp time `T_onset` is register-dependent: `(periods / f0).max(2ms)`, where `periods` ranges from 2.5 (ff) to 5.0 (pp). No upper clamp -- bass reeds are heavy and physically need more cycles to reach full amplitude (C2 ff: 38ms, C2 pp: 77ms). The envelope shape is `cosine^(1 + (1-velocity))` -- ff gets a raised cosine, pp gets Hann-squared (softer onset). This models reed mechanical inertia -- bass reeds take more time to reach full amplitude than treble reeds. The raised cosine reaches 90% at 79.5% of T, so 2.5 periods at ff means 90% at cycle 2.0, matching OBM cycle-by-cycle analysis of the real 200A.
+The onset ramp time `T_onset` is register-dependent: `(periods / f0).max(2ms)`, where `periods` ranges from **1.0 (ff) to 2.0 (pp)** (2026-07: shortened from 2.5/5.0). No upper clamp. The envelope shape is `cosine^(1 + (1-velocity))` -- ff gets a raised cosine, pp gets Hann-squared (softer onset). The physical anchor is the hammer contact (dwell ≈ 0.75 cycle, Miessner): the reed reaches near-peak by the end of contact, ~1 cycle -- so at ff the low bass now **cracks near the strike** (C2 ff ~15 ms) instead of swelling in over ~38 ms, which had made the bass growl fade up rather than hit. Because the ramp is period-scaled, this primarily speeds up the bass; treble already sits at the 2 ms floor and is unchanged. (The earlier "90% at cycle 2.0, matching OBM" target came from room-coupled OBM whose smeared attack over-reads the rise time -- the ear wanted the crack.)
 
 ### Attack Overshoot: Let Physics Handle It
 
@@ -806,7 +806,7 @@ The speaker HPF/LPF are physical limitations, not design choices. Expose a "Spea
 
 Two variable-cutoff biquad filters (Direct Form II Transposed) with smoothed coefficient updates:
 
-1. **Open-baffle bass rolloff:** Single HPF at 95 Hz, Q=0.75
+1. **Open-baffle bass rolloff:** was a single HPF at 95 Hz, Q=0.75 — lowered to 30 Hz subsonic in 2026-07 (cabinet bass roll-off is Vurli's domain)
    - Physics-motivated: combination of speaker resonance + open baffle cancellation (~12 dB/oct)
    - Attenuates C2 fundamental (65 Hz) by ~5.4 dB
    - Leaves H2 (130 Hz) nearly untouched
@@ -1011,7 +1011,7 @@ All other parameters (decay rates, pickup gap, preamp component values, mode amp
 | Miller pole 2 | ~81 kHz | Stage 2 (C-4=100pF, low Miller multiplication) |
 | Full-chain bandwidth | ~11800 Hz (no trem) / ~9700 Hz (trem bright) | Preamp-only ~15.5 kHz; full chain includes speaker rolloff |
 | DC block | N/A | Handled internally by DK preamp |
-| Speaker HPF (authentic) | 95 Hz, Q=0.75 | Open-baffle resonance + bass cancellation |
+| Speaker HPF (authentic) | 30 Hz, Q=0.75 | Subsonic only (2026-07; the 95 Hz cabinet roll-off moved to Vurli) |
 | Speaker LPF (authentic) | 5500 Hz, Q=0.707 | Cone breakup (OBM-calibrated, was 7500 Hz) |
 | Noise decay | 1/0.003 = 333 Hz | 3ms attack noise time constant |
 | Dwell sigma^2 | 64.0 | Gaussian dwell filter width (sigma=8.0) |

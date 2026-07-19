@@ -455,11 +455,20 @@ The current implementation (`speaker.rs`) uses a generalized Hammerstein-like ar
 **Linear filters:**
 
 ```
-HPF: 2nd-order highpass at 95 Hz, Q = 0.75   (combined cone resonance + open-baffle rolloff)
+HPF: 2nd-order highpass at 30 Hz, Q = 0.75   (subsonic protection only — see note)
 LPF: 2nd-order lowpass at 5500 Hz, Q = 0.707 (Butterworth, cone breakup + voice coil inductance; lowered from 7500 Hz per OBM A/B comparison)
 ```
 
-> **Note:** An earlier design (documented below in §5.4.1) specified three cascaded HPFs at 150/100/70 Hz to separately model cone resonance, dipole cancellation, and radiation impedance. The implementation simplified this to a single HPF at 95 Hz, which provides adequate bass rolloff (~12 dB/oct, ~3-4 dB down at C2 fundamental of 65 Hz) without the over-aggressive filtering of the three-HPF cascade.
+> **Note (2026-07):** The HPF is now **subsonic-only (30 Hz)**, down from 95 Hz.
+> The 95 Hz corner was the small 4×8" speaker's own bass roll-off — cabinet
+> coloration, which per the openwurli/Vurli scope split belongs downstream in
+> Vurli, not in the raw-physics circuit model. It was stripping the A1/C2
+> fundamental (55/65 Hz), leaving the low end thin and never "growling." The
+> circuit's genuine bass roll-off (power-amp output coupling caps) is modeled
+> upstream; this filter now only removes DC/subsonic rumble, preserving the full
+> musical bass the circuit produces. (An earlier design specified three cascaded
+> HPFs at 150/100/70 Hz for cone resonance / dipole cancellation / radiation
+> impedance — all cabinet effects, also Vurli's domain.)
 
 **Nonlinear features:**
 - **Normalized Hammerstein polynomial waveshaper:** `y = (x + a2*x^2 + a3*x^3) / (1 + a2 + a3)` where a2 = 0.2 (BL force factor asymmetry, generates even harmonics) and a3 = 0.6 (Kms suspension hardening, generates odd harmonics). Coefficients scale with the Speaker Character parameter. The normalization by `(1 + a2 + a3)` ensures `y(1) = 1`, preserving peak positive level. The even-order term (a2) introduces asymmetry, so `y(-1) != -1`.
@@ -641,7 +650,7 @@ full plugin chain at `volume=0.50, speaker=0.0`):
 Variable speaker emulation with bypass-to-authentic range. The plugin exposes a "Speaker Character" knob that blends from bypass (flat, linear passthrough) to authentic (full Hammerstein nonlinearity + HPF + LPF).
 
 At "authentic" position (character = 1.0):
-- HPF: 95 Hz, Q=0.75 (combined cone resonance + open-baffle rolloff)
+- HPF: 30 Hz, Q=0.75 (subsonic protection only; the 95 Hz cabinet roll-off moved to Vurli, 2026-07)
 - LPF: 5500 Hz, Q=0.707 (Butterworth, lowered from 7500 Hz)
 - Hammerstein polynomial: (x + 0.2x² + 0.6x³) / 1.8, normalized
 - tanh Xmax soft stop

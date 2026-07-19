@@ -74,17 +74,24 @@ Because d₀ is unknown, the model does not use a physical gap. Instead
 the pickup-geometry constant) into one calibratable number.
 
 - Current: `DS_AT_C4 = 0.85`, per-note law `ds = DS_AT_C4 · (C/C_ref)^DS_EXPONENT`
-  (DS_EXPONENT = 0.75), clamped to `[0.02, 0.88]` (`tables::pickup_displacement_scale`).
+  (DS_EXPONENT = 0.75), clamped to `[0.02, 0.95]` (`tables::pickup_displacement_scale`).
+  (Clamp upper raised 0.88 → 0.95 in the 2026-07 bass calibration so bass drives
+  closer to the pickup on peaks → sharper spikes; see CHANGELOG + memory reed-pickup-displacement-research.)
 - Safety rail: `PICKUP_MAX_Y = 0.98` with a smooth-saturation knee at
-  `PICKUP_KNEE_Y = 0.85` (the `1/(1−y)` pole is at y=1; the model must never reach it).
-- Typical realized `y_peak ≈ 0.85` at v=127 with current DS.
+  `PICKUP_KNEE_Y = 0.94` (raised 0.85 → 0.94 in the 2026-07 bass calibration so
+  the saturation stops rounding the bark spike tips; the `1/(1−y)` pole is at
+  y=1, and the model must never reach it).
+- The bass edge of `velocity_exponent` was also compressed (1.3 → 0.55) so the
+  reed drives hard enough to spike at moderate velocity, not only ff — the bark
+  appears in normal playing. Treble edge stays 1.3 (unchanged).
 
 ### 2.2 DS was calibrated by EAR/spectrum, not physics — this is the gap we're closing
 DS history (from `memory/calibration-history.md`), all OBM/Dr-Dawgg-driven:
 `DS_AT_C4`: 0.70 → **0.85** (Feb 2026, "H2/H1 5–8 dB too clean") → 0.75 (reshape)
-→ **0.85** again (Apr 2026 retune, clamp raised 0.82 → 0.88). Every move was
-"match the reference spectrum," never "match a measured gap." **That is exactly
-the guess-and-check this research is meant to replace with a physics bound.**
+→ **0.85** again (Apr 2026 retune, clamp raised 0.82 → 0.88) → clamp **0.88 → 0.95**
+(2026-07 bass calibration, waveform-grounded — sharper spikes). Every move was
+"match the reference spectrum/waveform," never "match a measured gap." **That is
+exactly the guess-and-check this research is meant to replace with a physics bound.**
 
 ### 2.3 The voltage back-calculation (our tightest independent constraint)
 We can bound `y` from the measured output voltage, working backward through the
