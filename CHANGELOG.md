@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] "SupernaturalDelight" - 2026-07-19
+
 ### Fixed
 - **Tremolo depth mechanism corrected — the "missing" vibrato is back.**
   Since the melange migration the tremolo applied depth by scaling the LED
@@ -956,7 +958,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/hal0zer0/openwurli/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/hal0zer0/openwurli/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/hal0zer0/openwurli/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/hal0zer0/openwurli/compare/v0.4.0...v0.5.0
