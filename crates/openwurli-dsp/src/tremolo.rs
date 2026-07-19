@@ -11,28 +11,35 @@ use std::f64::consts::PI;
 #[cfg(not(feature = "legacy-tremolo"))]
 use crate::gen_tremolo;
 
-/// CdS LDR parameters (shared between behavioral and circuit paths).
-const ATTACK_TAU: f64 = 0.003;
-const RELEASE_TAU: f64 = 0.050;
-/// LDR bright-phase floor. Set to match the preamp's documented
-/// "tremolo bright" calibration point (19 kΩ total shunt → 12.61 dB gain).
-/// Shunt is `R_SHUNT_SERIES + r_ldr`, so r_ldr_min = 19_000 − 680 ≈ 18 320.
-/// Previously 50 Ω (datasheet CdS min) — but shunt values below about
-/// 1 kΩ clamp at the preamp's `.runtime R 1k 1Meg` floor and waste drive.
-/// Keeping the bright phase at the preamp's documented bright point gives
-/// monotonic depth→swing behavior and hits the 6.1 dB gain-range target.
-const R_LDR_MIN: f64 = 18_320.0;
+/// CdS vactrol dynamics — LG-1 (#142312, VTL5C-class LED/LDR opto).
+/// Datasheet range: rise ~2.5 ms, fall ~35 ms; power-law exponent ~0.7–0.9.
+const ATTACK_TAU: f64 = 0.0025;
+const RELEASE_TAU: f64 = 0.035;
+const GAMMA: f64 = 0.9;
+/// CdS photoresistance range under the 200A's *actual* LED drive. The LED
+/// runs at only ~0.84 mA (fixed, through R17 = 4.7 kΩ off the oscillator),
+/// so the cell never leaves the kΩ regime: ~9 kΩ illuminated ↔ ~1 MΩ dark.
+/// (An earlier model fudged the bright floor to 18,320 Ω to fake a 19 kΩ
+/// shunt endpoint — that was really the 18 kΩ + R18 network folded into the
+/// cell. The real cell is weakly driven and sits at ~9 kΩ bright; the
+/// tremolo depth comes from the divider network below, not a hot LDR.)
+const R_LDR_MIN: f64 = 9_000.0;
 const R_LDR_MAX: f64 = 1_000_000.0;
-const GAMMA: f64 = 1.1;
 
-/// Fixed series resistance in the LDR shunt path from fb_junction to GND:
-/// R-??? (680 Ω on LG-1 pin 5) in series with the LDR itself. The 50 kΩ
-/// VIBRATO pot + 18 kΩ are in the LED drive path (controlling LED current
-/// and hence brightness), **not** in this shunt path — see `set_depth`.
-/// Pre-Apr-2026 versions double-counted the pot into both paths, which
-/// flattened the depth→swing curve at high settings (100 % actually milder
-/// than 75 %). See `memory/known-issues.md` for the full write-up.
-const R_SHUNT_SERIES: f64 = 680.0;
+/// 200A vibrato depth network, per schematic #203720-S-3 (schemer 2026-07-19,
+/// verified on the 36 MP scan). The 50 kΩ front-panel VIBRATO pot is a
+/// 3-terminal divider in the fb_junction→LDR shunt leg: top→fb_junction,
+/// bottom→ground, wiper→the LDR branch. An 18 kΩ resistor bridges top→wiper;
+/// R18 (680 Ω) is in series in the LDR branch off the wiper. The LED drive is
+/// FIXED (depth does not scale it) — depth is the wiper position alone.
+/// Shunt impedance seen by fb_junction:
+///   Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ (680 Ω + R_ldr))
+/// with R_upper = 50 kΩ·(1−depth), R_lower = 50 kΩ·depth. depth = 1.0 puts the
+/// wiper at the fb end (max depth); depth = 0 grounds the LDR branch (vibrato
+/// off, fb sees a fixed 50 kΩ ∥ 18 kΩ ≈ 13 kΩ). See `shunt_impedance`.
+const R18_SERIES: f64 = 680.0;
+const R_VIB_BRIDGE: f64 = 18_000.0;
+const R_VIB_POT: f64 = 50_000.0;
 
 /// Twin-T oscillator output voltage range (from ngspice/melange validation).
 #[cfg(not(feature = "legacy-tremolo"))]
@@ -106,8 +113,10 @@ impl Tremolo {
     }
 
     pub fn process(&mut self) -> f64 {
-        // Step 1: Get oscillator drive (0..1)
-        let led_drive = self.oscillator_drive() * self.depth;
+        // Step 1: Oscillator LED drive (0..1). FIXED amplitude — depth does NOT
+        // scale the LED; it lives in the shunt divider (Step 4). The real 200A
+        // drives the LED at a constant ~0.84 mA off the oscillator through R17.
+        let led_drive = self.oscillator_drive();
 
         // Step 2: CdS LDR envelope (asymmetric attack/release)
         let coeff = if led_drive > self.ldr_envelope {
@@ -126,7 +135,29 @@ impl Tremolo {
             self.r_ldr = log_r.exp();
         }
 
-        R_SHUNT_SERIES + self.r_ldr
+        // Step 4: depth divider → shunt impedance seen by fb_junction
+        self.shunt_impedance()
+    }
+
+    /// Shunt impedance from fb_junction to ground through the vibrato depth
+    /// network: `Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ (R18 + R_ldr))`, with the
+    /// 50 kΩ pot split by `depth` (wiper). See the constants block for the
+    /// topology. At depth = 0 the LDR branch is grounded (vibrato off).
+    fn shunt_impedance(&self) -> f64 {
+        let r_upper = R_VIB_POT * (1.0 - self.depth);
+        let r_lower = R_VIB_POT * self.depth;
+        let top = if r_upper > 0.0 {
+            r_upper * R_VIB_BRIDGE / (r_upper + R_VIB_BRIDGE)
+        } else {
+            0.0
+        };
+        let branch = R18_SERIES + self.r_ldr;
+        let low = if r_lower > 0.0 {
+            r_lower * branch / (r_lower + branch)
+        } else {
+            0.0
+        };
+        top + low
     }
 
     /// Get the oscillator's LED drive signal (0..1).
@@ -148,7 +179,7 @@ impl Tremolo {
     }
 
     pub fn current_resistance(&self) -> f64 {
-        R_SHUNT_SERIES + self.r_ldr
+        self.shunt_impedance()
     }
 
     pub fn reset(&mut self) {
@@ -272,6 +303,12 @@ mod tests {
 
     #[test]
     fn test_resistance_range() {
+        // At full depth the shunt impedance seen by fb_junction is the vibrato
+        // divider's output: bright ≈ 50 kΩ ∥ (680 + R_ldr_min≈9 kΩ) ≈ 8 kΩ,
+        // dark ≈ 50 kΩ ∥ (680 + settled-R_ldr) ≈ mid-40 kΩ. The divider CAPS the
+        // dark side well below the raw 1 MΩ cell resistance (the grounded pot
+        // leg limits it) — this is the loaded-divider fingerprint, not the old
+        // fb→R_ldr→gnd shunt that reached ~1 MΩ.
         let sr = 44100.0;
         let mut trem = Tremolo::new(1.0, sr);
         trem.set_depth(1.0);
@@ -286,20 +323,27 @@ mod tests {
             max_r = max_r.max(r);
         }
 
-        assert!(min_r < 100_000.0, "Min resistance too high: {min_r:.0}");
-        assert!(max_r > 200_000.0, "Max resistance too low: {max_r:.0}");
+        // Bright phase pulls the divider output down near ~8 kΩ.
+        assert!(
+            (5_000.0..15_000.0).contains(&min_r),
+            "Bright-phase shunt out of range: {min_r:.0} (expected ~8 kΩ)"
+        );
+        // Dark phase is capped by the 50 kΩ pot leg — tens of kΩ, never ~1 MΩ.
+        assert!(
+            (25_000.0..80_000.0).contains(&max_r),
+            "Dark-phase shunt out of range: {max_r:.0} (expected ~40–48 kΩ, capped by the pot)"
+        );
     }
 
     #[test]
     fn test_depth_swing_monotonic() {
-        // Regression guard against the pre-Apr-2026 bug where `set_depth` mixed
-        // the 50 kΩ VIBRATO pot into both the LED drive path AND the feedback
-        // shunt path. That double-count made depth=1.0 produce *less* swing than
-        // depth=0.75 because the small r_series at high depth raised the dim-
-        // phase floor. Fix: moved the pot out of the shunt (pot only affects
-        // LED drive via the `led_drive = osc * depth` scaling), left the
-        // shunt at R_SHUNT_SERIES + r_ldr. log10(R_max/R_min) must be
-        // monotonically non-decreasing in depth.
+        // Regression guard on the depth→swing curve. Historically flattened
+        // twice: first by a pot double-count (pre-Apr-2026), then by scaling
+        // the LED drive with depth (`led_drive = osc * depth`, the melange-era
+        // mechanism that made 0.25–0.75 nearly inert). Both are gone — depth
+        // now lives solely in the shunt divider (`shunt_impedance`), LED drive
+        // is fixed. log10(R_max/R_min) must be monotonically non-decreasing in
+        // depth (per schematic #203720-S-3; see the constants block).
         let sr = 44100.0;
         let warmup = sr as usize;
         let measure = (sr * 1.0) as usize;

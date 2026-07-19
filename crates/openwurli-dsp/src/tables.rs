@@ -513,7 +513,7 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// Lowered from +19.5 dB → +14.5 dB on 2026-04-25 after the DI-limiter
 /// removal (5fbc4a1, 220a5aa).
 ///
-/// 2026-04-26 (later): final value lands after the user-volume / circuit-
+/// 2026-04-26 (later): sizing lands after the user-volume / circuit-
 /// drive DECOUPLING (see FIXED_CIRCUIT_DRIVE below). With drive pinned at
 /// 0.25, the amp output peak (chord-ff + tremolo bright) is constant
 /// regardless of user volume; PSG is sized so that user_vol=1.0 puts the
@@ -521,10 +521,19 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// near −6 dBFS (chord-ff). Mid-session iterations: was 19.5 dB pre-Apr-25
 /// (DI-limiter era), 14.5 dB Apr 25, 10.5 dB Apr 26 (vol²-pre-amp era).
 /// Regression-guarded by `engine::tests::test_engine_peak_below_unity_at_vol_1`.
-pub const POST_SPEAKER_GAIN_DB: f64 = 22.0;
+///
+/// 2026-07-19: lowered +22.0 → +17.5 dB after the tremolo LDR-divider
+/// correction (schematic #203720-S-3). Modeling the vibrato pot as its real
+/// 3-terminal divider raised the accurate preamp gain (no-vibrato baseline
+/// ~14 dB, was assumed 6 dB; bright-tremolo peak ~16 dB, was 12.1), which
+/// pushed the worst-case engine peak from ≤1.0 to 1.63 (+4.2 dB). PSG drops
+/// 4.5 dB to restore the vol=1.0 ≤ 1.0 invariant. This is a post-chain level
+/// trim only — the circuit correction (hotter, accurate preamp) is preserved;
+/// PSG just re-centers the DAW output level as it always has.
+pub const POST_SPEAKER_GAIN_DB: f64 = 17.5;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 12.589_254_117_941_673; // 10^(22.0/20)
+pub const POST_SPEAKER_GAIN: f64 = 7.498_942_093_324_558; // 10^(17.5/20)
 
 /// Fixed circuit-drive level — multiplier applied between preamp output
 /// and power amp input. Historically this was `vol²` (3K audio-taper pot,

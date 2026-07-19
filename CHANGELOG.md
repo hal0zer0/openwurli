@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Tremolo depth mechanism corrected — the "missing" vibrato is back.**
+  Since the melange migration the tremolo applied depth by scaling the LED
+  drive (`led_drive = oscillator * depth`), which is not how the 200A
+  works and flattened the depth response (0.25–0.75 on the knob did almost
+  nothing). Schematic #203720-S-3 (re-read at high DPI) shows the 50 kΩ
+  VIBRATO pot is a **3-terminal divider in the fb_junction→LDR shunt leg**
+  (top→fb, bottom→ground, wiper→LDR branch; 18 kΩ bridges top→wiper; R18
+  680 Ω in series in the branch), and the LED is driven at a **fixed**
+  ~0.84 mA. Depth is now the pot divider; the LED is fixed. The CdS cell
+  also runs at its true weakly-driven range (~9 kΩ bright ↔ ~1 MΩ dark),
+  removing the old `R_LDR_MIN = 18,320 Ω` fudge (that value was really the
+  18 kΩ + R18 network folded into a fake cell floor). Result: a monotonic,
+  well-spread depth curve (measured AM 0 / 1.3 / 2.5 / 3.8 / 7.3 dB at
+  depth 0/0.25/0.5/0.75/1.0), a clean off at depth 0, and ~7.3 dB at full
+  depth — cross-validated between the Rust DSP path (7.33 dB) and an
+  independent ngspice arbiter (7.31 dB) driven by the same r(t) law.
+- **Note-onset "repeated strike" transient on the first note eliminated.**
+  A note struck while the preamp/shadow-pump/CdS-envelope were cold rode
+  the shadow-pump's multi-second settling transient — a ~30 dB gain
+  excursion at the tremolo rate that near-gated the signal each dark phase
+  and read as repeated attacks (worst right after plugin load; scaled with
+  depth). New `WurliEngine::warm_up()` settles the chain to its steady DC
+  operating point (the real 200A preamp is always biased, never cold) by
+  running ~0.6 s of internal silence; called from `reset()` and
+  `set_sample_rate()` so the first note is always clean.
+
+### Changed
+- **POST_SPEAKER_GAIN +22.0 → +17.5 dB.** The tremolo LDR-divider
+  correction raised the accurate preamp gain (the no-vibrato baseline is
+  ~14 dB, not the 6.0 dB the old simplified shunt implied; bright-tremolo
+  peak ~16 dB, was 12.1), pushing the worst-case engine peak from ≤1.0 to
+  1.63. PSG drops 4.5 dB to restore the vol=1.0 ≤ 1.0 invariant — a
+  post-chain output-level trim only; the accurate hotter preamp is
+  preserved. Regression-guarded by
+  `engine::tests::test_engine_peak_below_unity_at_vol_1`.
+
 ## [0.5.2] "YouTreatedMeCruel" - 2026-07-04
 
 ### Performance

@@ -247,6 +247,26 @@ impl WurliEngine {
         self.tremolo_depth.snap_to(self.tremolo_depth.target);
         self.speaker_character
             .snap_to(self.speaker_character.target);
+        self.warm_up();
+    }
+
+    /// Settle the preamp / shadow-pump / CdS-envelope to their steady operating
+    /// point by running internal silence with the tremolo active. The real 200A
+    /// preamp is always biased at its DC operating point; a solver started cold
+    /// takes ~0.5 s (the shadow-pump's multi-second transient) to reach the
+    /// steady tremolo modulation, and a note struck during that window rides a
+    /// deep gain excursion that reads as repeated attacks. Called after every
+    /// `reset()` and `set_sample_rate()` so the first note is always clean.
+    /// Not on the per-buffer path — a one-time settle, allocation-free.
+    pub fn warm_up(&mut self) {
+        let mut scratch = [0.0f32; 512];
+        let total = (self.sample_rate * 0.6) as usize;
+        let mut done = 0;
+        while done < total {
+            let len = 512.min(total - done);
+            self.render(&mut scratch[..len]);
+            done += len;
+        }
     }
 
     pub fn set_sample_rate(&mut self, sr: f64) {
@@ -262,6 +282,7 @@ impl WurliEngine {
         self.volume.set_ramp_samples(ramp);
         self.tremolo_depth.set_ramp_samples(ramp);
         self.speaker_character.set_ramp_samples(ramp);
+        self.warm_up();
     }
 
     pub fn ensure_buffer_capacity(&mut self, max_samples: usize) {
