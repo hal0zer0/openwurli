@@ -33,8 +33,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operating point (the real 200A preamp is always biased, never cold) by
   running ~0.6 s of internal silence; called from `reset()` and
   `set_sample_rate()` so the first note is always clean.
+- **Tremolo was silent in DAWs after a host `reset()`.** `Tremolo::reset()`
+  re-seeded the Twin-T oscillator to its DC operating point — the
+  oscillator's *unstable equilibrium*, where a clean solver never starts
+  oscillating — so the LFO sat dead and the depth knob only shifted a
+  static gain (no modulation) in the plugin, while offline renders (which
+  build a fresh `Tremolo`) were fine. `reset()` now rebuilds the oscillator
+  from `default()` (which carries the startup perturbation) and re-settles
+  it, so the tremolo survives the host reset. Regression-guarded by
+  `tremolo::tests::test_oscillator_survives_reset`.
 
 ### Changed
+- **Bass voicing: restored body, percussive attack, and sharper bark
+  spikes.** Waveform comparison against a real 200A (OBM) showed the model's
+  low end was smooth/rounded where the instrument is jagged. Five
+  bass-targeted changes (treble measured unchanged): the speaker HPF drops
+  95 → 30 Hz so the A1/C2 fundamental survives (the small-speaker bass
+  roll-off is cabinet coloration, downstream's job; the circuit's own
+  roll-off stays in the power-amp caps); the hammer onset ramp shortens
+  2.5 → 1.0 periods (anchored to the ~0.75-cycle dwell) so the reed cracks
+  near the strike instead of swelling in over ~40 ms; the pickup drives
+  closer on peaks (DS clamp 0.88 → 0.95) with the saturation knee raised
+  0.85 → 0.94 so the spike tips stay sharp; and the bass edge of the
+  velocity→amplitude curve compresses (exponent 1.3 → 0.55) so the bark
+  appears at moderate playing, not only ff. Reduced bass dynamic range is
+  intended — openwurli models circuit authenticity; loudness/dynamics
+  balancing is downstream's job. The click-band alias-audit gate stays
+  green (the oversampler holds the sharper spikes) and the vol=1.0
+  engine-peak invariant holds.
 - **POST_SPEAKER_GAIN +22.0 → +17.5 dB.** The tremolo LDR-divider
   correction raised the accurate preamp gain (the no-vibrato baseline is
   ~14 dB, not the 6.0 dB the old simplified shunt implied; bright-tremolo
@@ -43,6 +69,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   post-chain output-level trim only; the accurate hotter preamp is
   preserved. Regression-guarded by
   `engine::tests::test_engine_peak_below_unity_at_vol_1`.
+
+### Documentation
+- **Reed–pickup displacement provenance** (`docs/research/reed-pickup-displacement.md`).
+  New authoritative record for the rest gap d₀ — the master "bark"
+  parameter that has no documented value. A 99-agent adversarial research
+  pass confirmed d₀ is genuinely undocumented for the 200A in every primary
+  source and that the voltage back-calc is *structurally* underdetermined,
+  so `DISPLACEMENT_SCALE` is correctly a calibration constant, not a
+  measured ratio. The pass also corrected three unsourced figures the docs
+  had trusted: the "Pfeifle 1.5 mm d₀ (EP300)" citation is a misattribution
+  (that paper models the EP200, has no rest-gap value); Avenson's 2–7 mV
+  output has no independent verified source; and the 240 pF pickup
+  capacitance is a single refuted forum figure (retained as a plausible
+  assumption, flagged low-confidence). `pickup-system.md` updated to match.
+- **Tremolo topology corrected in the reference docs** to the shunt-divider
+  mechanism (`output-stage.md`, `preamp-circuit.md`): the old "pot in the
+  LED drive path" and "6.0 dB no-tremolo baseline" claims are replaced (the
+  real no-vibrato gain is ~14 dB, which now agrees with Avenson's ~15 dB
+  measurement). Schematic PDFs are gitignored.
 
 ## [0.5.2] "YouTreatedMeCruel" - 2026-07-04
 
