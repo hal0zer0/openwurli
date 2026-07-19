@@ -8,9 +8,11 @@
 use std::process::Command;
 
 fn cargo_bin() -> Command {
-    let mut cmd = Command::new(env!("CARGO"));
-    cmd.args(["run", "-p", "reed-renderer", "--"]);
-    cmd
+    // Invoke the already-built binary directly via the path Cargo provides to
+    // integration tests. Spawning a nested `cargo run` here races the outer
+    // `cargo test --workspace` on the shared target dir and intermittently
+    // fails to exec the binary (ENOENT) — observed on macOS CI.
+    Command::new(env!("CARGO_BIN_EXE_reed-renderer"))
 }
 
 fn temp_path(name: &str) -> std::path::PathBuf {
