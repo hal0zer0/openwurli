@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **MLP per-note correction retrained against the 0.6.0 signal chain.** The
+  0.6.0 pickup-nonlinearity changes (`PICKUP_KNEE_Y` 0.85→0.94, `DS_CLAMP`
+  upper 0.88→0.95) prompted a retrain, since the MLP's `ds_correction` sits on
+  top of that nonlinearity. Re-rendered the OBM reference notes through the
+  current chain (`preamp-bench render --no-mlp`), recomputed residuals, and
+  swept hidden=16 across seeds {7,42,123,999}; winner `h16_s123` (val loss
+  0.037 vs the shipped 0.051, freq_H2 MAE 1.55¢ vs 2.00, decay_H2 0.45 vs
+  0.72). Same architecture (2→16→16→11, 507 params). NOTE: the residual
+  *targets* barely moved (ds_corr mean 1.429→1.398, ~2%) because the OBM data
+  is all mid-register / moderate-velocity — where the 0.6.0 changes don't
+  engage — so this is a tighter fit to essentially-unchanged targets, not a
+  correction of a stale model. `POST_SPEAKER_GAIN_DB` trimmed 17.5→16.8 dB
+  (−0.7 dB) because the fresh weights saturate `ds_correction` at its 1.2 clamp
+  across the chord-ff voicing and pushed the worst-case engine peak to 1.0796;
+  the trim restores the vol=1.0 ≤ 1.0 invariant (peak 0.996). Output-level
+  re-center only.
+
 ## [0.6.0] "SupernaturalDelight" - 2026-07-19
 
 ### Fixed

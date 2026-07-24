@@ -530,10 +530,17 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// 4.5 dB to restore the vol=1.0 ≤ 1.0 invariant. This is a post-chain level
 /// trim only — the circuit correction (hotter, accurate preamp) is preserved;
 /// PSG just re-centers the DAW output level as it always has.
-pub const POST_SPEAKER_GAIN_DB: f64 = 17.5;
+///
+/// 2026-07-24: lowered +17.5 → +16.8 dB (−0.7 dB) alongside the MLP retrain
+/// against the 0.6.0 signal chain (h16_s123). The refreshed per-note
+/// `ds_correction` saturates at its 1.2 inference clamp across the chord-ff
+/// voicing, nudging the worst-case engine peak to 1.0796; this post-chain trim
+/// restores the vol=1.0 ≤ 1.0 invariant (predicted peak 0.996). Output-level
+/// re-center only — the retrained corrections are preserved.
+pub const POST_SPEAKER_GAIN_DB: f64 = 16.8;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 7.498_942_093_324_558; // 10^(17.5/20)
+pub const POST_SPEAKER_GAIN: f64 = 6.918_309_709_189_366; // 10^(16.8/20)
 
 /// Fixed circuit-drive level — multiplier applied between preamp output
 /// and power amp input. Historically this was `vol²` (3K audio-taper pot,
