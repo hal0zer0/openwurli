@@ -21,6 +21,10 @@ pub mod preamp;
 pub mod tremolo;
 
 // Output stage
+// Allows cover melange-codegen emissions missing from the generated file's
+// own allow header (dead j_dev store, manual swaps — melange ca2d7e6).
+#[allow(unused_assignments)]
+#[allow(clippy::manual_swap)]
 pub mod gen_power_amp;
 #[cfg(not(feature = "legacy-tremolo"))]
 pub mod gen_tremolo;

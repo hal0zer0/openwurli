@@ -13,9 +13,8 @@
 # and gen_tremolo generated ~2026-05, gen_power_amp 2026-04-25; the vendored
 # netlists are the canonical regen source per the 2026-07-25 resync record).
 #
-# Pending sanctioned change: `.linearize Q9` enters wurli-power-amp.cir at
-# the next power-amp regen (settled 2026-08-03 with melange-circuits) —
-# update that hash in the regen commit.
+# 2026-08-03: wurli-power-amp hash updated for the `.linearize Q9` adoption
+# (settled with melange-circuits), atomically with the gen_power_amp.rs regen.
 c38e83ce2576cc4c  wurli-preamp.cir
-afa10433898ff720  wurli-power-amp.cir
+cafa37a933dbc24b  wurli-power-amp.cir
 34e70f5fee654edb  wurli-tremolo.cir

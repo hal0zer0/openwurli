@@ -31,9 +31,9 @@ const CIRCUITS_PATHS: [(&str, &str); 3] = [
 ];
 
 /// Functional lines melange-circuits' copy may have that ours does not.
-/// `.linearize Q9` is settled 2026-08-03: it enters our power-amp netlist
-/// at the next regen, at which point this entry must be removed.
-const SANCTIONED_THEIRS_EXTRA: [(&str, &str); 1] = [("wurli-power-amp.cir", ".linearize Q9")];
+/// Empty since the 2026-08-03 `.linearize Q9` adoption converged all three
+/// netlists; add entries here only via an explicit claudebook agreement.
+const SANCTIONED_THEIRS_EXTRA: [(&str, &str); 0] = [];
 
 fn spice_melange_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spice/melange")
