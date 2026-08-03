@@ -1,0 +1,21 @@
+# Regen manifest — netlist ↔ generated-solver provenance guard
+#
+# Each line: FNV-1a-64 of the netlist's NORMALIZED functional content
+# (trailing whitespace stripped; blank lines and `*` comment lines dropped),
+# recorded at the last regen of the corresponding gen_*.rs solver.
+#
+# Enforced by crates/openwurli-dsp/tests/netlist_sync.rs. If a hash here
+# mismatches the netlist on disk, someone edited a wurli-*.cir without
+# regenerating its solver — netlist and generated code must change
+# atomically, in the same commit, along with this manifest.
+#
+# Baseline established 2026-08-03 from the netlists as shipped (gen_preamp
+# and gen_tremolo generated ~2026-05, gen_power_amp 2026-04-25; the vendored
+# netlists are the canonical regen source per the 2026-07-25 resync record).
+#
+# Pending sanctioned change: `.linearize Q9` enters wurli-power-amp.cir at
+# the next power-amp regen (settled 2026-08-03 with melange-circuits) —
+# update that hash in the regen commit.
+c38e83ce2576cc4c  wurli-preamp.cir
+afa10433898ff720  wurli-power-amp.cir
+34e70f5fee654edb  wurli-tremolo.cir
