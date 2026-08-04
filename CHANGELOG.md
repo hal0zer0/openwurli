@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Netlist drift guards.** Two new tripwires against the drift classes that
+  have repeatedly bitten the melange sync: `spice/melange/REGEN_MANIFEST.txt`
+  records a functional-content hash of each vendored netlist at its last
+  solver regen, and `tests/netlist_sync.rs` fails if a netlist changes
+  without its generated solver and the manifest changing in the same commit.
+  A second test diffs functional content against the melange-circuits
+  sibling checkout (skipped when absent, so CI is unaffected); circuits runs
+  a verified-equivalent mirror on their side. Sanctioned divergence between
+  the repos is an explicit, test-enforced allowlist — currently empty.
+
 ### Changed
+- **Opt-in melange power-amp solver regenerated against current melange —
+  upstream overdrive divergence fixed and verified.** The vendored
+  `wurli-power-amp.cir` adopts `.linearize Q9` (the Vbe bias spreader — a
+  must-not-clip stage and the canonical linearize target; settled with
+  melange-circuits, all three netlists now byte-converged across repos), and
+  `gen_power_amp.rs` is regenerated with the current melange codegen: full
+  Gummel-Poon BJTs (M=14), Backward-Euler-primary integration, and the
+  upstream fix for the NR node-step damping-floor bug that let the solver
+  false-converge onto non-physical operating points (internal excursions of
+  110–195 V on ±22.5 V rails at normal drive, verified before/after — now a
+  clean, monotonic rail clip at ~20.6 V with zero NaN across the drive
+  sweep). An ignored diagnostic test (`tests/raw_probe.rs`) documents the
+  sweep. **The shipping default is unchanged** — the behavioral power amp
+  remains default; the regenerated solver runs 1.2–7.4× slower than realtime
+  for the amp stage alone and stays opt-in until that gap closes.
+
+### Fixed
+- **Flaky reed-renderer integration tests on macOS CI** stabilized.
 - **MLP per-note correction retrained against the 0.6.0 signal chain.** The
   0.6.0 pickup-nonlinearity changes (`PICKUP_KNEE_Y` 0.85→0.94, `DS_CLAMP`
   upper 0.88→0.95) prompted a retrain, since the MLP's `ds_correction` sits on
