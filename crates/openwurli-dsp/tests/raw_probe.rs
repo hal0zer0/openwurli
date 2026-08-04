@@ -12,6 +12,13 @@
 //!   which showed 1e272-V internal excursions + NaN-reset storms on the
 //!   same sweep, settled or cold.
 //! Both gates for making the melange amp the default remain CLOSED.
+//!
+//! 2026-08-03 LATER (regen @ melange 1ed5e2f — overdrive fix e6d5db8/7906d30):
+//! - overdrive bug FIXED, verified here: internal peaks physical at all
+//!   drives (3.6-20.6 V, clean rail clip, zero NaN, monotonic).
+//! - CPU improved 1.2-7.4x realtime (was 9.5-157x) — still ~100x too slow
+//!   for a plugin default (behavioral amp ~0.7% of a core). CPU gate stays
+//!   closed; overdrive gate cleared.
 use openwurli_dsp::gen_power_amp as gpa;
 use std::time::Instant;
 

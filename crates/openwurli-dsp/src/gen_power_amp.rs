@@ -8716,16 +8716,8 @@ fn sparse_lu_back_solve(a_lu: &[[f64; N]; N], dr: &[f64; N], dc: &[f64; N], b: &
         x[i] = dr[i] * b[i];
     }
     // Static row swaps (matching factorization)
-    {
-        let tmp = x[18];
-        x[18] = x[3];
-        x[3] = tmp;
-    }
-    {
-        let tmp = x[19];
-        x[19] = x[7];
-        x[7] = tmp;
-    }
+    x.swap(18, 3);
+    x.swap(19, 7);
 
     // Sparse forward substitution (L, AMD order)
     x[1] -= a_lu[1][0] * x[0];
@@ -9694,7 +9686,7 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
             }
             let damp_thresh = 10.0_f64.max(max_v * 0.05);
             if max_node_dv > damp_thresh {
-                alpha *= (damp_thresh / max_node_dv).max(0.01);
+                alpha *= damp_thresh / max_node_dv;
             }
         }
 
@@ -9803,28 +9795,26 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
         let mut i_nl_resid = [0.0f64; M];
         if !max_step_exceeded {
             let i_nl_chord = i_nl;
-            let mut v_nl = [0.0f64; M];
-            v_nl[0] = N_V[0][1] * v[1] + N_V[0][2] * v[2];
-            v_nl[1] = N_V[1][1] * v[1] + N_V[1][4] * v[4];
-            v_nl[2] = N_V[2][2] * v[2] + N_V[2][6] * v[6];
-            v_nl[3] = N_V[3][5] * v[5] + N_V[3][6] * v[6];
-            v_nl[4] = N_V[4][4] * v[4] + N_V[4][7] * v[7];
-            v_nl[5] = N_V[5][4] * v[4] + N_V[5][10] * v[10];
-            v_nl[6] = N_V[6][12] * v[12] + N_V[6][15] * v[15];
-            v_nl[7] = N_V[7][12] * v[12] + N_V[7][14] * v[14];
-            v_nl[8] = N_V[8][3] * v[3] + N_V[8][14] * v[14];
-            v_nl[9] = N_V[9][14] * v[14] + N_V[9][15] * v[15];
-            v_nl[10] = N_V[10][10] * v[10] + N_V[10][17] * v[17];
-            v_nl[11] = N_V[11][10] * v[10] + N_V[11][16] * v[16];
-            v_nl[12] = N_V[12][7] * v[7] + N_V[12][16] * v[16];
-            v_nl[13] = N_V[13][16] * v[16] + N_V[13][17] * v[17];
+            let mut v_nl_final = [0.0f64; M];
+            v_nl_final[0] = N_V[0][1] * v[1] + N_V[0][2] * v[2];
+            v_nl_final[1] = N_V[1][1] * v[1] + N_V[1][4] * v[4];
+            v_nl_final[2] = N_V[2][2] * v[2] + N_V[2][6] * v[6];
+            v_nl_final[3] = N_V[3][5] * v[5] + N_V[3][6] * v[6];
+            v_nl_final[4] = N_V[4][4] * v[4] + N_V[4][7] * v[7];
+            v_nl_final[5] = N_V[5][4] * v[4] + N_V[5][10] * v[10];
+            v_nl_final[6] = N_V[6][12] * v[12] + N_V[6][15] * v[15];
+            v_nl_final[7] = N_V[7][12] * v[12] + N_V[7][14] * v[14];
+            v_nl_final[8] = N_V[8][3] * v[3] + N_V[8][14] * v[14];
+            v_nl_final[9] = N_V[9][14] * v[14] + N_V[9][15] * v[15];
+            v_nl_final[10] = N_V[10][10] * v[10] + N_V[10][17] * v[17];
+            v_nl_final[11] = N_V[11][10] * v[10] + N_V[11][16] * v[16];
+            v_nl_final[12] = N_V[12][7] * v[7] + N_V[12][16] * v[16];
+            v_nl_final[13] = N_V[13][16] * v[16] + N_V[13][17] * v[17];
             let mut i_nl = [0.0f64; M];
-            let mut j_dev = [0.0f64; M * M];
             {
-                // BJT 0 (RB/RC/RE inner NR)
-                let vbe = v_nl[0];
-                let vbc = v_nl[1];
-                let (ic, ib, jac) = bjt_with_parasitics(
+                let vbe = v_nl_final[0];
+                let vbc = v_nl_final[1];
+                let (ic, ib, _jac) = bjt_with_parasitics(
                     vbe,
                     vbc,
                     state.device_0_is,
@@ -9849,16 +9839,11 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 );
                 i_nl[0] = ic;
                 i_nl[1] = ib;
-                j_dev[0] = jac[0];
-                j_dev[1] = jac[1];
-                j_dev[14] = jac[2];
-                j_dev[15] = jac[3];
             }
             {
-                // BJT 1 (RB/RC/RE inner NR)
-                let vbe = v_nl[2];
-                let vbc = v_nl[3];
-                let (ic, ib, jac) = bjt_with_parasitics(
+                let vbe = v_nl_final[2];
+                let vbc = v_nl_final[3];
+                let (ic, ib, _jac) = bjt_with_parasitics(
                     vbe,
                     vbc,
                     state.device_1_is,
@@ -9883,16 +9868,11 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 );
                 i_nl[2] = ic;
                 i_nl[3] = ib;
-                j_dev[30] = jac[0];
-                j_dev[31] = jac[1];
-                j_dev[44] = jac[2];
-                j_dev[45] = jac[3];
             }
             {
-                // BJT 2 (RB/RC/RE inner NR)
-                let vbe = v_nl[4];
-                let vbc = v_nl[5];
-                let (ic, ib, jac) = bjt_with_parasitics(
+                let vbe = v_nl_final[4];
+                let vbc = v_nl_final[5];
+                let (ic, ib, _jac) = bjt_with_parasitics(
                     vbe,
                     vbc,
                     state.device_2_is,
@@ -9917,16 +9897,11 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 );
                 i_nl[4] = ic;
                 i_nl[5] = ib;
-                j_dev[60] = jac[0];
-                j_dev[61] = jac[1];
-                j_dev[74] = jac[2];
-                j_dev[75] = jac[3];
             }
             {
-                // BJT 3 (RB/RC/RE inner NR)
-                let vbe = v_nl[6];
-                let vbc = v_nl[7];
-                let (ic, ib, jac) = bjt_with_parasitics(
+                let vbe = v_nl_final[6];
+                let vbc = v_nl_final[7];
+                let (ic, ib, _jac) = bjt_with_parasitics(
                     vbe,
                     vbc,
                     state.device_3_is,
@@ -9951,16 +9926,11 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 );
                 i_nl[6] = ic;
                 i_nl[7] = ib;
-                j_dev[90] = jac[0];
-                j_dev[91] = jac[1];
-                j_dev[104] = jac[2];
-                j_dev[105] = jac[3];
             }
             {
-                // BJT 4 (RB/RC/RE inner NR)
-                let vbe = v_nl[8];
-                let vbc = v_nl[9];
-                let (ic, ib, jac) = bjt_with_parasitics(
+                let vbe = v_nl_final[8];
+                let vbc = v_nl_final[9];
+                let (ic, ib, _jac) = bjt_with_parasitics(
                     vbe,
                     vbc,
                     state.device_4_is,
@@ -9985,16 +9955,11 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 );
                 i_nl[8] = ic;
                 i_nl[9] = ib;
-                j_dev[120] = jac[0];
-                j_dev[121] = jac[1];
-                j_dev[134] = jac[2];
-                j_dev[135] = jac[3];
             }
             {
-                // BJT 5 (RB/RC/RE inner NR)
-                let vbe = v_nl[10];
-                let vbc = v_nl[11];
-                let (ic, ib, jac) = bjt_with_parasitics(
+                let vbe = v_nl_final[10];
+                let vbc = v_nl_final[11];
+                let (ic, ib, _jac) = bjt_with_parasitics(
                     vbe,
                     vbc,
                     state.device_5_is,
@@ -10019,16 +9984,11 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 );
                 i_nl[10] = ic;
                 i_nl[11] = ib;
-                j_dev[150] = jac[0];
-                j_dev[151] = jac[1];
-                j_dev[164] = jac[2];
-                j_dev[165] = jac[3];
             }
             {
-                // BJT 6 (RB/RC/RE inner NR)
-                let vbe = v_nl[12];
-                let vbc = v_nl[13];
-                let (ic, ib, jac) = bjt_with_parasitics(
+                let vbe = v_nl_final[12];
+                let vbc = v_nl_final[13];
+                let (ic, ib, _jac) = bjt_with_parasitics(
                     vbe,
                     vbc,
                     state.device_6_is,
@@ -10053,10 +10013,6 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                 );
                 i_nl[12] = ic;
                 i_nl[13] = ib;
-                j_dev[180] = jac[0];
-                j_dev[181] = jac[1];
-                j_dev[194] = jac[2];
-                j_dev[195] = jac[3];
             }
             i_nl_resid = i_nl;
             // Tolerance matches DK Schur path: ABSTOL=1e-12, RELTOL=1e-3,
@@ -11576,7 +11532,7 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
                     max_node_dv = max_node_dv.max(dv.abs());
                 }
                 if max_node_dv > 10.0 {
-                    alpha *= (10.0 / max_node_dv).max(0.01);
+                    alpha *= 10.0 / max_node_dv;
                 }
             }
 
@@ -11675,6 +11631,238 @@ pub fn process_sample(input: f64, state: &mut CircuitState) -> [f64; NUM_OUTPUTS
             for i in 0..N {
                 v[i] += alpha * (v_new[i] - v[i]);
             }
+            // Residual convergence safety net (BE path)
+            if !be_step_exceeded {
+                let i_nl_be_chord = i_nl;
+                let mut v_nl_final = [0.0f64; M];
+                v_nl_final[0] = N_V[0][1] * v[1] + N_V[0][2] * v[2];
+                v_nl_final[1] = N_V[1][1] * v[1] + N_V[1][4] * v[4];
+                v_nl_final[2] = N_V[2][2] * v[2] + N_V[2][6] * v[6];
+                v_nl_final[3] = N_V[3][5] * v[5] + N_V[3][6] * v[6];
+                v_nl_final[4] = N_V[4][4] * v[4] + N_V[4][7] * v[7];
+                v_nl_final[5] = N_V[5][4] * v[4] + N_V[5][10] * v[10];
+                v_nl_final[6] = N_V[6][12] * v[12] + N_V[6][15] * v[15];
+                v_nl_final[7] = N_V[7][12] * v[12] + N_V[7][14] * v[14];
+                v_nl_final[8] = N_V[8][3] * v[3] + N_V[8][14] * v[14];
+                v_nl_final[9] = N_V[9][14] * v[14] + N_V[9][15] * v[15];
+                v_nl_final[10] = N_V[10][10] * v[10] + N_V[10][17] * v[17];
+                v_nl_final[11] = N_V[11][10] * v[10] + N_V[11][16] * v[16];
+                v_nl_final[12] = N_V[12][7] * v[7] + N_V[12][16] * v[16];
+                v_nl_final[13] = N_V[13][16] * v[16] + N_V[13][17] * v[17];
+                let mut i_nl = [0.0f64; M];
+                {
+                    let vbe = v_nl_final[0];
+                    let vbc = v_nl_final[1];
+                    let (ic, ib, _jac) = bjt_with_parasitics(
+                        vbe,
+                        vbc,
+                        state.device_0_is,
+                        state.device_0_vt,
+                        DEVICE_0_NF,
+                        DEVICE_0_NR,
+                        state.device_0_bf,
+                        state.device_0_br,
+                        DEVICE_0_SIGN,
+                        DEVICE_0_USE_GP,
+                        DEVICE_0_VAF,
+                        DEVICE_0_VAR,
+                        DEVICE_0_IKF,
+                        DEVICE_0_IKR,
+                        DEVICE_0_ISE,
+                        DEVICE_0_NE,
+                        DEVICE_0_ISC,
+                        DEVICE_0_NC,
+                        DEVICE_0_RB,
+                        DEVICE_0_RC,
+                        DEVICE_0_RE,
+                    );
+                    i_nl[0] = ic;
+                    i_nl[1] = ib;
+                }
+                {
+                    let vbe = v_nl_final[2];
+                    let vbc = v_nl_final[3];
+                    let (ic, ib, _jac) = bjt_with_parasitics(
+                        vbe,
+                        vbc,
+                        state.device_1_is,
+                        state.device_1_vt,
+                        DEVICE_1_NF,
+                        DEVICE_1_NR,
+                        state.device_1_bf,
+                        state.device_1_br,
+                        DEVICE_1_SIGN,
+                        DEVICE_1_USE_GP,
+                        DEVICE_1_VAF,
+                        DEVICE_1_VAR,
+                        DEVICE_1_IKF,
+                        DEVICE_1_IKR,
+                        DEVICE_1_ISE,
+                        DEVICE_1_NE,
+                        DEVICE_1_ISC,
+                        DEVICE_1_NC,
+                        DEVICE_1_RB,
+                        DEVICE_1_RC,
+                        DEVICE_1_RE,
+                    );
+                    i_nl[2] = ic;
+                    i_nl[3] = ib;
+                }
+                {
+                    let vbe = v_nl_final[4];
+                    let vbc = v_nl_final[5];
+                    let (ic, ib, _jac) = bjt_with_parasitics(
+                        vbe,
+                        vbc,
+                        state.device_2_is,
+                        state.device_2_vt,
+                        DEVICE_2_NF,
+                        DEVICE_2_NR,
+                        state.device_2_bf,
+                        state.device_2_br,
+                        DEVICE_2_SIGN,
+                        DEVICE_2_USE_GP,
+                        DEVICE_2_VAF,
+                        DEVICE_2_VAR,
+                        DEVICE_2_IKF,
+                        DEVICE_2_IKR,
+                        DEVICE_2_ISE,
+                        DEVICE_2_NE,
+                        DEVICE_2_ISC,
+                        DEVICE_2_NC,
+                        DEVICE_2_RB,
+                        DEVICE_2_RC,
+                        DEVICE_2_RE,
+                    );
+                    i_nl[4] = ic;
+                    i_nl[5] = ib;
+                }
+                {
+                    let vbe = v_nl_final[6];
+                    let vbc = v_nl_final[7];
+                    let (ic, ib, _jac) = bjt_with_parasitics(
+                        vbe,
+                        vbc,
+                        state.device_3_is,
+                        state.device_3_vt,
+                        DEVICE_3_NF,
+                        DEVICE_3_NR,
+                        state.device_3_bf,
+                        state.device_3_br,
+                        DEVICE_3_SIGN,
+                        DEVICE_3_USE_GP,
+                        DEVICE_3_VAF,
+                        DEVICE_3_VAR,
+                        DEVICE_3_IKF,
+                        DEVICE_3_IKR,
+                        DEVICE_3_ISE,
+                        DEVICE_3_NE,
+                        DEVICE_3_ISC,
+                        DEVICE_3_NC,
+                        DEVICE_3_RB,
+                        DEVICE_3_RC,
+                        DEVICE_3_RE,
+                    );
+                    i_nl[6] = ic;
+                    i_nl[7] = ib;
+                }
+                {
+                    let vbe = v_nl_final[8];
+                    let vbc = v_nl_final[9];
+                    let (ic, ib, _jac) = bjt_with_parasitics(
+                        vbe,
+                        vbc,
+                        state.device_4_is,
+                        state.device_4_vt,
+                        DEVICE_4_NF,
+                        DEVICE_4_NR,
+                        state.device_4_bf,
+                        state.device_4_br,
+                        DEVICE_4_SIGN,
+                        DEVICE_4_USE_GP,
+                        DEVICE_4_VAF,
+                        DEVICE_4_VAR,
+                        DEVICE_4_IKF,
+                        DEVICE_4_IKR,
+                        DEVICE_4_ISE,
+                        DEVICE_4_NE,
+                        DEVICE_4_ISC,
+                        DEVICE_4_NC,
+                        DEVICE_4_RB,
+                        DEVICE_4_RC,
+                        DEVICE_4_RE,
+                    );
+                    i_nl[8] = ic;
+                    i_nl[9] = ib;
+                }
+                {
+                    let vbe = v_nl_final[10];
+                    let vbc = v_nl_final[11];
+                    let (ic, ib, _jac) = bjt_with_parasitics(
+                        vbe,
+                        vbc,
+                        state.device_5_is,
+                        state.device_5_vt,
+                        DEVICE_5_NF,
+                        DEVICE_5_NR,
+                        state.device_5_bf,
+                        state.device_5_br,
+                        DEVICE_5_SIGN,
+                        DEVICE_5_USE_GP,
+                        DEVICE_5_VAF,
+                        DEVICE_5_VAR,
+                        DEVICE_5_IKF,
+                        DEVICE_5_IKR,
+                        DEVICE_5_ISE,
+                        DEVICE_5_NE,
+                        DEVICE_5_ISC,
+                        DEVICE_5_NC,
+                        DEVICE_5_RB,
+                        DEVICE_5_RC,
+                        DEVICE_5_RE,
+                    );
+                    i_nl[10] = ic;
+                    i_nl[11] = ib;
+                }
+                {
+                    let vbe = v_nl_final[12];
+                    let vbc = v_nl_final[13];
+                    let (ic, ib, _jac) = bjt_with_parasitics(
+                        vbe,
+                        vbc,
+                        state.device_6_is,
+                        state.device_6_vt,
+                        DEVICE_6_NF,
+                        DEVICE_6_NR,
+                        state.device_6_bf,
+                        state.device_6_br,
+                        DEVICE_6_SIGN,
+                        DEVICE_6_USE_GP,
+                        DEVICE_6_VAF,
+                        DEVICE_6_VAR,
+                        DEVICE_6_IKF,
+                        DEVICE_6_IKR,
+                        DEVICE_6_ISE,
+                        DEVICE_6_NE,
+                        DEVICE_6_ISC,
+                        DEVICE_6_NC,
+                        DEVICE_6_RB,
+                        DEVICE_6_RC,
+                        DEVICE_6_RE,
+                    );
+                    i_nl[12] = ic;
+                    i_nl[13] = ib;
+                }
+                for i in 0..M {
+                    let r = (i_nl[i] - i_nl_be_chord[i]).abs();
+                    let tol = 1e-3 * i_nl[i].abs().max(i_nl_be_chord[i].abs()).max(1e-9) + 1e-12;
+                    if !(r <= tol) {
+                        be_step_exceeded = true;
+                        break;
+                    }
+                }
+            }
+
             let be_converged = !be_step_exceeded;
 
             if be_converged {
