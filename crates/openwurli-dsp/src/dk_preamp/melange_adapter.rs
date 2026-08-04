@@ -56,12 +56,17 @@ impl DkPreamp {
         self.main.set_noise_enabled(on);
     }
 
-    /// Scale thermal noise amplitude. `1.0` = physics-honest full noise
-    /// (empirically lands at ~−11 dBFS at the DAW with default volume/PSG,
-    /// which is much louder than a real 200A DI recording's noise floor
-    /// because commercial captures are masked by the mic-preamp/ADC floor).
-    /// The plugin default of `0.05` puts the noise floor near −37 dBFS:
-    /// audibly present when idle, fully masked during any playing.
+    /// Scale thermal noise amplitude. `1.0` = physics-honest full noise:
+    /// every preamp resistor contributes its `sqrt(4·k_B·T·R·BW)` density,
+    /// matching what ngspice `.NOISE` reports for the same netlist (~8 µV
+    /// RMS at the preamp output). That lands near −86 dBFS at DAW default
+    /// gain staging — the same place a clean DI of a real 200A sits.
+    ///
+    /// The plugin's `noise_gain` param wraps this via `set_noise_gain` and
+    /// defaults to `1.0×` (asserted in `openwurli-plugin/src/lib.rs`). See
+    /// `openwurli-plugin/src/params.rs` for the authoritative dBFS figures
+    /// (that doc is the single source of truth). Raise above `1.0` to
+    /// exaggerate the noise for "vintage hiss"; `30×` ≈ −56 dBFS.
     pub fn set_thermal_gain(&mut self, gain: f64) {
         self.thermal_gain = gain;
         self.main.set_thermal_gain(gain);
