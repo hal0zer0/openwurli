@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.1] "NotADuck" - 2026-08-03
 
 ### Added
 - **Netlist drift guards.** Two new tripwires against the drift classes that
@@ -35,8 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remains default; the regenerated solver runs 1.2–7.4× slower than realtime
   for the amp stage alone and stays opt-in until that gap closes.
 
-### Fixed
-- **Flaky reed-renderer integration tests on macOS CI** stabilized.
 - **MLP per-note correction retrained against the 0.6.0 signal chain.** The
   0.6.0 pickup-nonlinearity changes (`PICKUP_KNEE_Y` 0.85→0.94, `DS_CLAMP`
   upper 0.88→0.95) prompted a retrain, since the MLP's `ds_correction` sits on
@@ -53,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   across the chord-ff voicing and pushed the worst-case engine peak to 1.0796;
   the trim restores the vol=1.0 ≤ 1.0 invariant (peak 0.996). Output-level
   re-center only.
+
+### Fixed
+- **Flaky reed-renderer integration tests on macOS CI** stabilized.
 
 ## [0.6.0] "SupernaturalDelight" - 2026-07-19
 
@@ -1005,7 +1006,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/hal0zer0/openwurli/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/hal0zer0/openwurli/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/hal0zer0/openwurli/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/hal0zer0/openwurli/compare/v0.5.0...v0.5.1
