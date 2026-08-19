@@ -6,10 +6,12 @@
 //    transient); 8 s finds nothing later. Wurli peaks are early.
 // 2. The invariant is PHASE-FRAGILE: sweeping chord onset across one
 //    tremolo cycle (warmed engine, as production always is) gives peaks
-//    0.997..1.144 at vol=1.0. The in-tree ≤1.02 test passes only because
+//    0.997..1.148 at vol=1.0 (validated at 2 ms phase density, 90 points:
+//    broad plateau at 160-168 ms, max 1.1484 — NOT a narrow notch; coarse
+//    9-point figure moved only +0.03 dB). The in-tree ≤1.02 test passes only because
 //    it omits warm_up() — a cold-engine state no host produces — and lands
 //    on a lucky phase. Production worst-case exceeds the documented
-//    invariant by +1.16 dB. PSG decision pending (re-trim vs document).
+//    invariant by +1.20 dB. PSG decision pending (re-trim vs document).
 use openwurli_dsp::WurliEngine;
 
 #[test]
@@ -61,7 +63,7 @@ fn peak_arrival_time_probe() {
 fn peak_vs_tremolo_phase_probe() {
     let sr = 44_100.0;
     // 5.63 Hz tremolo period ~178 ms; sweep chord onset across ~1 cycle.
-    for delay_ms in [0u32, 22, 44, 66, 89, 111, 133, 155, 178] {
+    for delay_ms in (0u32..=178).step_by(2) {
         let mut e = WurliEngine::new(sr);
         e.set_volume(1.0);
         e.set_tremolo_depth(1.0);
