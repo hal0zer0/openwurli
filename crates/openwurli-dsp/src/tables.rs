@@ -537,10 +537,22 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// voicing, nudging the worst-case engine peak to 1.0796; this post-chain trim
 /// restores the vol=1.0 ≤ 1.0 invariant (predicted peak 0.996). Output-level
 /// re-center only — the retrained corrections are preserved.
-pub const POST_SPEAKER_GAIN_DB: f64 = 16.8;
+///
+/// 2026-08-19: lowered +16.8 → +15.5 dB (−1.3 dB). The vol=1.0 invariant
+/// turned out to be tremolo-PHASE-FRAGILE: prior sizing measured a cold
+/// (un-warmed) engine at one lucky onset phase. On a warmed engine (the
+/// production state — the plugin always warm_up()s) with chord onset swept
+/// across the tremolo cycle at 2 ms density, peak = 0.997..1.1484 (broad
+/// plateau at onset 160–168 ms; see tests/peak_window_probe.rs). The
+/// exposure is structural, not a measurement artifact: the ~40 ms attack
+/// transient ends well inside a 178 ms tremolo period, freezing onset phase
+/// into the envelope — no longer window averages it out. −1.3 dB puts the
+/// worst phase at ~0.989 with honest margin. The invariant test now warms
+/// the engine and sweeps phases including the plateau.
+pub const POST_SPEAKER_GAIN_DB: f64 = 15.5;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 6.918_309_709_189_366; // 10^(16.8/20)
+pub const POST_SPEAKER_GAIN: f64 = 5.956_621_435_290_105; // 10^(15.5/20)
 
 /// Fixed circuit-drive level — multiplier applied between preamp output
 /// and power amp input. Historically this was `vol²` (3K audio-taper pot,

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`POST_SPEAKER_GAIN` lowered +16.8 → +15.5 dB — the vol=1.0 headroom
+  invariant was tremolo-phase-fragile.** The invariant ("worst-case chord-ff
+  at vol=1.0 peaks ≤ 1.0") had been sized against a cold, un-warmed engine
+  with the chord landing at one lucky tremolo phase — a state no host
+  produces, since the plugin always `warm_up()`s. Measured in production
+  conditions with chord onset swept across the tremolo cycle at 2 ms
+  density, the peak spans 0.997–1.148 (+1.20 dB over the invariant at the
+  worst phase, a broad plateau at onset ≈ 160–168 ms — not an under-sampled
+  notch). The exposure is structural: the ~40 ms attack transient ends well
+  inside the 178 ms tremolo period, freezing onset phase into the envelope,
+  so no longer measurement window can average it out. The −1.3 dB trim puts
+  the worst phase at ~0.989 with honest margin. Level re-center only.
+  `test_engine_peak_below_unity_at_vol_1` now warms the engine and sweeps
+  onset phases including the measured plateau — the previous version passed
+  against the cold single-phase state, which is false assurance, strictly
+  worse than no test. Diagnostic sweeps: `tests/peak_window_probe.rs`.
+  (Found via the fleet-wide measurement-window audit; the general lesson —
+  "what did the measurement hold fixed that production leaves free" — is
+  recorded in the probe header.)
+
 ## [0.6.1] "NotADuck" - 2026-08-03
 
 ### Added
