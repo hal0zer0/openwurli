@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **MLP per-note corrections now default OFF.** A listening report ("the
+  bark sounds slightly muffled with MLP on") was confirmed objectively with
+  oomox's Sensor Array: at expressive velocities in the mid register the
+  corrections progressively mute the harmonic series (C4 at velocity 112:
+  H2 −0.9 dB, H3 −1.8, H4 −2.7, H5 −3.5 vs MLP off, with output levels
+  matched within 0.7 dB — spectral, not loudness). Mechanism: the MLP is
+  trained on single-velocity (~mf) mid-register reference recordings, and
+  outside that distribution it extrapolates backwards — `ds_correction`
+  drops below 1 at high velocity (a real 200A barks MORE when struck
+  harder, not less) and the mode-decay corrections pin at their 0.3 clamp
+  rail, killing overtones 3.3× faster than physics. In-distribution the
+  benefit is real but small (≈1.5 dB closer to the reference H2 at one
+  note; negligible at another; the third reference note is unmeasurable).
+  Below MIDI ~59 the MLP was already a no-op (training-range fade), so
+  bass is unaffected by this change. The parameter remains available for
+  A/B; saved sessions keep their stored setting. The vol=1.0 headroom
+  invariant was re-verified for both settings (MLP-off worst-phase peak
+  0.947; MLP-on 0.989 — the guarded worst case remains MLP-on). Possible
+  future middle path, recorded in the project notes: a velocity fade
+  mirroring the existing note fade, so corrections only speak where their
+  training data does.
+
 ### Fixed
 - **`POST_SPEAKER_GAIN` lowered +16.8 → +15.5 dB — the vol=1.0 headroom
   invariant was tremolo-phase-fragile.** The invariant ("worst-case chord-ff

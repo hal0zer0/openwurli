@@ -220,7 +220,7 @@ impl WurliEngine {
             os_sample_rate: os_sr,
             oversample,
             sustain_held: false,
-            mlp_enabled: true,
+            mlp_enabled: false,
             volume: LinearSmoother::new(0.5, ramp),
             tremolo_depth: LinearSmoother::new(0.5, ramp),
             speaker_character: LinearSmoother::new(0.0, ramp),

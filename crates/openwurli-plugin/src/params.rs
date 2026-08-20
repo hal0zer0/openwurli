@@ -16,7 +16,13 @@ pub struct OpenWurliParams {
     #[id = "speaker"]
     pub speaker_character: FloatParam,
 
-    /// MLP per-note corrections: on = apply learned corrections, off = raw physics only.
+    /// MLP per-note corrections: on = apply learned corrections, off = raw
+    /// physics only. Default OFF since 2026-08-20: the corrections are
+    /// trained on single-velocity mid-register reference material and
+    /// measurably mute the harmonic series when extrapolating to expressive
+    /// velocities (Sensor A/B: H2 −0.9 dB .. H5 −3.5 dB at C4 ff), while the
+    /// in-distribution benefit is ~1.5 dB at one reference note. Raw physics
+    /// wins by ear and by ruler; flip ON to A/B the learned fit.
     #[id = "mlp"]
     pub mlp_enabled: BoolParam,
 
@@ -74,7 +80,7 @@ impl Default for OpenWurliParams {
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_string_to_value(formatters::s2v_f32_percentage()),
 
-            mlp_enabled: BoolParam::new("MLP Corrections", true),
+            mlp_enabled: BoolParam::new("MLP Corrections", false),
 
             noise_enable: BoolParam::new("Authentic Noise", false),
 

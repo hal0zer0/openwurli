@@ -208,7 +208,9 @@ mod tests {
         assert!((params.volume.default_plain_value() - 0.50).abs() < 0.01);
         assert!((params.tremolo_depth.default_plain_value() - 0.5).abs() < 0.01);
         assert!((params.speaker_character.default_plain_value()).abs() < 0.01);
-        assert!(params.mlp_enabled.default_plain_value());
+        // MLP default OFF (2026-08-20): out-of-distribution velocity
+        // extrapolation measurably mutes the harmonic series; see params.rs.
+        assert!(!params.mlp_enabled.default_plain_value());
     }
 
     #[test]
