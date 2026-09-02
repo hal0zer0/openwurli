@@ -1,8 +1,9 @@
 # Regen manifest — netlist ↔ generated-solver provenance guard
 #
 # Each line: FNV-1a-64 of the netlist's NORMALIZED functional content
-# (trailing whitespace stripped; blank lines and `*` comment lines dropped),
-# recorded at the last regen of the corresponding gen_*.rs solver.
+# (trailing whitespace stripped; the title line, blank lines, `*` comment
+# lines, and a bare `.END` dropped — 2026-09-01 spec, thread 259), recorded
+# at the last regen of the corresponding gen_*.rs solver.
 #
 # Enforced by crates/openwurli-dsp/tests/netlist_sync.rs. If a hash here
 # mismatches the netlist on disk, someone edited a wurli-*.cir without

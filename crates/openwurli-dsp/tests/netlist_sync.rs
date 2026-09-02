@@ -39,11 +39,19 @@ fn spice_melange_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spice/melange")
 }
 
-/// Trailing whitespace stripped; blank lines and `*` SPICE comments dropped.
+/// Trailing whitespace stripped; the title line (line 1 — ngspice treats it
+/// as a title whether or not it starts with `*`), blank lines, `*` SPICE
+/// comments, and a bare `.end` dropped. None of these are circuit topology.
+/// Spec shared with melange-circuits' tools/wurli_sync.py (thread 259);
+/// change only via an exchange where both sides change together.
 fn normalized_lines(raw: &str) -> Vec<String> {
     raw.lines()
+        .skip(1)
         .map(|l| l.trim_end())
-        .filter(|l| !l.is_empty() && !l.trim_start().starts_with('*'))
+        .filter(|l| {
+            let t = l.trim_start();
+            !t.is_empty() && !t.starts_with('*') && !t.eq_ignore_ascii_case(".end")
+        })
         .map(String::from)
         .collect()
 }
