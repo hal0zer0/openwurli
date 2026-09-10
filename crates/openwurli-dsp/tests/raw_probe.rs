@@ -11,6 +11,7 @@
 //! - Strictly better than the prior in-tree codegen (M=7, de9dc81-era),
 //!   which showed 1e272-V internal excursions + NaN-reset storms on the
 //!   same sweep, settled or cold.
+//!
 //! Both gates for making the melange amp the default remain CLOSED.
 //!
 //! 2026-08-03 LATER (regen @ melange 1ed5e2f — overdrive fix e6d5db8/7906d30):

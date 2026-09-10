@@ -5,9 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.2] "MojoRisin" - 2026-09-10
+
+### Added
+- **Tremolo gain-vs-R sweep now guarded at interior points.** An outside
+  reader found a 2.4 dB non-monotonic hole at 35.5 kΩ in stale baseline
+  sweeps — invisible by construction to the historical endpoint+range
+  checks, which test the extremes of a curve whose defect was interior.
+  Current code produces a clean curve there (the artifact dates to the
+  pre-divider tremolo era), but nothing had enforced it: gain is
+  physically required to be strictly decreasing in LDR path resistance,
+  and a new test asserts that across a 10-point log grid with a
+  max-adjacent-step bound as a false-convergence tripwire.
+- **Diagnostic probes** (all `#[ignore]`d, run on demand):
+  `tests/peak_window_probe.rs` (chord peak vs tremolo onset phase — the
+  sweep that exposed the PSG fragility fixed below), a preamp CPU probe
+  A/B-ing feature builds (legacy 4.4% RT, shipped melange artifact 24.6%,
+  fresh regen vs melange HEAD 52.7%), and an MLP correction-vector dump
+  probe (used for the default-off decision below).
 
 ### Changed
+- **Netlist drift guards ignore SPICE title line and bare `.END`.** Both
+  are metadata, not circuit topology (ngspice treats line 1 as the title
+  either way; melange dc-op measured byte-identical), so the
+  normalization now drops them before hashing. This lets melange-circuits
+  publish proper titles/`.END` on the three sync-locked netlists without
+  tripping the guard on either side or invalidating `REGEN_MANIFEST`
+  hashes; melange-circuits mirrors the same spec in `tools/wurli_sync.py`.
 - **MLP per-note corrections now default OFF.** A listening report ("the
   bark sounds slightly muffled with MLP on") was confirmed objectively with
   oomox's Sensor Array: at expressive velocities in the mid register the
@@ -1052,7 +1076,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/hal0zer0/openwurli/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/hal0zer0/openwurli/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/hal0zer0/openwurli/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/hal0zer0/openwurli/compare/v0.5.1...v0.5.2

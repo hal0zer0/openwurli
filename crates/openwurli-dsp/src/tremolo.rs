@@ -293,7 +293,7 @@ mod tests {
         // Twin-T oscillator is ~5.3-5.6 Hz; legacy is 5.63 Hz
         // Over 2 seconds expect ~11 crossings
         assert!(
-            crossings >= 8 && crossings <= 14,
+            (8..=14).contains(&crossings),
             "Expected ~11 oscillations in 2s, got {crossings}"
         );
     }

@@ -24,6 +24,7 @@ use openwurli_dsp::alias_audit;
 ///   * Loose (1.5–2.0 dB) lets minor re-tunings pass while still catching
 ///     the historical v0.5.0-era tear, which moved click-band harmonics by
 ///     +5 to +13 dB (commit 00168ca). Use this for the regression-gate role.
+///
 /// Currently set to the loose values — this test guards against catastrophic
 /// regressions (the actual "tear"), not benign spectrum drift.
 const MAX_STEP_UP_TOLERANCE_DB: f64 = 1.5;
