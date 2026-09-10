@@ -70,8 +70,8 @@ crates/
     mlp_weights.rs            #   Trained MLP weights (195 params)
     preamp.rs                 #   PreampModel trait
     tremolo.rs                #   CdS LDR + melange Twin-T oscillator (--features legacy-tremolo = sine LFO)
-    power_amp.rs              #   Adapter over gen_power_amp; --features legacy-power-amp = behavioral NR
-    gen_power_amp.rs          #   Melange-generated 7-BJT Class AB solver (default)
+    power_amp.rs              #   Power amp; behavioral NR is the shipping default (feature legacy-power-amp, in default set)
+    gen_power_amp.rs          #   Melange-generated 7-BJT Class AB solver (opt-in: build with --no-default-features)
     speaker.rs                #   HPF/LPF cabinet simulation
   openwurli-plugin/src/       # nih-plug CLAP+VST3 plugin
     lib.rs                    #   Plugin entry, process callback, voice mgmt
