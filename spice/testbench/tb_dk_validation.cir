@@ -24,7 +24,7 @@
 * ============================================================
 * CIRCUIT A: Ideal BJT, R_ldr=1M (matches DK model)
 * ============================================================
-Vcc_a vcc_a 0 DC 15
+Vcc_a vcc_a 0 DC 14.5
 Vin_a in_a 0 DC 0 AC 1
 
 * Input: Cin + R1 in series
@@ -60,7 +60,7 @@ R9a coll2a outa 6.8K
 * ============================================================
 * CIRCUIT B: Ideal BJT, R_ldr=19K (tremolo bright)
 * ============================================================
-Vcc_b vcc_b 0 DC 15
+Vcc_b vcc_b 0 DC 14.5
 Vin_b in_b 0 DC 0 AC 1
 
 R1b in_b node_Ab 22K
@@ -85,7 +85,7 @@ R9b coll2b outb 6.8K
 * ============================================================
 * CIRCUIT C: Full SPICE model, R_ldr=1M (reference)
 * ============================================================
-Vcc_c vcc_c 0 DC 15
+Vcc_c vcc_c 0 DC 14.5
 Vin_c in_c 0 DC 0 AC 1
 
 R1c in_c node_Ac 22K

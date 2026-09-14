@@ -11,14 +11,14 @@
 .include ../subcircuits/preamp.cir
 
 * === TEST 1: Unloaded (no volume pot, DI directly at out node) ===
-Vcc1  vcc1 0  DC 15
+Vcc1  vcc1 0  DC 14.5
 Xpre1  in1 out1 vcc1 0 fb1  wurli_preamp
 Vin1  in1 0  DC 0
 Bldr1  fb1 0  I = V(fb1) / (1e6 - 981e3 * (0.5 + 0.5*sin(2*3.14159265*5.63*time)))
 Rload1  out1 0  1MEG
 
 * === TEST 2: Loaded with volume pot at 40% ===
-Vcc2  vcc2 0  DC 15
+Vcc2  vcc2 0  DC 14.5
 Xpre2  in2 out2 vcc2 0 fb2  wurli_preamp
 Vin2  in2 0  DC 0
 Bldr2  fb2 0  I = V(fb2) / (1e6 - 981e3 * (0.5 + 0.5*sin(2*3.14159265*5.63*time)))
@@ -26,7 +26,7 @@ Rpot_top2  out2  wiper2  1800
 Rpot_bot2  wiper2 0  1200
 
 * === TEST 3: Volume pot -> C-8 -> power amp ===
-Vcc3  vcc3 0  DC 15
+Vcc3  vcc3 0  DC 14.5
 Xpre3  in3 out3 vcc3 0 fb3  wurli_preamp
 Vin3  in3 0  DC 0
 Bldr3  fb3 0  I = V(fb3) / (1e6 - 981e3 * (0.5 + 0.5*sin(2*3.14159265*5.63*time)))

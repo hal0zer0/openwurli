@@ -30,7 +30,7 @@
 * ===============================================================
 
 * Supply
-Vcc  vcc 0  DC 15
+Vcc  vcc 0  DC 14.5
 
 * Instantiate preamp
 Xpre  in_sig out vcc 0 fb_junct  wurli_preamp

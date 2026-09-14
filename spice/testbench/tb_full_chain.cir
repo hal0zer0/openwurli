@@ -29,7 +29,7 @@
 * POWER SUPPLIES
 * ============================================================
 Vhv    vhv_node   0    DC 147
-Vcc    vcc_node   0    DC 15
+Vcc    vcc_node   0    DC 14.5
 Vpos   vp_node    0    DC 22.5
 Vneg   vn_node    0    DC -22.5
 

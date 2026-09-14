@@ -46,7 +46,7 @@
 * ==================================================================
 * CIRCUIT R: REAL Q2N5089 (full SPICE model + C20, D1, Rload)
 * ==================================================================
-Vcc_r   vcc_r   0   DC 15
+Vcc_r   vcc_r   0   DC 14.5
 Vin_r   src_r   0   DC 0 SIN(0 0.001 262 0 0)
 
 * Input network
@@ -87,7 +87,7 @@ Rload_r out_r   0         100K
 * ==================================================================
 * Note: Keeping C20, D1, and Rload here too for apples-to-apples
 * circuit topology comparison. The ONLY difference is the BJT model.
-Vcc_i   vcc_i   0   DC 15
+Vcc_i   vcc_i   0   DC 14.5
 Vin_i   src_i   0   DC 0 SIN(0 0.001 262 0 0)
 
 * Input network

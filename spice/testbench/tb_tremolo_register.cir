@@ -38,7 +38,7 @@ Vin in_sig 0 DC 0 AC 0.01
 *======================================================================
 * CIRCUIT D (DARK): R_ldr = 1M — maximum feedback, minimum gain
 *======================================================================
-Vcc_d vcc_d 0 DC 15
+Vcc_d vcc_d 0 DC 14.5
 
 * Input coupling: R-1 (22K) + Cin (0.022uF)
 R1d in_sig nodeA_d 22K
@@ -77,7 +77,7 @@ Rload_d out_d 0 100K
 *======================================================================
 * CIRCUIT B (BRIGHT): R_ldr = 19K — minimum feedback, maximum gain
 *======================================================================
-Vcc_b vcc_b 0 DC 15
+Vcc_b vcc_b 0 DC 14.5
 
 R1b in_sig nodeA_b 22K
 Cinb nodeA_b base1_b 0.022U

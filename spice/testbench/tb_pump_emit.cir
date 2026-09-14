@@ -1,5 +1,10 @@
-* Wurlitzer 200A — Emit1 and Coll1 during tremolo pump
-* Measure just these two internal nodes during R_ldr cycling
+* Wurlitzer 200A — C-6 REGRESSION GUARD (was: tremolo pump probe)
+* RE-BASELINED 2026-09-13: with the drawn topology's C-6 in place, the
+* R-9/R-10 node sits at 0V DC and NO DC reaches the LDR leg. Measured:
+* emit1/coll1 pump = 0.000 mV pp under 19K<->1M LDR cycling at 5.63 Hz.
+* EXPECTED RESULT: ZERO pump. Any nonzero pump here means C-6 (or its
+* placement) regressed. The historical pump this bench was written to
+* dissect was an artifact of the pre-revision DC-coupled output.
 
 .title Pump Internal Nodes
 
@@ -7,7 +12,7 @@
 .include ../models/diodes.lib
 .include ../subcircuits/preamp.cir
 
-Vcc  vcc 0  DC 15
+Vcc  vcc 0  DC 14.5
 Xpre  in_sig out vcc 0 fb_junct  wurli_preamp
 Vin  in_sig 0  DC 0
 

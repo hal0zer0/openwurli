@@ -10,10 +10,13 @@
 * LDR (R_ldr) between trem pin and ground sets the feedback
 * divider with R-10. Nominal 12K gives ~5.6x (15 dB) closed-loop gain.
 *
-* Targets:
-*   Closed-loop gain at 1 kHz: ~5.6x (15 dB)  [with R_ldr = 12K]
-*   -3dB bandwidth: ~3.7 kHz
-*   C20 HPF corner: ~1903 Hz (interacts with feedback)
+* Targets (RE-BASELINED 2026-09-13, drawn topology, 14.5V rail):
+*   Closed-loop gain at 1 kHz: 15.54 dB  [R_ldr = 12K, loaded out]
+*   HF -3dB re 1 kHz: 16.8 kHz (triple-confirmed: melange 16.7k,
+*     matched-drive derivation 17.1k)
+*   Mild LF rise to ~16.4 dB near 31 Hz (stage-2 zero/pole + loop-gain
+*     shaping from C-7's incomplete bypass -- real physics)
+*   (The old "C20 1903 Hz corner" target was the misread topology.)
 
 .title Preamp AC Frequency Response
 
@@ -22,7 +25,7 @@
 .include ../subcircuits/preamp.cir
 
 * Supply
-Vcc  vcc 0  DC 15
+Vcc  vcc 0  DC 14.5
 
 * Instantiate preamp
 Xpre  in_sig out vcc 0 trem  wurli_preamp

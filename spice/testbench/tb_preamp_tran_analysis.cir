@@ -8,7 +8,7 @@
 .include ../models/diodes.lib
 .include ../subcircuits/preamp.cir
 
-Vcc  vcc 0  DC 15
+Vcc  vcc 0  DC 14.5
 Xpre  in_sig out vcc 0 trem  wurli_preamp
 
 * R-1 from ground (no HV supply)

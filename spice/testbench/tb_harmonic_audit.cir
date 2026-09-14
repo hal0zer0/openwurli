@@ -53,7 +53,7 @@ Vdisp  reed_disp  0  DC 0 SIN(0 0.05 440 0 0)
 * Separate preamp instance driven by a clean voltage source.
 * This isolates preamp distortion from pickup distortion.
 
-Vcc  vcc  0  DC 15
+Vcc  vcc  0  DC 14.5
 
 * Clean sine input (altered in .control block)
 Vin  src  0  DC 0 SIN(0 0.001 440 0 0)

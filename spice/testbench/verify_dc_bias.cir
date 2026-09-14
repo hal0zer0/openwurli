@@ -85,10 +85,10 @@ Rload out 0 100K
 * ============================================================
 
 * Power supply
-Vcc1 vcc1 0 DC 15
-Vcc2 vcc2 0 DC 15
-Vcc3 vcc3 0 DC 15
-Vcc4 vcc4 0 DC 15
+Vcc1 vcc1 0 DC 14.5
+Vcc2 vcc2 0 DC 14.5
+Vcc3 vcc3 0 DC 14.5
+Vcc4 vcc4 0 DC 14.5
 
 * --- Config A: R2=2MEG, R3=470K, 2N5089 (BF=1434) ---
 * (our resolved design-center values)

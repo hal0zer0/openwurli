@@ -13,7 +13,7 @@
 .MODEL D1N4148 D(IS=2.52E-09 RS=0.568 N=1.752 BV=100
 +  IBV=100E-06 CJO=4E-12 VJ=0.7 M=0.45 TT=6E-09)
 
-Vcc vcc 0 DC 15
+Vcc vcc 0 DC 14.5
 
 * Input signal - parameterized amplitude and frequency
 * Realistic pickup levels: 0.5mV (pp), 2mV (mf), 10mV (ff), 50mV (fff/clipping)
