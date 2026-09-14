@@ -28,10 +28,15 @@
 *   V1: 14.5V. Service manual TEXT says "+14.5 volts regulated" (p.64); the
 *       drawing marks "+15V". 14.5 closes the TR-2 collector KCL imbalance
 *       implied by the drawing's own DC marks (+10.4% -> +1.6%).
-* CODEGEN WARNING: this deck is TRAPEZOIDAL-UNSTABLE at every tested rate
-* (spectral radius 1.07-1.08; melange auto-promotes to BE). Integrator choice
-* is a first-class decision at regen time. BE damps HF; trap-pinned small-
-* signal is faithful (independent cross-check to 2.5%).
+* INTEGRATOR: author-pinned to backward Euler below. The deck is
+* trapezoidal-unstable (spectral radius 1.1394, dominant sign -1: a
+* Nyquist-marginal z=-1 mode, which L-stable BE genuinely damps — the
+* auto-promoter selects BE for this deck anyway; the pin makes it
+* deterministic across regens). BE's HF damping understates the ~16.7 kHz
+* corner at low sim rates; the generated solver runs oversampled, and the
+* shipping hand solver treats stability separately. Trap-pinned
+* small-signal analysis of this deck is faithful (cross-checked to 2.5%)
+* — the instability is a transient-integration property.
 * TRANSISTOR CARD: 2N5089 retained pending the Phase-3 voicing decision.
 * The original part is Green-grade 2N292x (ss-hfe 235-470, DC typ 215; GE
 * 1971 pp.498-500 - 2N2923/24/25 are the color grades of the 2N2926
@@ -104,6 +109,9 @@ R10   node_c6  fb     56K
 * are identical to .pot R after melange's 2026-04-20 reseed strip.
 R_ldr fb    0      100k
 .runtime R_ldr 1k 1Meg as r_ldr
+
+* --- Integrator: author-pinned (see header) ---
+.integrator be
 
 * --- Supply: +14.5V (manual text; drawing mark "+15V" - see header) ---
 V1    vcc   0      DC 14.5

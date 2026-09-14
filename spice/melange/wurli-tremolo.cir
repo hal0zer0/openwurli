@@ -74,6 +74,12 @@ R17   ledk  out    4.7K
 * --- Stray cap on output (prevent trapezoidal oscillation) ---
 Cpar  out   0      1P
 
+* --- Declared taps: raw inner-rate node voltages for the light law ---
+* LED current in Rust: (V_rail - v(leda))/680 per inner sample, or the
+* leda/ledk pair across the diode. Taps are pre-decimation by design.
+.tap leda led_anode
+.tap ledk led_cathode
+
 * --- Supply: +14.5V (manual text; drawing mark "+15V" - see header) ---
 V1    vcc   0      DC 14.5
 
