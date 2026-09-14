@@ -5,6 +5,97 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] "CODENAME-TBD" - UNRELEASED
+
+The drawn-topology revision: instrumented re-reads of schematic
+#203720-S-3 overturned six circuit readings the model was built on, and
+this release rebuilds the preamp, pickup, and tremolo on the verified
+circuit. Every correction was cross-checked by at least two independent
+methods (instrumented drawing reads, independent SPICE, independent hand
+derivation, real-instrument DC measurements) before any code moved.
+
+### Changed — the circuit
+- **Preamp rebuilt on the verified topology** (9-node MNA): R-2 is 1 MEG
+  from the +150V polarizing line on the PICKUP side of the input cap
+  (the old "2 MEG to the base" was a misreading, and the "380K measured
+  input impedance" that justified it was circular); R-3 (470K) returns
+  from TR-1's base to TR-2's emitter divider — a DC-feedback servo that
+  is the base's only bias path; C-7 spans both emitter resistors (stage
+  2 is the high-gain stage: A1 ≈ 8, A2 ≈ 130, not 420/2.2); C-6 (4.7 µF)
+  AC-couples the output — the R-9/R-10 node sits at 0 V DC. Supply
+  corrected to +14.5 V (service-manual text; resolves a collector-current
+  imbalance in the schematic's own annotations). DC now matches the
+  real-instrument measurement set the old topology could never reach.
+- **Pickup corner corrected 2312 Hz → ≈880 Hz.** C-1 is a short at
+  audio, so C-2's 220 pF sits in parallel with the plate capacitance —
+  the old model missed this and over-filtered the bass by ~8 dB below
+  400 Hz (some 2026-07 downstream bass voicing was compensating for it).
+  Bass fundamentals are restored at the source.
+- **Pickup nonlinearity moved to the physical source.** The 1/(1−y)
+  bark mechanism now lives in the moving reed's charge injection; the
+  network is nearly LTI (one ~3 pF reed against the ~240 pF node). The
+  old model modulated the entire node capacitance — ~80× the physical
+  depth — which generated inharmonic intermodulation hash (measured
+  ~13 dB of it removed at C2 ff), had its asymmetry inverted, and lost
+  all harmonic generation above the corner. Displacement scaling now
+  means what its name says (gap fraction), and the hard clamp became a
+  soft saturation (the derivative discontinuity was audible).
+- **Levels re-balanced** for the hotter, bass-restored voice:
+  DS re-fit (C4 anchor back at its ear-blessed value), post-speaker gain
+  re-trimmed, and the vol=1.0 worst-case peak invariant preserved. The
+  DS-vs-loudness tradeoff curve is documented in-commit for future
+  voicing (≈1.5 dB of level per dB of C4 H2).
+- **Tremolo LED path corrected**: R-18 (680 Ω) drives the LG-1 LED (it
+  was wrongly modeled inside the LDR leg), R-17 is the VIBRATO ADJUST
+  depth trimmer, and the light law is now built from the oscillator's
+  LED current through a period-datasheet intensity law into the existing
+  CdS cell dynamics — with zero fitted constants (the shipped depth
+  ladder emerged within +0.22 dB). Measured result: the cell's time
+  constants, not the LED drive, own the tremolo's shape — the audible
+  character is unchanged by design.
+- **Shadow-pump subtraction retired.** The tremolo bias pump it
+  compensated does not exist in the real circuit (C-6 blocks DC from
+  the LDR leg; measured 0.000 mV). Null-tested to the 24-bit LSB before
+  removal. Whole-engine CPU −22%.
+- **Volume-pot documentation corrected**: the 200A uses a 10K main pot
+  plus a 25K reed-bar trimmer (the "3K" in older docs is a Model 200
+  part). No code change (volume is post-amp by design).
+
+### Added
+- Regression guards: C-6 pump guard (any bias pump under LDR cycling is
+  now a failure), tremolo-ladder and light-law gates, DC operating-point
+  test pinned to the cross-verified table, Nyquist-mode numerics test.
+- `spice/`: netlists, subcircuits, models, and testbenches migrated to
+  the drawn topology at 14.5 V, with a per-bench triage record
+  (`spice/testbench/REVISION-NOTES.md`). The generated solvers are
+  regenerated against the revised decks (upstream pin advanced to
+  v0.1.7; integrator author-pinned per deck).
+- Research docs rewritten on the verified circuit (`preamp-circuit.md`
+  with a superseded-readings appendix so no overturned reading can
+  silently return; `dk-preamp-derivation.md` for the 9-node solver;
+  `pickup-system.md`, `output-stage.md`, `signal-chain-architecture.md`
+  refreshed; schematic provenance clarified in `SCHEMATIC_SOURCE.md`).
+
+### Fixed
+- MLP: consumption of never-trained decay heads no longer clamps to a
+  0.3 rail (a 3.3× decay error on the opt-in path); level compensation
+  uses the real pickup corner; weights retrained on the revised physics
+  (corrections remain default-OFF).
+- preamp-bench: the harmonic estimator was an un-windowed DFT measuring
+  spectral leakage (~1000× THD overstatement) — now windowed and
+  bin-aligned with a 0.00009% verified floor.
+- Community "6 dB tremolo boost" figure documented with its provenance
+  (a single aged-unit measurement with the depth trimmer at minimum),
+  not treated as a spec.
+
+### Known issues
+- The hand solver's BJT kernel is forward-active only: far above any
+  reachable drive it diverges rather than saturating. Inaudible;
+  documented; blocks one internal probe until a kernel extension.
+- C_TOTAL (240 pF) and C-2's return node remain hardware-unverified;
+  the pickup corner scales with the former and forks on the latter
+  (880 vs ~1400 Hz). Bench measurements are in progress.
+
 ## [0.6.2] "MojoRisin" - 2026-09-10
 
 ### Added
