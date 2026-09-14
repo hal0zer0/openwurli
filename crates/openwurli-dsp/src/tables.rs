@@ -247,9 +247,52 @@ pub fn reed_compliance(midi: u8) -> f64 {
 ///   D5 (MIDI 74): 0.59  (moderate bark)
 ///   D6 (MIDI 86): 0.45  (lighter)
 ///   C7 (MIDI 96): 0.24  (clean, bell-like)
-const DS_AT_C4: f64 = 0.85;
+///
+/// ## 2026-09-14 re-fit for the pickup modulation-depth restructure
+///
+/// `DS_AT_C4` **0.85 → 0.73**, `DS_CLAMP` upper **0.95 → 0.90**
+/// (`DS_EXPONENT` unchanged at 0.75).
+///
+/// DS now means what its name says. The previous pickup model modulated the
+/// whole plate node as `1/(1-y)` — 80x the physical depth — and DS was silently
+/// absorbing the ratio; `pickup.rs` carries the derivation. With the
+/// nonlinearity moved into the source term where it belongs, the same y
+/// produces a much stronger and (correctly) frequency-independent harmonic
+/// series, so the old DS over-drove it.
+///
+/// **`DS_CLAMP` upper 0.95 → 0.90** is the better-determined of the two: two
+/// independent criteria land on it. (i) It puts C2 ff H2/H1 at 107.8% against
+/// the pre-restructure branch's 109.5% — a 0.14 dB match on the bass-ladder
+/// gate. (ii) It makes the C2 ff harmonic ladder track the pre-revision
+/// reference (the one the perceptual review blessed as real-200A behaviour) to
+/// **0.89 dB RMS across H2-H8**, versus 4.97 dB at the old 0.95 and 4.34 dB at
+/// 0.86. A gap fraction of 0.95 — reed within 5% of touching — was survivable
+/// when the nonlinearity was weak per unit y; with the correct one it is not.
+///
+/// **`DS_AT_C4` 0.85 → 0.73** is set by the vol=1.0 level invariant, not by
+/// ear. The restructure raises output by +0.7..+5.9 dB depending on register
+/// (that rise IS the restored nonlinearity), and `POST_SPEAKER_GAIN_DB` was
+/// ringfenced for this change, so the level had to come out of DS. Measured
+/// worst-phase warmed chord-ff peak: 0.8562 at 0.71, 0.9253 at 0.73, 1.0035 at
+/// 0.75, 1.1393 at 0.78 (limit 1.02). 0.73 leaves +0.85 dB of headroom —
+/// more than the 0.980 the branch shipped with.
+///
+/// ⚠ **This is the one constant here set by a level budget rather than by
+/// physics or bark.** At DS 0.85 the restructure raised C4 ff pickup H2/H1 to
+/// 73.0% (from 62.3%, +1.4 dB); at 0.73 it sits at 59.6% (-0.4 dB). The H2
+/// improvement the restructure can deliver is being spent on headroom. If
+/// `POST_SPEAKER_GAIN_DB` is ever allowed to absorb the level instead, DS
+/// should go back up and that H2 returns — see the Phase-3 notes.
+///
+/// ⚠ **`output_scale` partially fights DS.** Its RMS proxy normalises for DS
+/// (and still uses the superseded 2312 Hz corner, `HPF_FC` in
+/// `output_scale_with_config`), so lowering DS raises `output_scale` and the
+/// level does not track DS one-for-one — lowering `DS_CLAMP` actually *raised*
+/// the chord peak. Re-deriving that proxy against the corrected pickup is the
+/// obvious follow-up and would also unblock the velocity-span gate.
+const DS_AT_C4: f64 = 0.73;
 const DS_EXPONENT: f64 = 0.75;
-const DS_CLAMP: (f64, f64) = (0.02, 0.95);
+const DS_CLAMP: (f64, f64) = (0.02, 0.90);
 
 /// Runtime-overridable calibration parameters.
 /// All fields default to the current hardcoded constants.

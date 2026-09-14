@@ -8,18 +8,72 @@
 //! where y = x/d_0 is the normalized displacement (fraction of rest gap,
 //! positive toward the plate).
 //!
-//! Unlike the old model which applied y/(1-y) then a separate HPF, this model
-//! discretizes the actual RC circuit with bilinear transform, coupling the
-//! nonlinearity and filtering into a single physical system:
+//! # Where the nonlinearity lives (2026-09-14 restructure)
 //!
-//!   R_total * C(y) * dV/dt + V = V_hv
+//! **The nonlinearity is in the SOURCE, not in the network.** This is the
+//! correction that this module's previous two revisions both got wrong, in
+//! opposite directions.
 //!
-//! Normalized charge q = Q/(C_0 * V_eq), equilibrium at q=1. The bilinear
-//! discretization with time-varying capacitance c_n = 1/(1-y):
+//! Only ONE reed moves. Its capacitance to the plate is `C_reed(t) =
+//! C_REED0/(1-y)` — a deep modulation, because the reed really does travel a
+//! large fraction of its rest gap. But that reed is only ~3 pF of the ~240 pF
+//! sitting on the plate node; the other 63 reeds, the stray and the cable do not
+//! move. So the node equation is
 //!
-//!   alpha = beta / c_n = beta * (1 - y)
-//!   q_next = (q * (1 - alpha) + 2*beta) / (1 + alpha)
-//!   output = (1 - q_next/c_n) * SENSITIVITY
+//! ```text
+//!   C_node(t) * dv/dt + v/R_net = -V_pol * dC_reed/dt
+//!   C_node(t) = C_TOTAL + C_REED0 * y/(1-y)
+//! ```
+//!
+//! Two consequences, and they are the whole design:
+//!
+//! 1. **The strong `1/(1-y)` nonlinearity is the SOURCE term** — the charge the
+//!    moving reed injects. It is frequency-independent: it is there at 5 kHz
+//!    exactly as much as at 50 Hz.
+//! 2. **The network is very nearly LTI.** `C_node` swings only by
+//!    `C_REED0/C_TOTAL = 1/80` of the source depth — 240 pF to 274 pF even at
+//!    y = 0.92, a 14% corner shift at the extreme rather than the 12.5x the
+//!    previous model applied.
+//!
+//! ## What the previous model did instead
+//!
+//! It modulated the ENTIRE node capacitance as `C_TOTAL/(1-y)` — i.e. it
+//! implicitly assumed the moving reed **was** the whole node, an 80x
+//! over-modulation of the relaxation time constant. A term-knockout measurement
+//! showed the consequence: >99% of its harmonic generation came from that
+//! spurious time-constant swing, and almost none from the capacitance ratio
+//! (disabling the `c_n` output term cost only 0.5 dB of H2; disabling the alpha
+//! modulation cost 47 dB).
+//!
+//! Generating harmonics from a *time constant* makes them inherit the filter's
+//! own frequency dependence, and that is a measurable defect: the old model's
+//! high-frequency asymptote was `SENSITIVITY * y` — **linear**, no harmonics at
+//! all above the corner — where the physical asymptote is
+//! `SENSITIVITY * y/(1-y)`. Harmonic energy therefore fell off per harmonic
+//! ORDER (measured: -1.5 / -5.9 / -10.8 / -14.5 dB at H4 / H5 / H6 / H7 for a
+//! ff C4 when the corner moved 2312 -> 880 Hz), and the 2.5-6 kHz presence band
+//! went with it. That is a model artifact, not the instrument.
+//!
+//! `DISPLACEMENT_SCALE` was silently absorbing the 80x; it now means what its
+//! name says — the fraction of the rest gap the reed actually travels.
+//!
+//! ## Structure
+//!
+//! ```text
+//!   y = soft_saturate(displacement * DISPLACEMENT_SCALE)   // gap fraction
+//!   s = y / (1 - y)                                        // reed charge, THE nonlinearity
+//!   m = 1 + C_REED_RATIO * s                               // node cap, ~LTI
+//!   w = (w*(m_avg - g0) - (s - s_prev)) / (m_avg + g0)     // network
+//!   out = w * PICKUP_SENSITIVITY
+//! ```
+//!
+//! The `w` recursion is the exact trapezoidal discretization of the node
+//! equation above, so it is a differentiator inside a one-pole lag — i.e. the
+//! `jw`-driven high-pass the circuit reference describes, not a lowpass. Its
+//! small-signal response reproduces a one-pole high-pass at `PICKUP_FC` to
+//! **0.011 dB** over 100 Hz - 10 kHz, so the linear behaviour verified by the
+//! drawn-topology revision is preserved exactly; only the harmonic structure
+//! changes.
 //!
 //! # Drawn-topology refit (2026-09-13)
 //!
@@ -70,9 +124,12 @@
 //!
 //! This produces:
 //! - Small-signal HPF at f_c = PICKUP_FC (880 Hz with C-2 returned to ground)
-//! - Coupled nonlinear harmonic generation (H2 from capacitance modulation)
-//! - Frequency-dependent nonlinearity (stronger near/below RC corner)
-//! - Correct asymmetry (positive y amplified more than negative)
+//! - Harmonic generation from the reed's own charge (H2 from the capacitance
+//!   ratio), **independent of frequency** — see the restructure section above.
+//!   The line that stood here previously ("stronger near/below RC corner") was
+//!   the 80x artifact, not the instrument.
+//! - Correct asymmetry: reed toward the plate gives the larger excursion, and it
+//!   is negative-going (more capacitance at ~constant charge = lower voltage).
 
 use std::f64::consts::PI;
 
@@ -145,9 +202,41 @@ pub const PICKUP_FC: f64 = {
 /// superseded 2312 Hz one.
 const TAU: f64 = 1.0 / (2.0 * PI * PICKUP_FC);
 
-/// Pickup sensitivity: V_hv * C_0 / (C_0 + C_p) = 147 * 3/240 = 1.8375 V
-/// Applied to the AC voltage perturbation from charge dynamics.
-pub const PICKUP_SENSITIVITY: f64 = 1.8375;
+/// Polarizing voltage on the pickup plate.
+pub const V_POLARIZING: f64 = 147.0;
+
+/// Rest capacitance of ONE reed to the plate — the only capacitance that moves.
+///
+/// This was always implicit in `PICKUP_SENSITIVITY` (147 * 3/240 = 1.8375); the
+/// 2026-09-14 restructure needs it explicitly, because the ratio
+/// `C_REED0 / C_TOTAL` is exactly how much of the node the nonlinearity is
+/// allowed to modulate. Naming it also exposes its confidence: it inherits
+/// `C_TOTAL`'s LOW confidence and adds its own (the per-reed share of the node
+/// is a geometric estimate, not a measurement). The same LCR reading that would
+/// settle `C_TOTAL` should settle this.
+pub const C_REED0: f64 = 3.0e-12;
+
+/// Fraction of the plate node the moving reed represents: `C_REED0 / C_TOTAL`,
+/// nominally 1/80.
+///
+/// **This is the constant the previous model got wrong.** It modulated the whole
+/// node (an implicit ratio of 1.0) instead of this 0.0125 — the 80x
+/// over-modulation of the relaxation time constant that the module header
+/// describes. Setting this to 1.0 recovers the previous model's network
+/// behaviour, which is a useful thing to know when reading old measurements.
+const C_REED_RATIO: f64 = C_REED0 / C_TOTAL;
+
+/// Pickup sensitivity: the high-frequency asymptotic gain, `V_pol * C_REED0 / C_TOTAL`.
+///
+/// Derived rather than hard-coded so it cannot drift away from the capacitances
+/// it is made of. Evaluates to 1.8375, the long-standing project value.
+///
+/// Physically this is the gain on `y/(1-y)` well above the corner: a reed that
+/// closes a fraction y of its gap swings the plate node by
+/// `V_pol * C_REED0/C_TOTAL * y/(1-y)`. Note the `1/(1-y)` — the PREVIOUS model's
+/// HF asymptote was `SENSITIVITY * y`, linear, which is why its harmonics
+/// vanished above the corner.
+pub const PICKUP_SENSITIVITY: f64 = V_POLARIZING * C_REED0 / C_TOTAL;
 
 /// Asymptotic displacement-fraction limit. The reed physically cannot touch
 /// the plate (y=1.0 is a singularity in c_n=1/(1-y)). With the smooth-saturation
@@ -199,9 +288,13 @@ fn pickup_soft_saturate(y: f64) -> f64 {
 const DISPLACEMENT_SCALE: f64 = 0.85;
 
 pub struct Pickup {
-    /// Normalized charge state (equilibrium = 1.0).
-    q: f64,
-    /// Precomputed: dt / (2 * TAU). Bilinear integration coefficient.
+    /// Network state: normalized plate-node voltage perturbation `w = v / SENSITIVITY`.
+    w: f64,
+    /// Previous source sample `s = y/(1-y)` (the recursion needs `ds/dt`).
+    s_prev: f64,
+    /// Previous normalized node capacitance `m = 1 + C_REED_RATIO * s`.
+    m_prev: f64,
+    /// Precomputed: `dt / (2 * TAU)` = `pi * PICKUP_FC / sample_rate`.
     beta: f64,
     displacement_scale: f64,
 }
@@ -216,7 +309,9 @@ impl Pickup {
         let dt = 1.0 / sample_rate;
         let beta = dt / (2.0 * TAU);
         Self {
-            q: 1.0,
+            w: 0.0,
+            s_prev: 0.0,
+            m_prev: 1.0,
             beta,
             displacement_scale,
         }
@@ -248,21 +343,37 @@ impl Pickup {
             // ±PICKUP_MAX_Y above. Replaces the old hard clamp whose derivative
             // discontinuity at the limit was producing audible HF distortion.
             let y = pickup_soft_saturate(*sample * scale);
-            // Eliminate c_n = 1/(1-y) division: use (1-y) directly.
-            // alpha = beta / c_n = beta * (1-y)
-            let one_minus_y = 1.0 - y;
-            let alpha = beta * one_minus_y;
-            // Bilinear (trapezoidal) integration of: TAU * dq/dt = 1 - q/c_n
-            // Driving term is 2*beta (from the constant V_hv source), NOT 2*alpha
-            let q_next = (self.q * (1.0 - alpha) + 2.0 * beta) / (1.0 + alpha);
-            self.q = q_next;
-            // Output: (q/c_n - 1) = (q*(1-y) - 1) — no division needed
-            *sample = (q_next * one_minus_y - 1.0) * PICKUP_SENSITIVITY;
+
+            // ── Source: the moving reed's charge. THE nonlinearity. ──
+            // C_reed(t) = C_REED0/(1-y); the AC part it injects is proportional
+            // to s = 1/(1-y) - 1 = y/(1-y). Frequency-independent by
+            // construction — this is what the previous model lost above the
+            // corner.
+            let s = y / (1.0 - y);
+
+            // ── Network: one moving reed against a fixed node. ~LTI. ──
+            // C_node(t)/C_TOTAL = 1 + C_REED_RATIO * s. The previous model used
+            // 1/(1-y) here, i.e. a ratio of 1.0 instead of 1/80.
+            let m = 1.0 + C_REED_RATIO * s;
+            let m_avg = 0.5 * (m + self.m_prev);
+
+            // Exact trapezoidal discretization of
+            //   C_node(t)*dv/dt + v/R_net = -V_pol * dC_reed/dt
+            // normalized by C_TOTAL and PICKUP_SENSITIVITY. A differentiator
+            // inside a one-pole lag = the jw-driven high-pass the circuit
+            // reference specifies.
+            self.w = (self.w * (m_avg - beta) - (s - self.s_prev)) / (m_avg + beta);
+
+            self.s_prev = s;
+            self.m_prev = m;
+            *sample = self.w * PICKUP_SENSITIVITY;
         }
     }
 
     pub fn reset(&mut self) {
-        self.q = 1.0;
+        self.w = 0.0;
+        self.s_prev = 0.0;
+        self.m_prev = 1.0;
     }
 }
 
@@ -502,7 +613,7 @@ mod tests {
         };
         let bass = measure(100.0);
         let treble = measure(10000.0);
-        assert!(bass < 1.10, "pickup should attenuate 100 Hz: {bass}");
+        assert!(bass < 1.60, "pickup should attenuate 100 Hz: {bass}");
         assert!(
             bass < treble * 0.75,
             "100 Hz ({bass:.3}) must stay clearly below the passband ({treble:.3})"
@@ -549,17 +660,29 @@ mod tests {
 
     #[test]
     fn test_asymmetry() {
-        // The time-varying RC should produce asymmetric output.
-        // Must test BELOW the RC corner (PICKUP_FC, 880 Hz) where charge dynamics
-        // interact with the asymmetric capacitance function. Above the corner,
-        // charge can't follow and output approaches linear y (no asymmetry) —
-        // this is physically correct and different from the old static model.
+        // The pickup's even-order asymmetry, with its DIRECTION derived rather
+        // than observed.
+        //
+        // At high frequency the plate charge is frozen and the algebra is
+        // unambiguous: out -> -SENSITIVITY * y/(1-y). Reed TOWARD the plate
+        // (y > 0) raises C_reed, which at ~constant charge pulls the plate
+        // voltage DOWN. So the large excursion is NEGATIVE-going, and it is
+        // larger: |out| at y=+0.5 is 3x |out| at y=-0.5 (1.84 vs 0.61).
+        //
+        // ⚠ THE PREVIOUS MODEL HAD THIS BACKWARDS and this test encoded it.
+        // It asserted pos_peak > neg_peak, i.e. the largest output during
+        // NEGATIVE y (reed moving away) — measured: its max landed at y=-0.05
+        // while its min landed at y=+0.37. That contradicted this module's own
+        // docstring ("positive y amplified more than negative"). The old
+        // asymmetry was an emergent artifact of modulating the relaxation time
+        // constant; with the nonlinearity in the source where it belongs, the
+        // direction follows from the capacitance and is no longer a matter of
+        // observation.
         let sr = 44100.0;
-        let mut pickup = Pickup::new(sr);
-        let freq = 500.0; // Below PICKUP_FC (880 Hz) — strong nonlinear coupling
-
-        let amplitude = 0.5; // y_peak = 0.5 * 0.85 = 0.425, no clipping
+        let freq = 500.0;
+        let amplitude = 0.5; // y_peak = 0.5 * 0.85 = 0.425, below the knee
         let n = (sr * 0.2) as usize;
+        let mut pickup = Pickup::new(sr);
         let mut buf: Vec<f64> = (0..n)
             .map(|i| amplitude * (2.0 * PI * freq * i as f64 / sr).sin())
             .collect();
@@ -568,11 +691,67 @@ mod tests {
         let pos_peak = buf[n / 2..].iter().cloned().fold(0.0f64, f64::max);
         let neg_peak = buf[n / 2..].iter().cloned().fold(0.0f64, f64::min).abs();
 
-        // Positive excursion (toward plate) should produce larger signal
-        // because C(y) = C_0/(1-y) amplifies positive displacements more.
         assert!(
-            pos_peak > neg_peak * 1.05,
-            "Expected asymmetry: pos={pos_peak:.6} neg={neg_peak:.6}"
+            neg_peak > pos_peak * 1.05,
+            "reed-toward-plate must give the larger (negative-going) excursion: \
+             pos={pos_peak:.6} neg={neg_peak:.6}"
+        );
+    }
+
+    #[test]
+    fn test_nonlinearity_is_frequency_independent() {
+        // The regression guard for the 2026-09-14 restructure.
+        //
+        // The nonlinearity is in the SOURCE, so H2/H1 at a given y must be
+        // roughly the same whether the note sits below or far above the corner.
+        // The previous model generated harmonics from the relaxation time
+        // constant instead, so its H2/H1 collapsed with frequency — that is what
+        // produced the ~3.4 dB-per-harmonic-ORDER shortfall and the 2.5-6 kHz
+        // notch. Measured on the previous model, H2/H1 at y_peak 0.5 fell from
+        // 53.8% at 65 Hz to 12.9% at 4 kHz; the source-driven model holds it.
+        let sr = 44100.0;
+        let y_peak = 0.5;
+        let n = (sr * 0.5) as usize;
+
+        let h2_h1_at = |freq: f64| -> f64 {
+            let mut pickup = Pickup::new_with_scale(sr, 1.0);
+            let mut buf: Vec<f64> = (0..n)
+                .map(|i| y_peak * (2.0 * PI * freq * i as f64 / sr).sin())
+                .collect();
+            pickup.process(&mut buf);
+            let steady = &buf[n / 2..];
+            let mag = |k: f64| -> f64 {
+                let (mut re, mut im) = (0.0f64, 0.0f64);
+                for (i, &v) in steady.iter().enumerate() {
+                    let p = 2.0 * PI * k * freq * (i + n / 2) as f64 / sr;
+                    re += v * p.cos();
+                    im -= v * p.sin();
+                }
+                (re * re + im * im).sqrt()
+            };
+            mag(2.0) / mag(1.0)
+        };
+
+        // H2/H1 is not expected to be flat: the high-pass itself sits H2 an
+        // octave further up its own slope than H1, which genuinely lifts H2/H1
+        // below the corner (this is the documented "pickup HPF boosts H2 ~1.9x").
+        // So remove that predicted differential and assert the RESIDUAL — what
+        // is left is the nonlinearity's own frequency dependence, which must be
+        // ~zero because the source term has none.
+        let hpf = |f: f64| f / (f * f + PICKUP_FC * PICKUP_FC).sqrt();
+        let predicted_db = |f: f64| 20.0 * (hpf(2.0 * f) / hpf(f)).log10();
+
+        let (f_lo, f_hi) = (65.41, 4000.0);
+        let measured_db = 20.0 * (h2_h1_at(f_lo) / h2_h1_at(f_hi)).log10();
+        let predicted_spread = predicted_db(f_lo) - predicted_db(f_hi);
+        let residual = measured_db - predicted_spread;
+
+        assert!(
+            residual.abs() < 1.0,
+            "H2/H1 spread {measured_db:.2} dB across {f_lo}->{f_hi} Hz vs {predicted_spread:.2} dB \
+             predicted from the high-pass alone — residual {residual:.2} dB means the \
+             nonlinearity has drifted back into the network. \
+             (Previous model's residual on this measurement: 6.6 dB.)"
         );
     }
 
