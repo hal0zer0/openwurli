@@ -15,7 +15,7 @@
 # netlists are the canonical regen source per the 2026-07-25 resync record).
 #
 # 2026-08-03: wurli-power-amp hash updated for the `.linearize Q9` adoption
-# (settled with melange-circuits), atomically with the gen_power_amp.rs regen.
+# (settled with the sidecar-validation repo), atomically with the gen_power_amp.rs regen.
 c38e83ce2576cc4c  wurli-preamp.cir
 cafa37a933dbc24b  wurli-power-amp.cir
 34e70f5fee654edb  wurli-tremolo.cir

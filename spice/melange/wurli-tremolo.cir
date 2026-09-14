@@ -2,8 +2,8 @@
 * Twin-T oscillator (TR-3/TR-4) driving the LG-1 LED, ~5.5-5.9 Hz.
 *
 * ============================================================================
-* TOPOLOGY REVISION 2026-09-13 (drawn LED path, arbiter-verified)
-* Schemer pixel-instrumented reads of #203720-S-3 (robogogo t352/375):
+* TOPOLOGY REVISION 2026-09-13 (drawn LED path, cross-verified)
+* Pixel-level instrumented re-reads of #203720-S-3, both scan surfaces:
 * R-18 (680) is in the LED DRIVE PATH, not the LDR leg (the old reading
 * misread two line hops as junctions). The shared collector load is the
 * series chain: +V -> R-18 -> LG-1 pin 2 (LED anode) -> pin 1 (cathode)
@@ -15,17 +15,17 @@
 *   below is ONE position; the final default is a Phase-3 calibration
 *   decision. Untuned corroboration: at BF 155 + R-17=0 + 14.5V the deck
 *   reproduces the print's "TYPICAL WAVE FORM" marks (11.5 Vpp, ~5.9V
-*   mean, ~5.85 Hz) with zero fitted parameters (t373 real-card grid).
+*   mean, ~5.85 Hz) with zero fitted parameters (real-card sweep grid).
 *   Trimmer loads the oscillator: rate moves ~+3.6% at R-17=0.
 *   V1: 14.5V (manual text p.64; drawing marks "+15V").
 * TRANSISTOR CARD: BF=155 = GE 1971 DC typical for the Yellow-grade
-* 2N292x (TR-3/4 = 142083-2; grade reading rule-of-thumb-strong, memory:
-* voltron-schematic-challenge-2026-09). Band 150-300 (small-signal);
-* sensitivity edges 100/300 measured in the t373 grid.
+* 2N292x (TR-3/4 = 142083-2; grade reading rule-of-thumb per the GE 1971
+* handbook's documented color-grade scheme). Band 150-300 (small-signal);
+* sensitivity edges 100/300 measured in the sweep grid.
 * LED CARD: single-diode level fit to TI TIL209A Fig 4 (June 1973), the
 * only period sub-mA I-V curve; residual <=5.6 mV over 0.35-20 mA
-* (melange-circuits fit, KCL-verified to 0.14 mV; digitisation: schemer
-* benchmarks/voltron_reads/led_iv/). The TI curve is DRAFTED artwork -
+* (single-diode fit, KCL-verified to 0.14 mV against a digitised trace
+* of the bulletin figure). The TI curve is DRAFTED artwork -
 * use as a LEVEL, do not read device physics from IS/N. Bounds cards
 * (HP-derived LOWa/LOWb) differ by <=16% in I_min, ~2% mean/peak: card
 * choice is second-order. No period data exists below 0.1 mA. NOT in

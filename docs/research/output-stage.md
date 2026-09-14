@@ -44,7 +44,7 @@ The Wurlitzer 200A service manual explicitly states:
 
 > "The reed bar signal is modulated by inserting the vibrato voltage into the feedback loop of the high impedance preamp. A divider is formed by the feedback resistor R-10, and the light dependent resistor of LG-1. The L.D.R., in conjunction with the light emitting diode in the same package, creates a variable leg in the feedback divider and makes possible amplitude modulation of the reed bar voltage."
 
-R-10 (56K) feeds back from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD coupling cap) AC-couples fb_junct to TR-1's **emitter**. This is **series-series (emitter) NEGATIVE feedback**. Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (top terminal = fb_junct, bottom terminal = ground, wiper → the LDR branch), with an 18K resistor bridging top→wiper; the LDR sits directly on the wiper branch (cable pin 5 → LG-1 pin 4, LDR pin 3 → ground). R-18 (680 Ω) is **not** in the LDR leg — it is in the LED drive path (+15V → R-18 → LG-1 pin 2 LED → pin 1 → R-17; schemer-verified 2026-09-13, hop-vs-junction instrumented read — the earlier "R18 in series with the LDR" reading misread two line hops as junctions). Front-panel depth = wiper position. When the LDR resistance changes, it diverts feedback current away from the emitter, modulating the preamp's closed-loop gain. (The old "fb_junct → 50K pot → 18K → LG-1 series chain" reading was corrected 2026-07-19 to this loaded divider — see §2.3.)
+R-10 (56K) feeds back from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD coupling cap) AC-couples fb_junct to TR-1's **emitter**. This is **series-series (emitter) NEGATIVE feedback**. Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (top terminal = fb_junct, bottom terminal = ground, wiper → the LDR branch), with an 18K resistor bridging top→wiper; the LDR sits directly on the wiper branch (cable pin 5 → LG-1 pin 4, LDR pin 3 → ground). R-18 (680 Ω) is **not** in the LDR leg — it is in the LED drive path (+15V → R-18 → LG-1 pin 2 LED → pin 1 → R-17; verified 2026-09-13 by hop-vs-junction instrumented read — the earlier "R18 in series with the LDR" reading misread two line hops as junctions). Front-panel depth = wiper position. When the LDR resistance changes, it diverts feedback current away from the emitter, modulating the preamp's closed-loop gain. (The old "fb_junct → 50K pot → 18K → LG-1 series chain" reading was corrected 2026-07-19 to this loaded divider — see §2.3.)
 
 **Implications for modeling:**
 - Tremolo modulates preamp GAIN via emitter feedback, which means the distortion character changes with the tremolo cycle
@@ -85,13 +85,13 @@ The oscillator is a **twin-T (parallel-T) oscillator**. The twin-T network forms
 | TR-3 emitter / TR-4 base | 0.68V | 0.668V | Excellent |
 | Shared collector (Node G) | 5.9V | 4.95V | See note |
 
-Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vcc. In the real circuit, the LG-1 LED in series adds ~1.5V forward drop, reducing effective Vcc and raising the quiescent collector point.
+Note: as of the 2026-09-13 revision the subcircuit models the drawn LED path (R-18 → LED → R-17 trimmer), so the collector point now includes the ~1.5V LED drop; testbench reads 5.02V DC / 5.70 Hz / 11.88 Vpp at R-17 = 4.7K, 14.5V rail.
 
 **Output swing:** 11.8 Vpp (target ~11.5 Vpp). Near rail-to-rail.
 
 **Waveform:** The real twin-T oscillator produces a mildly distorted sinusoid (estimated THD 3-10%). The OpenWurli implementation now uses a melange-generated Twin-T circuit oscillator as the default, which models the real waveform shape including the mild distortion. The behavioral sine LFO is still available behind `--features legacy-tremolo`.
 
-**LED drive path:** Node G → R17 (4.7K) → LG-1 pin 1 (LED cathode) → LED → pin 2 (LED anode) → return to Vcc via cable. The LG-1 LED symbol points downward on the schematic (anode=pin 2 at top, cathode=pin 1 at bottom). The LED runs at a **fixed ~0.84 mA** set by R17 — front-panel depth does **NOT** scale the LED drive. Depth lives entirely in the shunt divider (§2.3), not in the LED brightness.
+**LED drive path (corrected 2026-09-13):** Vcc → R-18 (680 Ω) → LG-1 pin 2 (LED anode) → pin 1 (cathode) → R-17 (4.7K VIBRATO ADJUST trimmer, wiper-strapped) → Node G. The LED current follows the oscillator swing scaled by the trimmer position (~0.4–2.3 mA over the cycle at full R-17; up to ~18 mA peak at R-17 = 0) — the old "fixed ~0.84 mA" figure came from the pre-revision reading with R-18 misplaced in the LDR leg. Front-panel depth lives in the shunt divider (§2.3); R-17 is a second, service-side depth control.
 
 **SPICE netlist:** `spice/subcircuits/tremolo_osc.cir` (validated in `spice/testbench/tb_tremolo_osc.cir`)
 
@@ -116,7 +116,7 @@ CdS devices exhibit strongly asymmetric time constants (fast on, slow off). This
 
 **CdS nonlinearity:** Resistance follows a power law. The OpenWurli implementation uses the datasheet-typical **gamma = 0.9** (VTL5C-class) over a weakly-driven cell range of **~9 kΩ bright ↔ ~1 MΩ dark** — the weak LED drive keeps the cell in the kΩ regime and never reaches its datasheet ~50 Ω floor. The code uses a log-space interpolation model: `log_r = log_max + (log_min - log_max) * drive^gamma` (see `tremolo.rs`), rather than the simpler `R = R_dark * illumination^(-gamma)` formula. (Earlier docs cited gamma = 1.1 with an 18,320 Ω bright floor; that floor was really the 18 kΩ divider network folded into a fake cell minimum — now modeled explicitly as the shunt divider, §2.3.)
 
-> **⚠ LED-drive correction (2026-09-13, schemer-verified):** the LED current is NOT a fixed ~0.84 mA. The LED path is +15V → R-18 (680 Ω) → LED → **R-17 (4.7K, VARIABLE — a wiper-strapped depth trimmer**, arrowhead on the archive scan; the Tropical Fish redraw lost it) → the TR-3 collector node (5.9 V mark). LED current therefore follows the oscillator swing and the trimmer setting. The cell-range and drive figures in this section were derived under the fixed-current assumption and are being re-derived on the corrected deck (robogogo threads 352/373/375).
+> **⚠ LED-drive correction (2026-09-13, instrumented-read-verified):** the LED current is NOT a fixed ~0.84 mA. The LED path is +15V → R-18 (680 Ω) → LED → **R-17 (4.7K, VARIABLE — a wiper-strapped depth trimmer**, arrowhead on the archive scan; the Tropical Fish redraw lost it) → the TR-3 collector node (5.9 V mark). LED current therefore follows the oscillator swing and the trimmer setting. The cell-range and drive figures in this section were derived under the fixed-current assumption and are being re-derived on the corrected deck (2026-09 revision record).
 
 ### 2.3 Feedback Divider Operation
 
@@ -127,11 +127,11 @@ Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ R_ldr)
     R_upper = 50 kΩ·(1 − depth),  R_lower = 50 kΩ·depth
 ```
 
-> **⚠ Topology correction (2026-09-13, schemer-verified on both scan surfaces):** the earlier reading placed R-18 (680 Ω) in series with the LDR; the drawing shows cable pin 5 running directly to LG-1 pin 4 (two line HOPS en route, not junctions), with R-18 in the LED drive path instead. All quantitative partition figures below (no-vib ≈ 13 kΩ, bright/dark ≈ 8 kΩ ↔ 48 kΩ, ~7 dB AM ceiling) were computed WITH the spurious 680 Ω in the LDR leg and are being re-derived on the corrected deck (robogogo threads 352/373/375). The shipped calibration (depth ladder 0/1.3/2.5/3.8/7.3 dB) remains the current release behavior until that re-derivation lands.
+> **⚠ Topology correction (2026-09-13, verified by instrumented read on both scan surfaces):** the earlier reading placed R-18 (680 Ω) in series with the LDR; the drawing shows cable pin 5 running directly to LG-1 pin 4 (two line HOPS en route, not junctions), with R-18 in the LED drive path instead. All quantitative partition figures below (no-vib ≈ 13 kΩ, bright/dark ≈ 8 kΩ ↔ 48 kΩ, ~7 dB AM ceiling) were computed WITH the spurious 680 Ω in the LDR leg and are being re-derived on the corrected deck (2026-09 revision record). The shipped calibration (depth ladder 0/1.3/2.5/3.8/7.3 dB) remains the current release behavior until that re-derivation lands.
 
 - When LDR resistance is LOW (LED on/bright): the LDR branch pulls the shunt impedance down → feedback cannot reach emitter → emitter AC-grounded via Ce1 → **HIGHER** preamp gain
 - When LDR resistance is HIGH (LED off/dim): the LDR branch goes high-Z, but the **50K/18K divider still loads fb_junct** → partial feedback reaches emitter via Ce1 → emitter degeneration → **LOWER** preamp gain
-- Front-panel depth is the **50K VIBRATO pot wired as a divider** (wiper position). In addition, R-17 (4.7K) is a **wiper-strapped depth TRIMMER in the LED path** (schemer-verified 2026-09-13) — LED current is not fixed; it follows the oscillator swing scaled by the trimmer. The front panel and the trimmer are two separate depth controls, matching the service-position "trimpot + front panel pot" description in §2.4.
+- Front-panel depth is the **50K VIBRATO pot wired as a divider** (wiper position). In addition, R-17 (4.7K) is a **wiper-strapped depth TRIMMER in the LED path** (instrumented-read-verified 2026-09-13) — LED current is not fixed; it follows the oscillator swing scaled by the trimmer. The front panel and the trimmer are two separate depth controls, matching the service-position "trimpot + front panel pot" description in §2.4.
 - Pot part number: 201812 on the Tropical Fish print; unreadable on the archive scan (the earlier "203697" reading is unconfirmed).
 
 Because the pot **always loads fb_junct** (at depth = 0 the wiper grounds the LDR branch and fb_junct still sees 50K ∥ 18K ≈ 13 kΩ), the shunt never reaches the ~1 MΩ raw cell resistance. This bounds the tremolo AM swing (~7 dB peak-to-peak at full depth) — the same order of magnitude as the EP-Forum "6 dB gain boost" measurement.
@@ -166,7 +166,7 @@ Keep two things separate:
 
 ## 3. Volume Control
 
-> **⚠ Corrected 2026-09-13 (schemer-verified, robogogo thread 352):** earlier revisions of this section described a 3K pot and a "model as real attenuator" decision. Both were wrong: the 3K volume control (part 201814) is a **Model 200** part (drawing 201904-S-1-E-1), and the attenuator decision was superseded by the 2026-04-26 drive/volume decoupling. This section now records both the real circuit and the shipped architecture.
+> **⚠ Corrected 2026-09-13 (verified by instrumented schematic read):** earlier revisions of this section described a 3K pot and a "model as real attenuator" decision. Both were wrong: the 3K volume control (part 201814) is a **Model 200** part (drawing 201904-S-1-E-1), and the attenuator decision was superseded by the 2026-04-26 drive/volume decoupling. This section now records both the real circuit and the shipped architecture.
 
 ### 3.1 The real 200A volume chain
 
@@ -180,7 +180,7 @@ Keep two things separate:
 
 The wiper drives the power amp input through C-8, so the power-amp input impedance loads the wiper; with the 25K trimmer ahead of the 10K pot, the source impedance at mid-travel is several kΩ — if this is ever modeled as a real attenuator, solve it loaded, not as an ideal gain block.
 
-**Taper note (voltron, thread 352):** a standard carbon audio-taper pot is not x². Bourns' standard 15% curve is a two-slope line reaching ~15% output at half rotation (−16.5 dB at center, vs −12 dB for x² and −6 dB for linear); a 25% part would match x² at center but still miss the two-slope shape. The actual taper code of the 200A's pot is undocumented; measuring a real pot (wiper-to-ground resistance at marked rotations) is the only way to pin it.
+**Taper note (analog-reference review, 2026-09-13):** a standard carbon audio-taper pot is not x². Bourns' standard 15% curve is a two-slope line reaching ~15% output at half rotation (−16.5 dB at center, vs −12 dB for x² and −6 dB for linear); a 25% part would match x² at center but still miss the two-slope shape. The actual taper code of the 200A's pot is undocumented; measuring a real pot (wiper-to-ground resistance at marked rotations) is the only way to pin it.
 
 ### 3.2 Shipped architecture (supersedes the old attenuator DECISION)
 
@@ -270,7 +270,7 @@ From service manual:
 
 #### 4.3.1 Supply Topology and Rail Sag Model
 
-The ±22 V power-amp rails come from a full-wave center-tapped rectifier feeding 2 × 2200 µF filter caps. Schematic source: #203720-S-3, components extracted Apr 2026 (see `~/dev/schemer/research/openwurli-power-supply-response.md`).
+The ±22 V power-amp rails come from a full-wave center-tapped rectifier feeding 2 × 2200 µF filter caps. Schematic source: #203720-S-3, components extracted Apr 2026 (maintainer research notes).
 
 | Refdes | Value | Role |
 |---|---|---|

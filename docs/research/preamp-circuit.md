@@ -8,7 +8,7 @@ Comprehensive technical reference for implementing a digital model of the Wurlit
 
 ## ⚠ TOPOLOGY REVISION IN PROGRESS (2026-09-13)
 
-Instrumented schematic re-reads (schemer, pixel-level hop/junction/terminus classification on both circulating scan surfaces; robogogo threads 352/375) **overturned four topology readings this document is built on**. The corrections below are drawing-verified fact; the re-derivation of everything downstream of them (bias arithmetic, per-stage gains, input impedance, pickup HPF corner) is in progress against a corrected SPICE deck (thread 373) and this document will be rewritten when those numbers land. Until then, treat the affected sections as historical.
+Instrumented schematic re-reads (pixel-level hop/junction/terminus classification on both circulating scan surfaces) **overturned four topology readings this document is built on**. The corrections below are drawing-verified fact; the re-derivation of everything downstream of them (bias arithmetic, per-stage gains, input impedance, pickup HPF corner) is in progress against an independently cross-checked corrected SPICE deck, and this document will be rewritten when those numbers land. Until then, treat the affected sections as historical.
 
 | # | As drawn (verified) | This doc currently says | Affected sections |
 |---|--------------------|------------------------|-------------------|

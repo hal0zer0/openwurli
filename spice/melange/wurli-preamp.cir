@@ -4,12 +4,11 @@
 * Flattened from openwurli/spice/subcircuits/preamp.cir for melange codegen.
 *
 * ============================================================================
-* TOPOLOGY REVISION 2026-09-13 (drawn topology, arbiter-verified)
-* Schemer pixel-instrumented reads of #203720-S-3, both scan surfaces
-* (robogogo threads 352/375); confirmed by independent SPICE (melange-circuits,
-* thread 373) + hand derivation (memory: preamp-rederivation-2026-09) + real-
-* instrument DC set (GroupDIY, preamp-circuit.md:221). Changes vs the pre-
-* revision deck:
+* TOPOLOGY REVISION 2026-09-13 (drawn topology, cross-verified)
+* Pixel-level instrumented re-reads of #203720-S-3, both circulating scan
+* surfaces; confirmed by an independent SPICE implementation, an independent
+* hand derivation, and a real-instrument DC measurement set (GroupDIY,
+* preamp-circuit.md:221). Changes vs the pre-revision deck:
 *   R2: was 2MEG vcc->base1 (misread). Drawn: 1MEG from the +150V polarizing
 *       line to the R-1/C-1 junction (mid_in). The +150V rail is AC ground in
 *       this audio deck, so R2 = mid_in -> 0. The DC polarizing path lives on
@@ -22,9 +21,9 @@
 *       loop gain is set by the R-10/C-5 global feedback.
 *   C6: NEW - 4.7uF series coupling, TR-2 collector (+) -> R-9/R-10 node.
 *       The R-9/R-10 node sits at 0V DC; no DC flows into R-10/R_ldr.
-*   C2: RESTORED - 220pF at base1. This is C-2, a real 200A part (see memory
-*       c20-not-on-200a-settled; the earlier "C20, 206A-only" removal was a
-*       designator conflation). Its bottom rail is drawn BROKEN on both
+*   C2: RESTORED - 220pF at base1. This is C-2, a real 200A part (the
+*       earlier "C20, 206A-only" removal was a designator conflation - C-2
+*       and C20 are different 220pF parts; C20 is the aux-section one). Its bottom rail is drawn BROKEN on both
 *       surfaces (drawing defect); ground return is the settled assumption.
 *   V1: 14.5V. Service manual TEXT says "+14.5 volts regulated" (p.64); the
 *       drawing marks "+15V". 14.5 closes the TR-2 collector KCL imbalance
@@ -32,13 +31,13 @@
 * CODEGEN WARNING: this deck is TRAPEZOIDAL-UNSTABLE at every tested rate
 * (spectral radius 1.07-1.08; melange auto-promotes to BE). Integrator choice
 * is a first-class decision at regen time. BE damps HF; trap-pinned small-
-* signal is faithful (arbiter cross-check to 2.5%).
+* signal is faithful (independent cross-check to 2.5%).
 * TRANSISTOR CARD: 2N5089 retained pending the Phase-3 voicing decision.
 * The original part is Green-grade 2N292x (ss-hfe 235-470, DC typ 215; GE
 * 1971 pp.498-500 - 2N2923/24/25 are the color grades of the 2N2926
 * population). Hardware-anchored TR-1 hFE = 350+/-50; sim best-fit TR-2
 * BF ~350-400. Carry BF as a BAND, never a fitted point (beta2 is not
-* extractable from the anchors - see the re-derivation, section 2.4).
+* extractable from the available anchors).
 * ============================================================================
 *
 * N=11 nodes: in, mid_in, base1, emit1, coll1, emit2a, emit2b, coll2,

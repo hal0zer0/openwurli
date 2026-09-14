@@ -108,7 +108,7 @@ Q4    led_out emit3 gnd  Q2N2924
 * ============================================================
 * Shared collector load: the drawn LED path (REVISED 2026-09-13)
 * ============================================================
-* Schemer-verified (#203720-S-3, robogogo t352/375): the load is the
+* Verified by instrumented re-read of #203720-S-3 (both surfaces): the load is the
 * series chain Vcc -> R-18 (680) -> LG-1 pin 2 (LED anode) -> pin 1
 * (cathode) -> R-17 -> Node G. R-18 is NOT in the LDR leg (old misread).
 * R-17 (203717-2) is the wiper-strapped VIBRATO ADJUST depth trimmer;

@@ -2,8 +2,8 @@
 * =====================================================
 * Validates DC bias against the 2026-09-13 drawn-topology revision.
 *
-* Targets (independent SPICE, melange-circuits t373, Vcc 14.5V, 2N5089
-* card BF 1434 — this exact configuration):
+* Targets (independent SPICE cross-check, Vcc 14.5V, 2N5089 card BF 1434
+* — this exact configuration):
 *   TR-1 Base (base1):      2.651V
 *   TR-1 Emitter (emit1):   2.093V
 *   TR-1 Collector (coll1): 4.269V  (= TR-2 Base)

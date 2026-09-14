@@ -5,11 +5,10 @@
 * Miller feedback caps C-3, C-4.
 *
 * ============================================================================
-* TOPOLOGY REVISION 2026-09-13 (drawn topology, arbiter-verified)
-* Schemer pixel-instrumented reads of schematic #203720-S-3, both scan
-* surfaces (robogogo threads 352/375); independently confirmed by SPICE
-* (melange-circuits, t373), hand derivation (openwurli memory:
-* preamp-rederivation-2026-09), and the GroupDIY real-instrument DC set.
+* TOPOLOGY REVISION 2026-09-13 (drawn topology, cross-verified)
+* Pixel-level instrumented re-reads of schematic #203720-S-3, both
+* circulating scan surfaces; independently confirmed by SPICE, by hand
+* derivation, and by the GroupDIY real-instrument DC measurement set.
 * Superseded readings (kept here so nobody re-introduces them):
 *   - "R-2 = 2MEG from Vcc to base1" - WRONG. R-2 is 1MEG from the +150V
 *     polarizing line to the R-1/C-1 junction, pickup side of the input
@@ -22,12 +21,12 @@
 *     hardware 2.447V that the divider topology missed by 0.35V.
 *   - "Ce2 bypasses R-7 only (Av2 = -2.2)" - WRONG. C-7 spans TR-2
 *     emitter -> ground (across R-7+R-8). Stage 2 is high-gain CE
-*     (A1~8 / A2~120-140 at 1 kHz, arbiter-measured); closed-loop gain
+*     (A1~8 / A2~120-140 at 1 kHz, independently measured); closed-loop gain
 *     is set by the R-10/Ce1 feedback divider.
 *   - Output DC-coupled through R-9 - WRONG. C-6 (4.7uF) couples the
 *     collector to the R-9/R-10 node, which sits at 0V DC.
 *   - "C20 220pF is 206A-only" - designator conflation. The base1 220pF
-*     is C-2, a real 200A part (memory: c20-not-on-200a-settled). Its
+*     is C-2, a real 200A part (C-2 and C20 are different 220pF parts). Its
 *     bottom rail is drawn broken on both surfaces (drawing defect);
 *     ground return is the settled assumption (emitter return would move
 *     the pickup corner 850 -> 1375 Hz).
