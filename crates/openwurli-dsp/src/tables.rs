@@ -284,12 +284,10 @@ pub fn reed_compliance(midi: u8) -> f64 {
 /// `POST_SPEAKER_GAIN_DB` is ever allowed to absorb the level instead, DS
 /// should go back up and that H2 returns — see the Phase-3 notes.
 ///
-/// ⚠ **`output_scale` partially fights DS.** Its RMS proxy normalises for DS
-/// (and still uses the superseded 2312 Hz corner, `HPF_FC` in
-/// `output_scale_with_config`), so lowering DS raises `output_scale` and the
-/// level does not track DS one-for-one — lowering `DS_CLAMP` actually *raised*
-/// the chord peak. Re-deriving that proxy against the corrected pickup is the
-/// obvious follow-up and would also unblock the velocity-span gate.
+/// (Historical note: `output_scale`'s RMS proxy used to fight DS — it
+/// normalises by a proxy that still carried the superseded 2312 Hz corner, so
+/// lowering DS *raised* `output_scale` and the level did not track DS. That is
+/// fixed as of 2026-09-14; see `pickup_rms_proxy`.)
 const DS_AT_C4: f64 = 0.73;
 const DS_EXPONENT: f64 = 0.75;
 const DS_CLAMP: (f64, f64) = (0.02, 0.90);
@@ -478,6 +476,36 @@ pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES]
 /// used the peak of y/(1-y) instead of Fourier coefficients and ignored H2-H8 energy.
 /// The peak/c₁ ratio varies from 1.7 (ds=0.50) to 2.4 (ds=0.80), systematically
 /// over-estimating bass by ~2 dB.
+///
+/// # 2026-09-14: this proxy was always source-shaped; only the corner was wrong
+///
+/// Note what the maths above actually models: the harmonics of `y/(1-y)`, each
+/// then passed through a one-pole high-pass. That is **exactly** the structure
+/// of the restructured pickup — a source term carrying the nonlinearity, into a
+/// nearly-LTI network (see `pickup.rs`). It was never a model of the
+/// *pre-restructure* pickup, which put the nonlinearity in the network's time
+/// constant; against that model this proxy was structurally wrong, and nobody
+/// noticed because the error was absorbed into `register_trim_db`.
+///
+/// So the re-derivation for the restructure needed no new algebra — only the
+/// corner. Callers must pass `pickup::PICKUP_FC`; the call site previously
+/// hardcoded the superseded 2312 Hz.
+///
+/// Verified against the restructured module over ds ∈ {0.2, 0.4, 0.6, 0.8} ×
+/// f0 ∈ {65, 131, 262, 523, 1046} Hz, normalised at ds=0.5 / f0=262:
+///
+/// | | 65 Hz | 131 Hz | 262 Hz | 523 Hz | 1046 Hz |
+/// |---|---|---|---|---|---|
+/// | with fc = 2312 (stale) | -0.5 | -0.4 | -0.2 | +0.6 | **+2.5** |
+/// | with fc = 2312, ds=0.8 | -0.4 | -0.1 | +0.7 | +2.0 | **+3.9** |
+/// | with fc = PICKUP_FC | -0.04 | 0.00 | -0.01 | -0.01 | -0.01 |
+/// | with fc = PICKUP_FC, ds=0.8 | +0.03 | 0.00 | +0.07 | +0.09 | +0.12 |
+///
+/// ±0.12 dB worst case, against a 4.4 dB spread before. That spread was the
+/// DS-feedback loop: because `output_scale` normalises by this proxy, a DS
+/// change moved the proxy differently from the way it moved the real pickup, so
+/// lowering DS *raised* `output_scale` and the chain level did not track DS.
+/// Lowering `DS_CLAMP` could therefore RAISE the chord peak.
 pub fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
     if ds < 1e-10 {
         return 0.0;
@@ -659,7 +687,12 @@ pub fn output_scale(midi: u8, velocity_norm: f64) -> f64 {
 }
 
 pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationConfig) -> f64 {
-    const HPF_FC: f64 = 2312.0;
+    // The pickup's small-signal corner. Was hardcoded 2312.0 — the superseded
+    // corner from the misread input network — which left this proxy
+    // mis-normalising by up to 4.4 dB across register and drive, and fighting
+    // any DS change (see `pickup_rms_proxy`). Referenced, not copied, so an LCR
+    // measurement of C_TOTAL moves it here too.
+    let hpf_fc = crate::pickup::PICKUP_FC;
 
     let ds = pickup_displacement_scale_with_config(midi, cfg);
     let f0 = midi_to_freq(midi);
@@ -674,8 +707,8 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
     let effective_ds = (ds * vel_scale).max(1e-6);
     let effective_ds_ref = (cfg.ds_at_c4 * vel_scale_c4).max(1e-6);
 
-    let rms = pickup_rms_proxy(effective_ds, f0, HPF_FC);
-    let rms_ref = pickup_rms_proxy(effective_ds_ref, midi_to_freq(60), HPF_FC);
+    let rms = pickup_rms_proxy(effective_ds, f0, hpf_fc);
+    let rms_ref = pickup_rms_proxy(effective_ds_ref, midi_to_freq(60), hpf_fc);
 
     let flat_db = -20.0 * (rms / rms_ref).log10();
     let voicing_db = cfg.voicing_slope * (midi as f64 - 60.0).max(0.0);
