@@ -549,10 +549,17 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// into the envelope — no longer window averages it out. −1.3 dB puts the
 /// worst phase at ~0.989 with honest margin. The invariant test now warms
 /// the engine and sweeps phases including the plateau.
-pub const POST_SPEAKER_GAIN_DB: f64 = 15.5;
+///
+/// 2026-09-13: lowered +15.5 → +14.8 dB (−0.7 dB) for the drawn-topology
+/// preamp revision. This is a pure re-level, forced by physics upstream: the
+/// drawn topology's gain-vs-shunt curve sits ~1.9 dB above the pre-revision
+/// one (C-7 spanning R-7+R-8 makes stage 2 a high-gain CE stage), which pushed
+/// the warmed worst-phase chord peak to 1.0620 — over the invariant. −0.7 dB
+/// restores it. Nothing about the voicing changed; only the output trim.
+pub const POST_SPEAKER_GAIN_DB: f64 = 14.8;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 5.956_621_435_290_105; // 10^(15.5/20)
+pub const POST_SPEAKER_GAIN: f64 = 5.495_408_738_576_246; // 10^(14.8/20)
 
 /// Fixed circuit-drive level — multiplier applied between preamp output
 /// and power amp input. Historically this was `vol²` (3K audio-taper pot,
