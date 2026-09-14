@@ -1,16 +1,19 @@
 * Wurlitzer 200A Preamp — DC Operating Point Testbench
 * =====================================================
-* Validates all DC bias voltages against schematic annotations.
+* Validates DC bias against the 2026-09-13 drawn-topology revision.
 *
-* Targets (±10%):
-*   TR-1 Base (base1):    2.45V
-*   TR-1 Emitter (emit1): 1.95V
-*   TR-1 Collector (coll1): 4.1V  (= TR-2 Base)
-*   TR-2 Emitter a (emit2a): 3.4V (approx)
-*   TR-2 Emitter b (emit2b): ~3.1V
-*   TR-2 Collector (coll2): 8.8V
-*   Ic(TR-1): 66-73 uA
-*   Ic(TR-2): 3.3-3.5 mA
+* Targets (independent SPICE, melange-circuits t373, Vcc 14.5V, 2N5089
+* card BF 1434 — this exact configuration):
+*   TR-1 Base (base1):      2.651V
+*   TR-1 Emitter (emit1):   2.093V
+*   TR-1 Collector (coll1): 4.269V  (= TR-2 Base)
+*   TR-2 Emitter a (emit2a): 3.602V
+*   TR-2 Collector (coll2): 8.561V
+* Reference sets (for context, NOT this card):
+*   Print marks: B1 2.45, C1 4.1, E2 3.4, C2 8.8 (nominal annotations)
+*   GroupDIY hardware: B1 2.447, E1 1.923, C1 3.980, E2 3.356, C2 8.450
+*   (hardware matches at Green-grade TR-2, BF ~350-400, not at BF 1434)
+* Note: out sits at 0V DC now — C-6 blocks; the R-9/R-10 node is 0V DC.
 
 .title Preamp DC Operating Point
 
@@ -18,8 +21,8 @@
 .include ../models/diodes.lib
 .include ../subcircuits/preamp.cir
 
-* Supply
-Vcc  vcc 0  DC 15
+* Supply: +14.5V regulated (service manual text p.64; drawing marks +15V)
+Vcc  vcc 0  DC 14.5
 
 * Instantiate preamp — no signal input, trem pin floating (no LDR)
 Xpre  in_sig out vcc 0 trem  wurli_preamp

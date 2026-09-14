@@ -21,3 +21,12 @@
 +  TT=5.7E-06     EG=1.11      XTI=3)
 
 * End of diode models
+
+* --- LED_GAASP: LG-1 LED, period red GaAsP (2026-09-13) ---
+* Single-diode LEVEL fit to TI TIL209A bulletin (June 1973) Fig 4 -- the
+* only period sub-mA I-V curve; residual <= 5.6 mV over 0.35-20 mA.
+* The TI curve is DRAFTED artwork (53.9 mV/dec): use as a level, do NOT
+* read device physics from IS/N. Fit + KCL verification: melange-circuits
+* t373; digitisation: schemer benchmarks/voltron_reads/led_iv/.
+* Bounds (HP 5082-4403-derived) move I_min <=16%, mean/peak ~2%.
+.MODEL LED_GAASP D(IS=2.2324E-29 N=1.00 RS=0)

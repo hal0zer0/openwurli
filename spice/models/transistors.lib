@@ -23,10 +23,12 @@
 
 * --- 2N2924 (NPN, general-purpose, original Wurlitzer) ---
 * Used in: TR-3, TR-4 (tremolo oscillator, original part 142083-2)
-* Bf typical: 150-300
-* Source: Motorola datasheet / general GP NPN
+* BF=155: GE 1971 Semiconductor Data Handbook p.498 DC typical
+* (VCE 4.5V, IC 2mA); small-signal hfe band 150-300 (Yellow grade of
+* the 2N2926 population, pp.499-500). Was an unsourced BF=200 before
+* the 2026-09-13 revision. Carry as a band in sensitivity work.
 .MODEL Q2N2924 NPN(
-+  IS=1.4E-14     BF=200       NF=1        VAF=100
++  IS=1.4E-14     BF=155       NF=1        VAF=100
 +  IKF=0.03       ISE=1.5E-13  NE=1.5      BR=4
 +  NR=1           VAR=20       IKR=0.03    ISC=0
 +  NC=2           RB=10        IRB=0       RBM=10

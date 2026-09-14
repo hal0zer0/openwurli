@@ -1,51 +1,103 @@
 * Wurlitzer 200A Reed-Bar Preamp
-* Two-stage direct-coupled NPN CE amplifier (TR-1, TR-2 = 2N5089)
+* Two-stage direct-coupled NPN CE amplifier (TR-1, TR-2 = 2N5089 card)
 * with series-series emitter feedback and LDR tremolo modulation.
 * Flattened from openwurli/spice/subcircuits/preamp.cir for melange codegen.
 *
-* N=10 nodes: in, mid_in, base1, emit1, coll1, emit2a, emit2b, coll2, out, fb
+* ============================================================================
+* TOPOLOGY REVISION 2026-09-13 (drawn topology, arbiter-verified)
+* Schemer pixel-instrumented reads of #203720-S-3, both scan surfaces
+* (robogogo threads 352/375); confirmed by independent SPICE (melange-circuits,
+* thread 373) + hand derivation (memory: preamp-rederivation-2026-09) + real-
+* instrument DC set (GroupDIY, preamp-circuit.md:221). Changes vs the pre-
+* revision deck:
+*   R2: was 2MEG vcc->base1 (misread). Drawn: 1MEG from the +150V polarizing
+*       line to the R-1/C-1 junction (mid_in). The +150V rail is AC ground in
+*       this audio deck, so R2 = mid_in -> 0. The DC polarizing path lives on
+*       the pickup side (pickup.rs / Phase-2 interface decision).
+*   R3: was base1->gnd. Drawn: base1 -> R-7/R-8 junction (emit2b) = DC
+*       feedback from TR-2's emitter divider. This is TR-1's ONLY DC bias
+*       path (grounded-R3 leaves the base with no bias source at all).
+*   C7 (Ce2): was across R-7 (270) only. Drawn: TR-2 emitter -> ground,
+*       across R-7+R-8 in series. Stage 2 is a high-gain CE stage; closed-
+*       loop gain is set by the R-10/C-5 global feedback.
+*   C6: NEW - 4.7uF series coupling, TR-2 collector (+) -> R-9/R-10 node.
+*       The R-9/R-10 node sits at 0V DC; no DC flows into R-10/R_ldr.
+*   C2: RESTORED - 220pF at base1. This is C-2, a real 200A part (see memory
+*       c20-not-on-200a-settled; the earlier "C20, 206A-only" removal was a
+*       designator conflation). Its bottom rail is drawn BROKEN on both
+*       surfaces (drawing defect); ground return is the settled assumption.
+*   V1: 14.5V. Service manual TEXT says "+14.5 volts regulated" (p.64); the
+*       drawing marks "+15V". 14.5 closes the TR-2 collector KCL imbalance
+*       implied by the drawing's own DC marks (+10.4% -> +1.6%).
+* CODEGEN WARNING: this deck is TRAPEZOIDAL-UNSTABLE at every tested rate
+* (spectral radius 1.07-1.08; melange auto-promotes to BE). Integrator choice
+* is a first-class decision at regen time. BE damps HF; trap-pinned small-
+* signal is faithful (arbiter cross-check to 2.5%).
+* TRANSISTOR CARD: 2N5089 retained pending the Phase-3 voicing decision.
+* The original part is Green-grade 2N292x (ss-hfe 235-470, DC typ 215; GE
+* 1971 pp.498-500 - 2N2923/24/25 are the color grades of the 2N2926
+* population). Hardware-anchored TR-1 hFE = 350+/-50; sim best-fit TR-2
+* BF ~350-400. Carry BF as a BAND, never a fitted point (beta2 is not
+* extractable from the anchors - see the re-derivation, section 2.4).
+* ============================================================================
+*
+* N=11 nodes: in, mid_in, base1, emit1, coll1, emit2a, emit2b, coll2,
+*             node_c6, out, fb
 * M=5 nonlinear dimensions: 2 BJTs (2D each) + 1 diode (1D)
-* C20 (220pF) removed: present on 206A only, NOT 200A.
 
 * --- Input coupling: R1 (22K) in series with Cin (0.022uF) ---
 * R1 is external to the original subcircuit (between pickup and preamp input).
-* Modeled as two components with intermediate node mid_in to preserve
-* the 22K series impedance and ~330 Hz highpass corner.
+* mid_in is the R-1 / C-1 junction - the node the +150V polarizing feed
+* (R2) lands on, per the drawn topology.
 R1    in     mid_in  22K
 Cpar  in     0       1P
 Cin   mid_in base1   0.022U
 
-* --- Base1 bias network ---
-* Thevenin: Vth = 15 * 470K / (2M + 470K) = 2.854V
-R2    vcc   base1  2MEG
-R3    base1 0      470K
+* --- R2: polarizing feed, 1MEG (drawn value, glyph-verified) ---
+* Physically: +150V line -> R2 -> mid_in. +150V is AC ground here.
+R2    mid_in 0      1MEG
+
+* --- C-2: 220pF at base1 (real 200A part; return = ground, see header) ---
+C2    base1  0      220P
 
 * --- Protection diode (reverse-biased under normal operation) ---
 D1    0     base1  D1N4148
 
-* --- Stage 1: TR-1 (2N5089 NPN common-emitter) ---
+* --- Stage 1: TR-1 (NPN common-emitter) ---
 Q1    coll1 base1 emit1  Q2N5089
 Rc1   vcc   coll1  150K
 Re1   emit1 0      33K
 Ce1   emit1 fb     4.7U
 Cc3   coll1 base1  100P
 
-* --- Stage 2: TR-2 (2N5089 NPN common-emitter) ---
+* --- Stage 2: TR-2 (NPN common-emitter) ---
 * Direct-coupled: TR-1 collector = TR-2 base (coll1 node)
+* Ce2 (C-7) AC-grounds the emitter across BOTH emitter resistors:
+* stage 2 is a high-gain CE stage (open-loop A2 ~ 120-140 at 1 kHz,
+* zero ~6.6 Hz / pole ~1 kHz from the incomplete bypass at low f).
 Q2    coll2 coll1 emit2a  Q2N5089
 Rc2   vcc   coll2  1.8K
 Re2a  emit2a emit2b  270
-Ce2   emit2a emit2b  22U
+Ce2   emit2a 0     22U
 Re2b  emit2b 0    820
 Cc4   coll2  coll1  100P
 
-* --- Output ---
-R9    coll2 out    6.8K
+* --- R3: TR-1 DC bias via feedback from TR-2's emitter divider ---
+* base1 -> R-7/R-8 junction. Negative DC servo, loop gain ~2.1,
+* desensitivity ~3.1. Reproduces the printed TR-1 base 2.45V and the
+* GroupDIY hardware 2.447V that the old divider topology missed by 0.35V.
+R3    base1 emit2b 470K
+
+* --- Output: C-6 couples the collector to the R-9/R-10 node ---
+* node_c6 sits at 0V DC. R-9 is OUTSIDE the feedback loop (pure output
+* series loss); R-10 taps node_c6, i.e. feedback is taken at the collector.
+C6    coll2  node_c6  4.7U
+R9    node_c6 out    6.8K
 
 * --- Global AC negative feedback (series-series / emitter) ---
-* R10 from output to fb_junct; Ce1 AC-couples fb_junct to TR-1 emitter.
+* R10 from node_c6 to fb_junct; Ce1 AC-couples fb_junct to TR-1 emitter.
 * LDR shunts fb_junct to ground, modulating feedback and thus gain.
-R10   out   fb     56K
+R10   node_c6  fb     56K
 
 * --- Tremolo LDR (plugin-driven audio-rate resistor) ---
 * Declared as .runtime R (not .pot) because the LDR resistance is driven
@@ -54,8 +106,8 @@ R10   out   fb     56K
 R_ldr fb    0      100k
 .runtime R_ldr 1k 1Meg as r_ldr
 
-* --- Supply ---
-V1    vcc   0      DC 15
+* --- Supply: +14.5V (manual text; drawing mark "+15V" - see header) ---
+V1    vcc   0      DC 14.5
 
 * --- Device models ---
 * 2N5089: full Gummel-Poon. Source: LTspice standard.bjt / ON Semi 2N5089 datasheet.

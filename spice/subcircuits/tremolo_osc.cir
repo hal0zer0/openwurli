@@ -106,11 +106,19 @@ R16   emit3   gnd   10K
 Q4    led_out emit3 gnd  Q2N2924
 
 * ============================================================
-* Shared collector load: R17 (4.7K) from Vcc to Node G
+* Shared collector load: the drawn LED path (REVISED 2026-09-13)
 * ============================================================
-* In real circuit: Vcc -> LG-1 pin 2 (LED anode) -> LED ->
-* pin 1 (cathode) -> 4.7K -> Node G. LED adds ~1.5V drop.
-* Approximated here as direct 4.7K to Vcc.
-R17_load vcc led_out 4.7K
+* Schemer-verified (#203720-S-3, robogogo t352/375): the load is the
+* series chain Vcc -> R-18 (680) -> LG-1 pin 2 (LED anode) -> pin 1
+* (cathode) -> R-17 -> Node G. R-18 is NOT in the LDR leg (old misread).
+* R-17 (203717-2) is the wiper-strapped VIBRATO ADJUST depth trimmer;
+* 4.7K = full value (one position — Phase-3 calibration decides the
+* default; the print's "TYPICAL WAVE FORM" marks correspond to R-17
+* near 0). LED current is the physical drive for the LG-1 cell; the
+* light law lives outside this subcircuit. Requires LED_GAASP from
+* models/diodes.lib.
+R18      vcc  leda    680
+D_LED    leda ledk    LED_GAASP
+R17_trim ledk led_out 4.7K
 
 .ENDS wurli_tremolo_osc

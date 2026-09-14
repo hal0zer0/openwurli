@@ -16,10 +16,11 @@
 
 * --- Include models ---
 .include ../models/transistors.lib
+.include ../models/diodes.lib
 .include ../subcircuits/tremolo_osc.cir
 
 * --- Power supply ---
-Vcc vcc 0 DC 15
+Vcc vcc 0 DC 14.5
 
 * --- Instantiate oscillator ---
 Xosc led_out vcc 0 wurli_tremolo_osc
