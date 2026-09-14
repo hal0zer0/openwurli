@@ -264,7 +264,7 @@ From service manual:
 |------|--------------------|--------------------|
 | V+ | +22V (nominal) | +24 to +24.5V |
 | V- | -22V (nominal) | -24 to -24.5V |
-| Preamp supply | +15V (regulated) | +15V |
+| Preamp supply | +14.5V regulated (manual text, p.64) | schematic marks "+15V" — sources disagree; 14.5V resolves the TR-2 IC/IE mark imbalance (see preamp-circuit.md banner) |
 
 **NOTE:** The actual rail voltages are typically 10% higher than the nominal specification (24.5V vs 22V). This is normal for unregulated supplies at light load.
 

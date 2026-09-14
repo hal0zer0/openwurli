@@ -19,6 +19,8 @@ Instrumented schematic re-reads (schemer, pixel-level hop/junction/terminus clas
 
 Also verified: C-2 (220pF) is on the board with no model restriction, but its bottom rail is drawn **broken** on both surfaces (drawing defect — its return, and R-5's, need DC analysis or hardware, not the print). The tremolo-side R-18/R-17 corrections live in [Output Stage §2.3](output-stage.md).
 
+**Supply rail (2026-09-13):** the service manual TEXT specifies **"+14.5 volts regulated"** (p.64) while the schematic marks "+15V" — the sources disagree. 14.5 V resolves an otherwise-unexplained 10% collector/emitter current imbalance at TR-2 implied by the drawing's own DC marks (an instrumented read confirmed the collector node has no other DC path). Treat the preamp rail as 14.5 V until hardware says otherwise; this document's derivations and our netlists (`V1 vcc 0 DC 15`) still assume 15 V and are on the revision list.
+
 ---
 
 ---
