@@ -2,8 +2,8 @@
 #
 # Each line: FNV-1a-64 of the netlist's NORMALIZED functional content
 # (trailing whitespace stripped; the title line, blank lines, `*` comment
-# lines, and a bare `.END` dropped — 2026-09-01 spec, thread 259), recorded
-# at the last regen of the corresponding gen_*.rs solver.
+# lines, and a bare `.END` dropped — 2026-09-01 cross-repo normalization
+# spec), recorded at the last regen of the corresponding gen_*.rs solver.
 #
 # Enforced by crates/openwurli-dsp/tests/netlist_sync.rs. If a hash here
 # mismatches the netlist on disk, someone edited a wurli-*.cir without
@@ -16,6 +16,12 @@
 #
 # 2026-08-03: wurli-power-amp hash updated for the `.linearize Q9` adoption
 # (settled with the sidecar-validation repo), atomically with the gen_power_amp.rs regen.
-c38e83ce2576cc4c  wurli-preamp.cir
+#
+# 2026-09-13: wurli-preamp and wurli-tremolo hashes updated for the drawn-
+# topology revision, atomically with the gen_preamp.rs / gen_tremolo.rs regen
+# at the melange v0.1.7 pin. wurli-power-amp is UNCHANGED by that revision and
+# its hash is deliberately untouched — the power-amp deck carries no preamp
+# topology and no 14.5 V rail.
+e021197db9c23187  wurli-preamp.cir
 cafa37a933dbc24b  wurli-power-amp.cir
-34e70f5fee654edb  wurli-tremolo.cir
+a323eead31ebf251  wurli-tremolo.cir

@@ -11,6 +11,16 @@ use std::f64::consts::PI;
 #[cfg(not(feature = "legacy-tremolo"))]
 use crate::gen_tremolo;
 
+/// Empty `.inject` argument for the v0.1.7 generated oscillator.
+///
+/// API drift at the melange pin bump de9dc81 -> 7ecb36c (v0.1.7):
+/// `process_sample` gained an `injections_inner` parameter and now returns
+/// `(outputs, taps_inner)` instead of a bare output array. The tremolo deck
+/// declares no `.inject` sources, so `NUM_INJECT == 0` and this argument is
+/// always an empty array — zero runtime cost.
+const NO_INJECT: [[f64; gen_tremolo::NUM_INJECT]; gen_tremolo::OVERSAMPLING_FACTOR] =
+    [[0.0; gen_tremolo::NUM_INJECT]; gen_tremolo::OVERSAMPLING_FACTOR];
+
 /// CdS vactrol dynamics — LG-1 (#142312, VTL5C-class LED/LDR opto).
 /// Datasheet range: rise ~2.5 ms, fall ~35 ms; power-law exponent ~0.7–0.9.
 const ATTACK_TAU: f64 = 0.0025;
@@ -96,7 +106,7 @@ impl Tremolo {
                 }
                 // Settle oscillator to reach steady-state amplitude
                 for _ in 0..(sample_rate * 2.0) as usize {
-                    gen_tremolo::process_sample(0.0, &mut s);
+                    gen_tremolo::process_sample(0.0, &NO_INJECT, &mut s);
                 }
                 s
             },
@@ -179,7 +189,13 @@ impl Tremolo {
 
     #[cfg(not(feature = "legacy-tremolo"))]
     fn oscillator_drive(&mut self) -> f64 {
-        let v_out = gen_tremolo::process_sample(0.0, &mut self.osc_state)[0];
+        // `.1` is `taps_inner` — the raw LED anode/cathode node voltages newly
+        // exposed by the v0.1.7 codegen. Deliberately IGNORED here: the shipped
+        // drive law is collector-voltage-driven and stays that way in Phase 2.
+        // The taps are reserved for the Phase-3 light-law rebuild, which is the
+        // decision that should consume real LED current instead of inferring
+        // brightness from the collector swing.
+        let v_out = gen_tremolo::process_sample(0.0, &NO_INJECT, &mut self.osc_state).0[0];
         // Map collector voltage to LED drive: low V = bright LED = high drive
         ((V_OUT_MAX - v_out) / (V_OUT_MAX - V_OUT_MIN)).clamp(0.0, 1.0)
     }
@@ -207,7 +223,7 @@ impl Tremolo {
                 s.set_sample_rate(self.sample_rate);
             }
             for _ in 0..(self.sample_rate * 2.0) as usize {
-                gen_tremolo::process_sample(0.0, &mut s);
+                gen_tremolo::process_sample(0.0, &NO_INJECT, &mut s);
             }
             self.osc_state = s;
         }
@@ -231,13 +247,13 @@ mod tests {
                 s.set_sample_rate(sr);
             }
             for _ in 0..(sr * 2.0) as usize {
-                gen_tremolo::process_sample(0.0, &mut s);
+                gen_tremolo::process_sample(0.0, &NO_INJECT, &mut s);
             }
             let mut lo = f64::INFINITY;
             let mut hi = f64::NEG_INFINITY;
             let mut samples = Vec::new();
             for _ in 0..(sr * 2.0) as usize {
-                let v = gen_tremolo::process_sample(0.0, &mut s)[0];
+                let v = gen_tremolo::process_sample(0.0, &NO_INJECT, &mut s).0[0];
                 lo = lo.min(v);
                 hi = hi.max(v);
                 samples.push(v);

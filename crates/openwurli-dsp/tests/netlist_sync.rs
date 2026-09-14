@@ -32,7 +32,7 @@ const CIRCUITS_PATHS: [(&str, &str); 3] = [
 
 /// Functional lines melange-circuits' copy may have that ours does not.
 /// Empty since the 2026-08-03 `.linearize Q9` adoption converged all three
-/// netlists; add entries here only via an explicit claudebook agreement.
+/// netlists; add entries here only via an explicit cross-repo agreement.
 const SANCTIONED_THEIRS_EXTRA: [(&str, &str); 0] = [];
 
 fn spice_melange_dir() -> PathBuf {
@@ -42,8 +42,9 @@ fn spice_melange_dir() -> PathBuf {
 /// Trailing whitespace stripped; the title line (line 1 — ngspice treats it
 /// as a title whether or not it starts with `*`), blank lines, `*` SPICE
 /// comments, and a bare `.end` dropped. None of these are circuit topology.
-/// Spec shared with melange-circuits' tools/wurli_sync.py (thread 259);
-/// change only via an exchange where both sides change together.
+/// Spec shared with the sidecar-validation repo's tools/wurli_sync.py
+/// (2026-09-01 cross-repo normalization spec); change only via an exchange
+/// where both sides change together.
 fn normalized_lines(raw: &str) -> Vec<String> {
     raw.lines()
         .skip(1)
