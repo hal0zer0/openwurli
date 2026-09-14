@@ -12,6 +12,7 @@
 use std::f64::consts::PI;
 use std::io::Write;
 
+use openwurli_dsp::WurliEngine;
 use openwurli_dsp::dk_preamp::DkPreamp;
 use openwurli_dsp::hammer::{dwell_attenuation, onset_ramp_time};
 use openwurli_dsp::oversampler::Oversampler;
@@ -1708,10 +1709,88 @@ fn cmd_render_poly(args: &[String]) {
 
 // ─── MIDI file render ─────────────────────────────────────────────────────
 
+/// Absolute-tick tempo map for a MIDI file.
+///
+/// **This exists because tempo is a FILE-level property, not a track-level one.**
+/// In SMF format 1 the conventional layout puts the tempo map in track 0 and the
+/// notes in tracks 1..n. The previous implementation declared `tempo` inside the
+/// per-track loop, so every note track ran at the 120 BPM default and a tempo map
+/// in track 0 reached nothing — a format-1 file at any other tempo rendered at the
+/// wrong speed, silently. Mid-song tempo changes were equally lost.
+///
+/// Tempo events from ALL tracks are collected by absolute tick, sorted, and applied
+/// to every track.
+struct TempoMap {
+    /// (absolute tick, microseconds per quarter note, seconds elapsed at this tick)
+    points: Vec<(u64, f64, f64)>,
+    ticks_per_beat: f64,
+}
+
+impl TempoMap {
+    fn build(smf: &midly::Smf, ticks_per_beat: f64) -> Self {
+        // Collect every tempo event in the file, keyed by absolute tick.
+        let mut raw: Vec<(u64, f64)> = Vec::new();
+        for track in smf.tracks.iter() {
+            let mut tick: u64 = 0;
+            for event in track {
+                tick += event.delta.as_int() as u64;
+                if let midly::TrackEventKind::Meta(midly::MetaMessage::Tempo(t)) = event.kind {
+                    raw.push((tick, t.as_int() as f64));
+                }
+            }
+        }
+        raw.sort_by_key(|&(tick, _)| tick);
+
+        // Default 120 BPM until the first tempo event. If a tempo event sits at
+        // tick 0 it replaces the default rather than following it.
+        let mut points: Vec<(u64, f64, f64)> = Vec::new();
+        if raw.first().map(|&(t, _)| t) != Some(0) {
+            points.push((0, 500_000.0, 0.0));
+        }
+        for (tick, us_per_qn) in raw {
+            // Later events at the same tick win; earlier ones never applied.
+            if let Some(last) = points.last_mut()
+                && last.0 == tick
+            {
+                last.1 = us_per_qn;
+                continue;
+            }
+            let (prev_tick, prev_us, prev_sec) = *points.last().unwrap_or(&(0, 500_000.0, 0.0));
+            let secs =
+                prev_sec + ((tick - prev_tick) as f64 / ticks_per_beat) * (prev_us / 1_000_000.0);
+            points.push((tick, us_per_qn, secs));
+        }
+        if points.is_empty() {
+            points.push((0, 500_000.0, 0.0));
+        }
+        Self {
+            points,
+            ticks_per_beat,
+        }
+    }
+
+    /// Absolute tick -> absolute seconds, honouring mid-song tempo changes.
+    fn seconds_at(&self, tick: u64) -> f64 {
+        // Last breakpoint at or before `tick`.
+        let idx = match self.points.binary_search_by_key(&tick, |&(t, _, _)| t) {
+            Ok(i) => i,
+            Err(0) => 0,
+            Err(i) => i - 1,
+        };
+        let (bp_tick, us_per_qn, bp_secs) = self.points[idx];
+        bp_secs + ((tick - bp_tick) as f64 / self.ticks_per_beat) * (us_per_qn / 1_000_000.0)
+    }
+}
+
 /// Render a MIDI file through the full polyphonic signal chain.
 ///
-/// Replicates the plugin's exact voice management and signal routing:
-///   voices (reed → pickup) → sum → oversampled preamp → volume → power amp → speaker
+/// Routed through `WurliEngine` — the SAME engine the plugin runs — rather than a
+/// hand-assembled copy of it. The previous implementation rebuilt voice management
+/// and the output stage locally and drifted: it applied `volume * volume` BEFORE
+/// the power amp, which was the pre-2026-04-26 coupled topology. The shipping chain
+/// pins circuit drive and applies user volume as a LINEAR post-speaker multiplier,
+/// so the old code changed the amp's operating point with the volume knob and its
+/// renders did not match the plugin at any setting but one.
 ///
 /// Usage:
 ///   preamp-bench render-midi --midi path/to/file.mid --output /tmp/output.wav
@@ -1719,18 +1798,24 @@ fn cmd_render_midi(args: &[String]) {
     let midi_path = parse_flag_str(args, "--midi", "");
     if midi_path.is_empty() {
         eprintln!("Usage: preamp-bench render-midi --midi <file.mid> [--output <file.wav>]");
-        eprintln!("  --volume V       Volume (default 0.60)");
-        eprintln!("  --speaker S      Speaker character 0-1 (default 1.0)");
-        eprintln!("  --no-poweramp    Bypass power amp");
-        eprintln!("  --tail T         Extra seconds after last note (default 2.0)");
-        eprintln!("  --track N        Only render track N (0-based, default: all tracks)");
+        eprintln!("  --volume V           Volume 0-1, linear post-speaker (default 0.60)");
+        eprintln!("  --speaker S          Speaker character 0-1 (default 1.0)");
+        eprintln!("  --tremolo-depth D    Tremolo depth 0-1 (default 0.0)");
+        eprintln!("  --mlp                Enable MLP corrections (default off, as shipped)");
+        eprintln!("  --tail T             Extra seconds after last note (default 2.0)");
+        eprintln!("  --track N            Only render track N (0-based, default: all)");
+        eprintln!();
+        eprintln!("  NOTE: --no-poweramp is not available here — this command renders");
+        eprintln!("  through the shipping engine, which has no power-amp bypass. Use");
+        eprintln!("  `render` for single notes with a bypass.");
         return;
     }
     let default_out = temp_default("preamp_render_midi.wav");
     let output_path = parse_flag_str(args, "--output", &default_out);
     let volume = parse_flag(args, "--volume", 0.60);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
-    let no_poweramp = has_flag(args, "--no-poweramp");
+    let tremolo_depth = parse_flag(args, "--tremolo-depth", 0.0);
+    let mlp = has_flag(args, "--mlp");
     let tail_seconds = parse_flag(args, "--tail", 2.0);
     let track_filter: Option<usize> = if has_flag(args, "--track") {
         Some(parse_flag(args, "--track", 0.0) as usize)
@@ -1738,7 +1823,6 @@ fn cmd_render_midi(args: &[String]) {
         None
     };
 
-    // Parse MIDI file
     let midi_data = std::fs::read(midi_path).expect("Failed to read MIDI file");
     let smf = midly::Smf::parse(&midi_data).expect("Failed to parse MIDI file");
 
@@ -1750,55 +1834,43 @@ fn cmd_render_midi(args: &[String]) {
         }
     };
 
-    // Collect all MIDI events with absolute time in seconds
+    let tempo_map = TempoMap::build(&smf, ticks_per_beat);
+
     #[derive(Clone)]
     enum MidiEvt {
         NoteOn { note: u8, velocity: u8 },
         NoteOff { note: u8 },
         Pedal { on: bool },
     }
-
     struct TimedEvent {
         time_s: f64,
         evt: MidiEvt,
     }
 
     let mut events: Vec<TimedEvent> = Vec::new();
-
     for (track_idx, track) in smf.tracks.iter().enumerate() {
-        let mut tempo: f64 = 500_000.0; // default 120 BPM
-        let mut time_s: f64 = 0.0;
-
-        // Always process tempo events from track 0, but skip note events
-        // from non-selected tracks when --track is specified.
-        let emit_notes = track_filter.is_none_or(|t| t == track_idx);
-
+        if let Some(t) = track_filter
+            && t != track_idx
+        {
+            continue;
+        }
+        let mut tick: u64 = 0;
         for event in track {
-            let delta_ticks = event.delta.as_int() as u64;
-            let delta_s = (delta_ticks as f64 / ticks_per_beat) * (tempo / 1_000_000.0);
-            time_s += delta_s;
-
-            match event.kind {
-                midly::TrackEventKind::Meta(midly::MetaMessage::Tempo(t)) => {
-                    tempo = t.as_int() as f64;
-                }
-                midly::TrackEventKind::Midi { message, .. } if emit_notes => match message {
+            tick += event.delta.as_int() as u64;
+            let time_s = tempo_map.seconds_at(tick);
+            if let midly::TrackEventKind::Midi { message, .. } = event.kind {
+                match message {
                     midly::MidiMessage::NoteOn { key, vel } => {
                         let v = vel.as_int();
-                        if v == 0 {
-                            events.push(TimedEvent {
-                                time_s,
-                                evt: MidiEvt::NoteOff { note: key.as_int() },
-                            });
+                        let evt = if v == 0 {
+                            MidiEvt::NoteOff { note: key.as_int() }
                         } else {
-                            events.push(TimedEvent {
-                                time_s,
-                                evt: MidiEvt::NoteOn {
-                                    note: key.as_int(),
-                                    velocity: v,
-                                },
-                            });
-                        }
+                            MidiEvt::NoteOn {
+                                note: key.as_int(),
+                                velocity: v,
+                            }
+                        };
+                        events.push(TimedEvent { time_s, evt });
                     }
                     midly::MidiMessage::NoteOff { key, .. } => {
                         events.push(TimedEvent {
@@ -1817,13 +1889,10 @@ fn cmd_render_midi(args: &[String]) {
                         });
                     }
                     _ => {}
-                },
-                _ => {}
+                }
             }
         }
     }
-
-    // Sort by time
     events.sort_by(|a, b| a.time_s.partial_cmp(&b.time_s).unwrap());
 
     if events.is_empty() {
@@ -1836,203 +1905,82 @@ fn cmd_render_midi(args: &[String]) {
     let total_samples = (total_duration * BASE_SR) as usize;
 
     eprintln!(
-        "MIDI: {} events, {:.1}s + {:.1}s tail = {:.1}s total ({} samples)",
+        "MIDI: {} events, {:.1}s + {:.1}s tail = {:.1}s total ({} samples); \
+         tempo map {} point(s), {:.1}-{:.1} BPM",
         events.len(),
         last_event_time,
         tail_seconds,
         total_duration,
-        total_samples
+        total_samples,
+        tempo_map.points.len(),
+        60_000_000.0
+            / tempo_map
+                .points
+                .iter()
+                .map(|p| p.1)
+                .fold(f64::MIN, f64::max),
+        60_000_000.0
+            / tempo_map
+                .points
+                .iter()
+                .map(|p| p.1)
+                .fold(f64::MAX, f64::min),
     );
 
-    // Voice management (mirrors plugin architecture)
-    const MAX_VOICES: usize = 64;
+    // The shipping engine, configured exactly as the plugin configures it.
+    let mut engine = WurliEngine::new(BASE_SR);
+    engine.set_volume(volume);
+    engine.set_speaker_character(speaker_char);
+    engine.set_tremolo_depth(tremolo_depth);
+    engine.set_mlp_enabled(mlp);
+    engine.ensure_buffer_capacity(64);
+    engine.warm_up();
 
-    struct VoiceSlot {
-        voice: Option<Voice>,
-        active: bool,
-        midi_note: u8,
-        age: u64,
-    }
-
-    let mut voices: Vec<VoiceSlot> = (0..MAX_VOICES)
-        .map(|_| VoiceSlot {
-            voice: None,
-            active: false,
-            midi_note: 0,
-            age: 0,
-        })
-        .collect();
-    let mut age_counter: u64 = 0;
-
-    let mut preamp = create_preamp(args);
-    preamp.set_ldr_resistance(1_000_000.0);
-    preamp.reset();
-    let mut os = Oversampler::new();
-    let mut power_amp = PowerAmp::new();
-    let mut speaker = Speaker::new(BASE_SR);
-    speaker.set_character(speaker_char);
-
-    let mut output = vec![0.0f64; total_samples];
-    let mut event_idx = 0;
-
-    let chunk_size = 64; // process in small chunks for sample-accurate events
-    let mut voice_buf = vec![0.0f64; chunk_size];
-    let mut sum_buf = vec![0.0f64; chunk_size];
-    let mut up_buf = vec![0.0f64; chunk_size * 2];
-    let mut down_buf = vec![0.0f64; chunk_size];
-
+    let mut output = vec![0.0f32; total_samples];
+    let chunk_size = 64;
     let mut sample_pos: usize = 0;
-    let mut peak_polyphony: usize = 0;
+    let mut event_idx = 0;
     let mut note_on_count: usize = 0;
-    let mut pedal_down = false;
-    // Notes waiting for pedal release to send note_off
-    let mut pedal_held: Vec<u8> = Vec::new();
 
     while sample_pos < total_samples {
         let chunk_end = (sample_pos + chunk_size).min(total_samples);
-        let len = chunk_end - sample_pos;
         let chunk_time = sample_pos as f64 / BASE_SR;
 
-        // Process MIDI events at or before this chunk
         while event_idx < events.len() && events[event_idx].time_s <= chunk_time {
-            let evt = events[event_idx].evt.clone();
-            match evt {
+            match events[event_idx].evt.clone() {
                 MidiEvt::NoteOn { note, velocity } => {
-                    let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
-                    let vel = velocity as f64 / 127.0;
-                    age_counter += 1;
+                    engine.note_on(note, velocity as f32 / 127.0);
                     note_on_count += 1;
-
-                    let slot_idx = voices.iter().position(|s| !s.active).unwrap_or_else(|| {
-                        voices
-                            .iter()
-                            .enumerate()
-                            .min_by_key(|(_, s)| s.age)
-                            .map(|(i, _)| i)
-                            .unwrap_or(0)
-                    });
-
-                    let seed = (note as u32)
-                        .wrapping_mul(2654435761)
-                        .wrapping_add(age_counter as u32);
-                    voices[slot_idx] = VoiceSlot {
-                        voice: Some(Voice::note_on(note, vel, BASE_SR, seed, true)),
-                        active: true,
-                        midi_note: note,
-                        age: age_counter,
-                    };
-                    let active = voices.iter().filter(|s| s.active).count();
-                    peak_polyphony = peak_polyphony.max(active);
                 }
-                MidiEvt::NoteOff { note } => {
-                    let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
-                    if pedal_down {
-                        // Defer note-off until pedal release
-                        pedal_held.push(note);
-                    } else {
-                        // Immediate note-off
-                        if let Some(slot) = voices
-                            .iter_mut()
-                            .filter(|s| s.active && s.midi_note == note)
-                            .min_by_key(|s| s.age)
-                            && let Some(ref mut v) = slot.voice
-                        {
-                            v.note_off();
-                        }
-                    }
-                }
-                MidiEvt::Pedal { on } => {
-                    pedal_down = on;
-                    if !on {
-                        // Release all pedal-held notes
-                        for held_note in pedal_held.drain(..) {
-                            if let Some(slot) = voices
-                                .iter_mut()
-                                .filter(|s| s.active && s.midi_note == held_note)
-                                .min_by_key(|s| s.age)
-                                && let Some(ref mut v) = slot.voice
-                            {
-                                v.note_off();
-                            }
-                        }
-                    }
-                }
+                MidiEvt::NoteOff { note } => engine.note_off(note),
+                MidiEvt::Pedal { on } => engine.set_sustain(on),
             }
             event_idx += 1;
         }
 
-        // Clean up silent voices
-        for slot in &mut voices {
-            if slot.active
-                && let Some(ref v) = slot.voice
-                && v.is_silent()
-            {
-                slot.active = false;
-                slot.voice = None;
-            }
-        }
-
-        // Render all active voices → sum
-        sum_buf[..len].fill(0.0);
-        for slot in &mut voices {
-            if !slot.active {
-                continue;
-            }
-            if let Some(ref mut voice) = slot.voice {
-                voice_buf[..len].fill(0.0);
-                voice.render(&mut voice_buf[..len]);
-                for i in 0..len {
-                    sum_buf[i] += voice_buf[i];
-                }
-            }
-        }
-
-        // Oversampled preamp
-        os.upsample_2x(&sum_buf[..len], &mut up_buf[..len * 2]);
-        for s in &mut up_buf[..len * 2] {
-            *s = preamp.process_sample(*s);
-        }
-        os.downsample_2x(&up_buf[..len * 2], &mut down_buf[..len]);
-
-        // Output stage: volume → power amp → speaker → post-speaker gain
-        for i in 0..len {
-            let attenuated = down_buf[i] * volume * volume;
-            let amplified = if no_poweramp {
-                attenuated
-            } else {
-                power_amp.process(attenuated)
-            };
-            output[sample_pos + i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
-        }
-
+        engine.render(&mut output[sample_pos..chunk_end]);
         sample_pos = chunk_end;
     }
 
-    // Peak measurement
-    let peak = peak_abs(&output);
+    let output_f64: Vec<f64> = output.iter().map(|&x| x as f64).collect();
+    let peak = peak_abs(&output_f64);
     let peak_dbfs = to_dbfs(peak);
-
     if peak > 1.0 {
         eprintln!(
             "WARNING: Peak exceeds 0 dBFS ({peak_dbfs:.1} dBFS) — consider reducing --volume"
         );
     }
 
-    write_wav_24bit(output_path, &output, BASE_SR, 1.0);
+    write_wav_24bit(output_path, &output_f64, BASE_SR, 1.0);
 
     println!("MIDI render complete");
     println!("  File:      {midi_path}");
     println!("  Notes:     {note_on_count} note-ons");
-    println!("  Peak poly: {peak_polyphony} voices");
     println!("  Duration:  {total_duration:.1}s");
-    println!(
-        "  Volume:    {volume:.3} (audio taper: {:.3})",
-        volume * volume
-    );
+    println!("  Volume:    {volume:.3} (linear, post-speaker — decoupled from drive)");
     println!("  Speaker:   {speaker_char:.1}");
-    if no_poweramp {
-        println!("  Power amp: BYPASSED");
-    }
+    println!("  Tremolo:   {tremolo_depth:.2}");
+    println!("  MLP:       {}", if mlp { "on" } else { "off (shipped)" });
     println!("  Peak:      {peak_dbfs:.1} dBFS");
     println!("  Output:    {output_path}");
 }
@@ -3269,6 +3217,132 @@ mod tests {
         // Degenerate inputs must not panic.
         assert_eq!(integer_cycle_slice(&short, 0.0, BASE_SR).len(), short.len());
         assert!(integer_cycle_slice(&[], 440.0, BASE_SR).is_empty());
+    }
+
+    /// Build a minimal SMF format-1 file: tempo map in track 0, notes in
+    /// track 1, at a tempo that is NOT the 120 BPM default.
+    ///
+    /// Hand-assembled bytes rather than a builder, so the test exercises the
+    /// real parse path the tool uses.
+    fn synthetic_format1(tpb: u16, us_per_qn: u32, extra_tempo: Option<(u32, u32)>) -> Vec<u8> {
+        fn vlq(mut n: u32) -> Vec<u8> {
+            let mut out = vec![(n & 0x7F) as u8];
+            n >>= 7;
+            while n > 0 {
+                out.push(((n & 0x7F) as u8) | 0x80);
+                n >>= 7;
+            }
+            out.reverse();
+            out
+        }
+        fn chunk(id: &[u8; 4], body: Vec<u8>) -> Vec<u8> {
+            let mut c = id.to_vec();
+            c.extend_from_slice(&(body.len() as u32).to_be_bytes());
+            c.extend(body);
+            c
+        }
+
+        // Header: format 1, 2 tracks, `tpb` ticks per quarter note.
+        let mut header = Vec::new();
+        header.extend_from_slice(&1u16.to_be_bytes());
+        header.extend_from_slice(&2u16.to_be_bytes());
+        header.extend_from_slice(&tpb.to_be_bytes());
+
+        // Track 0: tempo only.
+        let mut t0 = Vec::new();
+        t0.extend(vlq(0));
+        t0.extend_from_slice(&[0xFF, 0x51, 0x03]);
+        t0.extend_from_slice(&us_per_qn.to_be_bytes()[1..]);
+        if let Some((at_tick, us2)) = extra_tempo {
+            t0.extend(vlq(at_tick));
+            t0.extend_from_slice(&[0xFF, 0x51, 0x03]);
+            t0.extend_from_slice(&us2.to_be_bytes()[1..]);
+        }
+        t0.extend(vlq(0));
+        t0.extend_from_slice(&[0xFF, 0x2F, 0x00]); // end of track
+
+        // Track 1: note on at tick 0, note on at tick 4*tpb (4 beats in).
+        let mut t1 = Vec::new();
+        t1.extend(vlq(0));
+        t1.extend_from_slice(&[0x90, 60, 100]);
+        t1.extend(vlq(4 * tpb as u32));
+        t1.extend_from_slice(&[0x90, 64, 100]);
+        t1.extend(vlq(0));
+        t1.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+
+        let mut out = chunk(b"MThd", header);
+        out.extend(chunk(b"MTrk", t0));
+        out.extend(chunk(b"MTrk", t1));
+        out
+    }
+
+    /// REGRESSION: a tempo map in track 0 must reach the notes in track 1.
+    ///
+    /// The previous implementation declared `tempo` inside the per-track loop,
+    /// so format-1 files rendered at the 120 BPM default no matter what track 0
+    /// said. At 60 BPM that is a 2x timing error, silently.
+    #[test]
+    fn test_tempo_map_is_global_across_tracks() {
+        let tpb = 480u16;
+        // 60 BPM = 1,000,000 us per quarter note (half the 120 BPM default).
+        let data = synthetic_format1(tpb, 1_000_000, None);
+        let smf = midly::Smf::parse(&data).expect("synthetic format-1 file must parse");
+        assert_eq!(smf.tracks.len(), 2);
+
+        let map = TempoMap::build(&smf, tpb as f64);
+
+        // 4 beats at 60 BPM = 4.0 s. At the 120 BPM default it would be 2.0 s —
+        // which is exactly what the bug produced.
+        let t = map.seconds_at(4 * tpb as u64);
+        assert!(
+            (t - 4.0).abs() < 1e-9,
+            "4 beats at 60 BPM should be 4.0 s, got {t} \
+             (2.0 means the track-0 tempo map never reached track 1)"
+        );
+        assert!((map.seconds_at(0) - 0.0).abs() < 1e-12);
+    }
+
+    /// Mid-song tempo changes must apply from the tick they occur at, not
+    /// retroactively and not from the next track boundary.
+    #[test]
+    fn test_tempo_map_handles_mid_song_change() {
+        let tpb = 480u16;
+        // 60 BPM from tick 0, then 240 BPM (250,000 us/qn) from beat 2.
+        let data = synthetic_format1(tpb, 1_000_000, Some((2 * tpb as u32, 250_000)));
+        let smf = midly::Smf::parse(&data).unwrap();
+        let map = TempoMap::build(&smf, tpb as f64);
+
+        // Beat 2 at 60 BPM = 2.0 s.
+        assert!((map.seconds_at(2 * tpb as u64) - 2.0).abs() < 1e-9);
+        // Beats 2..4 at 240 BPM = 2 * 0.25 s, so beat 4 lands at 2.5 s.
+        let t4 = map.seconds_at(4 * tpb as u64);
+        assert!(
+            (t4 - 2.5).abs() < 1e-9,
+            "beat 4 should be 2.0 + 2*0.25 = 2.5 s, got {t4}"
+        );
+        // Halfway through the fast section interpolates inside the segment.
+        let t3 = map.seconds_at(3 * tpb as u64);
+        assert!(
+            (t3 - 2.25).abs() < 1e-9,
+            "beat 3 should be 2.25 s, got {t3}"
+        );
+    }
+
+    /// No tempo event anywhere = the 120 BPM default, still global.
+    #[test]
+    fn test_tempo_map_defaults_to_120_bpm() {
+        let tpb = 96u16;
+        let mut data = synthetic_format1(tpb, 500_000, None);
+        // Blank the tempo meta-event's type byte so no tempo exists at all.
+        let pos = data
+            .windows(3)
+            .position(|w| w == [0xFF, 0x51, 0x03])
+            .unwrap();
+        data[pos + 1] = 0x01; // turn it into a text meta-event of the same length
+        let smf = midly::Smf::parse(&data).unwrap();
+        let map = TempoMap::build(&smf, tpb as f64);
+        assert_eq!(map.points.len(), 1);
+        assert!((map.seconds_at(4 * tpb as u64) - 2.0).abs() < 1e-9);
     }
 
     /// The re-baselined gain reference must reproduce the deck at its anchor
