@@ -269,26 +269,21 @@ pub fn reed_compliance(midi: u8) -> f64 {
 /// 0.86. A gap fraction of 0.95 — reed within 5% of touching — was survivable
 /// when the nonlinearity was weak per unit y; with the correct one it is not.
 ///
-/// **`DS_AT_C4` 0.85 → 0.73** is set by the vol=1.0 level invariant, not by
-/// ear. The restructure raises output by +0.7..+5.9 dB depending on register
-/// (that rise IS the restored nonlinearity), and `POST_SPEAKER_GAIN_DB` was
-/// ringfenced for this change, so the level had to come out of DS. Measured
-/// worst-phase warmed chord-ff peak: 0.8562 at 0.71, 0.9253 at 0.73, 1.0035 at
-/// 0.75, 1.1393 at 0.78 (limit 1.02). 0.73 leaves +0.85 dB of headroom —
-/// more than the 0.980 the branch shipped with.
+/// **`DS_AT_C4` 0.85 → 0.73 → back to 0.85** (2026-09-14, Task D). The 0.73 step
+/// was a level-budget stopgap taken while `POST_SPEAKER_GAIN_DB` was ringfenced;
+/// with PSG free to move, DS returns to its ear-blessed value and PSG absorbs
+/// the level instead. See the tradeoff curve on `POST_SPEAKER_GAIN_DB`.
 ///
-/// ⚠ **This is the one constant here set by a level budget rather than by
-/// physics or bark.** At DS 0.85 the restructure raised C4 ff pickup H2/H1 to
-/// 73.0% (from 62.3%, +1.4 dB); at 0.73 it sits at 59.6% (-0.4 dB). The H2
-/// improvement the restructure can deliver is being spent on headroom. If
-/// `POST_SPEAKER_GAIN_DB` is ever allowed to absorb the level instead, DS
-/// should go back up and that H2 returns — see the Phase-3 notes.
+/// At 0.85, C4 ff pickup H2/H1 is **73.0%** — H2 lands within 0.0 dB of the
+/// pre-revision build at the same note (both +0.2 dB rel H1) — and the C4
+/// velocity span recovers to **44.75 dB** against pre-revision's 43.14 dB.
 ///
-/// (Historical note: `output_scale`'s RMS proxy used to fight DS — it
-/// normalises by a proxy that still carried the superseded 2312 Hz corner, so
-/// lowering DS *raised* `output_scale` and the level did not track DS. That is
-/// fixed as of 2026-09-14; see `pickup_rms_proxy`.)
-const DS_AT_C4: f64 = 0.73;
+/// ⚠ **`DS_AT_C4` is now the one true ear knob in this file.** It trades harmonic
+/// richness against output level at roughly **1.5 dB of level per 1 dB of H2**,
+/// and it is the constant to move first in a voicing session. `DS_CLAMP` pins
+/// the bass independently (C2 is clamped at every DS in the useful range, so
+/// the bass ladder does not move with this constant).
+const DS_AT_C4: f64 = 0.85;
 const DS_EXPONENT: f64 = 0.75;
 const DS_CLAMP: (f64, f64) = (0.02, 0.90);
 
@@ -641,10 +636,51 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// one (C-7 spanning R-7+R-8 makes stage 2 a high-gain CE stage), which pushed
 /// the warmed worst-phase chord peak to 1.0620 — over the invariant. −0.7 dB
 /// restores it. Nothing about the voicing changed; only the output trim.
-pub const POST_SPEAKER_GAIN_DB: f64 = 8.9;
+/// ## 2026-09-14 (Task D): 8.9 → 4.5 dB, chosen from a DS/PSG tradeoff curve
+///
+/// PSG is a pure output scalar, so for any `DS_AT_C4` the largest PSG that keeps
+/// the warmed worst-phase vol=1.0 chord-ff peak inside the 1.02 bound is exact
+/// arithmetic, not a search. **THE CURVE — slide along it by ear:**
+///
+/// | `DS_AT_C4` | chord peak @PSG 8.9 | max PSG | C4 ff H2/H1 | typ-play RMS vs pre-revision | gate-(a) slope |
+/// |---|---|---|---|---|---|
+/// | 0.73 | 0.9449 | 9.56 | 59.6% | +1.78 dB | +0.55 dB/order |
+/// | 0.78 | 1.1581 | 7.80 | 64.9% | +0.82 dB | +1.44 dB/order |
+/// | 0.82 | 1.3832 | 6.25 | 69.4% | -0.06 dB | +2.18 dB/order |
+/// | **0.85** | **1.6132** | **4.92** | **73.0%** | **-0.88 dB** | **+2.77 dB/order** |
+///
+/// Shipped at **DS 0.85 / PSG 4.5** — 0.4 dB under the curve's 4.92 ceiling, to
+/// leave +0.42 dB of invariant margin (measured peak 0.9721), matching the
+/// +0.35 dB margin the 0.980 reference shipped with. Selection rule was
+/// "maximise H2 recovery subject to typical-play loudness within ~2 dB of
+/// pre-revision"; every row satisfies the loudness constraint, so H2 decides.
+///
+/// **Raising DS costs almost exactly what it gains**: 0.73 → 0.85 buys +1.76 dB
+/// of H2 for -4.64 dB of PSG, netting -2.66 dB of typical-play level. The
+/// exchange rate is ~1.5 dB of level per 1 dB of H2.
+///
+/// ⚠ **There was no spare headroom to reclaim.** The perception that the build
+/// leaves ~10 dB unused at max volume is worst-case sizing, not a level deficit:
+/// measured before this change, typical play (C4 v64-v110) already sat **+2.06 dB
+/// RMS above the pre-revision build**. The gap between a warmed worst-phase
+/// chord-ff and a single mf note is ~20 dB and is structural — it was equally
+/// true pre-revision. PSG cannot recover it; only a different sizing metric
+/// could.
+///
+/// ⚠ **Gate (a) and the H2 target are mutually exclusive**, crossing at
+/// DS ≈ 0.745. The gate compares the harmonic ladder against a corner-only
+/// (purely linear) prediction, which implicitly assumes the pre-revision
+/// nonlinearity strength — and that nonlinearity died above the corner, which is
+/// the defect the restructure fixed. The residual at DS 0.85 is entirely
+/// POSITIVE (no shortfall remains anywhere), and the ladder matches a memoryless
+/// y/(1-y) at the attack window's effective y. Read as a shortfall detector the
+/// gate passes; read as a two-sided bound it fails. Slide to 0.73 if the
+/// harmonic tail is too bright by ear — that is the honest disagreement, and the
+/// curve above is how to settle it.
+pub const POST_SPEAKER_GAIN_DB: f64 = 4.5;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 2.786_121_168_629_77; // 10^(8.9/20)
+pub const POST_SPEAKER_GAIN: f64 = 1.678_804_018_122_56; // 10^(4.5/20)
 
 /// Fixed circuit-drive level — multiplier applied between preamp output
 /// and power amp input. Historically this was `vol²` (3K audio-taper pot,
