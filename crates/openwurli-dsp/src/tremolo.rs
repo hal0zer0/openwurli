@@ -36,26 +36,86 @@ const GAMMA: f64 = 0.9;
 const R_LDR_MIN: f64 = 9_000.0;
 const R_LDR_MAX: f64 = 1_000_000.0;
 
-/// 200A vibrato depth network, per schematic #203720-S-3 (schemer 2026-07-19,
-/// verified on the 36 MP scan). The 50 kΩ front-panel VIBRATO pot is a
-/// 3-terminal divider in the fb_junction→LDR shunt leg: top→fb_junction,
-/// bottom→ground, wiper→the LDR branch. An 18 kΩ resistor bridges top→wiper;
-/// R18 (680 Ω) is in series in the LDR branch off the wiper. The LED drive is
-/// FIXED (depth does not scale it) — depth is the wiper position alone.
+/// 200A vibrato depth network, per schematic #203720-S-3. The 50 kΩ front-panel
+/// VIBRATO pot is a 3-terminal divider in the fb_junction→LDR shunt leg:
+/// top→fb_junction, bottom→ground, wiper→the LDR branch. An 18 kΩ resistor
+/// bridges top→wiper, and the LDR sits DIRECTLY on the wiper branch.
+///
+/// **R-18 (680 Ω) is NOT here** — it is in the LED DRIVE path
+/// (+14.5 V → R-18 → LED → R-17 → TR-3 collector). The 2026-09-13 instrumented
+/// re-read showed cable pin 5 running straight to LG-1 pin 4 with two line HOPS
+/// en route, not junctions. Its removal from this leg is the 2026-09-14
+/// light-law re-fit; it was the last superseded-topology reading in shipping
+/// code.
+///
 /// Shunt impedance seen by fb_junction:
-///   Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ (680 Ω + R_ldr))
+///   Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ R_ldr)
 /// with R_upper = 50 kΩ·(1−depth), R_lower = 50 kΩ·depth. depth = 1.0 puts the
 /// wiper at the fb end (max depth); depth = 0 grounds the LDR branch (vibrato
-/// off, fb sees a fixed 50 kΩ ∥ 18 kΩ ≈ 13 kΩ). See `shunt_impedance`.
-const R18_SERIES: f64 = 680.0;
+/// off, fb sees a fixed 50 kΩ ∥ 18 kΩ ≈ 13.2 kΩ). See `shunt_impedance`.
 const R_VIB_BRIDGE: f64 = 18_000.0;
 const R_VIB_POT: f64 = 50_000.0;
 
-/// Twin-T oscillator output voltage range (from ngspice/melange validation).
-#[cfg(not(feature = "legacy-tremolo"))]
-const V_OUT_MIN: f64 = 0.70;
-#[cfg(not(feature = "legacy-tremolo"))]
-const V_OUT_MAX: f64 = 10.95;
+// ── LED drive path and the TIL209A light law (2026-09-14 re-fit) ──────────
+//
+// The drawn LED chain is  +14.5 V → R-18 (680 Ω) → LG-1 LED → R-17 (4.7 K
+// trimmer) → TR-3 collector.  R-18 is HERE, not in the LDR leg.  The
+// `wurli-tremolo` deck exposes the LED anode/cathode as raw inner-rate taps
+// precisely so this module can consume real current instead of inferring
+// brightness from the collector swing:
+//
+//     I_LED(t) = (V_RAIL − v(led_anode)) / R-18
+//
+// Measured over a settled cycle at the shipped R-17 = 4.7 K (the trimmer's FULL
+// value = weakest LED drive, which is the position the deck models and the one
+// the service manual calls the starting point): anode 12.950–14.252 V, diode
+// drop 1.501–1.548 V, and therefore
+//
+//     I_LED = 0.365 … 2.279 mA
+//
+// The whole operating range sits in the sub-mA-to-few-mA regime.  That matters
+// for the light law below: the 10–40 mA part of the TIL209A curve is never
+// reached by this circuit.
+const V_RAIL: f64 = 14.5;
+const R18_LED_SERIES: f64 = 680.0;
+
+/// Relative luminous intensity vs forward current, TI TIL209A bulletin DL-S
+/// 12024 (June 1973) Fig. 4 — the only period sub-mA curve for this part.
+///
+/// The curve is not a single power law: its log-log slope runs ≈1.36 at
+/// 0.5–1 mA and tapers to ≈0.88 at 10–40 mA.  Encoded here as a piecewise
+/// power law, i.e. straight segments in log-log space, with the local exponent
+/// as the segment slope.
+///
+/// ⚠ **Provenance, stated plainly.** The exponents are taken from the digitised
+/// figure recorded in the project's coordination record and the deck header;
+/// this module encodes them, it did not re-digitise the artwork. The TI figure
+/// is DRAFTED artwork — use it as a LEVEL, not as device physics.
+///
+/// ⚠ **Below 0.35 mA this is EXTRAPOLATION.** The deck's I-V card is fitted over
+/// 0.35–20 mA and no period data exists below 0.1 mA. The oscillator's minimum
+/// (0.365 mA) sits just inside the fitted range, so the extrapolated region is
+/// touched only transiently, but the bottom segment's slope is an assumption.
+///
+/// (mA, local log-log exponent applied from this current up to the next)
+const LED_INTENSITY_LAW: [(f64, f64); 5] = [
+    (0.10, 1.36), // extrapolated below 0.35 mA — see caveat above
+    (1.00, 1.22),
+    (3.00, 1.02),
+    (10.00, 0.88),
+    (40.00, 0.88), // held flat above the documented range
+];
+
+/// Forward current treated as "fully illuminated" — the cell is at
+/// `R_LDR_MIN` here.  Set to the oscillator's measured peak (2.279 mA at
+/// R-17 = 4.7 K), so `drive` reaches 1.0 exactly at the top of the cycle and
+/// the mapping carries no hidden headroom.  Derived, not fitted.
+const LED_I_FULL_MA: f64 = 2.279;
+
+/// Size of the precomputed current→normalised-light table.  The law needs a
+/// `ln`/`exp` pair per evaluation; at 88.2 kHz that is not free, so it is
+/// tabulated once at construction and linearly interpolated per sample.
+const LED_LUT_N: usize = 256;
 
 pub struct Tremolo {
     // --- Oscillator state ---
@@ -84,6 +144,38 @@ pub struct Tremolo {
     gamma: f64,
     ln_r_max: f64,
     ln_min_minus_max: f64,
+    /// Precomputed normalised light vs LED current (index ∝ current).
+    #[cfg(not(feature = "legacy-tremolo"))]
+    led_lut: [f64; LED_LUT_N],
+}
+
+/// Relative intensity at `i_ma` from the piecewise log-log law, normalised so
+/// that `led_intensity(LED_I_FULL_MA) == 1.0`.
+fn led_intensity(i_ma: f64) -> f64 {
+    if i_ma <= 0.0 {
+        return 0.0;
+    }
+    // Integrate the piecewise-constant exponent in log-current space.
+    let ln_at = |i: f64| -> f64 {
+        let mut acc = 0.0;
+        let mut prev_i = LED_INTENSITY_LAW[0].0;
+        let mut prev_n = LED_INTENSITY_LAW[0].1;
+        if i <= prev_i {
+            // Below the first breakpoint: continue the first segment's slope.
+            return prev_n * (i / prev_i).ln();
+        }
+        for &(bp_i, bp_n) in LED_INTENSITY_LAW.iter().skip(1) {
+            let hi = i.min(bp_i);
+            acc += prev_n * (hi / prev_i).ln();
+            if i <= bp_i {
+                return acc;
+            }
+            prev_i = bp_i;
+            prev_n = bp_n;
+        }
+        acc + prev_n * (i / prev_i).ln()
+    };
+    (ln_at(i_ma) - ln_at(LED_I_FULL_MA)).exp()
 }
 
 /// Fixed oscillator rate for the legacy behavioral LFO (Hz).
@@ -121,6 +213,11 @@ impl Tremolo {
             gamma: GAMMA,
             ln_r_max: R_LDR_MAX.ln(),
             ln_min_minus_max: R_LDR_MIN.ln() - R_LDR_MAX.ln(),
+            #[cfg(not(feature = "legacy-tremolo"))]
+            led_lut: std::array::from_fn(|k| {
+                let i_ma = LED_I_FULL_MA * k as f64 / (LED_LUT_N - 1) as f64;
+                led_intensity(i_ma).clamp(0.0, 1.0)
+            }),
         }
     }
 
@@ -156,7 +253,7 @@ impl Tremolo {
     }
 
     /// Shunt impedance from fb_junction to ground through the vibrato depth
-    /// network: `Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ (R18 + R_ldr))`, with the
+    /// network: `Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ R_ldr)`, with the
     /// 50 kΩ pot split by `depth` (wiper). See the constants block for the
     /// topology. At depth = 0 the LDR branch is grounded (vibrato off).
     fn shunt_impedance(&self) -> f64 {
@@ -167,7 +264,7 @@ impl Tremolo {
         } else {
             0.0
         };
-        let branch = R18_SERIES + self.r_ldr;
+        let branch = self.r_ldr;
         let low = if r_lower > 0.0 {
             r_lower * branch / (r_lower + branch)
         } else {
@@ -189,15 +286,28 @@ impl Tremolo {
 
     #[cfg(not(feature = "legacy-tremolo"))]
     fn oscillator_drive(&mut self) -> f64 {
-        // `.1` is `taps_inner` — the raw LED anode/cathode node voltages newly
-        // exposed by the v0.1.7 codegen. Deliberately IGNORED here: the shipped
-        // drive law is collector-voltage-driven and stays that way in Phase 2.
-        // The taps are reserved for the Phase-3 light-law rebuild, which is the
-        // decision that should consume real LED current instead of inferring
-        // brightness from the collector swing.
-        let v_out = gen_tremolo::process_sample(0.0, &NO_INJECT, &mut self.osc_state).0[0];
-        // Map collector voltage to LED drive: low V = bright LED = high drive
-        ((V_OUT_MAX - v_out) / (V_OUT_MAX - V_OUT_MIN)).clamp(0.0, 1.0)
+        // `.1` is `taps_inner` — the raw LED anode/cathode node voltages. The
+        // light law consumes REAL LED CURRENT from these taps; the old
+        // collector-voltage map (and its fixed-current assumption) is retired.
+        //
+        // Averaged across the inner samples rather than decimated: the CdS cell
+        // integrates light, so the mean over the inner step is the physically
+        // right reduction and it anti-aliases the drive for free.
+        let (_out, taps) = gen_tremolo::process_sample(0.0, &NO_INJECT, &mut self.osc_state);
+        let mut light = 0.0;
+        for t in taps.iter() {
+            let i_ma = ((V_RAIL - t[0]) / R18_LED_SERIES) * 1000.0;
+            // LUT lookup with linear interpolation; index ∝ current.
+            let x = (i_ma / LED_I_FULL_MA).clamp(0.0, 1.0) * (LED_LUT_N - 1) as f64;
+            let k = x as usize;
+            light += if k + 1 < LED_LUT_N {
+                let f = x - k as f64;
+                self.led_lut[k] * (1.0 - f) + self.led_lut[k + 1] * f
+            } else {
+                self.led_lut[LED_LUT_N - 1]
+            };
+        }
+        light / taps.len() as f64
     }
 
     pub fn current_resistance(&self) -> f64 {
@@ -270,20 +380,29 @@ mod tests {
                 "osc raw: low={lo:.3}V high={hi:.3}V mean={mean:.3}V swing={:.3}V freq~{freq:.2}Hz",
                 hi - lo
             );
-            eprintln!("expected: V_OUT_MIN={V_OUT_MIN:.2} V_OUT_MAX={V_OUT_MAX:.2}");
-
-            // Also probe what led_drive looks like via the mapping
-            let mut ld_min = f64::INFINITY;
-            let mut ld_max = f64::NEG_INFINITY;
-            for v in &samples {
-                let ld = ((V_OUT_MAX - v) / (V_OUT_MAX - V_OUT_MIN)).clamp(0.0, 1.0);
-                ld_min = ld_min.min(ld);
-                ld_max = ld_max.max(ld);
+            // Probe the real LED drive: current from the taps, then the light law.
+            let mut s2 = gen_tremolo::CircuitState::default();
+            if (sr - gen_tremolo::SAMPLE_RATE).abs() > 0.5 {
+                s2.set_sample_rate(sr);
             }
-            eprintln!(
-                "led_drive: min={ld_min:.3} max={ld_max:.3} swing={:.3}",
-                ld_max - ld_min
-            );
+            for _ in 0..(sr * 2.0) as usize {
+                gen_tremolo::process_sample(0.0, &NO_INJECT, &mut s2);
+            }
+            let (mut i_min, mut i_max) = (f64::INFINITY, f64::NEG_INFINITY);
+            let (mut l_min, mut l_max) = (f64::INFINITY, f64::NEG_INFINITY);
+            for _ in 0..(sr * 0.5) as usize {
+                let (_o, taps) = gen_tremolo::process_sample(0.0, &NO_INJECT, &mut s2);
+                for t in taps.iter() {
+                    let i_ma = ((V_RAIL - t[0]) / R18_LED_SERIES) * 1000.0;
+                    i_min = i_min.min(i_ma);
+                    i_max = i_max.max(i_ma);
+                    let l = led_intensity(i_ma).clamp(0.0, 1.0);
+                    l_min = l_min.min(l);
+                    l_max = l_max.max(l);
+                }
+            }
+            eprintln!("LED current: {i_min:.4}..{i_max:.4} mA");
+            eprintln!("normalised light: {l_min:.4}..{l_max:.4}");
         }
     }
 
@@ -370,8 +489,8 @@ mod tests {
     #[test]
     fn test_resistance_range() {
         // At full depth the shunt impedance seen by fb_junction is the vibrato
-        // divider's output: bright ≈ 50 kΩ ∥ (680 + R_ldr_min≈9 kΩ) ≈ 8 kΩ,
-        // dark ≈ 50 kΩ ∥ (680 + settled-R_ldr) ≈ mid-40 kΩ. The divider CAPS the
+        // divider's output: bright ≈ 50 kΩ ∥ R_ldr_min(≈9 kΩ) ≈ 7.7 kΩ,
+        // dark ≈ 50 kΩ ∥ settled-R_ldr ≈ low-40 kΩ. The divider CAPS the
         // dark side well below the raw 1 MΩ cell resistance (the grounded pot
         // leg limits it) — this is the loaded-divider fingerprint, not the old
         // fb→R_ldr→gnd shunt that reached ~1 MΩ.
