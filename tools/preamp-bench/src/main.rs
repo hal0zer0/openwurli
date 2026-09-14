@@ -2643,7 +2643,8 @@ fn cmd_pump_spike(args: &[String]) {
     }
     let settle = parse_flag(args, "--settle", 400_000.0) as usize;
     let avg = parse_flag(args, "--avg", 8_192.0) as usize;
-    let prefix = parse_flag_str(args, "--csv-prefix", "/tmp/pump_spike");
+    let default_prefix = temp_default("pump_spike");
+    let prefix = parse_flag_str(args, "--csv-prefix", &default_prefix);
     assert!(
         avg.is_multiple_of(2),
         "--avg must be even to cancel Nyquist 2-cycle"

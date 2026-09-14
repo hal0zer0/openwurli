@@ -35,9 +35,11 @@ import numpy as np
 from scipy.interpolate import interp1d
 from scipy.optimize import minimize
 
-LUT_CSV = "/tmp/pump_sweep_88k2.csv"
-SIN_DIR = "/tmp/pump_sin"
-RESULTS_CSV = "/tmp/pump_fit_results.csv"
+import tempfile as _tempfile
+_TMP = _tempfile.gettempdir()
+LUT_CSV = f"{_TMP}/pump_sweep_88k2.csv"
+SIN_DIR = f"{_TMP}/pump_sin"
+RESULTS_CSV = f"{_TMP}/pump_fit_results.csv"
 
 
 # -----------------------------------------------------------------------------
