@@ -311,20 +311,22 @@ pub struct DkPreamp {
 
     // ── Per-instance mutable state ──
     //
-    // The main state processes the audio signal. The shadow state runs in
-    // parallel with zero input, producing only the tremolo pump. Subtracting
-    // shadow output from main output cancels all pump harmonics without
-    // any frequency-domain filtering — zero bass loss, zero phase distortion.
+    // RETIRED 2026-09-14: the shadow state. It ran a second full solve with
+    // zero input each sample, purely to produce the tremolo bias pump so it
+    // could be subtracted from the main output.
     //
-    // REVISION NOTE (2026-09): with C-6 present the output node is no longer
-    // DC-coupled into the LDR leg, so the pump this machinery cancels is now
-    // ~0 by construction (see `test_pump_guard_c6` and the tb_pump_emit
-    // regression guard). The shadow is therefore close to redundant and costs
-    // ~50% of the solver's CPU. It is KEPT here deliberately: removing it is an
-    // audible behaviour change and a separate decision from the topology fix.
-    // Retiring it is the top follow-up for this file.
+    // That pump was an artifact of the pre-revision topology, where the output
+    // was DC-coupled through R-10 into the LDR leg. C-6 eliminates it at
+    // source: node_c6, out and fb all sit at 0 V DC, so modulating R_ldr moves
+    // no bias (`tb_pump_emit`, and `test_acceptance_pump_guard_c6` here).
+    //
+    // Retired on a null test rather than on the argument above: renders built
+    // with and without the subtraction, across five notes at static shunt plus
+    // three tremolo-sweeping cases, differ by **exactly one 24-bit LSB
+    // (-138.47 dBFS)** — i.e. the float-domain difference is below half an LSB
+    // and the outputs are bit-identical after quantization. The acceptance bar
+    // was -80 dBFS. It was subtracting nothing, for ~50% of the solver's CPU.
     main: DkState,
-    shadow: DkState,
 
     // ── Shared R_ldr tracking ──
     r_ldr: f64,
@@ -333,7 +335,7 @@ pub struct DkPreamp {
 }
 
 /// Per-instance mutable state for the DK solver.
-/// Both main and shadow instances share the same fixed matrices and R_ldr.
+/// The solver's fixed matrices and R_ldr live here, separate from mutable state.
 #[derive(Clone)]
 struct DkState {
     j_cin: f64,
@@ -449,7 +451,7 @@ impl DkPreamp {
         let r_ldr_init = 1_000_000.0;
         let (v_nl_dc, v_dc) = Self::full_dc_solve(&g_dc_base, &w, r_ldr_init);
 
-        // Both main and shadow start at identical DC operating point
+        // Solver state starts at the DC operating point
         let init_state = DkState::at_dc(g_cin, v_nl_dc, v_dc);
 
         Self {
@@ -476,7 +478,6 @@ impl DkPreamp {
             c_cin,
             gc_1pc,
 
-            shadow: init_state.clone(),
             main: init_state,
 
             r_ldr: r_ldr_init,
@@ -581,12 +582,11 @@ fn compute_k(s: &MatN, ni: &[[(usize, f64); 2]; 2]) -> [[f64; 2]; 2] {
 
 /// Core DK trapezoidal step — free function for borrow-checker compatibility.
 ///
-/// Both main and shadow instances call this with the same immutable config but
+/// Called with the immutable config and the instance's own mutable state.
 /// different mutable state. Making this a free function (not a method) allows
 /// Rust's borrow checker to split borrows at the field level: config fields
 /// borrowed immutably, state field borrowed mutably, in the same call.
 ///
-/// The shadow runs with `input=0.0` to produce the pure pump signal.
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn dk_step(
@@ -748,42 +748,10 @@ impl PreampModel for DkPreamp {
             input,
         );
 
-        // Shadow solver: zero input → pure pump. Always runs — no bypass
-        // optimization. Toggling the solver on/off caused clicks (state
-        // discontinuities amplified by downstream gain), and the crossfade
-        // workarounds added complexity without fully fixing all edge cases.
-        //
-        // REVISION NOTE: C-6 makes the pump ~0 by construction, so this
-        // subtraction is now near-redundant. Kept deliberately — see the
-        // struct field comment.
-        let pump = dk_step(
-            &self.a_neg_base,
-            &self.two_w,
-            &self.s_base,
-            &self.s_nic,
-            &self.s_nib,
-            &self.s_fb_col,
-            self.s_fb_fb,
-            self.g_ldr,
-            self.g_ldr_prev,
-            &self.k_c,
-            &self.k_b,
-            &self.nv_sfb,
-            &self.sfb_nic,
-            &self.sfb_nib,
-            self.g_cin,
-            self.gc_1pc,
-            self.c_cin,
-            &mut self.shadow,
-            0.0,
-        );
-
-        // Update shared R_ldr tracking (after both steps used g_ldr_prev)
+        // Update shared R_ldr tracking (after the step consumed g_ldr_prev)
         self.g_ldr_prev = self.g_ldr;
 
-        // Subtract pump: cancels any residual tremolo pump without any
-        // frequency-domain filtering. Zero bass loss.
-        let result = main_out - pump;
+        let result = main_out;
 
         // NaN guard: if NR diverged, reset state and return silence.
         // Branch never taken in normal operation.
@@ -812,9 +780,8 @@ impl PreampModel for DkPreamp {
         self.g_ldr = 1.0 / self.r_ldr;
         self.g_ldr_prev = self.g_ldr;
 
-        // Reset both main and shadow to identical DC operating point
+        // Reset to the DC operating point
         let state = DkState::at_dc(self.g_cin, v_nl_dc, v_dc);
-        self.shadow = state.clone();
         self.main = state;
     }
 }
@@ -2216,8 +2183,11 @@ mod tests {
         );
     }
 
-    /// Verify shadow subtraction eliminates idle pump from tremolo R_ldr modulation.
-    /// With zero input, main and shadow produce identical pump; subtraction cancels exactly.
+    /// Idle pump level under tremolo R_ldr modulation, with zero input.
+    ///
+    /// This used to verify that shadow subtraction cancelled the pump. The
+    /// shadow was retired 2026-09-14; the test now verifies the thing that
+    /// actually matters — that C-6 leaves no pump to cancel in the first place.
     #[test]
     fn test_idle_pump_level() {
         use crate::tremolo::Tremolo;
@@ -2286,9 +2256,11 @@ mod tests {
         // not produce per-sample discontinuities that downstream gain (~49×)
         // would amplify into audible clicks.
         //
-        // The shadow solver always runs, so pump cancellation is always exact.
         // This test verifies continuity through the full cycle: modulation →
-        // constant → modulation.
+        // constant → modulation. (It formerly leaned on the shadow solver
+        // running unconditionally; with the shadow retired, continuity rests on
+        // the Sherman-Morrison R_ldr path alone, which is what it should have
+        // been testing all along.)
         let sr = 88200.0;
         let mut preamp = DkPreamp::new(sr);
 
@@ -2436,13 +2408,13 @@ mod tests {
         // 5.63 Hz with ZERO input must not move TR-1's bias.
         //
         // Before the revision the output was DC-coupled through R-10 into the
-        // LDR leg, so LDR modulation pumped the operating point; that pump is
-        // what the shadow-subtraction machinery exists to cancel. With C-6 in
+        // LDR leg, so LDR modulation pumped the operating point; the retired
+        // shadow-subtraction machinery existed to cancel that pump. With C-6 in
         // place the pump is eliminated at source. Any failure here means C-6
         // has gone missing from the C matrix again.
         //
-        // Note this probes emit1/coll1 DIRECTLY, so it is independent of the
-        // shadow subtraction — it cannot be masked by it.
+        // This probes emit1/coll1 DIRECTLY, so it was never maskable by the
+        // shadow subtraction — which is why it is the guard that survives it.
         let sr = 88200.0;
         let mut preamp = DkPreamp::new(sr);
         preamp.set_ldr_resistance(19_000.0);
