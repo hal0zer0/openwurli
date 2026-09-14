@@ -46,17 +46,17 @@ Keypress
   -> Reed vibrates (cantilevered spring steel with solder tuning mass at free end)
   -> Electrostatic pickup (reed + shared pickup plate = variable capacitor)
      - Polarizing voltage: ~147V DC via half-wave rectifier
-     - Bias network: ⚠ UNDER REVISION 2026-09-13 — R-2 is 1M from the +150V line on the PICKUP side of the input cap, and R-3 470K returns to TR-2's emitter divider, not ground (see preamp-circuit.md banner); the old "R-2||R-3 = 380k at the base" network is not on the drawing
-     - C20 shunt cap: 220 pF — NOTE: 206A ONLY, NOT present on the 200A
+     - Polarizing/bias network (revised 2026-09): R-2 (1M) from the +150V line lands on the PICKUP side of the input cap; TR-1's base is biased by R-3's (470K) DC-feedback return from TR-2's emitter divider — no base divider from the supply exists
+     - C-2 (220 pF) at the base — a real 200A part; folded into the pickup corner (C-1 is a short at audio), not a separate filter
      - ALL 64 reeds share ONE common pickup plate (reed bar assembly)
      - Total system capacitance: ~240 pF at preamp input
   -> Preamp (separate PCB mounted on reed bar in 200A)
      - Two direct-coupled NPN common-emitter stages (TR-1, TR-2)
      - Originally 2N2924, later replaced with 2N5089 (hFE >= 450)
-     - +15V DC supply
+     - +14.5V DC regulated supply (manual text; drawing marks +15V)
      - Collector-base feedback caps C-3 = C-4 = 100 pF
-     - Pickup RC HPF at ~2312 Hz (C20 at 1903 Hz is 206A only, NOT 200A) — ⚠ corner built on the 380k network above; recomputation pending (preamp-circuit.md banner)
-     - Total gain 6.0 dB (2.0x) no tremolo / 12.1 dB (4.0x) tremolo bright
+     - Pickup RC HPF at ≈880 Hz (revised 2026-09; one-pole fit to the corrected network, 0.23 dB max in-band error; scales with the LOW-confidence C_TOTAL)
+     - Closed-loop gain ≈15.9 dB at the divider floor (matches Avenson's ~15 dB); tremolo swings ≈7.9 dB p-p at full depth
      - Output: 2-7 mV AC at volume pot
   -> Tremolo (LDR optocoupler modulates preamp emitter feedback)
      - LFO (~5.6 Hz twin-T oscillator, TR-3/TR-4) drives LED inside LG-1 optocoupler
@@ -66,7 +66,7 @@ Keypress
      - LED ON → LDR low → fb_junct shunted to ground → feedback can't reach emitter → higher gain
      - LED OFF → LDR high → full feedback reaches emitter via Ce1 → lower gain
      - This is gain modulation, producing timbral variation through the tremolo cycle
-     - Rate: ~5.5-6 Hz, depth: ~6 dB modulation range at max vibrato
+     - Rate ≈5.56 Hz (measured); depth ladder 0/1.4/2.6/4.0/7.6 dB ("6 dB" folklore figure = one aged unit, see output-stage.md §2.3)
   -> Volume potentiometer
      - Between preamp output and power amp input
      - Output at pot: 2-7 mV AC
@@ -428,9 +428,9 @@ This is a nuanced point with significant implications:
 - **Per-reed capacitance:** ~5-20 pF (geometric estimate: plate ~3mm x 8mm, gap ~0.23mm)
 - **System capacitance:** ~240 pF at preamp input (all 64 reeds in parallel + wiring + parasitics)
 - **Per-reed RC corner:** f_c = 1/(2*PI*287k*10pF) >> 20 kHz -> constant-charge at all audio frequencies
-- **System RC corner:** f_c = 1/(2*PI*287k*240pF) = 2312 Hz -> bass fundamentals in constant-voltage regime (R_total = R_feed||(R-1+R_bias) = 1M||402K = 287K; see pickup-system.md Section 3.7)
+- **System RC corner:** f_c ≈ 880 Hz (revised 2026-09 — one-pole fit to the corrected network; the old 287K/2312 Hz figure was built on the misread bias divider; see pickup-system.md §3.7)
 
-The per-reed constant-charge approximation is a defensible engineering tradeoff because the system RC HPF at 2312 Hz provides similar bass rolloff to the system-level RC dynamics. (Note: C20 at 1903 Hz is 206A only, NOT 200A.) The pickup model includes the full 1/(1-y) nonlinearity, which is the primary source of even-harmonic "bark" at normal dynamics (H2/H1 ~ -21 dB at mf from SPICE).
+The per-reed constant-charge approximation is a defensible engineering tradeoff given the ≈880 Hz system corner. The pickup model places the full 1/(1−y) nonlinearity in the SOURCE (the moving reed's charge injection — 2026-09 restructure), which is the primary source of even-harmonic "bark" at normal dynamics.
 
 ### 1/(1-y) Nonlinear Pickup Model
 
@@ -447,8 +447,8 @@ let nonlinear = y / (1.0 - y);
 // Scale to voltage: V = V_hv * C_0/(C_0+C_p) * y/(1-y)
 let v = nonlinear * SENSITIVITY;   // SENSITIVITY = 1.8375 V
 
-// Pickup RC highpass at 2312 Hz (R_total=287K, C=240pF)
-let output = hpf.process(v);       // OnePoleHpf at 2312 Hz
+// Pickup network: source-injected 1/(1-y) + ~LTI one-pole at PICKUP_FC ≈ 880 Hz
+let output = hpf.process(v);       // (illustrative; see pickup.rs for the exact discretization)
 ```
 
 The 1/(1-y) nonlinearity generates H2 that scales with displacement amplitude:

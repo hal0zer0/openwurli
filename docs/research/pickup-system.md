@@ -106,12 +106,18 @@ The 200A service manual specifies 147V from the half-wave rectifier. Higher valu
 AC Mains → Power Transformer (dedicated winding)
          → Half-wave rectifier diode
          → RC filter (3 × 0.33 µF capacitors with series resistors)
-         → R_feed (1 MΩ)
-         → Reed bar pickup plate (all reeds in parallel)
+         → R-2 (1 MΩ) → R-1 (22K) → Reed bar pickup plate (all reeds in parallel)
          → Through per-reed capacitance to grounded reeds
 ```
 
-> **Naming note:** The 147V feed resistor is called "R_feed" in this document to avoid confusion with R-1 (22K series input resistor on preamp board) and R-2 (2M bias resistor to +15V). Some older sources use "R1" for both the feed resistor and the bias resistor -- these are distinct components at different circuit nodes.
+> **Naming note (corrected 2026-09):** the polarizing feed resistor IS
+> **R-2 (1 MEG)** — instrumented re-reads of the schematic place it from the
+> +150V line to the R-1/C-1 junction, on the PICKUP side of the coupling
+> cap. Earlier revisions of this document invented a separate "R_feed"
+> and additionally placed a phantom "R-2 = 2M" at TR-1's base; those were
+> two names for a misreading of one part (see preamp-circuit.md §11).
+> There is NO bias resistor from TR-1's base to any supply — the base is
+> biased by R-3's DC-feedback return from TR-2's emitter divider.
 
 The reeds themselves are grounded through the reed bar mounting, which is electrically connected to chassis ground. The polarizing voltage appears across the air gap between the pickup plate and each reed.
 
@@ -120,46 +126,57 @@ The reeds themselves are grounded through the reed bar mounting, which is electr
 ```
 Reed vibration → Varying capacitance per-reed
                → Current flow through all reed-plate capacitors (summed)
-               → Pickup plate node
-                    - R_feed (1M) provides DC path to 147V rail
-               → .022 uF coupling cap (blocks 147V DC; passes audio AC)
+               → Pickup plate node → R-1 (22K)
+               → R-1/C-1 junction
+                    - R-2 (1M) provides the DC path to the 147V rail
+                      (AC ground at audio via the supply filter caps)
+               → C-1 (.022 uF) coupling cap (blocks 147V DC; passes audio)
                → TR-1 base node
-                    - R-2 (2M) to +15V and R-3 (470K) to GND: DC bias divider
-                    - C20 (220 pF) shunt to GND: HPF bass rolloff
+                    - R-3 (470K) to the R-7/R-8 junction: DC-feedback bias
+                      (AC ground at audio via C-7)
+                    - C-2 (220 pF) shunt: bridged to the plate capacitance
+                      at audio because C-1 is a short (see §3.7)
                     - D1: reverse-polarity protection diode
                → TR-1 base (preamp stage 1)
 ```
 
-**Critical topology note:** The .022 uF coupling capacitor separates two distinct circuit nodes:
-1. **Pickup plate node**: connected to 147V through the feed resistor (R_feed = 1M). The 240 pF reed bar capacitance charges/discharges through this resistor.
-2. **TR-1 base node**: R-2 (2M) to +15V and R-3 (470K) to GND set the DC bias (~2.85V Thevenin, actual ~2.45V). C20 and D1 are also at this node.
-
-At audio frequencies (>>19 Hz), the .022 uF coupling cap is essentially a short circuit, so both nodes see each other's impedances for AC signals. But for DC analysis, they are isolated.
+**Critical topology note:** C-1 separates the DC domains (the plate side
+sits near 147V; the base sits at ~2.45V from the R-3 servo) but is a
+short at audio — which puts **C-2's 220 pF effectively in parallel with
+the plate capacitance**, nearly doubling the HPF capacitance. This is
+the mechanism the pre-revision model missed.
 
 ### 2.4 Input Impedance Network
 
-**At the pickup plate node:**
+**Plate-side network:**
 
 | Component | Value | Function |
 |-----------|-------|----------|
-| R_feed | 1 MΩ | DC path from pickup plate to 147V polarizing supply |
-| .022 uF | coupling cap | AC coupling to TR-1 base; blocks 147V DC |
+| R-1 | 22 kΩ | Series, plate → R-1/C-1 junction |
+| R-2 | 1 MΩ | Polarizing feed: +150V line → R-1/C-1 junction (AC ground at audio) |
+| C-1 | .022 µF | Coupling to TR-1 base; blocks 147V DC; a SHORT at audio |
 
-**At the TR-1 base node (after coupling cap):**
+**At the TR-1 base node:**
 
 | Component | Value | Function |
 |-----------|-------|----------|
-| R-2 | 2 MΩ | DC bias from +15V to TR-1 base |
-| R-3 | 470 kΩ | DC bias from TR-1 base to ground |
-| R-2 ‖ R-3 | 380 kΩ | Effective bias impedance at TR-1 base (2M‖470K) |
-| C20 | 220 pF | Shunt to ground: RF protection + bass rolloff HPF |
-| D1 | Small signal diode, 25 PIV, 10 mA (Wurlitzer part #142136) | Reverse-polarity transient protection at TR-1 base |
+| R-3 | 470 kΩ | DC-feedback bias, base → R-7/R-8 junction (470K to AC ground at audio) |
+| C-2 | 220 pF | At the base; bridged to the plate capacitance through C-1 at audio. Return assumed ground (broken-rail drawing defect) |
+| D1 | Small signal diode, 25 PIV, 10 mA (part #142136-5) | Reverse-polarity transient protection |
 
-With R_bias = R-2‖R-3 = 380K and C20 = 220 pF: f_c = 1/(2pi x 380K x 220pF) = 1903 Hz. GroupDIY thread 44606 cites "270pFd against 380K creates a bass-cut at 1,750Hz" -- the 270 pF likely reflects tolerance variation in ceramic capacitors.
+The base's AC input impedance is R-3 rolled off by C-2 plus a small Miller
+term (≈459K peak near 200 Hz, 339K at 1 kHz, tremolo-independent) — the
+transistor's own contribution is bootstrapped to ~34 MΩ by the series
+feedback. The old "R-2‖R-3 = 380K bias impedance" and the "C20 1903 Hz
+LPF" figures were artifacts of the misread topology (preamp-circuit.md §11).
 
-**Why BJT, not FET?** GroupDIY discussion explains two reasons:
-1. **Microphonics:** Higher input impedance increases sensitivity to mechanical vibration of the reed bar, which couples acoustically as unwanted signal. The relatively low 380 kΩ impedance at TR-1 base reduces this.
-2. **Overvoltage protection:** During tuning, reeds can short to the pickup plate, producing 150V transient peaks. The BJT base-emitter junction and D1 clamp these naturally. A FET gate would be damaged.
+**Why BJT, not FET?** Two reasons hold under the corrected topology:
+1. **Microphonics:** a few-hundred-kΩ base impedance (vs a FET's tens of
+   MΩ) reduces sensitivity to reed-bar mechanical vibration coupling in
+   electrically.
+2. **Overvoltage protection:** during tuning, reeds can short to the
+   pickup plate, producing ~150V transients. The BJT base-emitter
+   junction and D1 clamp these naturally; a FET gate would be damaged.
 
 ---
 
@@ -245,20 +262,15 @@ f_c = 1 / (2 * pi * R_total * C_total)
 ```
 
 where:
-- `R_total` = effective resistance seen by the pickup capacitance (C_total) at the pickup plate node
-- `C_total` = total system capacitance at the pickup node (240 pF measured)
+- `R_total` = effective resistance the pickup capacitance relaxes through
+- `C_total` = total system capacitance at the plate (240 pF nominal, LOW confidence — §3.6)
 
-The pickup plate connects to two resistive paths:
-1. **R_feed (1M)** to the 147V polarizing supply (DC path through the power supply filter chain — component 56 in HV filter)
-2. **R-2‖R-3 = 380K** at TR-1 base, seen through the .022 uF coupling cap
-
-At audio frequencies relevant to the pickup RC transition (~1-2 kHz), the .022 uF coupling cap has an impedance of only ~3-7 kΩ, which is negligible compared to 380K. So the coupling cap is effectively a short for this analysis, and both resistive paths are in parallel:
-
-```
-R_total = R_feed || (R-1 + R-2 || R-3) = 1M || (22K + 380K) = 1M || 402K = 287 kΩ
-```
-
-See Section 3.7 for the resulting f_c value.
+Corrected network (2026-09, cross-verified — see preamp-circuit.md §2.3):
+the plate relaxes through **R-1 (22K) into the junction where R-2 (1M, to
+the AC-grounded polarizing rail) and C-1 hang; C-1 is a short at audio,
+so C-2 (220 pF) at the base sits effectively in parallel with the plate
+capacitance, and R-3 (470K, to AC ground) loads the base side.** The
+network is second-order with one in-band pole. See §3.7.
 
 ### 3.5 Per-Reed Capacitance Estimate
 
@@ -278,7 +290,7 @@ For a treble reed (smaller area, narrower gap):
 
 ### 3.6 Total System Capacitance
 
-A single GroupDIY forum post reports **~240 pF** ("reed pickup capacitance was measured at 240pF"). **Confidence: LOW.** The 2026-07 deep-research pass adversarially **refuted** this figure as unverifiable single-source forum hearsay — no primary source (patent, service manual, or academic paper) gives any pickup-capacitance value for the 200A. We retain 240 pF as the model's `C_total` because (a) it is the only number available and (b) it is geometrically plausible (see below), but it is an **assumption, not a measurement**, and the pickup RC corner (TAU = 68.88 µs, f_c ≈ 2312 Hz) inherits that low confidence. An LCR-meter reading of a real reed bar would settle it. See [Reed–Pickup Displacement §5](reed-pickup-displacement.md).
+A single GroupDIY forum post reports **~240 pF** ("reed pickup capacitance was measured at 240pF"). **Confidence: LOW.** The 2026-07 deep-research pass adversarially **refuted** this figure as unverifiable single-source forum hearsay — no primary source (patent, service manual, or academic paper) gives any pickup-capacitance value for the 200A. We retain 240 pF as the model's `C_total` because (a) it is the only number available and (b) it is geometrically plausible (see below), but it is an **assumption, not a measurement**, and the pickup RC corner (f_c ≈ 880 Hz post-revision) inherits that low confidence. An LCR-meter reading of a real reed bar would settle it. See [Reed–Pickup Displacement §5](reed-pickup-displacement.md).
 
 240 pF cannot be per-reed (64 reeds × 240 pF = 15.4 nF, impossibly large); if real it is the **total system capacitance** at the preamp input node, comprising:
 - 64 reed-to-plate capacitors in parallel: 64 x 2-4 pF = ~130-250 pF
@@ -287,36 +299,42 @@ A single GroupDIY forum post reports **~240 pF** ("reed pickup capacitance was m
 
 The geometric estimate (130-250 pF for 64 reeds) is consistent with the ~240 pF figure — which is why we retain it despite the sourcing being weak.
 
-### 3.7 RC Time Constant and Cutoff Frequency
+### 3.7 RC Time Constant and Cutoff Frequency (REVISED 2026-09)
 
-The pickup plate sees two resistive paths to voltage sources (see Section 3.4):
-
-```
-R_total = R_feed || (R-1 + R-2 || R-3) = 1M || (22K + 380K) = 1M || 402K = 287 kΩ
-```
+Pole extraction of the full corrected network gives **one in-band pole**
+(the others sit at ~4.9 Hz and ~53 kHz). The shipping model fits it as a
+one-pole HPF at:
 
 ```
-R_total = 1M || 402K = 287 kΩ
-C_total = 240 pF (measured)
-tau = 287e3 * 240e-12 = 68.9 µs
-f_c = 1 / (2 * pi * tau) = 2312 Hz
+f_c = 880.5 Hz   (fits the cross-verified network response to 0.23 dB
+                  over 55 Hz-10 kHz; independent SPICE measures the
+                  -3 dB point at ~897 Hz)
+tau = 1/(2*pi*f_c) ≈ 181 µs
 ```
 
-Both paths are in parallel at audio frequencies because the .022 uF coupling cap is effectively a short above ~19 Hz.
+Scaling with the (LOW-confidence) plate capacitance:
+`f = f_ref·(C_ref + C-2)/(C_total + C-2)` — verified ±4.3% over
+120-500 pF (C_total 150 pF → 1021 Hz; 400 pF → 652 Hz). The C-2-return
+fork (ground, assumed, vs TR-1 emitter) would move the corner to
+≈1.4 kHz; one hardware continuity check settles it.
 
-**Summary:** f_c = **2312 Hz**, indicating significant bass attenuation from the pickup RC.
+**Summary:** f_c ≈ **880 Hz** — the superseded 2312 Hz figure was built
+on the misread 287K network and over-filtered the bass by ~8-11 dB below
+400 Hz (part of the 2026-07 downstream bass voicing was compensating for
+it). The physical reed drive is a current ∝ jω; state the drive when
+quoting any response from this network (preamp-circuit.md §9, pitfall 7).
 
 **This means:**
 
-| Frequency | Regime (R_feed=1M, f_c=2312Hz) | Signal Type |
+| Frequency | Regime (f_c ≈ 880 Hz) | Signal Type |
 |-----------|--------|-------------|
 | < ~230 Hz | Strongly constant-voltage | Proportional to velocity, heavily attenuated |
 | ~230-2300 Hz | Transition zone | Mixed displacement/velocity response |
 | > ~2300 Hz | Strongly constant-charge | Proportional to displacement (linear) |
 
 **Key implication for bass notes:**
-- A1 (55 Hz): Well below f_c. Only ~55/2312 = 2.4% of the constant-charge voltage appears (-32 dB).
-- C4 (262 Hz): Still below f_c. ~262/2312 = 11.3% (-19 dB).
+- A1 (55 Hz): well below f_c ≈ 880 Hz — ~55/880 = 6.3% of the constant-charge voltage (−24 dB).
+- C4 (262 Hz): still below f_c — ~262/880 = 30% (−10.5 dB). (Pre-revision, the wrong 2312 Hz corner put these at −32/−19 dB — the origin of the over-thin bass.)
 - C5 (523 Hz): Below f_c. ~22% (-13 dB).
 - C6 (1047 Hz): Below f_c. ~41% (-8 dB).
 - C7 (2093 Hz): Near f_c. ~67% (-3 dB).
@@ -479,7 +497,7 @@ H(f) = j*f/f_c / (1 + j*f/f_c)
 |H(f)| = f / sqrt(f^2 + f_c^2)
 ```
 
-where `f_c ≈ 2312 Hz` (see Section 3.7).
+where `f_c ≈ 880 Hz` (see Section 3.7).
 
 This means the pickup's transfer function from displacement to voltage is:
 
@@ -491,7 +509,7 @@ where X(f) is the reed displacement spectrum.
 
 ### 5.2 Frequency Response by Register
 
-Using f_c = 2312 Hz:
+Using f_c = 880 Hz (values below predate the revision — rescale by the corner ratio when precision matters):
 
 | Note | MIDI | Freq (Hz) | |H(f)| | Attenuation (dB) | Regime |
 |------|------|-----------|-------|------------------|--------|
@@ -507,39 +525,16 @@ Using f_c = 2312 Hz:
 
 ### 5.3 C20 HPF at TR-1 Base
 
-> **Model note:** C20 (220 pF) is documented here for completeness, but it was a **206A component, NOT present on the 200A** being modeled. The C20 HPF at 1903 Hz is therefore **not implemented in the code**. Only the pickup RC HPF at 2312 Hz (Section 5.1) is active in OpenWurli's signal chain.
+> **Model note (corrected 2026-09):** the base-node 220 pF is **C-2, a real 200A part** (the "C20 = 206A-only" claim was a designator conflation; C20 is a different aux-section part). C-2 does not make a separate 1903 Hz filter — through C-1 (a short at audio) it parallels the plate capacitance and is folded into the single ≈880 Hz corner of Section 3.7, which is what the code implements.
 
-C20 (220 pF) is a shunt capacitor to ground at the **TR-1 base node** (after the .022 uF coupling cap). It forms a high-pass filter with the bias network resistance R-2‖R-3:
-
-```
-f_c20 = 1 / (2 * pi * (R-2 || R-3) * C20)
-     = 1 / (2 * pi * 380e3 * 220e-12) = 1903 Hz
-```
-
-GroupDIY's PRR states "270pFd against 380K is a bass-cut at 1,750Hz." The "380K" confirms R-2||R-3 = 2M||470K = 380K. GroupDIY's 270 pF value and their cited 1750 Hz are consistent with component tolerance (220 pF nominal + ~23% tolerance = ~270 pF; the actual HPF frequency varies with the specific capacitor installed).
-
-**Does TR-1's r_pi affect the C20 HPF?** At Ic ~ 66 uA with hFE = 800:
-- r_pi = hFE * Vt / Ic = 800 * 26e-3 / 66e-6 = 315 kOhm
-- R-2 ‖ R-3 ‖ r_pi = 380K ‖ 315K = 172 kOhm
-- f_c20 = 1 / (2*pi * 172e3 * 220e-12) = 4207 Hz
-
-This is too high relative to the nominal 1903 Hz (or GroupDIY's ~1750 Hz claim), so r_pi should NOT be included in the C20 HPF calculation. This makes physical sense: C20 shunts to ground from the node where R-2 and R-3 are also connected, and the signal must pass through the C20/R_bias HPF before reaching the transistor's base-emitter junction. The base input impedance loads the node for the signal but does not participate in the C20-to-ground shunt path.
-
-### 5.4 Combined Frequency Response
-
-> **Model note:** Since C20 is a 206A component not present on the 200A (see Section 5.3 note), the combined second-order response described below does **not** apply to the modeled instrument. The OpenWurli pickup uses only the single first-order pickup RC HPF at 2312 Hz.
-
-The pickup RC HPF (~2312 Hz) and C20 HPF (~1903 Hz) are in cascade, giving approximately:
-
-```
-|H_combined(f)| = |H_pickup(f)| * |H_C20(f)|
-```
-
-Both are first-order HPFs, so the combined response is second-order (12 dB/octave rolloff below ~2000 Hz). This strongly suppresses bass fundamentals.
-
-**Are these two independent HPFs?**
-
-Yes. The pickup RC HPF is determined by the 240 pF reed bar capacitance at the pickup plate node. The C20 HPF is determined by C20 (220 pF) at the TR-1 base node. These are at different circuit nodes (separated by the .022 uF coupling cap) and involve different capacitors.
+> **SUPERSEDED (2026-09).** Earlier revisions of this section derived a
+> separate "C20 HPF at 1903 Hz" from the misread bias network (2M‖470K =
+> 380K, which was circular arithmetic, not a measurement) and debated
+> whether it cascaded with the pickup RC. The corrected picture: the
+> base-node 220 pF is **C-2** (a real 200A part), C-1 is a short at
+> audio, so C-2 sits in parallel with the plate capacitance and there is
+> **one combined ≈880 Hz corner**, not two cascaded HPFs. Full analysis:
+> §3.7 and preamp-circuit.md §2.3/§11.
 
 The 240 pF measured at GroupDIY is the reed bar capacitance alone (reed-to-plate + wiring + strays). C20 (220 pF) is a separate discrete component at TR-1 base. They are at different nodes (pickup plate vs. TR-1 base), and 240 - 220 = only 20 pF for 64 reeds + wiring would be implausibly small. The two HPFs are independent.
 
@@ -601,75 +596,65 @@ The patent describes the general principle; the specific 200A implementation may
 
 ## 8. Modeling Decisions and Recommendations
 
-### 8.1 Current Model (OpenWurli)
+### 8.1 Current Model (OpenWurli) — post-restructure (2026-09)
 
-The current implementation in `pickup.rs` uses a time-varying RC circuit model with bilinear discretization. The 1/(1-y) nonlinearity and RC high-pass filtering are coupled into a single physical system — charge dynamics on the time-varying capacitance C(y) = C_0/(1-y) naturally produce both the nonlinear harmonic generation and the high-pass behavior:
+`pickup.rs` implements the corrected physics: **the 1/(1−y) nonlinearity
+lives in the SOURCE (the moving reed's charge injection), and the network
+is nearly LTI** (one ~3 pF reed against the fixed ~240 pF node — the node
+capacitance swings only 240→274 pF even at y = 0.92). The node equation
+`C_node(t)·dv/dt + v/R_net = −V_pol·dC_reed/dt` is discretized exactly
+(trapezoidal); the differentiator-inside-a-lag structure IS the jω-driven
+high-pass the circuit reference specifies.
 
 ```rust
-// pickup.rs — bilinear-discretized time-varying RC
-let y = (displacement * self.scale).clamp(-PICKUP_MAX_Y, PICKUP_MAX_Y);
-let c_n = 1.0 / (1.0 - y);             // C(y)/C_0 = 1/(1-y)
-let beta_c = self.beta * c_n;           // beta = dt / (2 * R * C_0)
-let v_out = (beta_c * (y - self.y_prev) + (beta_c - 1.0) * self.q_prev)
-          / (beta_c + 1.0);             // bilinear transform of RC circuit
+// pickup.rs core (post-restructure)
+let y = pickup_soft_saturate(sample * scale);   // physical gap fraction
+let s = y / (1.0 - y);        // SOURCE: reed charge — THE nonlinearity
+let m = 1.0 + C_REED_RATIO * s;   // NETWORK: ~LTI (ratio ≈ 1/80)
+// exact trapezoidal step of C_node·dv/dt + v/R_net = −V_pol·dC_reed/dt
+w = (w * (m_avg - beta) - (s - s_prev)) / (m_avg + beta);
+out = w * PICKUP_SENSITIVITY;
 ```
 
 **Key parameters:**
 
 | Parameter | Value | Derivation |
 |-----------|-------|------------|
-| SENSITIVITY | 1.8375 V | V_hv * C_0 / (C_0 + C_p) = 147 * 3/240 |
-| DISPLACEMENT_SCALE | 0.75 at C4 | Beam compliance L^3 / (w * t^3) with exponent 0.75 |
-| MAX_Y | 0.98 | Safety clamp (RC model self-limits via charge dynamics; only y→1.0 is singular) |
-| HPF corner | 2312 Hz | R_total=287K, C=240pF (one-pole) |
+| `C_TOTAL` | 240 pF | nominal, LOW confidence (§3.6); corner scales with it |
+| `C2_BASE` | 220 pF | C-2, bridged to the plate at audio; `C2_RETURNS_TO_GROUND = true` (the one open fork — flipping it moves the corner to ≈1.4 kHz) |
+| `PICKUP_FC` | 880.5 Hz | one-pole fit to the cross-verified network response (0.23 dB max error 55 Hz–10 kHz) |
+| `C_REED_RATIO` | ≈ 1/80 | one reed's capacitance vs the node — the physical modulation depth |
+| `DISPLACEMENT_SCALE` | per-note, `tables.rs` | now honestly a **gap-fraction calibration** (it previously absorbed the 80× depth error) |
+| soft saturation | knee → asymptotic `PICKUP_MAX_Y` | replaced the hard clamp (derivative discontinuity was audible HF distortion) |
 
-**Displacement scaling:** Per-note displacement scale is derived from reed beam compliance (`tables.rs:pickup_displacement_scale()`), normalized so C4 = 0.75. Bass reeds have higher compliance (larger displacement fraction, more bark); treble reeds have lower compliance (cleaner, more bell-like). The exponent of 0.75 was calibrated against OBM recordings.
+**What the restructure fixed** (full story: preamp-circuit.md §11 and the
+pickup.rs module docs): the previous model modulated the ENTIRE node as
+`1/(1−y)` — 80× the physical depth — which made its HF asymptote linear
+(`SENSITIVITY·y`, no harmonics above the corner, per-order harmonic
+falloff) and its 12.5× time-constant swing an intermodulation generator
+(inharmonic hash, since measured −13 dB improved). Its asymmetry was also
+inverted relative to its own documentation.
 
-**HPF harmonic boost:** The one-pole HPF at 2312 Hz boosts H2 relative to H1 by approximately 1.9x, because H2 (at 2f) is at a frequency where the HPF has higher gain than H1 (at f). This amplifies the even-harmonic "bark" generated by the 1/(1-y) nonlinearity.
+### 8.2 Assessment
 
-**Implementation files:** `pickup.rs` (pickup model), `voice.rs` (per-voice assembly including pickup), `tables.rs` (per-note displacement scale).
+**What it gets right:** physically-placed 1/(1−y) (H2-dominant, correct
+asymmetry direction, frequency-independent above the corner); one-pole
+HPF at 880 Hz matching the verified network to 0.23 dB; register-dependent
+gap-fraction scaling; shared-plate mono summation; hash-free harmonic
+generation (harmonic-to-hash ≈ 20 dB at C2 ff).
 
-### 8.2 Assessment of Current Model
-
-**What it gets right:**
-- Full 1/(1-y) nonlinearity produces physically correct even-harmonic content (H2 dominant)
-- One-pole HPF at 2312 Hz models the pickup RC high-pass characteristic, correctly attenuating bass fundamentals relative to treble
-- Register-dependent displacement scale (derived from beam compliance) captures the natural variation in pickup sensitivity across the keyboard
-- SENSITIVITY constant (1.8375 V) includes the parasitic capacitance voltage divider C_0/(C_0+C_p)
-- The signal summation (all voices into mono) correctly models the shared pickup plate
-- MAX_Y = 0.98 clamp prevents the 1/(1-y) singularity; RC model self-limits via charge dynamics so only y→1.0 is truly singular
-
-**Potential refinements (deferred to OBM comparison phase):**
-1. **Miessner asymmetric modulation** — the U-channel geometry may produce additional asymmetry beyond the 1/(1-y) model. This depends on the specific reed alignment and is deferred to calibration against recordings.
-2. **Full RC circuit model** — the current one-pole HPF approximates the pickup RC dynamics. A full time-varying RC model (see Option B in Section 8.3) would capture transient charge dynamics during attack, but the audible difference is likely small.
+**Open refinements:** the `ds_correction` MLP head's out-of-distribution
+velocity behavior (opt-in path); Miessner/U-channel asymmetry beyond
+1/(1−y) (deferred); real measured `C_TOTAL` and the C-2 return fork
+(hardware pending).
 
 ### 8.3 Implementation Status
 
-The recommendations from earlier versions of this document have been implemented and surpassed:
-
-**Implemented (current model in `pickup.rs`):**
-- Full 1/(1-y) nonlinearity (not the linear approximation)
-- One-pole HPF at 2312 Hz (pickup RC filter)
-- Register-dependent displacement scale from beam compliance (not simple gap scaling)
-- Parasitic capacitance included in SENSITIVITY constant (C_0/(C_0+C_p) = 3/240)
-
-**Future refinement: Full RC Circuit Model**
-
-If needed, the one-pole HPF could be replaced with an explicit time-varying RC circuit per-voice:
-
-```
-tau = R_total * C_total = 287k * 240p = 68.9 us   // see Section 3.7
-f_c = 2312 Hz
-
-// Per-sample:
-one_minus_y = 1.0 - y                 // displacement complement
-beta = dt / (2 * tau)                  // bilinear parameter
-alpha = beta * one_minus_y            // division eliminated: beta*(1-y) == beta/c_n
-q[n+1] = (q[n] * (1 - alpha) + 2*beta) / (1 + alpha)
-V_ac = (q * one_minus_y - 1) * SENSITIVITY  // q*(1-y) == q/c_n, no division
-```
-
-This would capture transient charge dynamics during attack that the one-pole HPF approximation does not model. However, the audible difference is expected to be small, and A/B testing against OBM recordings has not revealed deficiencies attributable to the HPF approximation.
+Implemented: the source-honest restructure above, the 880 Hz corner with
+the C_TOTAL scaling law, the C-2 fork as a one-constant switch, soft
+saturation. The pre-revision "future refinement: full time-varying RC"
+section is obsolete — the shipped model IS the full network model now,
+with the time variation placed where physics puts it.
 
 ### 8.4 Signal Level Estimation
 
@@ -679,11 +664,11 @@ The AC signal voltage at the preamp input can be estimated:
 V_ac_peak = V_bias * x_peak / d0 * C_reed / (C_reed + C_parasitic) * |H(f)|
 ```
 
-For C4 at mf (using f_c = 2312 Hz for pickup RC):
+For C4 at mf (values below predate the corner revision; rescale by 880/2312 where precision matters):
 - V_bias = 147V
 - x_peak / d0 ~ 0.10 (estimated)
 - C_reed / C_total = 3/240 = 0.0125
-- |H_pickup(262 Hz)| = 262/sqrt(262^2 + 2312^2) = 0.113
+- |H_pickup(262 Hz)| = 262/sqrt(262^2 + 880^2) = 0.285  (corrected corner)
 
 ```
 V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
@@ -700,10 +685,10 @@ V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
 |------|-------|
 | Pickup type | Electrostatic (capacitive) |
 | Polarizing voltage | 147V DC (half-wave rectified) |
-| R_feed (147V to pickup plate) | 1 MΩ (component 56 in HV filter chain) |
-| R-2 (TR-1 base bias to +15V) | 2 MΩ (schematic reads "1 MEG"; GroupDIY "380K" impedance = 2M||470K and DC analysis confirm 2M) |
+| R-2 (147V feed to the plate-side network) | 1 MΩ (glyph-verified; the doc's former "R_feed" and phantom "2M R-2" were one part, misread) |
+| R-2 (polarizing feed) | 1 MΩ (glyph-verified; the old "2M to +15V at the base" reading and its circular 380K "confirmation" are superseded — preamp-circuit.md §11) |
 | R-3 (TR-1 base bias to GND) | 470 kΩ |
-| R-2 || R-3 (TR-1 base impedance) | 380 kΩ |
+| base AC impedance | ≈459K peak @200 Hz, 339K @1 kHz (R-3 ∥ C-2 rolloff; tremolo-independent) |
 | .022 uF coupling cap | AC couples pickup plate to TR-1 base |
 | C20 (shunt cap at TR-1 base) | 220 pF (GroupDIY's 270 pF likely tolerance variation) |
 | Total system capacitance | ~240 pF (measured at pickup plate) |
@@ -716,8 +701,8 @@ V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
 | Item | Value | Derivation |
 |------|-------|-----------|
 | Per-reed capacitance | ~2-4 pF | Geometric calculation |
-| Pickup RC f_c | ~2312 Hz | R_total = R_feed ‖ (R-1 + R-2‖R-3) = 1M ‖ 402K = 287 kΩ, C=240 pF |
-| C20 HPF frequency | ~1903 Hz | C20=220 pF, R=R-2‖R-3=380 kΩ |
+| Pickup RC f_c | ≈ 880 Hz | one-pole fit to the corrected network (§3.7); scales with C_TOTAL |
+| C-2 (220 pF) | folded into the 880 Hz corner | no separate filter — C-1 is a short at audio (§3.7) |
 | Preamp input signal (C4 mf) | ~1-5 mV peak | Electrostatic calculation |
 | Pickup H2 contribution (mf) | ~-26 dB | arXiv formula |
 
@@ -736,7 +721,7 @@ V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
 | Miessner's asymmetric modulation in 200A | **DEFERRED** to OBM recording comparison phase. Unknown if preserved in production design. Will calibrate against OldBassMan recordings. |
 | Exact signal level at pickup output | Sub-mV to low mV estimated; no direct measurement found |
 
-**Pickup nonlinearity DECISION: IMPLEMENTED.** The full 1/(1-y) nonlinearity is implemented in `pickup.rs` as a bilinear-discretized time-varying RC circuit, with MAX_Y = 0.98 clamp, f_c = 2312 Hz, and register-dependent displacement scaling from beam compliance (`tables.rs:pickup_displacement_scale()`). The two deferred items above affect calibration constants only, not the model topology.
+**Pickup nonlinearity DECISION: IMPLEMENTED.** The full 1/(1-y) nonlinearity is implemented in `pickup.rs` as a bilinear-discretized time-varying RC circuit, with soft saturation toward PICKUP_MAX_Y, f_c = PICKUP_FC ≈ 880 Hz, and register-dependent displacement scaling from beam compliance (`tables.rs:pickup_displacement_scale()`). The two deferred items above affect calibration constants only, not the model topology.
 
 ---
 
@@ -881,7 +866,7 @@ beta_n = dt / (2 * tau)
 q_{n+1} = (q_n * (1 - alpha_{n+1}) + 2 * beta) / (1 + alpha_{n+1})
 ```
 
-**Note on the existing model's bug:** The original wurlitzer-physics.md notes that using `2*alpha` instead of `2*beta` in the driving term forces `q_equilibrium = 1` (constant charge) at all frequencies instead of `q_equilibrium = c` (constant voltage at DC). This is only correct if the system is always in constant-charge regime (f >> f_c). Given f_c = 2312 Hz (see Section 3.7), bass fundamentals (55-260 Hz) are NOT in constant-charge regime, and the bug matters.
+**Note on the existing model's bug:** The original wurlitzer-physics.md notes that using `2*alpha` instead of `2*beta` in the driving term forces `q_equilibrium = 1` (constant charge) at all frequencies instead of `q_equilibrium = c` (constant voltage at DC). This is only correct if the system is always in constant-charge regime (f >> f_c). Given f_c ≈ 880 Hz (see Section 3.7), bass fundamentals (55-260 Hz) are still below the corner, and the bug matters.
 
 ### Parasitic Capacitance Correction
 
@@ -925,7 +910,7 @@ For the Wurlitzer: `C_p / (C_0 + C_p) = 237/240 = 0.988`, so the sensitivity red
 ## Appendix B: Equivalent Circuit
 
 ```
-                  R_feed (1M)
+                  R-2 (1M)
 +147V DC ────────────┤
                      │
                      │  PICKUP PLATE NODE
@@ -962,13 +947,13 @@ The signal path is:
 1. Reed vibration changes `C_reed_n` for the struck reed(s)
 2. AC current flows from the pickup plate through the .022 uF coupling cap
 3. At TR-1 base node: R-2 (2M) to +15V and R-3 (470K) to GND set the DC bias
-4. C20 (220 pF) shunts to ground, creating an HPF at ~1903 Hz with R-2‖R-3 = 380K
+4. C-2 (220 pF) at the base is bridged to the plate capacitance through C-1 (a short at audio) — folded into the single ≈880 Hz corner
 5. D1 clamps transients from reed-plate shorts (during tuning, reed can short to plate)
 6. Signal reaches TR-1 base-emitter junction
 
 **Two distinct circuit nodes:**
-- **Pickup plate** (~147V DC): R_feed (1M) provides DC charging path for the reed bar capacitance. The pickup RC HPF (~2312 Hz) is determined by the 240 pF total system capacitance against R_feed || (R-1 + R-2||R-3) = 1M || 402K = 287K seen through the coupling cap.
-- **TR-1 base** (~2.45V DC): R-2/R-3 voltage divider sets the bias from +15V. C20 HPF (~1903 Hz) provides bass rolloff. The .022 uF coupling cap isolates the 147V DC on the pickup plate from the 2.45V DC at TR-1 base.
+- **Pickup plate** (~147V DC): R-2 (1M) via R-1 provides the DC charging path. The pickup RC corner (≈880 Hz) comes from the corrected network of §3.7 (C_TOTAL + C-2 against the R-1/R-2/R-3 network).
+- **TR-1 base** (~2.45V DC): biased by R-3's DC-feedback return from TR-2's emitter divider (no divider from the supply exists). C-1 isolates the 147V plate DC from the base.
 
 ---
 
@@ -976,7 +961,7 @@ The signal path is:
 
 ### Q1: Is the pickup truly in constant-charge regime at all audio frequencies?
 
-**No.** With f_c = 2312 Hz, bass fundamentals (55-260 Hz) are in the constant-voltage regime where signals are heavily attenuated. Mid-register notes (260-1000 Hz) are in the transition zone. Only treble notes above ~2-3 kHz approach constant-charge behavior. C20 (220 pF) at TR-1 base provides an independent HPF at ~1903 Hz on the 206A (NOT present on the 200A being modeled), which would create similar bass rolloff, partially masking the pickup's own RC dynamics.
+**No.** With f_c ≈ 880 Hz, bass fundamentals (55-260 Hz) sit below the corner (attenuated, though 8-11 dB less than the superseded 2312 Hz model claimed); mids are in the transition; treble above ~1-2 kHz approaches constant-charge behavior. C-2 does not add an independent filter — it is folded into the single corner (§3.7).
 
 ### Q2: What is the actual per-reed capacitance?
 
@@ -984,7 +969,7 @@ The signal path is:
 
 ### Q3: What is the bias voltage and how is it generated?
 
-**147V DC** from a half-wave rectifier on a dedicated transformer winding, filtered by three 0.33 uF capacitors in an RC chain. Fed to the reed bar pickup plate through R_feed (1 MOhm). Avenson's "499K" refers to their replacement preamp design, not the original 200A value.
+**147V DC** from a half-wave rectifier on a dedicated transformer winding, filtered by three 0.33 uF capacitors in an RC chain. Fed to the reed bar pickup plate through R-2 (1 MEG, glyph-verified) and R-1 (22K). Avenson's "499K" refers to their replacement preamp design, not the original 200A value.
 
 ### Q4: How does the gap vary by register?
 
@@ -996,7 +981,7 @@ Slot widths vary from 0.172" (bass) to 0.114" (treble), a ratio of **1.51:1**. S
 
 ### Q6: What is the C20 shunt capacitor value and HPF frequency?
 
-C20 = 220 pF (GroupDIY's 270 pF likely reflects tolerance variation). C20 is at TR-1 base, forming an HPF with R-2||R-3 = 380 kOhm. f_c = 1/(2pi x 380K x 220pF) = 1903 Hz.
+C-2 = 220 pF at TR-1's base (GroupDIY's 270 pF likely tolerance variation). It does not form a separate HPF: through C-1 (a short at audio) it parallels the plate capacitance inside the single ≈880 Hz corner (§3.7). The old "1903 Hz with 380K" figure was built on the misread bias network.
 
 ### Q7: Does the pickup introduce harmonic distortion?
 
