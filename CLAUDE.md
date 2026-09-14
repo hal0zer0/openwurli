@@ -21,7 +21,7 @@ PRs must be clean, minimal, and follow software engineering best practices. The 
 
 Read `docs/` before making DSP decisions. Key 200A characteristics:
 
-- **Solid-state preamp** — two-stage direct-coupled NPN CE amplifier (2N5089), asymmetric clipping (Stage 1: 5.3:1 sat/cutoff ratio)
+- **Solid-state preamp** — two-stage direct-coupled NPN CE amplifier; stage 2 is the high-gain stage (C-7 AC-grounds its emitter) and closed-loop gain is set by the R-10/Ce1 feedback divider; DC bias comes from an R-3 feedback servo, not a base divider (2026-09 drawn-topology revision — see docs/research/preamp-circuit.md)
 - **Capacitive pickup** — reed vibration modulates capacitance (not electromagnetic like Rhodes). The 1/(1-y) nonlinearity is the primary source of "bark"
 - **Tremolo inside feedback loop** — LDR shunts the preamp's emitter feedback path, modulating gain and timbre (not just volume)
 - **Velocity is mechanical** — hammer force on reed, not electronic scaling
