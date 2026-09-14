@@ -126,10 +126,21 @@ impl MlpCorrections {
         }
 
         // ds_correction: displacement scale multiplier from H2/H1 ratio.
-        // Upper clamp at 1.2 prevents pickup pole-stress at high amplitudes:
-        // ds * displacement near y=0.85 makes 1/(1-y) corner steepness audible
-        // as crackle on chord-ff content. 1.2 was 1.5 before Apr 25 2026.
-        let raw_ds = raw[DS_IDX].clamp(0.7, 1.2);
+        // Upper clamp prevents pickup pole-stress at high amplitudes: ds *
+        // displacement near y=0.85 makes 1/(1-y) corner steepness audible as
+        // crackle on chord-ff content, and drives the chord-ff peak above unity.
+        // History: 1.5 -> 1.2 (Apr 25 2026, crackle), 1.2 -> 1.05 (the topology
+        // revision). The revision widened the model's H2/H1 gap against the OBM
+        // reference, so the retrained ds head asks for a bigger boost on nearly
+        // every note and sits on this clamp; at 1.2 the warmed chord-ff peak at
+        // vol=1.0 reached 1.084 (measured), against 0.947 for the shipping
+        // MLP-off default and 0.972 for the pre-revision weights. 1.05 restores
+        // the <= 1.0 posture (0.979) without re-levelling POST_SPEAKER_GAIN_DB,
+        // which would tax the default path for an opt-in correction.
+        // Cost, measured at C5 v80: H2/H1 lift +1.11 dB (clamp 1.2) -> +0.42 dB
+        // (clamp 1.05), against a raw H2 deficit of ~6 dB at that register —
+        // the physics gap dominates either way.
+        let raw_ds = raw[DS_IDX].clamp(0.7, 1.05);
         let ds_correction = 1.0 + (raw_ds - 1.0) * fade;
 
         Self {
@@ -193,7 +204,7 @@ mod tests {
                     );
                 }
                 assert!(
-                    (0.7..=1.2).contains(&c.ds_correction),
+                    (0.7..=1.05).contains(&c.ds_correction),
                     "ds clamp violated: {}",
                     c.ds_correction
                 );
