@@ -80,6 +80,13 @@ Cpar  out   0      1P
 .tap leda led_anode
 .tap ledk led_cathode
 
+* --- Integrator: author-pinned. This deck is also trapezoidal-unstable
+* (spectral radius 1.0323, dominant sign -1, same Nyquist-marginal mode
+* class as the preamp deck); the auto-promoter selects BE anyway, the pin
+* makes it deterministic. BE's damping at a ~5.5 Hz oscillation vs audio
+* sample rates is negligible. ---
+.integrator be
+
 * --- Supply: +14.5V (manual text; drawing mark "+15V" - see header) ---
 V1    vcc   0      DC 14.5
 
