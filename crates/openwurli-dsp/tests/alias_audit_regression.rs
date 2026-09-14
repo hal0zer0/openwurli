@@ -39,21 +39,39 @@ struct BaselineEntry {
 
 /// Hand-parsed baseline — small enough that a JSON dep isn't worth pulling in.
 /// Must stay in lockstep with `tests/baselines/alias_audit_v0_5_1.json`.
+///
+/// REFRESHED 2026-09-13 for the pickup-network refit (corner 2312 Hz -> 880 Hz
+/// on the drawn topology). Deltas vs the v0.5.1 capture:
+///
+/// | note | step_up (aliasing) | hf_band (HF energy) |
+/// |------|--------------------|---------------------|
+/// |  72  | 7.951 -> 3.836  (**-4.12**) | -52.647 -> -48.639 (+4.01) |
+/// |  84  | 8.183 -> 1.578  (**-6.61**) | -47.809 -> -44.393 (+3.42) |
+/// |  91  | 6.862 -> 7.968  (+1.11, in tol) | -39.164 -> -40.854 (-1.69) |
+///
+/// The refresh is justified by the SIGN SPLIT, not by convenience: the two
+/// notes whose broadband HF energy rose are exactly the two whose click-band
+/// PLATEAU — `max_step_up_db`, the metric that actually detects aliasing —
+/// improved sharply. More genuine harmonic content, less alias hash. A real
+/// alias regression moves both metrics the same way (the v0.5.0 tear moved
+/// click-band harmonics +5 to +13 dB with the plateau worsening); this is the
+/// opposite pattern. Expected: moving the pickup corner below the stimulus
+/// fundamentals reduces the high-order nonlinear products available to fold.
 const BASELINE: &[BaselineEntry] = &[
     BaselineEntry {
         note: 72,
-        max_step_up_db: 7.951,
-        hf_band_dbc: -52.647,
+        max_step_up_db: 3.836,
+        hf_band_dbc: -48.639,
     },
     BaselineEntry {
         note: 84,
-        max_step_up_db: 8.183,
-        hf_band_dbc: -47.809,
+        max_step_up_db: 1.578,
+        hf_band_dbc: -44.393,
     },
     BaselineEntry {
         note: 91,
-        max_step_up_db: 6.862,
-        hf_band_dbc: -39.164,
+        max_step_up_db: 7.968,
+        hf_band_dbc: -40.854,
     },
 ];
 

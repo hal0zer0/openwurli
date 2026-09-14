@@ -550,16 +550,30 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// worst phase at ~0.989 with honest margin. The invariant test now warms
 /// the engine and sweeps phases including the plateau.
 ///
-/// 2026-09-13: lowered +15.5 → +14.8 dB (−0.7 dB) for the drawn-topology
+/// 2026-09-13 (b): lowered +14.8 → +8.9 dB (−5.9 dB) for the pickup-network
+/// refit. FORCED re-level, flagged as such: correcting the pickup's corner
+/// from the superseded 2312 Hz to the drawn network's 880 Hz passes ~+8 dB
+/// more bass below 440 Hz, and the chord-ff invariant is bass-dominated, so
+/// the warmed worst-phase peak went to 1.9386 — nearly 2x full scale, i.e.
+/// real clipping at vol=1.0. −5.9 dB restores it to ~0.98.
+///
+/// This is OUTPUT LEVEL ONLY — no voicing, no DS, no output_scale. The
+/// relative balance (more bass, same treble) is the intended physics change
+/// and is left exactly as the circuit produces it. Whether 8.9 dB is the
+/// right shipping level is a Phase-3 voicing/listening decision, not this
+/// one; this value only restores the vol=1.0 ≤ 1.0 invariant so the suite
+/// is honest. Cumulative drop from the pre-revision 15.5 dB is −6.6 dB.
+///
+/// 2026-09-13 (a): lowered +15.5 → +14.8 dB (−0.7 dB) for the drawn-topology
 /// preamp revision. This is a pure re-level, forced by physics upstream: the
 /// drawn topology's gain-vs-shunt curve sits ~1.9 dB above the pre-revision
 /// one (C-7 spanning R-7+R-8 makes stage 2 a high-gain CE stage), which pushed
 /// the warmed worst-phase chord peak to 1.0620 — over the invariant. −0.7 dB
 /// restores it. Nothing about the voicing changed; only the output trim.
-pub const POST_SPEAKER_GAIN_DB: f64 = 14.8;
+pub const POST_SPEAKER_GAIN_DB: f64 = 8.9;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 5.495_408_738_576_246; // 10^(14.8/20)
+pub const POST_SPEAKER_GAIN: f64 = 2.786_121_168_629_77; // 10^(8.9/20)
 
 /// Fixed circuit-drive level — multiplier applied between preamp output
 /// and power amp input. Historically this was `vol²` (3K audio-taper pot,

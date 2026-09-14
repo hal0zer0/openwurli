@@ -21,16 +21,129 @@
 //!   q_next = (q * (1 - alpha) + 2*beta) / (1 + alpha)
 //!   output = (1 - q_next/c_n) * SENSITIVITY
 //!
+//! # Drawn-topology refit (2026-09-13)
+//!
+//! The pre-revision model used `TAU = 287k x 240pF` (f_c = 2312 Hz). That 287k
+//! came from a superseded reading of the input network (R-2 as a 2 MEG bias
+//! resistor at TR-1's base). On the drawn topology R-2 is a 1 MEG polarizing
+//! feed on the PICKUP side of the input coupling cap, and C-2 (220 pF) sits at
+//! TR-1's base — tied to the plate's own capacitance through C-1 (0.022 uF),
+//! which is a short at audio. The plate therefore works into very nearly
+//! `C_TOTAL + C2_BASE` rather than `C_TOTAL` alone, and the corner drops by
+//! roughly an octave and a half.
+//!
+//! ## Structure: one pole, no correction stage — and why
+//!
+//! The corrected network is NOT first-order (it is a two-capacitor divider
+//! bridged by R-1 inside an R-2/R-3 resistive network), so a correction stage
+//! was budgeted for. It turned out not to be worth carrying. Fitted against the
+//! cross-checked jw-driven response (reed charge current into TR-1's base,
+//! normalised at 10 kHz), a single pole reproduces the network to **0.23 dB
+//! max error over 55 Hz - 10 kHz**:
+//!
+//! | f (Hz) |   55 |  110 |  220 |  262 |  440 |  880 | 1760 | 3520 | 7040 |
+//! |--------|------|------|------|------|------|------|------|------|------|
+//! | target |-24.3 |-18.0 |-12.1 |-10.6 | -6.7 | -2.8 | -0.8 | -0.1 | +0.0 |
+//! | model  |-24.2 |-18.3 |-12.4 |-11.0 | -7.1 | -3.1 | -1.0 | -0.2 | -0.0 |
+//! | error  |+0.07 |-0.29 |-0.35 |-0.36 |-0.35 |-0.28 |-0.17 |-0.07 |-0.02 |
+//!
+//! Adding a fitted biquad shelf on top improves the worst case from 0.229 dB
+//! to 0.196 dB — 0.03 dB, for a biquad's state, CPU and phase shift. It is not
+//! worth it, and more importantly it would be false precision: `C_TOTAL` itself
+//! is LOW confidence (see below) and a +-20% error there moves the corner by
+//! far more than the shape error the biquad would remove. If an LCR measurement
+//! ever pins C_TOTAL tightly AND a residual shape error still matters, the
+//! shelf to add is `1 + (G-1)*lowpass(fc, Q)` with G = +0.96 dB, fc = 1504 Hz,
+//! Q = 0.427 (fitted against the 1012 Hz lumped-RC core, not this one).
+//!
+//! The one-pole fit is robust across the C_TOTAL uncertainty band: worst-case
+//! error stays <= 0.28 dB for C_TOTAL anywhere in 120-500 pF.
+//!
+//! ## What this changes audibly
+//!
+//! At constant treble level (anchored at 10 kHz) the corrected network passes
+//! **~+8 dB more bass below 440 Hz** than the 2312 Hz model: +8.0 dB at 55 Hz,
+//! +7.7 dB at C4 (262 Hz), +5.7 dB at 880 Hz, +1.1 dB at 3.5 kHz, ~0 above
+//! 7 kHz. That is the intended physics correction, not collateral. Downstream
+//! voicing (tables.rs, DS constants, output_scale) is deliberately NOT
+//! recalibrated here — that is a Phase-3 decision with a listening session.
+//!
 //! This produces:
-//! - Identical small-signal HPF at f_c = 1/(2π*R*C_0) = 2312 Hz
+//! - Small-signal HPF at f_c = PICKUP_FC (880 Hz with C-2 returned to ground)
 //! - Coupled nonlinear harmonic generation (H2 from capacitance modulation)
 //! - Frequency-dependent nonlinearity (stronger near/below RC corner)
 //! - Correct asymmetry (positive y amplified more than negative)
 
-/// RC time constant: R_total * C_0
-/// R_total = R_feed (1M) || (R-1 + R-2||R-3) = 1M || 402K = 287K
-/// C_0 = 240 pF (rest capacitance)
-const TAU: f64 = 287.0e3 * 240.0e-12; // 68.88 µs → f_c = 2312 Hz
+use std::f64::consts::PI;
+
+/// Total system capacitance at the pickup plate.
+///
+/// **LOW CONFIDENCE.** This is a single forum measurement, adversarially
+/// reviewed and found to have no primary source (no patent, service manual or
+/// paper gives a pickup capacitance for the 200A). It is retained because it is
+/// the only number available and is geometrically plausible, but it is an
+/// ASSUMPTION, not a measurement, and the corner inherits that confidence.
+/// An LCR reading of a real reed bar would settle it — and is expected.
+///
+/// Corner sensitivity (fitted one-pole, from the cross-checked network):
+/// 150 pF -> 1064 Hz, 240 pF -> 880 Hz, 400 pF -> 670 Hz. Changing this
+/// constant moves `PICKUP_FC` automatically via the scaling law below.
+pub const C_TOTAL: f64 = 240.0e-12;
+
+/// C-2, the 220 pF capacitor at TR-1's base. Fixed 200A part. It is bridged to
+/// the plate's own capacitance by C-1 (0.022 uF, a short at audio), which is
+/// why it lands in the pickup's corner at all.
+const C2_BASE: f64 = 220.0e-12;
+
+/// **Open fork — C-2's return node.**
+///
+/// C-2's bottom rail is drawn BROKEN on both circulating scan surfaces (a
+/// drawing defect, not a reading failure). Ground is the settled assumption and
+/// what the netlists carry. The alternative is a return to TR-1's emitter,
+/// where the high loop gain bootstraps C-2 almost entirely away and the corner
+/// rises to ~1436 Hz.
+///
+/// Real-hardware evidence may settle this within days. Flipping this one `bool`
+/// is the whole change — the corner, the tests' expectations and the scaling
+/// law all follow from it.
+const C2_RETURNS_TO_GROUND: bool = true;
+
+/// Reference corner at `C_TOTAL` = 240 pF, C-2 returned to GROUND.
+///
+/// Not the network's -3 dB point (that is 897-900 Hz on the cross-check) but
+/// the single pole that best reproduces the WHOLE in-band curve — fitting the
+/// curve beats matching one point, and costs 0.23 dB instead of 0.37 dB.
+const FC_REF_C2_GROUND: f64 = 880.5;
+
+/// Reference corner with C-2 returned to TR-1's emitter (bootstrapped away).
+/// Same fit quality: 0.23 dB max error over 55 Hz - 10 kHz.
+const FC_REF_C2_EMITTER: f64 = 1436.0;
+
+/// Reference total capacitance the two `FC_REF_*` constants were fitted at.
+const C_TOTAL_REF: f64 = 240.0e-12;
+
+/// Small-signal corner of the pickup network.
+///
+/// Scales with the node capacitance so a future LCR measurement of `C_TOTAL` is
+/// a one-constant change: `f = f_ref * (C_ref + C2) / (C_total + C2)`. Verified
+/// against the full network across 120-500 pF, accurate to +-4.3% there.
+pub const PICKUP_FC: f64 = {
+    let f_ref = if C2_RETURNS_TO_GROUND {
+        FC_REF_C2_GROUND
+    } else {
+        FC_REF_C2_EMITTER
+    };
+    f_ref * (C_TOTAL_REF + C2_BASE) / (C_TOTAL + C2_BASE)
+};
+
+/// RC time constant of the pickup's charge dynamics, `1 / (2*pi*PICKUP_FC)`.
+///
+/// This is the time constant the NONLINEAR core runs on — moving it is the
+/// intended physics change, not a side effect. The 1/(1-y) charge-dynamics
+/// mechanism (the bark source, >98% of H2 at normal dynamics) is untouched;
+/// it now relaxes on the corrected network's dominant pole instead of the
+/// superseded 2312 Hz one.
+const TAU: f64 = 1.0 / (2.0 * PI * PICKUP_FC);
 
 /// Pickup sensitivity: V_hv * C_0 / (C_0 + C_p) = 147 * 3/240 = 1.8375 V
 /// Applied to the AC voltage perturbation from charge dynamics.
@@ -122,7 +235,7 @@ impl Pickup {
     ///
     /// The time-varying RC circuit couples the 1/(1-y) capacitance nonlinearity
     /// with the charge dynamics, producing frequency-dependent harmonic generation.
-    /// At frequencies well below the RC corner (2312 Hz), the circuit generates
+    /// At frequencies well below the RC corner (PICKUP_FC, 880 Hz), the circuit generates
     /// H2 proportional to displacement² (same as the static y/(1-y) model).
     /// At frequencies near/above the corner, the charge can't follow the fast
     /// capacitance changes, reducing the nonlinear contribution — physically
@@ -270,13 +383,25 @@ mod tests {
 
     #[test]
     fn test_frequency_response_matches_rc() {
-        // Small-signal sweep: the time-varying RC should match a 1-pole HPF at 2312 Hz
-        // within ~1 dB for small amplitudes (linear regime).
+        // Small-signal sweep against the CORRECTED pickup network.
+        //
+        // PRE-REVISION EXPECTATION REPLACED: this test swept against a 1-pole
+        // HPF at 2312 Hz (TAU = 287k x 240pF) with a 2 dB tolerance. Both the
+        // corner and the network behind it are void — the 287k came from
+        // reading R-2 as a 2 MEG base-bias resistor, but R-2 is a 1 MEG
+        // polarizing feed on the pickup side of C-1, and C-2 (220 pF) is
+        // bridged onto the plate capacitance by C-1. The corner is now
+        // PICKUP_FC (880 Hz at the nominal C_TOTAL).
+        //
+        // Tolerance tightened 2.0 dB -> 0.6 dB at the same time. The old
+        // 2 dB was loose enough to hide a corner error of nearly an octave;
+        // 0.6 dB covers the bilinear warping at 44.1 kHz (worst case ~0.35 dB
+        // at 10 kHz) with margin but would fail on any real corner drift.
         let sr = 44100.0;
-        let fc = 1.0 / (2.0 * PI * TAU); // 2312 Hz
+        let fc = PICKUP_FC;
         let amplitude = 0.01; // Very small — linear regime (y_peak = 0.0085)
 
-        for &freq in &[100.0, 500.0, 1000.0, 2312.0, 5000.0, 10000.0] {
+        for &freq in &[100.0, 500.0, 880.0, 2000.0, 5000.0, 10000.0] {
             let mut pickup = Pickup::new(sr);
             let n = (sr * 0.1) as usize;
             let mut buf: Vec<f64> = (0..n)
@@ -288,18 +413,40 @@ mod tests {
             let measured = steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
 
             // Expected: amplitude * DS * SENSITIVITY * HPF_gain
-            // For small y: output ≈ HPF(y) * SENSITIVITY = HPF(amplitude*DS*sin) * S
             let y_amp = amplitude * DISPLACEMENT_SCALE;
             let hpf_gain = freq / (freq * freq + fc * fc).sqrt();
             let expected = y_amp * PICKUP_SENSITIVITY * hpf_gain;
 
             let ratio_db = 20.0 * (measured / expected).log10();
-            // 2 dB tolerance: bilinear transform has frequency warping vs analog HPF
             assert!(
-                ratio_db.abs() < 2.0,
+                ratio_db.abs() < 0.6,
                 "at {freq} Hz: measured={measured:.6}, expected={expected:.6}, error={ratio_db:.2} dB"
             );
         }
+    }
+
+    #[test]
+    fn test_corner_tracks_c_total_and_fork() {
+        // The corner must follow C_TOTAL (an LCR measurement is expected to
+        // replace it) and the C-2 return fork (drawing defect, may be settled
+        // by hardware). Both are one-constant changes; this pins the law.
+        assert!(
+            (PICKUP_FC - 880.5).abs() < 1.0,
+            "default (C_TOTAL 240 pF, C-2 to ground) must give ~880 Hz, got {PICKUP_FC:.1}"
+        );
+        // Scaling law: f = f_ref * (C_ref + C2) / (C_total + C2).
+        // Cross-checked against the full network: 150 pF -> 1064 Hz,
+        // 400 pF -> 670 Hz (fitted), law reproduces both within 4.3%.
+        let law = |c_total: f64| FC_REF_C2_GROUND * (C_TOTAL_REF + C2_BASE) / (c_total + C2_BASE);
+        assert!((law(150.0e-12) - 1064.0).abs() / 1064.0 < 0.05);
+        assert!((law(400.0e-12) - 670.0).abs() / 670.0 < 0.05);
+        // The emitter-return fork sits ~1.6x higher — C-2 is bootstrapped away.
+        let (ground_fc, emitter_fc) = (FC_REF_C2_GROUND, FC_REF_C2_EMITTER);
+        assert!(
+            emitter_fc > ground_fc * 1.5,
+            "emitter-return fork should sit well above the ground fork: \
+             {emitter_fc} vs {ground_fc}"
+        );
     }
 
     #[test]
@@ -327,20 +474,39 @@ mod tests {
 
     #[test]
     fn test_hpf_attenuates_bass() {
-        // At 100 Hz, the RC circuit's charge tracks the capacitance changes,
-        // attenuating the output — same HPF behavior as before.
+        // At 100 Hz the RC charge tracks the capacitance changes, attenuating
+        // the output relative to the passband.
+        //
+        // PRE-REVISION EXPECTATION REPLACED: `peak < 0.65`, which encoded the
+        // 2312 Hz corner. The corrected network's corner is PICKUP_FC (880 Hz),
+        // so 100 Hz now sits far less deep into the rolloff and this full-scale
+        // drive measures 0.967 (was under 0.65). The bound is re-derived, not
+        // just loosened: 1.10 keeps ~13% headroom over the measured value while
+        // still failing outright if the corner regressed toward the passband.
+        //
+        // The second assertion is the one that carries the physics and is
+        // corner-independent: 100 Hz must remain clearly below the passband.
+        // At full-scale drive the 1/(1-y) compression flattens the curve
+        // (measured 0.967 at 100 Hz vs 1.546 at 10 kHz, a ratio of 0.63), so
+        // this is a weaker statement than the small-signal sweep — that is what
+        // `test_frequency_response_matches_rc` is for.
         let sr = 44100.0;
-        let mut pickup = Pickup::new(sr);
-        let freq = 100.0;
-
         let n = (sr * 0.1) as usize;
-        let mut buf: Vec<f64> = (0..n)
-            .map(|i| (2.0 * PI * freq * i as f64 / sr).sin())
-            .collect();
-        pickup.process(&mut buf);
-
-        let peak = buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        assert!(peak < 0.65, "pickup should heavily attenuate 100Hz: {peak}");
+        let measure = |freq: f64| {
+            let mut pickup = Pickup::new(sr);
+            let mut buf: Vec<f64> = (0..n)
+                .map(|i| (2.0 * PI * freq * i as f64 / sr).sin())
+                .collect();
+            pickup.process(&mut buf);
+            buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max)
+        };
+        let bass = measure(100.0);
+        let treble = measure(10000.0);
+        assert!(bass < 1.10, "pickup should attenuate 100 Hz: {bass}");
+        assert!(
+            bass < treble * 0.75,
+            "100 Hz ({bass:.3}) must stay clearly below the passband ({treble:.3})"
+        );
     }
 
     #[test]
@@ -348,43 +514,49 @@ mod tests {
         // Drive the pickup with a large-amplitude sine and verify H2 > H3.
         // The time-varying capacitance generates even harmonics.
         let sr = 44100.0;
-        let mut pickup = Pickup::new(sr);
-        let freq = 2000.0; // Near HPF corner for strong nonlinear coupling
+        // Swept at two points rather than one: 880 Hz is the CORRECTED corner
+        // (where charge/capacitance coupling is strongest) and 2000 Hz is the
+        // legacy probe point, kept so no coverage is lost by the corner move.
+        // The old comment called 2000 Hz "near the corner" — that was true of
+        // the superseded 2312 Hz reading, not of this network.
+        for freq in [880.0f64, 2000.0] {
+            let mut pickup = Pickup::new(sr);
 
-        let amplitude = 1.0;
-        let n = (sr * 0.2) as usize;
-        let mut buf: Vec<f64> = (0..n)
-            .map(|i| amplitude * (2.0 * PI * freq * i as f64 / sr).sin())
-            .collect();
-        pickup.process(&mut buf);
+            let amplitude = 1.0;
+            let n = (sr * 0.2) as usize;
+            let mut buf: Vec<f64> = (0..n)
+                .map(|i| amplitude * (2.0 * PI * freq * i as f64 / sr).sin())
+                .collect();
+            pickup.process(&mut buf);
 
-        let start = n * 3 / 4;
-        let signal = &buf[start..];
-        let h1 = dft_magnitude(signal, freq, sr);
-        let h2 = dft_magnitude(signal, 2.0 * freq, sr);
-        let h3 = dft_magnitude(signal, 3.0 * freq, sr);
+            let start = n * 3 / 4;
+            let signal = &buf[start..];
+            let h1 = dft_magnitude(signal, freq, sr);
+            let h2 = dft_magnitude(signal, 2.0 * freq, sr);
+            let h3 = dft_magnitude(signal, 3.0 * freq, sr);
 
-        assert!(
-            h2 > h3,
-            "H2 ({h2:.2e}) should dominate H3 ({h3:.2e}) from capacitance modulation"
-        );
-        let h2_ratio = h2 / h1;
-        assert!(
-            h2_ratio > 0.05,
-            "H2/H1 too low ({h2_ratio:.4}), expected >5% from nonlinearity"
-        );
+            assert!(
+                h2 > h3,
+                "H2 ({h2:.2e}) should dominate H3 ({h3:.2e}) from capacitance modulation"
+            );
+            let h2_ratio = h2 / h1;
+            assert!(
+                h2_ratio > 0.05,
+                "H2/H1 too low ({h2_ratio:.4}) at {freq} Hz, expected >5% from nonlinearity"
+            );
+        }
     }
 
     #[test]
     fn test_asymmetry() {
         // The time-varying RC should produce asymmetric output.
-        // Must test BELOW the RC corner (2312 Hz) where charge dynamics
+        // Must test BELOW the RC corner (PICKUP_FC, 880 Hz) where charge dynamics
         // interact with the asymmetric capacitance function. Above the corner,
         // charge can't follow and output approaches linear y (no asymmetry) —
         // this is physically correct and different from the old static model.
         let sr = 44100.0;
         let mut pickup = Pickup::new(sr);
-        let freq = 500.0; // Well below HPF corner — strong nonlinear coupling
+        let freq = 500.0; // Below PICKUP_FC (880 Hz) — strong nonlinear coupling
 
         let amplitude = 0.5; // y_peak = 0.5 * 0.85 = 0.425, no clipping
         let n = (sr * 0.2) as usize;
