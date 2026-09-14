@@ -343,6 +343,64 @@ Status and consequences:
 - It is **consistent with what measurement always said**: the pickup's 1/(1−y) owns >98% of H2 at normal dynamics and the preamp is transparent at mV levels. The revision removes a claimed *mechanism*, not a measured behavior.
 - At playing levels the preamp does not clip at all (a ff base signal sits ~40 dB below TR-2's threshold). The preamp's surviving nonlinearity is TR-2's exponential V_BE, suppressed a further ~46 dB by the loop.
 
+#### ⚠ KNOWN ISSUE — the shipping solver has no saturation region, so it cannot be used for this probe
+
+`dk_preamp_legacy.rs`'s BJT kernel is `fn bjt(vbe: f64)` — collector current is a function
+of **Vbe alone**, with no Vbc term, by deliberate design (the Early effect is omitted to keep
+the kernel one-dimensional per device). A forward-active-only device **has no saturation
+region**. Nothing in the model stops the collector once the global feedback loop can no longer
+hold the node, so the solver does not clip — it **diverges**:
+
+| shunt | input | peak gain | implied peak output |
+|---|---|---|---|
+| 13.24 kΩ | 0.83 V | 5.65× (15.04 dB) | 4.7 V — linear |
+| 13.24 kΩ | 1.0 V | 5.61× (14.97 dB) | 5.6 V — knee, matches the 0.85–1 V figure in §6.3 |
+| 13.24 kΩ | 1.2 V | **15.3× (23.7 dB)** | **18 V, above the 14.5 V rail** |
+| 1 MΩ | 2.4 V | 2.24× | 5.4 V — linear |
+| 1 MΩ | 4.0 V | **107.6×** | **430 V on a 14.5 V rail** |
+
+At 1.5 V in (13.24 kΩ) the DFT fundamental *collapses* to 0.52 V while the peak rises and THD
+stays at 1.3% — fundamental collapse with large peaks and little harmonic content is
+divergence, not soft clipping. Onset is at ~5.5 V **output** at both shunts, i.e. exactly
+TR-2's saturation point, which is the tell.
+
+Consequences:
+- The "which stage clips first" probe called for above **cannot be run on this solver.** Use
+  the SPICE deck until the kernel gains a Vbc term. The §6.3 clipping-character figures are
+  deck measurements and stand; the solver cannot reproduce them.
+- The in-code comment claiming "the circuit topology and NR solver naturally constrain the
+  operating point" is true only below the knee, and should not be read as a clipping model.
+- **Not audible today**: the shipping chain applies `output_scale` ahead of the preamp, so it
+  sees millivolts — ~40 dB below TR-2's threshold, and roughly two orders of magnitude below
+  the divergence onset. This is a measurement-capability limit, not a playing defect.
+- Any bench that drives the preamp directly from the pickup bus (the bark audit does) must
+  check its drive against the onset. The bark audit is safe only because it hardcodes a 1 MΩ
+  shunt, where onset is ~2.4 V against its 1.33 V worst case; at the instrument's real
+  13.24 kΩ idle shunt the onset is ~1.05 V and several ff rows would be inside the divergent
+  region.
+
+#### ⚠ KNOWN ISSUE — the pre-revision model carried a +0.69 dB offset against its own deck
+
+Recorded so a future correction is not misread as a regression. The **pre-revision** Rust
+preamp measured **+0.69 dB above its own SPICE target at both shunts** (6.69 vs 6.0 dB at
+1 MΩ; 12.79 vs 12.1 dB at 19 kΩ — the same offset at both, so it is systematic, not a
+curve-shape difference). Its origin was never established.
+
+This matters when comparing builds across the revision. The bench-vs-bench gain deltas
+(+0.35 dB at 1 MΩ, +0.47 dB at 19 kΩ) are *smaller* than the deck-node offsets (+1.3…+1.9 dB)
+for three reasons, of which this is one:
+
+| term | value |
+|---|---|
+| deck offset at 19 kΩ (12.1 → 14.0 dB, each at its own topology's R-9/R-10 node) | +1.90 dB |
+| new model stamps `RLOAD = 100 kΩ` at `out`; the pre-revision model had **no load** there — and the old topology's R-9/R-10 node *was* `out`, after R-9, while the new deck quotes `node_c6`, before it | −0.58 dB |
+| input-network change (R-2 2M-at-base → 1M-on-pickup-side, C-2 restored) — the smallest term, often wrongly blamed for the whole gap | −0.18 dB |
+| **this issue**: old model ran 0.69 dB hot vs its own deck, inflating the old baseline | −0.69 dB |
+| **predicted bench-vs-bench delta** | **+0.45 dB** (measured +0.47) |
+
+If the +0.69 dB is ever tracked down and fixed, the bench-vs-bench delta moves to ≈ +1.16 dB.
+That is the correction landing, not the revision regressing.
+
 ### 6.3 Measured harmonic character of the corrected circuit (SPICE, 14.5 V, idle shunt)
 
 - **Sub-clip H2 is 9–12 dB higher than the pre-revision model** (BF 400 / BF 240 respectively, vs the 1434 card's level; robust in direction across the whole plausible card band, monotone in BF). Directly relevant to the long-standing ~3 dB full-chain H2 deficit vs reference recordings — expect recalibration, not a free win.
@@ -409,9 +467,35 @@ The `PreampModel` trait architecture stands. The shipping implementation is the 
 | C-4 Miller loop (bandwidth ≈ 16.7 kHz; ~1.5× wider than the old model) | HF openness | HIGH |
 | Stage-2 zero/pole (6.6 Hz / 971 Hz) inside the loop | Frequency-dependent loop gain / distortion suppression; mild LF rise | MEDIUM-HIGH |
 | Direct-coupling bias servo (R-3 loop) | "Sag"/"bloom"; stages drift together | MEDIUM-HIGH |
-| Tremolo gain modulation | Timbral variation through the cycle | MEDIUM |
+| Tremolo gain modulation | **Level**, not timbre — see note | MEDIUM |
 | Even-order soft clipping knee at TR-2 (card-dependent onset) | ff character | MEDIUM (pending §6.2 probe) |
 | Early effect / β(Ic) / thermal | masked | LOW |
+
+**⚠ Note on the tremolo row — what rides the cycle is level, not audible timbre.**
+
+§7.3's mechanism (more shunt → less loop linearization → more distortion) is **real and
+measurable**, but it is ~90 dB down. Measured on the solver at C4 / 5 mV across the
+divider's reachable swing:
+
+| R_shunt | gain | preamp H2/H1 |
+|---|---|---|
+| 8 kΩ (full-depth bright) | 17.92 dB | −93.6 dBc |
+| 13.24 kΩ (depth-0 floor) | 15.01 dB | −96.7 dBc |
+| 48 kΩ (full-depth dark) | 9.95 dB | −102.1 dBc |
+
+So the preamp's own H2/H1 does swing **8.5 dB across the reachable range** — the mechanism
+is not fictitious. But it swings between −94 and −102 dBc, i.e. 60+ dB below the pickup's
+1/(1−y) contribution, which owns >98% of H2 at normal dynamics (§6.2). The audible
+consequence of the tremolo is therefore **level**; the timbral component is real physics that
+the MNA gets for free and that no behavioural model needs to reproduce deliberately. The row
+stays at MEDIUM for the level modulation, not for timbre.
+
+⚠ **Do not cite a "≤0.14 dB H2 change across the swing" figure** — that number came from the
+pre-fix `preamp-bench` harmonic estimator, whose unwindowed rectangular DFT had a leakage
+floor near −43 dBc. At −94…−102 dBc the real H2 was 50+ dB *under* that floor, so every shunt
+returned the same leakage value and the change looked like nothing. The estimator was fixed
+(Hann + integer-cycle windowing, floor now ≈ −120 dBc); any harmonic figure measured with that
+tool before the fix needs re-taking.
 
 ### 8.3 Simplifications that changed with the revision
 

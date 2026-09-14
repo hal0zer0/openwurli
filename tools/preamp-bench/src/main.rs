@@ -200,7 +200,7 @@ fn cmd_gain(args: &[String]) {
     let gain = measure_gain_at(preamp.as_mut(), freq, amplitude, r_ldr);
     let gain_db = 20.0 * gain.log10();
 
-    let target_db = if r_ldr > 500_000.0 { 6.0 } else { 12.1 };
+    let target_db = spice_gain_target_db(r_ldr);
     let delta = gain_db - target_db;
 
     println!("Preamp gain measurement");
@@ -208,8 +208,50 @@ fn cmd_gain(args: &[String]) {
     println!("  Amplitude:   {amplitude:.6} V");
     println!("  LDR path:    {r_ldr:.0} Ω");
     println!("  Gain:        {gain:.3}x ({gain_db:.2} dB)");
-    println!("  SPICE target: {target_db:.1} dB");
+    println!("  SPICE target: {target_db:.2} dB  (drawn topology, at `out` into RLOAD 100K)");
     println!("  Delta:       {delta:+.2} dB");
+    if r_ldr > 48_000.0 {
+        println!(
+            "  NOTE: {r_ldr:.0} Ω is NOT reachable through the 50K/18K VIBRATO divider.\n\
+             \x20       The instrument's depth-0 floor is 13.24 kΩ (→ 15.01 dB); full-depth\n\
+             \x20       sweeps 8K–48K. Shunts above that are solver-linearity probes only."
+        );
+    }
+}
+
+/// Reference gain at 1 kHz for a given feedback-shunt resistance.
+///
+/// RE-BASELINED for the drawn topology. Measured on `tb_preamp_ac.cir` with the
+/// revised subcircuit, 14.5 V rail, BF-1434 card — at `out` into `RLOAD 100K`,
+/// referenced to the source ahead of R-1, which is exactly what this tool
+/// measures. The old constants (6.0 dB / 12.1 dB) were pre-revision AND taken at
+/// a different node, so they read ~1.9 dB low against the drawn circuit.
+///
+/// The R-9-into-RLOAD loss is a constant 0.58 dB at every shunt, so the
+/// unloaded node_c6 figures quoted in the circuit reference are these + 0.58.
+fn spice_gain_target_db(r_ldr: f64) -> f64 {
+    // (shunt Ω, gain dB at `out` into 100K)
+    const TABLE: [(f64, f64); 7] = [
+        (8_000.0, 17.92),
+        (12_000.0, 15.54),
+        (13_240.0, 15.01), // the 50K/18K divider's depth-0 floor
+        (18_220.0, 13.43),
+        (19_000.0, 13.23),
+        (48_000.0, 9.95),
+        (1_000_000.0, 7.01),
+    ];
+    if r_ldr <= TABLE[0].0 {
+        return TABLE[0].1;
+    }
+    for w in TABLE.windows(2) {
+        let ((r0, g0), (r1, g1)) = (w[0], w[1]);
+        if r_ldr <= r1 {
+            // Log-resistance interpolation — the curve is near-linear in log R.
+            let t = (r_ldr.ln() - r0.ln()) / (r1.ln() - r0.ln());
+            return g0 + t * (g1 - g0);
+        }
+    }
+    TABLE[TABLE.len() - 1].1
 }
 
 // ─── Frequency sweep ────────────────────────────────────────────────────────
@@ -276,9 +318,10 @@ fn cmd_harmonics(args: &[String]) {
         output.push(down[0]);
     }
 
-    // Analyze last quarter (steady state)
+    // Analyze last quarter (steady state), trimmed to whole fundamental cycles
+    // so the whole harmonic series is bin-centred at once.
     let start = output.len() * 3 / 4;
-    let signal = &output[start..];
+    let signal = integer_cycle_slice(&output[start..], freq, BASE_SR);
 
     let h1 = dft_magnitude(signal, freq, BASE_SR);
     let h2 = dft_magnitude(signal, 2.0 * freq, BASE_SR);
@@ -353,12 +396,16 @@ fn cmd_tremolo_sweep(args: &[String]) {
         csv_lines.push(format!("{r_ldr:.0},{gain_db:.2}"));
     }
 
-    // SPICE targets
+    // SPICE targets — drawn topology, at `out` into RLOAD 100K (see
+    // spice_gain_target_db). Quoted at the shunts the VIBRATO divider can
+    // actually present, not at the solver-sweep endpoints.
     println!();
-    println!("SPICE targets:");
-    println!("  R_ldr = 1M  (no trem):     6.0 dB");
-    println!("  R_ldr = 19K (trem bright): 12.1 dB");
-    println!("  Range:                      6.1 dB");
+    println!("SPICE targets (drawn topology, at `out` into RLOAD 100K):");
+    println!("  R_shunt = 13.24K (depth-0 floor):  15.01 dB   <- the instrument's idle gain");
+    println!("  R_shunt = 8K     (full-depth bright): 17.92 dB");
+    println!("  R_shunt = 48K    (full-depth dark):    9.95 dB");
+    println!("  Reachable depth swing (8K–48K):        7.97 dB");
+    println!("  (1M is outside the divider's range — solver-linearity probe only: 7.01 dB)");
 
     if !csv_path.is_empty() {
         std::fs::write(csv_path, csv_lines.join("\n") + "\n").expect("Failed to write CSV");
@@ -620,8 +667,9 @@ fn cmd_bark_audit(args: &[String]) {
             pickup.process(&mut pu_buf);
             let pu_steady = &pu_buf[measure_offset..];
             let pu_peak = peak_abs(pu_steady);
-            let pu_h1 = dft_magnitude(pu_steady, freq, BASE_SR);
-            let pu_h2 = dft_magnitude(pu_steady, h2_freq, BASE_SR);
+            let pu_win = integer_cycle_slice(pu_steady, freq, BASE_SR);
+            let pu_h1 = dft_magnitude(pu_win, freq, BASE_SR);
+            let pu_h2 = dft_magnitude(pu_win, h2_freq, BASE_SR);
             let pu_h2_h1 = if pu_h1 > 1e-15 { pu_h2 / pu_h1 } else { 0.0 };
 
             // ── Stage 3: After preamp (oversampled) ──
@@ -630,8 +678,9 @@ fn cmd_bark_audit(args: &[String]) {
 
             let preamp_buf = process_oversampled(&pu_buf, preamp.as_mut());
             let pre_steady = &preamp_buf[measure_offset..];
-            let pre_h1 = dft_magnitude(pre_steady, freq, BASE_SR);
-            let pre_h2 = dft_magnitude(pre_steady, h2_freq, BASE_SR);
+            let pre_win = integer_cycle_slice(pre_steady, freq, BASE_SR);
+            let pre_h1 = dft_magnitude(pre_win, freq, BASE_SR);
+            let pre_h2 = dft_magnitude(pre_win, h2_freq, BASE_SR);
             let pre_h2_h1 = if pre_h1 > 1e-15 { pre_h2 / pre_h1 } else { 0.0 };
 
             // ── Report ──
@@ -656,11 +705,24 @@ fn cmd_bark_audit(args: &[String]) {
     println!(
         "  y_peak    = physical displacement fraction (y = reed_pk * DS), DS = per-note from tables"
     );
-    println!("  PU H2/H1  = H2/H1 after time-varying RC pickup (coupled NL + HPF at 2312 Hz)");
-    println!("  PU pk(mV) = peak signal after pickup (millivolts, feeds preamp)");
-    println!("  Pre H2/H1 = H2/H1 after preamp (2x gain, no tremolo)");
+    println!(
+        "  PU H2/H1  = H2/H1 after time-varying RC pickup (coupled NL + HPF at {:.0} Hz)",
+        openwurli_dsp::pickup::PICKUP_FC
+    );
+    println!(
+        "  PU pk     = peak signal after pickup, x1000 (MODEL UNITS, not volts —\n\
+         \x20             displacement_scale absorbs the undetermined rest gap d_0, so the\n\
+         \x20             absolute scale is a calibration convention. The shipping chain\n\
+         \x20             applies output_scale before the preamp; this audit does NOT, so\n\
+         \x20             the preamp here is driven far hotter than in the instrument.)"
+    );
+    println!(
+        "  Pre H2/H1 = H2/H1 after preamp, shunt fixed at 1 MΩ (a solver-linearity\n\
+         \x20             point, NOT the instrument's idle state — the divider's depth-0\n\
+         \x20             floor is 13.24 kΩ). Preamp gain at this shunt is 7.01 dB."
+    );
     println!();
-    println!("SPICE targets: y=0.10 → H2/H1 ≈ 8.7%, pickup HPF boosts H2 ~1.9x relative to H1");
+    println!("SPICE target: y=0.10 → H2/H1 ≈ 8.7%, pickup HPF boosts H2 ~1.9x relative to H1");
 }
 
 fn midi_note_name(note: u8) -> String {
@@ -890,16 +952,68 @@ fn cmd_intermod_audit(args: &[String]) {
 
 // ─── DFT helper ─────────────────────────────────────────────────────────────
 
+/// Single-bin DFT magnitude, Hann-windowed with coherent-gain correction.
+///
+/// **Why the window is not optional.** This was an unwindowed rectangular DFT
+/// evaluated at arbitrary, non-bin-centred frequencies. That leaks the
+/// fundamental straight into the harmonic bins: a *pure, undistorted sine* read
+/// 3.31% THD at 65 Hz, 0.94% at 262 Hz and 0.26% at 1046 Hz through the old
+/// estimator — tracking 1/f exactly, which is the Dirichlet sidelobe law, not a
+/// circuit law. Every harmonic figure this tool printed was that leakage: the
+/// give-away was THD identical to four significant figures across a 5x change
+/// in drive, where a real exponential V_BE nonlinearity puts H2 proportional to
+/// V^2. The real harmonics were 30-60 dB below the estimator's own floor.
+///
+/// Hann drops the first sidelobe from -13 dB to -31 dB and the rolloff from
+/// 6 dB/octave to 18 dB/octave. Combined with [`integer_cycle_slice`] at the
+/// harmonic call sites, the estimator floor on a pure sine goes from 3.31% to
+/// 0.000089% at 65 Hz — far enough below the circuit's real sub-clip THD
+/// (~0.0009% at C4/5 mV on the reference deck) to resolve it.
+///
+/// Callers probing a harmonic SERIES should pass a slice from
+/// [`integer_cycle_slice`] so every harmonic is simultaneously bin-centred.
+/// Callers probing unrelated frequencies (intermodulation products) can pass any
+/// slice; the window alone still removes most of the leakage.
 fn dft_magnitude(signal: &[f64], freq: f64, sr: f64) -> f64 {
-    let n = signal.len() as f64;
+    let n = signal.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let nf = n as f64;
     let mut re = 0.0;
     let mut im = 0.0;
     for (i, &s) in signal.iter().enumerate() {
+        // Periodic Hann: 0.5 - 0.5*cos(2*pi*i/N). Coherent gain = 0.5.
+        let w = 0.5 - 0.5 * (2.0 * PI * i as f64 / nf).cos();
+        let sw = s * w;
         let phase = 2.0 * PI * freq * i as f64 / sr;
-        re += s * phase.cos();
-        im -= s * phase.sin();
+        re += sw * phase.cos();
+        im -= sw * phase.sin();
     }
-    2.0 * ((re / n).powi(2) + (im / n).powi(2)).sqrt()
+    // /n for the transform, /0.5 for Hann's coherent gain, *2 for the
+    // single-sided amplitude => 4/n.
+    4.0 * ((re / nf).powi(2) + (im / nf).powi(2)).sqrt()
+}
+
+/// Truncate `signal` to a whole number of cycles of `fundamental_hz`.
+///
+/// With an integer number of fundamental cycles in the window, the fundamental
+/// AND every harmonic land exactly on a DFT bin at once, so none of them leaks
+/// into any other. This is what takes the estimator floor from ~0.03% (Hann
+/// alone, 65 Hz) to ~0.0001%.
+///
+/// Returns the input unchanged if it is shorter than one cycle.
+fn integer_cycle_slice(signal: &[f64], fundamental_hz: f64, sr: f64) -> &[f64] {
+    if fundamental_hz <= 0.0 || signal.is_empty() {
+        return signal;
+    }
+    let samples_per_cycle = sr / fundamental_hz;
+    let cycles = (signal.len() as f64 / samples_per_cycle).floor();
+    if cycles < 1.0 {
+        return signal;
+    }
+    let n = (cycles * samples_per_cycle).round() as usize;
+    &signal[..n.min(signal.len())]
 }
 
 // ─── Signal measurement helpers ────────────────────────────────────────────
@@ -927,8 +1041,9 @@ fn rms_db(signal: &[f64]) -> f64 {
 }
 
 fn h2_h1_ratio_db(signal: &[f64], fundamental_hz: f64, sr: f64) -> f64 {
-    let h1 = dft_magnitude(signal, fundamental_hz, sr);
-    let h2 = dft_magnitude(signal, 2.0 * fundamental_hz, sr);
+    let win = integer_cycle_slice(signal, fundamental_hz, sr);
+    let h1 = dft_magnitude(win, fundamental_hz, sr);
+    let h2 = dft_magnitude(win, 2.0 * fundamental_hz, sr);
     if h1 > 1e-15 {
         20.0 * (h2 / h1).log10()
     } else {
@@ -3060,4 +3175,129 @@ fn cmd_pump_sinusoid(args: &[String]) {
     eprintln!("  max sample-to-sample step:  dR={max_step_dr:.2} Ω  dY={max_step_dy:.4} V");
     eprintln!("  bifurcation events (pair-step > 0.1 V): {bifurcs}  (expect 0 for slewed-R)");
     eprintln!("pump-sinusoid: done in {secs:.1}s → {csv_path}");
+}
+
+// ─── Tests ──────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The estimator's own noise floor, measured the only way that means
+    /// anything: push a PURE, UNDISTORTED sine through it and see what THD it
+    /// invents. The unwindowed rectangular DFT this replaced read 3.31% at
+    /// 65 Hz, 0.94% at 262 Hz and 0.26% at 1046 Hz on exactly this signal —
+    /// pure Dirichlet leakage, which is what made every harmonic figure the
+    /// tool printed meaningless.
+    #[test]
+    fn test_estimator_floor_on_pure_sine() {
+        for &freq in &[65.41, 130.81, 261.63, 523.25, 1046.50] {
+            for &amplitude in &[0.001, 0.005] {
+                let n = (BASE_SR * 0.5) as usize;
+                let full: Vec<f64> = (0..n)
+                    .map(|i| amplitude * (2.0 * PI * freq * i as f64 / BASE_SR).sin())
+                    .collect();
+                let signal = integer_cycle_slice(&full[n * 3 / 4..], freq, BASE_SR);
+
+                let h1 = dft_magnitude(signal, freq, BASE_SR);
+                let thd = (2..=5)
+                    .map(|k| {
+                        let h = dft_magnitude(signal, k as f64 * freq, BASE_SR);
+                        h * h
+                    })
+                    .sum::<f64>()
+                    .sqrt()
+                    / h1
+                    * 100.0;
+
+                assert!(
+                    thd < 0.01,
+                    "estimator invents {thd:.6}% THD on a pure {freq} Hz sine at \
+                     amplitude {amplitude} — leakage floor has regressed"
+                );
+            }
+        }
+    }
+
+    /// Amplitude accuracy: the Hann coherent-gain correction must leave the
+    /// fundamental's magnitude right, or every absolute level the tool prints
+    /// is wrong by a constant.
+    #[test]
+    fn test_estimator_amplitude_accuracy() {
+        for &amplitude in &[0.001, 0.005, 1.0] {
+            let freq = 440.0;
+            let n = (BASE_SR * 0.25) as usize;
+            let full: Vec<f64> = (0..n)
+                .map(|i| amplitude * (2.0 * PI * freq * i as f64 / BASE_SR).sin())
+                .collect();
+            let signal = integer_cycle_slice(&full, freq, BASE_SR);
+            let h1 = dft_magnitude(signal, freq, BASE_SR);
+            let err_db = 20.0 * (h1 / amplitude).log10();
+            assert!(
+                err_db.abs() < 0.01,
+                "amplitude {amplitude} read back {err_db:+.4} dB off"
+            );
+        }
+    }
+
+    /// `integer_cycle_slice` must return whole fundamental cycles, and must not
+    /// panic or truncate to nothing on short or degenerate input.
+    #[test]
+    fn test_integer_cycle_slice_bounds() {
+        let buf = vec![0.0f64; 1000];
+        for &f in &[65.41, 440.0, 1046.5] {
+            let s = integer_cycle_slice(&buf, f, BASE_SR);
+            let cycles = s.len() as f64 * f / BASE_SR;
+            // A sampled window cannot hold an EXACT whole number of cycles
+            // unless sr/f happens to be rational with a small denominator, so
+            // the achievable bound is half a sample of slack. That residual is
+            // what the Hann window mops up — see test_estimator_floor_on_pure_sine
+            // for the measurement that actually matters.
+            let slack_cycles = 0.5 * f / BASE_SR;
+            assert!(
+                (cycles - cycles.round()).abs() <= slack_cycles,
+                "slice at {f} Hz is {cycles} cycles, off by more than half a sample"
+            );
+            assert!(!s.is_empty() && s.len() <= buf.len());
+        }
+        // Shorter than one cycle: return the input untouched rather than empty.
+        let short = vec![0.0f64; 10];
+        assert_eq!(
+            integer_cycle_slice(&short, 20.0, BASE_SR).len(),
+            short.len()
+        );
+        // Degenerate inputs must not panic.
+        assert_eq!(integer_cycle_slice(&short, 0.0, BASE_SR).len(), short.len());
+        assert!(integer_cycle_slice(&[], 440.0, BASE_SR).is_empty());
+    }
+
+    /// The re-baselined gain reference must reproduce the deck at its anchor
+    /// points and stay monotonically decreasing in between.
+    #[test]
+    fn test_spice_gain_target_table() {
+        for &(r, g) in &[
+            (8_000.0, 17.92),
+            (13_240.0, 15.01),
+            (19_000.0, 13.23),
+            (48_000.0, 9.95),
+            (1_000_000.0, 7.01),
+        ] {
+            assert!(
+                (spice_gain_target_db(r) - g).abs() < 0.01,
+                "target at {r} Ω should be {g} dB, got {}",
+                spice_gain_target_db(r)
+            );
+        }
+        // Monotone decreasing: more shunt = more feedback to the emitter = less gain.
+        let mut prev = f64::INFINITY;
+        for i in 0..200 {
+            let r = 5_000.0 * (1_000_000.0f64 / 5_000.0).powf(i as f64 / 199.0);
+            let g = spice_gain_target_db(r);
+            assert!(g <= prev + 1e-9, "non-monotone at {r} Ω: {g} after {prev}");
+            prev = g;
+        }
+        // Out-of-range clamps, not extrapolation.
+        assert!((spice_gain_target_db(1.0) - 17.92).abs() < 1e-9);
+        assert!((spice_gain_target_db(1e9) - 7.01).abs() < 1e-9);
+    }
 }
