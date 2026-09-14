@@ -25,7 +25,8 @@
 Reed Pickup
   -> Preamp (TR-1, TR-2 on reed bar PCB)
      [LDR tremolo is in the preamp FEEDBACK LOOP, not post-preamp]
-  -> Volume Pot (3K audio taper)
+  -> R-11 "REED BAR VOLUME" 25K trimmer (203717-1, wiper strapped)
+  -> Main Volume Pot (10K audio taper, 203643-001)
   -> C-8 coupling cap
   -> Power Amplifier (TR-7 through TR-13, on main amp board)
      -> Differential input (TR-7/TR-8)
@@ -43,7 +44,7 @@ The Wurlitzer 200A service manual explicitly states:
 
 > "The reed bar signal is modulated by inserting the vibrato voltage into the feedback loop of the high impedance preamp. A divider is formed by the feedback resistor R-10, and the light dependent resistor of LG-1. The L.D.R., in conjunction with the light emitting diode in the same package, creates a variable leg in the feedback divider and makes possible amplitude modulation of the reed bar voltage."
 
-R-10 (56K) feeds back from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD coupling cap) AC-couples fb_junct to TR-1's **emitter**. This is **series-series (emitter) NEGATIVE feedback**. Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (top terminal = fb_junct, bottom terminal = ground, wiper → the LDR branch), with an 18K resistor bridging top→wiper and R18 (680 Ω) in series with the LDR off the wiper. Front-panel depth = wiper position. When the LDR resistance changes, it diverts feedback current away from the emitter, modulating the preamp's closed-loop gain. (The old "fb_junct → 50K pot → 18K → LG-1 series chain" reading was corrected 2026-07-19 to this loaded divider — see §2.3.)
+R-10 (56K) feeds back from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD coupling cap) AC-couples fb_junct to TR-1's **emitter**. This is **series-series (emitter) NEGATIVE feedback**. Re1 (33K) provides the separate DC path from emitter to ground. The LDR (LG-1) shunts fb_junct to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (top terminal = fb_junct, bottom terminal = ground, wiper → the LDR branch), with an 18K resistor bridging top→wiper; the LDR sits directly on the wiper branch (cable pin 5 → LG-1 pin 4, LDR pin 3 → ground). R-18 (680 Ω) is **not** in the LDR leg — it is in the LED drive path (+15V → R-18 → LG-1 pin 2 LED → pin 1 → R-17; schemer-verified 2026-09-13, hop-vs-junction instrumented read — the earlier "R18 in series with the LDR" reading misread two line hops as junctions). Front-panel depth = wiper position. When the LDR resistance changes, it diverts feedback current away from the emitter, modulating the preamp's closed-loop gain. (The old "fb_junct → 50K pot → 18K → LG-1 series chain" reading was corrected 2026-07-19 to this loaded divider — see §2.3.)
 
 **Implications for modeling:**
 - Tremolo modulates preamp GAIN via emitter feedback, which means the distortion character changes with the tremolo cycle
@@ -113,21 +114,25 @@ Note: Collector is ~1V low because the subcircuit models R17 (4.7K) direct to Vc
 
 CdS devices exhibit strongly asymmetric time constants (fast on, slow off). This produces the characteristic "choppy" tremolo quality of the 200A.
 
-**CdS nonlinearity:** Resistance follows a power law. The OpenWurli implementation uses the datasheet-typical **gamma = 0.9** (VTL5C-class) over a weakly-driven cell range of **~9 kΩ bright ↔ ~1 MΩ dark** — the fixed ~0.84 mA LED keeps the cell in the kΩ regime and never reaches its datasheet ~50 Ω floor. The code uses a log-space interpolation model: `log_r = log_max + (log_min - log_max) * drive^gamma` (see `tremolo.rs`), rather than the simpler `R = R_dark * illumination^(-gamma)` formula. (Earlier docs cited gamma = 1.1 with an 18,320 Ω bright floor; that floor was really the 18 kΩ + R18 divider network folded into a fake cell minimum — now modeled explicitly as the shunt divider, §2.3.)
+**CdS nonlinearity:** Resistance follows a power law. The OpenWurli implementation uses the datasheet-typical **gamma = 0.9** (VTL5C-class) over a weakly-driven cell range of **~9 kΩ bright ↔ ~1 MΩ dark** — the weak LED drive keeps the cell in the kΩ regime and never reaches its datasheet ~50 Ω floor. The code uses a log-space interpolation model: `log_r = log_max + (log_min - log_max) * drive^gamma` (see `tremolo.rs`), rather than the simpler `R = R_dark * illumination^(-gamma)` formula. (Earlier docs cited gamma = 1.1 with an 18,320 Ω bright floor; that floor was really the 18 kΩ divider network folded into a fake cell minimum — now modeled explicitly as the shunt divider, §2.3.)
+
+> **⚠ LED-drive correction (2026-09-13, schemer-verified):** the LED current is NOT a fixed ~0.84 mA. The LED path is +15V → R-18 (680 Ω) → LED → **R-17 (4.7K, VARIABLE — a wiper-strapped depth trimmer**, arrowhead on the archive scan; the Tropical Fish redraw lost it) → the TR-3 collector node (5.9 V mark). LED current therefore follows the oscillator swing and the trimmer setting. The cell-range and drive figures in this section were derived under the fixed-current assumption and are being re-derived on the corrected deck (robogogo threads 352/373/375).
 
 ### 2.3 Feedback Divider Operation
 
-R-10 (56K) feeds from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter -- series-series negative feedback. The LDR (LG-1) shunts fb_junct to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (top = fb_junct, bottom = ground, wiper → LDR branch); an 18K resistor bridges top→wiper and R18 (680 Ω) is in series with the LDR off the wiper. The shunt impedance seen by fb_junct is:
+R-10 (56K) feeds from the preamp output to a feedback junction (fb_junct). Ce1 (4.7 MFD) AC-couples fb_junct to TR-1's emitter -- series-series negative feedback. The LDR (LG-1) shunts fb_junct to ground through the **50K VIBRATO pot wired as a 3-terminal divider** (top = fb_junct, bottom = ground, wiper → LDR branch); an 18K resistor bridges top→wiper and the LDR sits **directly** on the wiper branch (R-18 is in the LED path, not here — see the 2026-09-13 correction below). The shunt impedance seen by fb_junct is:
 
 ```
-Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ (680 Ω + R_ldr))
+Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ R_ldr)
     R_upper = 50 kΩ·(1 − depth),  R_lower = 50 kΩ·depth
 ```
 
+> **⚠ Topology correction (2026-09-13, schemer-verified on both scan surfaces):** the earlier reading placed R-18 (680 Ω) in series with the LDR; the drawing shows cable pin 5 running directly to LG-1 pin 4 (two line HOPS en route, not junctions), with R-18 in the LED drive path instead. All quantitative partition figures below (no-vib ≈ 13 kΩ, bright/dark ≈ 8 kΩ ↔ 48 kΩ, ~7 dB AM ceiling) were computed WITH the spurious 680 Ω in the LDR leg and are being re-derived on the corrected deck (robogogo threads 352/373/375). The shipped calibration (depth ladder 0/1.3/2.5/3.8/7.3 dB) remains the current release behavior until that re-derivation lands.
+
 - When LDR resistance is LOW (LED on/bright): the LDR branch pulls the shunt impedance down → feedback cannot reach emitter → emitter AC-grounded via Ce1 → **HIGHER** preamp gain
 - When LDR resistance is HIGH (LED off/dim): the LDR branch goes high-Z, but the **50K/18K divider still loads fb_junct** → partial feedback reaches emitter via Ce1 → emitter degeneration → **LOWER** preamp gain
-- Modulation depth is set by the front-panel **50K VIBRATO pot wired as a divider** (wiper position), NOT by an LED-drive trimpot. R17 (4.7K) sets a fixed LED current; depth does not scale it.
-- The pot part is labeled "50K VIBRATO 203697" on schematic #203720-S-3; some sources cite part 201812 — 203697 is what the drawing shows.
+- Front-panel depth is the **50K VIBRATO pot wired as a divider** (wiper position). In addition, R-17 (4.7K) is a **wiper-strapped depth TRIMMER in the LED path** (schemer-verified 2026-09-13) — LED current is not fixed; it follows the oscillator swing scaled by the trimmer. The front panel and the trimmer are two separate depth controls, matching the service-position "trimpot + front panel pot" description in §2.4.
+- Pot part number: 201812 on the Tropical Fish print; unreadable on the archive scan (the earlier "203697" reading is unconfirmed).
 
 Because the pot **always loads fb_junct** (at depth = 0 the wiper grounds the LDR branch and fb_junct still sees 50K ∥ 18K ≈ 13 kΩ), the shunt never reaches the ~1 MΩ raw cell resistance. This bounds the tremolo AM swing (~7 dB peak-to-peak at full depth) — the same order of magnitude as the EP-Forum "6 dB gain boost" measurement.
 
@@ -161,23 +166,27 @@ Keep two things separate:
 
 ## 3. Volume Control
 
+> **⚠ Corrected 2026-09-13 (schemer-verified, robogogo thread 352):** earlier revisions of this section described a 3K pot and a "model as real attenuator" decision. Both were wrong: the 3K volume control (part 201814) is a **Model 200** part (drawing 201904-S-1-E-1), and the attenuator decision was superseded by the 2026-04-26 drive/volume decoupling. This section now records both the real circuit and the shipped architecture.
+
+### 3.1 The real 200A volume chain
+
 | Parameter | Value |
 |-----------|-------|
-| Potentiometer value | 3K ohm |
-| Taper | Audio (logarithmic) |
-| Position in signal chain | After preamp output, before power amp input |
+| Reed-bar trimmer | R-11 "REED BAR VOLUME" 25K (203717-1, wiper strapped) |
+| Main volume pot | 10K (203643-001), bottom terminal to ground |
+| Taper | Audio; exact taper code unknown (see note below) |
+| Position in signal chain | Preamp output → R-11 → main pot → wiper → C-8 (4.7 µF) → TR-7 base |
 | Preamp output level | 2-7 mV AC (Brad Avenson measurement) |
 
-The 3K audio pot is unusually low impedance for a volume control. This has implications:
-- Very low output impedance to the power amp input
-- Minimal noise pickup on the wiring between pot and amp board
-- Compatible with the low-impedance preamp output
+The wiper drives the power amp input through C-8, so the power-amp input impedance loads the wiper; with the 25K trimmer ahead of the 10K pot, the source impedance at mid-travel is several kΩ — if this is ever modeled as a real attenuator, solve it loaded, not as an ideal gain block.
 
-**The volume pot is between the preamp (on the reed bar) and the power amp (on the main amp board).** The wiring runs from the reed bar preamp PCB through the volume pot to the amp board input via C-8 coupling capacitor.
+**Taper note (voltron, thread 352):** a standard carbon audio-taper pot is not x². Bourns' standard 15% curve is a two-slope line reaching ~15% output at half rotation (−16.5 dB at center, vs −12 dB for x² and −6 dB for linear); a 25% part would match x² at center but still miss the two-slope shape. The actual taper code of the 200A's pot is undocumented; measuring a real pot (wiper-to-ground resistance at marked rotations) is the only way to pin it.
 
-**DECISION: Model as real attenuator, not output gain.** The volume pot must sit between preamp and power amp in the plugin signal chain, not at the output. At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the character of the distortion (more odd harmonics from the dead zone). This interaction is audible and should be preserved. Implementation: audio-taper gain curve applied between preamp output and power amp input.
+### 3.2 Shipped architecture (supersedes the old attenuator DECISION)
 
-**Volume taper implementation:** `gain = volume^2` (quadratic approximation of audio taper). The parameter uses `FloatRange::Linear` (0.0 to 1.0). Default volume is 0.50, giving effective gain of 0.25 (-12 dB).
+**The plugin does NOT model the pot as an in-circuit attenuator.** Per the 2026-04-26 drive/volume decoupling: circuit drive into the power amp is pinned at `tables::FIXED_CIRCUIT_DRIVE` (the clean operating point), and user volume is a **linear post-amp multiplier** applied after the speaker stage (`engine.rs`, guarded by `test_user_volume_scales_output_linearly`). Volume 0.50 is therefore −6 dB of output level, and the low-volume crossover-distortion interaction the old DECISION argued for is deliberately not modeled.
+
+Why: SPICE drive sweeps showed the power amp has a razor-sharp THD cliff (clean below ~295 mV input, 18.6% THD at 500 mV) with no musical middle ground, and real players sit at 8–11 o'clock pot rotation, well inside the clean regime. Coupling volume to drive produced >0 dBFS output at vol > ~0.65 with no tonal benefit. Full trade-off record: openwurli memory `volume-decoupling-2026-04-26`.
 
 ---
 

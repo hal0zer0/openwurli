@@ -26,7 +26,7 @@ Read `docs/` before making DSP decisions. Key 200A characteristics:
 - **Tremolo inside feedback loop** — LDR shunts the preamp's emitter feedback path, modulating gain and timbre (not just volume)
 - **Velocity is mechanical** — hammer force on reed, not electronic scaling
 
-The authoritative schematic is `#203720-S-3` (serial 102905+). See `docs/SCHEMATIC_SOURCE.md` for how to obtain it. DO NOT use other Wurlitzer schematics — different models have different topology. The 200 is not the 200A.
+The authoritative schematic is `#203720-S-3` — specifically the titled archive scan; the Tropical Fish redraw is a different print (see `docs/SCHEMATIC_SOURCE.md` for provenance and how to obtain it). DO NOT use other Wurlitzer schematics — different models have different topology. The 200 is not the 200A.
 
 ## Build & Test
 

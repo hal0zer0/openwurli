@@ -6,6 +6,23 @@ Comprehensive technical reference for implementing a digital model of the Wurlit
 
 ---
 
+## ⚠ TOPOLOGY REVISION IN PROGRESS (2026-09-13)
+
+Instrumented schematic re-reads (schemer, pixel-level hop/junction/terminus classification on both circulating scan surfaces; robogogo threads 352/375) **overturned four topology readings this document is built on**. The corrections below are drawing-verified fact; the re-derivation of everything downstream of them (bias arithmetic, per-stage gains, input impedance, pickup HPF corner) is in progress against a corrected SPICE deck (thread 373) and this document will be rewritten when those numbers land. Until then, treat the affected sections as historical.
+
+| # | As drawn (verified) | This doc currently says | Affected sections |
+|---|--------------------|------------------------|-------------------|
+| 1 | **R-2 = 1 MEG**, from the **+150V polarizing line** to the R-1 22K / C-1 junction (pickup side of the input cap). No resistor from TR-1 base to +15V; +15V feeds only R-4 and R-6. | R-2 = 2 MEG from +15V to TR-1 base (Note 1's 2M override was a fit to the wrong topology) | §2, §4.3 (bias divider), §5 input impedance, the 2312 Hz pickup corner (287K network) |
+| 2 | **R-3 470K returns from TR-1 base to the R-7/R-8 junction** (DC feedback from TR-2's emitter; the crossings over R-5 and C-5 are hops). At audio, C-7 grounds that junction, so R-3 is 470K to AC ground. | R-3 = 470K to ground | §4.3 — the drawn topology reproduces the printed TR-1 base 2.45V and the GroupDIY hardware 2.447V that the current model misses by 0.35–0.37V |
+| 3 | **C-7 22µF spans TR-2 emitter → ground** (across R-7 + R-8 in series). | C-7 bypasses R-7 (270 Ω) only | §5 — stage 2 is a high-gain CE stage, not Av2 ≈ −2.2; closed-loop gain is set by the R-10/C-5 global feedback, so the per-stage gain arithmetic (§5, §8) needs redoing |
+| 4 | **C-6 4.7µF is a series coupling cap** between TR-2 collector and the R-9/R-10 node (+ toward collector); that node sits at 0V DC. | Output DC-coupled through R-9 | §5, §7 — our netlists lack C-6 entirely and leak DC through R-10 into the LDR leg |
+
+Also verified: C-2 (220pF) is on the board with no model restriction, but its bottom rail is drawn **broken** on both surfaces (drawing defect — its return, and R-5's, need DC analysis or hardware, not the print). The tremolo-side R-18/R-17 corrections live in [Output Stage §2.3](output-stage.md).
+
+---
+
+---
+
 ## Table of Contents
 
 1. [Circuit Overview](#1-circuit-overview)

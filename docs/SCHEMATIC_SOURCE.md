@@ -2,7 +2,9 @@
 
 ## Required Schematic
 
-This project references the **Wurlitzer Model 200A Electronic Piano Schematic**, drawing number **#203720-S-3**, valid for instruments starting at serial number **102905**.
+This project references the **Wurlitzer Model 200A Electronic Piano Schematic**, drawing number **#203720-S-3**. (An earlier revision of this doc said "valid for serial 102905+" — that serial belongs to the "LATE PRODUCTION AUX. OUTPUT CIRCUIT" note printed on the sheet, not to the schematic's coverage.)
+
+**Provenance note (2026-09-13):** two different prints of this circuit circulate. The archive scan (the "p.66" surface) carries the actual title block *"MODEL 200A ELECTRONIC PIANO SCHEMATIC ... SCHEMATIC # 203720-S-3"* and is the surface we treat as authoritative. The Tropical Fish Vintage compendium's redraw (its p.23) has **no title block** and a different bias-adjust note — it is a different print and must not be cited as 203720-S-3, even though its topology has matched the archive scan on every instrumented read so far.
 
 The schematic PDF is **not included** in this repository due to copyright. You must obtain it separately.
 
@@ -18,10 +20,10 @@ Search for: *"Wurlitzer 200A schematic 203720"* or *"Wurlitzer 200A service manu
 
 ## Correct Version
 
-Make sure you get the **200A** schematic (serial 102905+), not:
+Make sure you get the **200A** schematic, not:
 
 - The combined 200/203/206/207 schematic (different component numbering)
-- The 200 schematic (tube-based, completely different topology)
+- The Model 200 schematic (drawing 201904-S-1-E-1 — solid-state but a different circuit; e.g. its volume control is a 3K part 201814, vs the 200A's 10K pot + 25K reed-bar trimmer)
 - The 206A schematic (has C20/220pF cap not present on the 200A)
 
 ## Where to Place It

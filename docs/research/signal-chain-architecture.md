@@ -46,7 +46,7 @@ Keypress
   -> Reed vibrates (cantilevered spring steel with solder tuning mass at free end)
   -> Electrostatic pickup (reed + shared pickup plate = variable capacitor)
      - Polarizing voltage: ~147V DC via half-wave rectifier
-     - Bias network: R-2=2M, R-3=470k -> R_total = R-2||R-3 = 380k
+     - Bias network: ⚠ UNDER REVISION 2026-09-13 — R-2 is 1M from the +150V line on the PICKUP side of the input cap, and R-3 470K returns to TR-2's emitter divider, not ground (see preamp-circuit.md banner); the old "R-2||R-3 = 380k at the base" network is not on the drawing
      - C20 shunt cap: 220 pF — NOTE: 206A ONLY, NOT present on the 200A
      - ALL 64 reeds share ONE common pickup plate (reed bar assembly)
      - Total system capacitance: ~240 pF at preamp input
@@ -55,13 +55,13 @@ Keypress
      - Originally 2N2924, later replaced with 2N5089 (hFE >= 450)
      - +15V DC supply
      - Collector-base feedback caps C-3 = C-4 = 100 pF
-     - Pickup RC HPF at ~2312 Hz (C20 at 1903 Hz is 206A only, NOT 200A)
+     - Pickup RC HPF at ~2312 Hz (C20 at 1903 Hz is 206A only, NOT 200A) — ⚠ corner built on the 380k network above; recomputation pending (preamp-circuit.md banner)
      - Total gain 6.0 dB (2.0x) no tremolo / 12.1 dB (4.0x) tremolo bright
      - Output: 2-7 mV AC at volume pot
   -> Tremolo (LDR optocoupler modulates preamp emitter feedback)
      - LFO (~5.6 Hz twin-T oscillator, TR-3/TR-4) drives LED inside LG-1 optocoupler
      - R-10 (56K) feeds back from output to fb_junct; Ce1 (4.7 MFD) couples fb_junct to TR-1 emitter
-     - LDR (LG-1) shunts fb_junct to ground via cable Pin 1 → 50K VIBRATO → 18K → LG-1
+     - LDR (LG-1) shunts fb_junct to ground via the 50K VIBRATO pot wired as a loaded divider (18K top→wiper, LDR directly on the wiper branch — see output-stage.md §2.3)
      - Modulates preamp GAIN (not post-preamp volume): series-series emitter feedback topology
      - LED ON → LDR low → fb_junct shunted to ground → feedback can't reach emitter → higher gain
      - LED OFF → LDR high → full feedback reaches emitter via Ce1 → lower gain
