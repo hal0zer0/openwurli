@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] "CODENAME-TBD" - UNRELEASED
+## [0.7.0] "ResponsiblePractical" - 2026-09-15
 
 The drawn-topology revision: instrumented re-reads of schematic
 #203720-S-3 overturned six circuit readings the model was built on, and
@@ -1167,7 +1167,8 @@ derivation, real-instrument DC measurements) before any code moved.
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/hal0zer0/openwurli/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/hal0zer0/openwurli/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/hal0zer0/openwurli/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/hal0zer0/openwurli/compare/v0.5.2...v0.6.0
