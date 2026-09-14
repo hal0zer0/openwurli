@@ -117,9 +117,13 @@ impl Voice {
         let base_ds = tables::pickup_displacement_scale(midi_note);
         let mlp_level_compensation = if (corrections.ds_correction - 1.0).abs() > 1e-6 {
             let f0 = tables::midi_to_freq(midi_note);
-            const HPF_FC: f64 = 2312.0;
-            let proxy_base = tables::pickup_rms_proxy(base_ds, f0, HPF_FC);
-            let proxy_corrected = tables::pickup_rms_proxy(corrected_ds, f0, HPF_FC);
+            // The pickup's small-signal corner, referenced not copied. This call
+            // site hardcoded the superseded 2312 Hz; `pickup_rms_proxy` requires
+            // the real corner or it mis-normalises by up to 4.4 dB across
+            // register and drive, and the compensation stops tracking DS.
+            let hpf_fc = crate::pickup::PICKUP_FC;
+            let proxy_base = tables::pickup_rms_proxy(base_ds, f0, hpf_fc);
+            let proxy_corrected = tables::pickup_rms_proxy(corrected_ds, f0, hpf_fc);
             if proxy_corrected > 1e-10 {
                 (proxy_base / proxy_corrected).sqrt()
             } else {
