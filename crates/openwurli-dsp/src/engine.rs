@@ -157,6 +157,18 @@ pub struct WurliEngine {
 
     // Shared signal chain (mono, post voice-sum)
     preamp: DkPreamp,
+
+    /// Test-only power-amp drive probe. Accumulates peak and mean-square of
+    /// the signal actually presented to `PowerAmp::process`, i.e.
+    /// `preamp_out * FIXED_CIRCUIT_DRIVE`. Used by the drive-headroom probe
+    /// to compare against the amp's linearity envelope. `cfg(test)` so the
+    /// hot loop carries nothing in release builds.
+    #[cfg(test)]
+    pub(crate) drive_peak: f64,
+    #[cfg(test)]
+    pub(crate) drive_sumsq: f64,
+    #[cfg(test)]
+    pub(crate) drive_n: u64,
     tremolo: Tremolo,
     oversampler: Oversampler,
     power_amp: PowerAmp,
@@ -203,6 +215,12 @@ impl WurliEngine {
             voices: (0..MAX_VOICES).map(|_| VoiceSlot::default()).collect(),
             age_counter: 0,
             preamp: DkPreamp::new(os_sr),
+            #[cfg(test)]
+            drive_peak: 0.0,
+            #[cfg(test)]
+            drive_sumsq: 0.0,
+            #[cfg(test)]
+            drive_n: 0,
             tremolo: Tremolo::new(0.5, os_sr),
             oversampler: Oversampler::new(),
             // Power amp runs at the oversampled rate alongside the preamp so
@@ -541,9 +559,14 @@ impl WurliEngine {
                     // Pin BJT drive at the clean operating point. User volume
                     // is applied post-amp in render() as a linear multiplier
                     // (decoupled from circuit drive — see FIXED_CIRCUIT_DRIVE).
-                    self.up_buf[idx] = self
-                        .power_amp
-                        .process(preamp_out * tables::FIXED_CIRCUIT_DRIVE);
+                    let drive = preamp_out * tables::FIXED_CIRCUIT_DRIVE;
+                    #[cfg(test)]
+                    {
+                        self.drive_peak = self.drive_peak.max(drive.abs());
+                        self.drive_sumsq += drive * drive;
+                        self.drive_n += 1;
+                    }
+                    self.up_buf[idx] = self.power_amp.process(drive);
                 }
             }
 
@@ -559,9 +582,14 @@ impl WurliEngine {
                 self.preamp.set_ldr_resistance(r_ldr);
                 let preamp_out = self.preamp.process_sample(self.sum_buf[i]);
                 // Drive pinned; user volume applied post-amp in render().
-                self.out_buf[offset + i] = self
-                    .power_amp
-                    .process(preamp_out * tables::FIXED_CIRCUIT_DRIVE);
+                let drive = preamp_out * tables::FIXED_CIRCUIT_DRIVE;
+                #[cfg(test)]
+                {
+                    self.drive_peak = self.drive_peak.max(drive.abs());
+                    self.drive_sumsq += drive * drive;
+                    self.drive_n += 1;
+                }
+                self.out_buf[offset + i] = self.power_amp.process(drive);
             }
         }
     }
@@ -1208,5 +1236,133 @@ mod tests {
             swing > 3.0,
             "Tremolo should produce > 3 dB RMS swing at default depth 0.5: got {swing:.2} dB"
         );
+    }
+
+    /// Power-amp drive-headroom probe (Phase-2 closing measurement).
+    ///
+    /// Reports peak and RMS of the signal actually presented to the power amp
+    /// (`preamp_out * FIXED_CIRCUIT_DRIVE`) so it can be compared against the
+    /// amp's linearity envelope. Reference points:
+    ///   * behavioural amp closed-loop gain 68.93x, rails at 22 V
+    ///     => hard rail clip at 22 / 68.93 = 319 mV input
+    ///   * SPICE reference: THD crosses 1% near 295-300 mV input, razor cliff above
+    ///
+    /// User volume is applied POST-amp, so drive is volume-independent by
+    /// construction (that is the point of the 2026-04-26 decoupling).
+    #[test]
+    #[ignore = "diagnostic probe"]
+    fn power_amp_drive_headroom_probe() {
+        let sr = 44_100.0;
+        let mk = || {
+            let mut e = WurliEngine::new(sr);
+            e.ensure_buffer_capacity(1024);
+            e.set_volume(1.0);
+            e.set_tremolo_depth(1.0);
+            e.set_speaker_character(0.0);
+            e.set_mlp_enabled(true);
+            e.set_noise_enabled(false);
+            e.warm_up();
+            e
+        };
+        let run = |e: &mut WurliEngine, total: usize| {
+            let mut buf = vec![0.0f32; 1024];
+            let mut pos = 0;
+            while pos < total {
+                let len = 1024.min(total - pos);
+                e.render(&mut buf[..len]);
+                pos += len;
+            }
+        };
+        println!("  stimulus            peak mV    RMS mV   % of 319 mV clip");
+        // (a) single ff notes across the register
+        for note in [36u8, 48, 60, 72, 84] {
+            let mut best = (0.0f64, 0.0f64);
+            for delay_ms in [0usize, 44, 89, 133, 162] {
+                let mut e = mk();
+                run(&mut e, (sr as usize) * delay_ms / 1000);
+                e.drive_peak = 0.0;
+                e.drive_sumsq = 0.0;
+                e.drive_n = 0;
+                e.note_on(note, 0.95);
+                run(&mut e, sr as usize);
+                let rms = (e.drive_sumsq / e.drive_n as f64).sqrt();
+                if e.drive_peak > best.0 {
+                    best = (e.drive_peak, rms);
+                }
+            }
+            println!(
+                "  note {note:>3} ff       {:8.1}  {:8.1}   {:6.1}%",
+                best.0 * 1000.0,
+                best.1 * 1000.0,
+                best.0 / 0.319 * 100.0
+            );
+        }
+        // (b) worst-phase ff chord — same stimulus as the peak invariant
+        let mut best = (0.0f64, 0.0f64);
+        for delay_ms in [0usize, 44, 89, 133, 162] {
+            let mut e = mk();
+            run(&mut e, (sr as usize) * delay_ms / 1000);
+            e.drive_peak = 0.0;
+            e.drive_sumsq = 0.0;
+            e.drive_n = 0;
+            for &n in &[48u8, 55, 60, 63, 67, 70] {
+                e.note_on(n, 0.95);
+            }
+            run(&mut e, sr as usize);
+            let rms = (e.drive_sumsq / e.drive_n as f64).sqrt();
+            if e.drive_peak > best.0 {
+                best = (e.drive_peak, rms);
+            }
+        }
+        println!(
+            "  chord ff worst-ph  {:8.1}  {:8.1}   {:6.1}%",
+            best.0 * 1000.0,
+            best.1 * 1000.0,
+            best.0 / 0.319 * 100.0
+        );
+    }
+
+    /// Behavioural power-amp linearity envelope — where does its nonlinearity
+    /// actually engage? Sine sweep straight into `PowerAmp`, THD via DFT.
+    /// Reference: SPICE says the real amp crosses 1% THD near 295-300 mV in.
+    #[test]
+    #[ignore = "diagnostic probe"]
+    fn power_amp_linearity_envelope_probe() {
+        use crate::power_amp::PowerAmp;
+        let sr = 88_200.0;
+        let n = 8192usize;
+        // COHERENT analysis frequency: the 4096-sample window must hold an
+        // integer number of cycles, else leakage from H1 sets a constant
+        // apparent-THD floor that masks the real level dependence entirely
+        // (an incoherent 220 Hz reads a flat 3.38% from 1 mV to 330 mV).
+        let f = 10.0 * sr / (n as f64 / 2.0); // 215.33 Hz, exactly 10 cycles
+        let thd_at = |amp_v: f64| {
+            let mut pa = PowerAmp::new_at_sample_rate(sr);
+            let mut y = vec![0.0f64; n];
+            for i in 0..n {
+                let t = i as f64 / sr;
+                y[i] = pa.process(amp_v * (2.0 * std::f64::consts::PI * f * t).sin());
+            }
+            let w = &y[n / 2..];
+            let mag = |k: f64| {
+                let (mut re, mut im) = (0.0, 0.0);
+                for (i, &v) in w.iter().enumerate() {
+                    let ph = 2.0 * std::f64::consts::PI * k * i as f64 / sr;
+                    re += v * ph.cos();
+                    im -= v * ph.sin();
+                }
+                ((re / w.len() as f64).powi(2) + (im / w.len() as f64).powi(2)).sqrt()
+            };
+            let h1 = mag(f);
+            let harm: f64 = (2..=8).map(|h| mag(h as f64 * f).powi(2)).sum();
+            100.0 * harm.sqrt() / h1
+        };
+        println!("   input mV     THD %");
+        for mv in [
+            1.0f64, 5.0, 10.0, 20.0, 54.5, 100.0, 115.6, 150.0, 200.0, 250.0, 280.0, 295.0, 300.0,
+            310.0, 319.0, 330.0,
+        ] {
+            println!("   {mv:8.1}  {:9.4}", thd_at(mv / 1000.0));
+        }
     }
 }
