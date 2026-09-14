@@ -122,3 +122,59 @@ not a generalisation estimate.
 | `generate_rust_weights.py` | Stage 7: weight export to Rust |
 | `h3_analysis.py` | H3 harmonic deep-dive analysis |
 | `h3_analysis_v2.py` | H3 analysis with improved filtering |
+
+## 2026-09-14 — untrained-head rail fixed (`mlp_correction.rs`)
+
+### What was wrong
+
+`compute_residuals.py` sets `MAX_RELIABLE_HARMONIC = 2`, so only H2 and H3 clear the
+SNR/anomaly filters. Verified against `ml_data/training_data.npz`:
+
+| head | training samples |
+|---|---|
+| `freq_H2` / `freq_H3` | 13 / 13 and 12 / 13 |
+| `freq_H4` / `H5` / `H6` | **0 / 13** |
+| `decay_H2` / `decay_H3` | 13 / 13 and 12 / 13 |
+| `decay_H4` / `H5` / `H6` | **0 / 13** |
+| `ds` | 13 / 13 |
+
+Six of the eleven outputs were never trained. An untrained head is not neutral — it emits
+whatever the shared hidden layers and the initialisation leave, and then meets a clamp.
+Measured on the shipped weights, `decay_H4..H6` emitted **0.592** at MIDI 60 and sat
+**railed at the 0.300 lower clamp** at MIDI 72 and 84: a 3.3× *faster* decay correction on
+three modes, asked for by nobody. (`freq_H4..H6` happened to land on 0.00 cents, so they
+were already harmless — but they were untrained too, and are now explicitly identity.)
+
+### What changed
+
+`mlp_correction.rs` gained `N_TRAINED_HARMONICS = 2`, mirroring `MAX_RELIABLE_HARMONIC`.
+Heads at or above that index emit **identity** (decay 1.0, freq 0.0 cents) instead of a
+clamped network output. No weights were regenerated — the fix is in how outputs are
+consumed, so the existing artifacts stand.
+
+**If the pipeline ever trains more harmonics, raise `N_TRAINED_HARMONICS` to match.**
+
+### What this did NOT fix — read before citing it
+
+The rail was blamed for the muted upper-harmonic decay in the corrections-on A/B. It is not
+the cause. C4 v112, corrections-ON minus corrections-OFF, sustain window 0.8–2.5 s:
+
+| | H1 | H2 | H3 | H4 | H5 | H6 | H7 | H8 |
+|---|---|---|---|---|---|---|---|---|
+| decay rail broken | +1.14 | +0.33 | −0.51 | −1.26 | −2.03 | −3.90 | −3.84 | −1.93 |
+| decay rail fixed | +1.14 | +0.33 | −0.51 | −1.26 | −2.03 | −3.90 | −3.85 | −1.95 |
+| fixed **+ `ds_correction` forced to 1.0** | +0.00 | +0.00 | +0.00 | +0.00 | −0.00 | +0.00 | +0.00 | −0.02 |
+
+**100% of the muting is `ds_correction`.** At C4 v112 it infers **0.918** — it *reduces*
+displacement at high velocity, which weakens the pickup's `1/(1−y)` and mutes the harmonic
+series from H4 up. The magnitude checks out: `4·20·log10(0.918) = −3.0 dB` at H4 against
+−1.3 measured, same direction and order.
+
+The decay heads could not have caused it either way: `decay_offsets` apply to the reed's
+**inharmonic** modes 2–6, which sit 46–66 dB below the fundamental and do not land on
+harmonic bins at all. The rail was a real correctness defect and is worth fixing; it was
+simply inaudible.
+
+`ds_correction` extrapolating below 1.0 at out-of-distribution velocity is the live issue,
+and it is unchanged here (out of scope). A velocity fade on the ds head is the standing
+proposal. **MLP default stays OFF.**

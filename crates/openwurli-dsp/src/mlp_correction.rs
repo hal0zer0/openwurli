@@ -21,6 +21,26 @@ use mlp_weights::*;
 const MIDI_MIN: f64 = 21.0;
 const MIDI_MAX: f64 = 108.0;
 const N_OUTPUTS: usize = 11;
+
+/// How many harmonic heads the network was actually TRAINED on.
+///
+/// Mirrors `MAX_RELIABLE_HARMONIC` in `ml/compute_residuals.py`: only H2 and H3
+/// clear the SNR / anomaly filters on the reference set, so `freq_H4..H6` and
+/// `decay_H4..H6` have **zero** training samples — verified against
+/// `ml/ml_data/training_data.npz` (13/13 and 12/13 samples for H2/H3; 0/13 for
+/// H4, H5 and H6).
+///
+/// An untrained head is not neutral. Its weights are whatever initialisation
+/// and the shared hidden layers leave them, and the output then meets a clamp.
+/// Measured before this fix, `decay_H4..H6` emitted **0.592** at MIDI 60 and sat
+/// **railed at the 0.300 lower clamp** at MIDI 72 and 84 — a decay-rate
+/// correction of 3.3x FASTER on three upper modes that nothing ever asked for.
+/// That is the mechanism behind the muted upper-harmonic decay in the
+/// corrections-on A/B (H4 -2.4 dB, H5 -3.2 dB at C4 v112).
+///
+/// Heads at or above this index now emit IDENTITY. If the pipeline ever trains
+/// more harmonics, raise this to match `MAX_RELIABLE_HARMONIC` and regenerate.
+const N_TRAINED_HARMONICS: usize = 2;
 const N_FREQ: usize = 5;
 const N_DECAY: usize = 5;
 const DS_IDX: usize = 10;
@@ -117,10 +137,12 @@ impl MlpCorrections {
         let mut freq_offsets_cents = [0.0f64; N_FREQ];
         let mut decay_offsets = [1.0f64; N_DECAY];
 
-        for h in 0..N_FREQ {
+        // Untrained heads emit identity, not whatever the clamp catches.
+        // See N_TRAINED_HARMONICS for why this is not a tuning choice.
+        for h in 0..N_FREQ.min(N_TRAINED_HARMONICS) {
             freq_offsets_cents[h] = (raw[h] * fade).clamp(-100.0, 100.0);
         }
-        for h in 0..N_DECAY {
+        for h in 0..N_DECAY.min(N_TRAINED_HARMONICS) {
             let raw_decay = raw[N_FREQ + h].clamp(0.3, 3.0);
             decay_offsets[h] = 1.0 + (raw_decay - 1.0) * fade;
         }
