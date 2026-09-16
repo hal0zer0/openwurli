@@ -6,6 +6,8 @@ This project references the **Wurlitzer Model 200A Electronic Piano Schematic**,
 
 **Provenance note (2026-09-13):** two different prints of this circuit circulate. The archive scan (the "p.66" surface) carries the actual title block *"MODEL 200A ELECTRONIC PIANO SCHEMATIC ... SCHEMATIC # 203720-S-3"* and is the surface we treat as authoritative. The Tropical Fish Vintage compendium's redraw (its p.23) has **no title block** and a different bias-adjust note — it is a different print and must not be cited as 203720-S-3, even though its topology has matched the archive scan on every instrumented read so far.
 
+**Encoding caveat (2026-09-16):** the archive scan PDF is 1-bit **JBIG2** at 300 dpi with no text layer (check with `pdfimages -list`). JBIG2 is a lossy symbol coder that can substitute one glyph for a visually similar one (3/8, 1/7, 6/8), so any component value or drawing number read off it alone carries substitution risk. The Tropical Fish redraw is JPEG2000 (no symbol coding, resolution-limited only). Rule: cite the drawing number from the archive scan; accept a **value** from the archive scan only when it clears a same-sheet glyph control or agrees with the Tropical Fish print. The 2026-09 topology revision read both surfaces this way (e.g. R-2's "1 MEG" label, `docs/research/preamp-circuit.md` Note 1).
+
 The schematic PDF is **not included** in this repository due to copyright. You must obtain it separately.
 
 ## Where to Find It
