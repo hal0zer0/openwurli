@@ -5,9 +5,8 @@
 //! default for a 1.6-7× CPU win over the generated solver.
 //!
 //! `--features melange-preamp`: melange-generated 12-node M=5 solver with
-//! Sherman-Morrison pot correction. Its adapter still carries the pre-0.7.0
-//! shadow-pump subtraction, which the C-6 correction made physically
-//! baseless on the default path; not normally needed at runtime.
+//! Sherman-Morrison pot correction. Retained for full-precision circuit
+//! studies; not normally needed at runtime.
 
 #[cfg(not(feature = "melange-preamp"))]
 pub use crate::dk_preamp_legacy::DkPreamp;
@@ -118,7 +117,7 @@ mod melange_gate_tests {
     /// 4411bb4, 03c290e). Sweeps R_ldr over its full tremolo range during a
     /// 1 kHz carrier and asserts no sample-to-sample jump exceeds what the
     /// carrier itself can naturally produce by a wide margin. Runs through the
-    /// DkPreamp adapter so shadow-pump cancellation is active (plugin path).
+    /// DkPreamp adapter used by the plugin path.
     #[test]
     fn test_ldr_sweep_no_clicks() {
         let mut preamp = crate::dk_preamp::DkPreamp::new(SR);

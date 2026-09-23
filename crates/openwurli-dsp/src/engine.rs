@@ -280,10 +280,10 @@ impl WurliEngine {
         self.warm_up();
     }
 
-    /// Settle the preamp / shadow-pump / CdS-envelope to their steady operating
+    /// Settle the preamp and CdS envelope to their steady operating
     /// point by running internal silence with the tremolo active. The real 200A
     /// preamp is always biased at its DC operating point; a solver started cold
-    /// takes ~0.5 s (the shadow-pump's multi-second transient) to reach the
+    /// takes ~0.5 s to reach the
     /// steady tremolo modulation, and a note struck during that window rides a
     /// deep gain excursion that reads as repeated attacks. Called after every
     /// `reset()` and `set_sample_rate()` so the first note is always clean.
