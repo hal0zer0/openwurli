@@ -142,9 +142,9 @@ use std::f64::consts::PI;
 /// ASSUMPTION, not a measurement, and the corner inherits that confidence.
 /// An LCR reading of a real reed bar would settle it — and is expected.
 ///
-/// Corner sensitivity (fitted one-pole, from the cross-checked network):
-/// 150 pF -> 1064 Hz, 240 pF -> 880 Hz, 400 pF -> 670 Hz. Changing this
-/// constant moves `PICKUP_FC` automatically via the scaling law below.
+/// Corner sensitivity (from the scaling law below, which is what the code
+/// applies): 150 pF -> 1095 Hz, 240 pF -> 880 Hz, 400 pF -> 653 Hz. Changing
+/// this constant moves `PICKUP_FC` automatically.
 pub const C_TOTAL: f64 = 240.0e-12;
 
 /// C-2, the 220 pF capacitor at TR-1's base. Fixed 200A part. It is bridged to
@@ -243,10 +243,10 @@ pub const PICKUP_SENSITIVITY: f64 = V_POLARIZING * C_REED0 / C_TOTAL;
 /// curve below, |y_out| approaches but never reaches this value.
 ///
 /// The old static model needed a tight clamp (0.90) because y/(1-y) at 0.90 = 9.0
-/// produced huge intermediate signals. The time-varying RC model self-limits via
-/// charge dynamics — output is bounded at ~±SENSITIVITY regardless of y, so we
-/// can safely allow y close to 1.0. At y=0.98, c_n=50, alpha=0.008 — numerically
-/// well-behaved.
+/// produced huge intermediate signals. In the source-driven model the source
+/// term y/(1-y) is large near the limit (49 at y = 0.98) but the network stays
+/// well-conditioned: the node capacitance rises only by C_REED_RATIO times that
+/// (≈1.6× at y = 0.98), so y close to 1.0 is numerically safe.
 pub const PICKUP_MAX_Y: f64 = 0.98;
 
 /// Knee where the smooth saturation begins. Below this, `pickup_soft_saturate`
@@ -328,13 +328,11 @@ impl Pickup {
     /// Input: reed displacement in normalized model units.
     /// Output: pickup voltage in volts (millivolt-scale signals).
     ///
-    /// The time-varying RC circuit couples the 1/(1-y) capacitance nonlinearity
-    /// with the charge dynamics, producing frequency-dependent harmonic generation.
-    /// At frequencies well below the RC corner (PICKUP_FC, 880 Hz), the circuit generates
-    /// H2 proportional to displacement² (same as the static y/(1-y) model).
-    /// At frequencies near/above the corner, the charge can't follow the fast
-    /// capacitance changes, reducing the nonlinear contribution — physically
-    /// correct behavior that the old separated model couldn't capture.
+    /// The nonlinearity lives in the SOURCE (the moving reed's y/(1-y) charge
+    /// injection) and is frequency-independent; the network that follows is
+    /// very nearly LTI — a differentiator inside a one-pole lag with its corner
+    /// at PICKUP_FC (880 Hz). See the module docs and
+    /// `test_nonlinearity_is_frequency_independent`.
     pub fn process(&mut self, buffer: &mut [f64]) {
         let scale = self.displacement_scale;
         let beta = self.beta;

@@ -699,8 +699,9 @@ pub const POST_SPEAKER_GAIN: f64 = 1.678_804_018_122_56; // 10^(4.5/20)
 /// music) and crossover-region grit at very low vol (rarely visited in
 /// real play). Preserves: every nonlinearity that defines the 200A sound —
 /// pickup 1/(1-y) bark, preamp asymmetric clipping, tremolo loop-gain
-/// shunt, MLP per-note corrections, rail sag, divergence guard. The BJT
-/// solver still runs every sample; it just runs at one operating point.
+/// shunt, MLP per-note corrections (rail sag and the divergence guard exist
+/// only on the opt-in melange power-amp path). The BJT solver still runs
+/// every sample; it just runs at one operating point.
 pub const FIXED_CIRCUIT_DRIVE: f64 = 0.25;
 
 /// Per-note output scaling to balance the keyboard.

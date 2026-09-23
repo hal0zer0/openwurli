@@ -23,10 +23,10 @@
 * CIRCUIT TOPOLOGY (verified from schematic screenshots Feb 2026):
 *
 *   TR-3 and TR-4 share a common collector node (Node G / led_out).
-*   R17 (4.7K) from Vcc to Node G is the only collector load for both.
-*   In the real circuit, R17 is in series with LG-1 LED (pin 1=cathode),
-*   with LED anode (pin 2) returning to Vcc via cable. For the subcircuit
-*   we approximate the LED path as a direct 4.7K to Vcc.
+*   The collector load for both is the LED path: +15 V regulated -> R-18
+*   (680) -> LG-1 LED -> R-17 (4.7K, wiper-strapped trimmer) -> Node G
+*   (2026-09 instrumented re-read; the earlier "R17 direct to Vcc" reading
+*   is superseded). See the body of this file for how it is modelled.
 *
 *   R15 (680K) pulls TR-3 base to GROUND (not Vcc!). The DC bias is set
 *   by the voltage divider between:

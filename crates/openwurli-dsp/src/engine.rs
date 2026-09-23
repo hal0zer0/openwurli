@@ -448,7 +448,7 @@ impl WurliEngine {
         self.ensure_buffer_capacity(len);
 
         // After this call, out_buf holds the post-power-amp signal at base rate
-        // (preamp + vol² + power amp ran inside the OS bus together).
+        // (preamp + fixed drive + power amp ran inside the OS bus together).
         self.render_voices_to_preamp_out(0, len);
 
         for (i, sample_slot) in out.iter_mut().enumerate() {

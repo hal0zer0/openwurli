@@ -120,7 +120,7 @@ MIDI note-on (key, velocity, channel, note_id)
               -> Stage 2: Miller pole ~81 kHz
         [H] DC Block (handled internally by DK preamp)
      -> 2x Downsample (matching allpass polyphase IIR)
-     [I] Volume Control (real attenuator, audio taper, between preamp and power amp)
+     [I] Fixed circuit drive (×0.25, pinned — the real 10K pot sits here; user volume is a linear post-speaker multiplier, see §12)
      [K] Power Amplifier (Class AB, crossover distortion at low signal levels)
      [L] Speaker Cabinet (variable: bypass to authentic HPF 30 Hz subsonic + LPF 5.5 kHz)
      [M] Output (no separate limiter — handled by power amp tanh and speaker tanh Xmax)
@@ -508,7 +508,7 @@ This is the most complex processing stage. The preamp adds harmonic coloring at 
 ### DECISION: Trait-Based A/B Architecture
 
 The preamp implements a `PreampModel` trait with `process_sample()`, `set_ldr_resistance()`, `reset()`. Two implementations exist behind this interface:
-1. **DkPreampLegacy** (`dk_preamp_legacy.rs`) — hand-written 8-node MNA solver. **Default since v0.5.2.** Measured (v0.5.2 A/B) to be tonally indistinguishable from the melange solver (±0.18 dB gain offset, identical THD/H2/H3, identical tremolo range 6.10 dB) while being 1.6-7× faster depending on workload. The former `EbersMollPreamp` was deleted in v0.3.0.
+1. **DkPreampLegacy** (`dk_preamp_legacy.rs`) — hand-written 9-node MNA solver on the 2026-09 drawn topology. **Default since v0.5.2.** Measured (v0.5.2 A/B) to be tonally indistinguishable from the melange solver (±0.18 dB gain offset, identical THD/H2/H3, identical tremolo range 6.10 dB) while being 1.6-7× faster depending on workload. The former `EbersMollPreamp` was deleted in v0.3.0.
 2. **DkPreamp** (melange-generated 12-node MNA solver using the DK method, `--features melange-preamp`) — full-precision implementation with shadow-pump cancellation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `dk-preamp-derivation.md`. Retained for full-precision DC-pump characterization studies; opt-in if a future analysis surfaces a tonal difference the v0.5.2 A/B missed.
 
 ### Oversampling Wrapper
@@ -666,11 +666,13 @@ ldr_envelope = led_drive + coeff * (ldr_envelope - led_drive)
 // log(R) interpolates between log(R_max) and log(R_min) as drive increases,
 // with gamma controlling the knee of the response curve.
 drive = ldr_envelope.clamp(0, 1)
-log_r = log(R_max) + (log(R_min) - log(R_max)) * drive^gamma  // gamma = 1.1
-R_ldr = exp(log_r)    // R_min=50, R_max=1M
+log_r = log(R_max) + (log(R_min) - log(R_max)) * drive^gamma  // gamma = 0.9
+R_ldr = exp(log_r)    // R_min=9k, R_max=1M (weakly driven cell)
 
-// LDR path impedance: fb_junct -> Pin 1 -> 50K VIBRATO -> 18K -> LDR -> GND
-R_ldr_path = 18000 + 50000 * (1 - depth) + R_ldr
+// Shunt seen by fb_junct: the 50K VIBRATO pot is a 3-terminal divider
+// (top = fb_junct, bottom = GND, wiper -> LDR); 18K bridges top -> wiper.
+Z_shunt = (R_upper ∥ 18k) + (R_lower ∥ R_ldr)
+R_upper = 50k·(1 − depth),  R_lower = 50k·depth   // depth 0 -> ≈13 kΩ fixed
 
 // Emitter feedback: R-10 (56K) from output to fb_junct, Ce1 couples to emitter
 // LDR path shunts fb_junct to ground, diverting feedback away from emitter
@@ -684,9 +686,9 @@ R_ldr_path = 18000 + 50000 * (1 - depth) + R_ldr
 
 ### Character
 
-The asymmetric attack/release creates a "choppy" effect: fast dips (3ms), slow recovery (50ms). This is distinctly different from a smooth sine tremolo and is immediately recognizable as Wurlitzer.
+The asymmetric attack/release creates a "choppy" effect: fast dips (2.5 ms), slow recovery (35 ms). This is distinctly different from a smooth sine tremolo and is immediately recognizable as Wurlitzer.
 
-**Timbral modulation:** At the high-gain phase (LDR dark), the preamp's gain is higher, amplifying the pickup-generated harmonics more and pushing the preamp closer to its own saturation threshold. At the low-gain phase (LDR lit), the preamp operates more linearly with less harmonic amplification. This subtle but important timbral variation distinguishes the real 200A tremolo from a simple volume multiplier.
+**Timbral modulation:** At the high-gain phase (LDR lit — the low-resistance shunt diverts feedback from the emitter), the preamp's gain is higher, amplifying the pickup-generated harmonics more and pushing the preamp closer to its own saturation threshold. At the low-gain phase (LDR dark, full feedback reaches the emitter), the preamp operates more linearly with less harmonic amplification. This subtle but important timbral variation distinguishes the real 200A tremolo from a simple volume multiplier.
 
 ### Implementation Note
 
@@ -712,16 +714,16 @@ R_ldr modulation at 5.63 Hz creates a ~4.5V pp pump at the preamp output via Ce1
 
 In the real 200A, the 3K audio-taper volume potentiometer sits between the preamp output and the power amplifier input. The plugin must place the volume control at this exact point in the signal chain — NOT as a final output gain.
 
-**Why placement matters:** At low volume settings, the signal level at the power amp input drops into the crossover distortion region, changing the distortion character (more odd harmonics from the Class AB dead zone). This interaction between volume and power amp behavior is audible and contributes to the instrument's character at low volumes.
+**Why placement matters on the real instrument:** at low pot settings the power amp input drops into the crossover region and the distortion character changes (more odd harmonics from the Class AB dead zone).
+
+**What the model does (2026-04-26 drive/volume decoupling):** the pot is NOT modeled as a variable attenuator. Circuit drive is pinned at `FIXED_CIRCUIT_DRIVE = 0.25` (the old vol² value at vol = 0.50, the point every calibration was balanced against) and user volume is applied as a LINEAR multiplier after the speaker model:
 
 ```
-// Audio taper: linear range + squared multiplier (audio path)
-pot_position = user_volume_param  // 0.0 to 1.0 (FloatRange::Linear)
-output = input * pot_position * pot_position  // vol^2 in the audio path
-// -> feeds into power amplifier stage
+drive  = preamp_out * FIXED_CIRCUIT_DRIVE      // into the power amp, pinned
+output = speaker(power_amp(drive)) * POST_SPEAKER_GAIN * user_volume
 ```
 
-The audio taper is implemented as `vol * vol` (quadratic) in the audio path, with a `FloatRange::Linear` parameter. The default volume of 0.50 produces an effective gain of 0.25 (0.50^2). In the real instrument, the volume pot output is measured at 2-7 mV AC.
+Consequence: the amp always runs at one operating point, so the volume-dependent breakup/crossover interaction of the real instrument does not occur in the model. This is a documented design decision (see `tables.rs` at `FIXED_CIRCUIT_DRIVE` and output-stage §3), flagged again by the 2026-09-22 external circuit review, and remains the maintainer's call.
 
 ---
 
@@ -737,7 +739,7 @@ The real 200A has a ~18-20W quasi-complementary push-pull Class AB output stage:
 - Emitter degeneration: 0.47 ohm
 - Quiescent bias: ~10 mA
 
-### Melange-generated 7-BJT Circuit Solver (default since Apr 2026)
+### Melange-generated 7-BJT Circuit Solver (opt-in: build with `--no-default-features`)
 
 The power amp is modeled by a melange-generated DK/Nodal circuit solver compiled
 from `spice/melange/wurli-power-amp.cir`. Every one of the 7 transistors (Q7/Q8
@@ -769,11 +771,14 @@ simulation — no separate hand-written nonlinearity model.
 - H3 < −30 dB at 440 Hz, 0.001 V — crossover suppression by feedback
 - Output always finite and bounded for any input in ±5 V
 
-### Legacy behavioral closed-loop NR model (`--features legacy-power-amp`)
+### Behavioral closed-loop NR model (`legacy-power-amp`, in the default feature set — the SHIPPING model)
 
-Original approximation kept for A/B diagnostics. Models the loop
-`y = f(A_ol × (input − β × y))` where `f()` = Gaussian-dead-zone crossover
-followed by `rail × tanh(v / rail)`:
+Models the loop `y = f(A_ol × (input − β(s) × y))` where `f()` = Gaussian-dead-zone
+crossover followed by `rail × tanh(v / rail)`, and β(s) is the drawn R-31 / (R-30 +
+C-10) feedback divider — 220/15220 in band, rising to 1 at DC. That leg is the
+circuit's only bass roll-off (the amp is split-rail and DC-coupled): −3 dB at 33 Hz,
+−1.3 dB at A1. It is a bilinear first-order section inside the NR loop (added
+2026-09-22 after an external circuit review found the model memoryless):
 
 | Constant | Value | Derivation |
 |----------|-------|------------|
@@ -788,9 +793,9 @@ Crossover uses a C∞ Gaussian `q + (1 − q)(1 − exp(−v² / vt²))` instead
 piecewise dead zone so the NR Jacobian is well-defined everywhere. It produces
 physically plausible harmonic content at typical drive levels but can't capture
 level-dependent device nonlinearity that naturally emerges from full Gummel-Poon.
-Enable only when comparing the two paths.
+The melange solver is the higher-fidelity path; it is opt-in on CPU grounds.
 
-Audio taper volume control: `vol^2` (quadratic), default position 0.50 (effective 0.25).
+User volume: linear post-speaker multiplier; circuit drive pinned at 0.25 (§12).
 
 ---
 
@@ -865,21 +870,23 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 
 ### Plugin Signal Levels (Current)
 
-The gain staging is designed so the power amplifier sees realistic signal levels
-(1-7% of its ±22V headroom at typical dynamics). A post-speaker gain stage
-(+19.5 dB) maps the physical speaker output to DAW-friendly digital levels
-without distorting any circuit model — it sits after all analog stages.
+The power amp sees a pinned drive (`FIXED_CIRCUIT_DRIVE`). Measured with the
+engine's drive-headroom probe (`power_amp_drive_headroom_probe`, 2026-09-22):
+single ff notes 12–15 mV RMS / 64–131 mV peak at the amp input, i.e. 20–41 % of
+the 319 mV clip knee; a worst-phase ff chord reaches 61 %. A post-speaker gain
+stage (`POST_SPEAKER_GAIN_DB` = +4.5 dB) maps the output to DAW-friendly digital
+levels without distorting any circuit model — it sits after all analog stages.
 
 | Point in Chain | Level | Notes |
 |---------------|-------|-------|
 | Single voice, mf | ~0.05-0.15 | After pickup |
 | 6-voice chord, ff | ~0.3-0.9 | Sum of voices |
 | After output_scale() | target_db=-35 dBFS | Into DkPreamp |
-| After preamp | ~3 mV RMS (C4 ff) | 2.1x gain (no trem), matches real 2-7 mV |
-| After volume pot (0.50, taper 0.25) | ~1-3% of PA headroom | Single ff note |
-| After power amp | ~0.3-1.4V of ±22V rails | Clean at normal dynamics |
-| After speaker | physics-level output | |
-| After post-speaker gain (+19.5 dB) | -10 to -14 dBFS single ff | DAW-friendly |
+| After preamp | ~50 mV RMS (C4 ff) | ≈14 dB closed-loop gain at the idle shunt |
+| After fixed drive (×0.25) | 12–15 mV RMS single ff, 29 mV RMS ff chord | 20–41 % / 61 % of the 319 mV clip knee |
+| After power amp | ~0.9 V RMS single ff (69×) | Clean at normal dynamics |
+| After speaker | physics-level output | speaker character defaults to 0 (bypass) |
+| After post-speaker gain (+4.5 dB) × volume | ≈ −17 dBFS peak single ff at vol 0.50 | DAW-friendly |
 
 Polyphonic headroom (measured, ff at default vol=0.50):
 - ff chords peak ~-3 dBFS (4-6 voices)

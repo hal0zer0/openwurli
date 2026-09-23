@@ -30,7 +30,7 @@ Reed Pickup
   -> C-8 coupling cap
   -> Power Amplifier (TR-7 through TR-13, on main amp board)
      -> Differential input (TR-7/TR-8)
-     -> VAS/pre-driver (TR-11)
+     -> VAS/pre-driver (TR-14, drawn "PRE DRIVER", part 203719)
      -> Bias control (TR-9, Vbe multiplier)
      -> Complementary drivers (TR-10 NPN, TR-12 PNP)
      -> Quasi-complementary output (TR-13 NPN / TIP35C, TR-11 PNP / TIP36C)
@@ -218,9 +218,9 @@ The negative feedback through R-31 serves three purposes (from service manual):
 2. Lowers distortion (linearizes the amplifier)
 3. Minimizes DC offset voltage at the output
 
-#### Pre-Driver / VAS Stage (TR-11)
+#### Pre-Driver / VAS Stage (TR-14)
 
-- TR-11 receives the differential signal from TR-7's collector
+- TR-14 (drawn "PRE DRIVER", part 203719) receives the differential signal from TR-7's collector
 - Acts as voltage amplifier stage (VAS)
 - Provides the voltage swing needed to drive the output stage
 
@@ -250,7 +250,7 @@ From service manual:
 | TR-11 | TIP36C (PNP) | PNP output | TO-247 | 100V, 25A, 125W |
 | TR-13 | TIP35C (NPN) | NPN output | TO-247 | 100V, 25A, 125W |
 
-**NOTE on transistor designation:** TR-11 serves double duty in different sources. In some schematic descriptions, TR-11 refers to the pre-driver/VAS stage, and TIP36C is the PNP output. The numbering may vary between schematic revisions. The key fact is: TIP36C (PNP) and TIP35C (NPN) form the complementary output pair.
+**NOTE on transistor designation (settled 2026-09-22, blind drawing read):** the VAS/pre-driver is **TR-14** (drawn "PRE DRIVER", part 203719); **TR-11 is the TIP36C PNP output**. Earlier revisions of this document called the VAS "TR-11" — that was a designator conflation, not a schematic-revision difference.
 
 **Emitter degeneration resistors:**
 - R-37: 0.47 ohm (NPN side)
@@ -310,10 +310,9 @@ The bootstrap capacitor is standard practice in quasi-complementary designs. It 
 | TR-9 | MPSA06 or MPSA14 | Vbe multiplier (bias) |
 | TR-10 | MPSA06 (NPN) | NPN driver |
 | TR-12 | MPSA56 (PNP) | PNP driver |
-| TR-11* | TIP36C (PNP) | PNP output, 125W |
+| TR-11 | TIP36C (PNP) | PNP output, 125W |
 | TR-13 | TIP35C (NPN) | NPN output, 125W |
-
-*TR-11 designation may vary by schematic revision; see note in section 4.2.
+| TR-14 | 203719 (NPN) | VAS / pre-driver ("PRE DRIVER") |
 
 TR-7 = TR-8 = Wurlitzer part #142128
 
@@ -323,8 +322,8 @@ TR-7 = TR-8 = Wurlitzer part #142128
 |-----|-------|----------|
 | R-30 | 220 Ω | Feedback ground-side resistor (with R-31 forms voltage divider) |
 | R-31 | 15K | Output-to-input negative feedback |
-| R-32 | 1.8K | Differential pair collector load (TR-7) |
-| R-33 | 1.8K | Differential pair collector load (TR-8) |
+| R-32 | 1.8K | Bootstrapped VAS (TR-14) collector load, with R-33 and C-12 (see §4.4) |
+| R-33 | 1.8K | Bootstrapped VAS collector load (upper half) |
 | R-34 | 160 ohm | Bias network (confirmed by GroupDIY measurement of 150-160 ohm) |
 | R-35 | 220 ohm | Bias network |
 | R-36 | 270 ohm | Base-emitter TR-11 |
@@ -381,7 +380,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 
 **For modeling purposes:** The power amplifier is modeled as a closed-loop negative feedback amplifier. The R-31/R-30 feedback network (loop gain ≈ 275) linearizes the output at normal signal levels. Distortion becomes significant only near the ±22V supply rails. The power amp is NOT a major tonal contributor — the Wurlitzer's characteristic bark comes primarily from the pickup's 1/(1-y) nonlinearity, with the preamp's asymmetric soft-clipping adding further coloring at high dynamics.
 
-**Gain staging:** The voice output_scale uses target_db=-35 dBFS so the power amp sees realistic signal levels: a single ff note uses ~1-3% of the ±22V headroom, matching Brad Avenson's measurements of 2-7 mV at the volume pot (model produces 3 mV RMS). A post-speaker gain of +17.5 dB (applied AFTER the speaker model; current value — see CHANGELOG for history, most recently 22.0 → 17.5 dB after the 2026-07 tremolo-divider correction raised the accurate preamp gain) maps physical SPL to DAW-friendly digital levels. This separates two concerns: the analog circuit model operates at realistic voltages, while the digital output is set for typical DAW workflows (-10 to -14 dBFS for single ff notes at vol=0.50, ff chords peak ~-3 dBFS).
+**Gain staging (current, measured 2026-09-22 with the engine's `power_amp_drive_headroom_probe`):** the power amp input is pinned at `preamp_out × FIXED_CIRCUIT_DRIVE (0.25)`. Single ff notes put 12–15 mV RMS (64–131 mV peak) into the amp, 20–41 % of its 319 mV clip knee; a worst-phase ff chord reaches 61 %. (The earlier "1–3 % of headroom at 3 mV RMS" figures described the pre-2026-04 vol² chain and were ≈20 dB stale.) The Avenson "2–7 mV at the volume pot" field figure is a single unverified rig and does not say which side of the pot it was taken on. A post-speaker gain of **+4.5 dB** (`POST_SPEAKER_GAIN_DB`, applied AFTER the speaker model; history in CHANGELOG: 14.5 → 22.0 → 17.5 → 16.8 → 15.5 → 4.5 across the drive-decoupling, tremolo-divider and v0.7.0 level rebalances) times the linear user volume maps the output to DAW-friendly levels: a single ff note peaks ≈ −17 dBFS at vol 0.50.
 
 ---
 
@@ -538,8 +537,9 @@ This cascade produced ~30 dB/oct rolloff below 70 Hz, which proved too aggressiv
 // Oscillator (tremolo.rs) — default: melange Twin-T circuit oscillator
 rate = ~5.6 Hz (fixed by Twin-T RC network; no rate parameter)
 waveform: real oscillator circuit output, half-wave rectified for LED drive.
-// LED drive is FIXED (~0.84 mA via R17 = 4.7 kΩ off the oscillator collector);
-// front-panel depth does NOT scale it — depth lives in the shunt divider below.
+// LED drive follows the oscillator swing through +15 V -> R-18 (680) -> LED ->
+// R-17 (4.7K trimmer) -> collector node: ≈0.37–2.28 mA (tremolo.rs LED_I_FULL_MA).
+// Front-panel depth does NOT scale it — depth lives in the shunt divider below.
 // --features legacy-tremolo: behavioral sine LFO at 5.63 Hz (phase.sin())
 
 // CdS LDR time constants (VTL5C-class, datasheet-typical)
@@ -549,16 +549,16 @@ release_tau = 35 ms   (slow off)
 // CdS LDR resistance model (log-space interpolation)
 log_r = log(R_max) + (log(R_min) - log(R_max)) * drive^gamma
 R_min = 9 000 ohm (bright), R_max = 1 000 000 ohm (dark), gamma = 0.9
-// Weakly-driven cell: the fixed ~0.84 mA LED keeps it in the kΩ regime and
+// Weakly-driven cell: the ≤2.3 mA LED keeps it in the kΩ regime and
 // never reaches the datasheet ~50 Ω min. (An earlier model fudged R_min = 18,320 Ω
 // to fake a 19 kΩ shunt endpoint — that was really the 18 kΩ + R18 divider folded
 // into the cell floor; the divider is now modeled explicitly below.)
 
 // Shunt impedance seen by fb_junct → DkPreamp::set_ldr_resistance().
 // The 50 kΩ VIBRATO pot is a 3-terminal divider (top = fb_junct, bottom = GND,
-// wiper → LDR branch); 18 kΩ bridges top→wiper; R18 = 680 Ω in series in the
-// LDR branch off the wiper:
-//   Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ (680 Ω + R_ldr))
+// wiper → LDR branch); 18 kΩ bridges top→wiper. (R-18 is in the LED drive
+// path, NOT the LDR leg — 2026-09 correction, see §2.3):
+//   Z = (R_upper ∥ 18 kΩ) + (R_lower ∥ R_ldr)
 //   R_upper = 50 kΩ·(1 − depth),  R_lower = 50 kΩ·depth
 // depth = 1.0 → wiper at fb end (max depth); depth = 0 → LDR branch grounded
 // (vibrato off; fb_junct still sees 50 kΩ ∥ 18 kΩ ≈ 13 kΩ).
@@ -569,7 +569,7 @@ VIBRATO pot is **not** in the LED drive path — it is a **3-terminal divider in
 fb_junct→LDR shunt leg** (see the `Z = …` formula above). Depth is the wiper
 position: depth = 1.0 puts the wiper at the fb end (max shunt swing), depth = 0
 grounds the LDR branch (vibrato off, fb_junct sees a fixed 50 kΩ ∥ 18 kΩ ≈ 13 kΩ).
-The LED is driven at a fixed ~0.84 mA current — depth does **not** scale it.
+The LED current follows the oscillator (≈0.37–2.28 mA through R-18/LED/R-17) — depth does **not** scale it.
 
 Two earlier models were wrong here and are both superseded: (a) a pre-Apr-2026
 version mixed `18 kΩ + 50 kΩ × (1 − depth)` into a simple series shunt, and (b) the
@@ -582,19 +582,20 @@ depth 0 / .25 / .5 / .75 / 1.0).
 (Rust DSP 7.33 dB vs an independent ngspice arbiter's 7.31 dB), regression-guarded by
 `dk_preamp::melange_gate_tests::test_tremolo_am_depth_at_full_depth`. The full-depth
 divider swings the shunt ~8 kΩ bright ↔ ~48 kΩ dark. POST_SPEAKER_GAIN was dropped
-22.0 → 17.5 dB to keep the vol = 1.0 engine peak ≤ 1.0 given the higher (accurate)
-preamp gain.
+22.0 → 17.5 dB at the time to keep the vol = 1.0 engine peak ≤ 1.0 given the higher
+(accurate) preamp gain; it now sits at +4.5 dB after the v0.7.0 level rebalance.
 
 ### 7.2 Power Amplifier Model
 
-**Status: IMPLEMENTED (melange-generated 7-BJT circuit solver, default since Apr 2026).**
-Adapter + tests in `power_amp.rs`; generated code in `gen_power_amp.rs`. The earlier
-behavioral closed-loop NR approximation is preserved behind
-`--features openwurli-dsp/legacy-power-amp` for A/B diagnostics only.
+**Status: two models. SHIPPING = the behavioral closed-loop NR model** (feature
+`legacy-power-amp`, in the default set) with the drawn R-30/C-10 feedback shelf
+(−3 dB at 33 Hz; added 2026-09-22). The melange-generated 7-BJT circuit solver
+(`gen_power_amp.rs`, adapter in `power_amp.rs`) is the higher-fidelity path, opt-in
+via `--no-default-features` on CPU grounds. Both are covered by `power_amp::tests`.
 
 **Topology (from `spice/melange/wurli-power-amp.cir`):**
 
-- PNP differential pair (Q7/Q8, 2N5087) with 10 kΩ tail to Vp
+- PNP differential pair (Q7/Q8, 2N5087) with 10 kΩ tail — the deck ties it to Vp (+22.5 V); a 2026-09-22 blind drawing read returns R-28 to the **+15 V regulated** rail (tail 2.18 → 1.43 mA). Deck correction pending.
 - NPN VAS/pre-driver (Q14, MPSA06) with bootstrapped collector load (R32/R33 + C12)
 - Vbe multiplier bias network (Q9, MPSA06) driving ±0.6 V between drv_bot and vas_out
 - Top Sziklai output pair: Q10 (MPSA06 NPN driver) + Q11 (TIP36C PNP output)

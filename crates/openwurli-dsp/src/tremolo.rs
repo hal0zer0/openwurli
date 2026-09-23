@@ -27,8 +27,10 @@ const ATTACK_TAU: f64 = 0.0025;
 const RELEASE_TAU: f64 = 0.035;
 const GAMMA: f64 = 0.9;
 /// CdS photoresistance range under the 200A's *actual* LED drive. The LED
-/// runs at only ~0.84 mA (fixed, through R17 = 4.7 kΩ off the oscillator),
-/// so the cell never leaves the kΩ regime: ~9 kΩ illuminated ↔ ~1 MΩ dark.
+/// path is +15 V → R-18 (680 Ω) → LED → R-17 (4.7 kΩ trimmer) → the
+/// oscillator collector node, so the LED current follows the oscillator swing
+/// (≈0.37–2.28 mA, see `LED_I_FULL_MA`) — weak drive, and the cell never
+/// leaves the kΩ regime: ~9 kΩ illuminated ↔ ~1 MΩ dark.
 /// (An earlier model fudged the bright floor to 18,320 Ω to fake a 19 kΩ
 /// shunt endpoint — that was really the 18 kΩ + R18 network folded into the
 /// cell. The real cell is weakly driven and sits at ~9 kΩ bright; the
@@ -226,9 +228,9 @@ impl Tremolo {
     }
 
     pub fn process(&mut self) -> f64 {
-        // Step 1: Oscillator LED drive (0..1). FIXED amplitude — depth does NOT
-        // scale the LED; it lives in the shunt divider (Step 4). The real 200A
-        // drives the LED at a constant ~0.84 mA off the oscillator through R17.
+        // Step 1: Oscillator LED drive (0..1). Depth does NOT scale the LED;
+        // it lives in the shunt divider (Step 4). The LED current follows the
+        // oscillator swing through R-18/LED/R-17 (≈0.37–2.28 mA).
         let led_drive = self.oscillator_drive();
 
         // Step 2: CdS LDR envelope (asymmetric attack/release)

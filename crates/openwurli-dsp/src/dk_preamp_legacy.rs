@@ -60,13 +60,13 @@ const R10: f64 = 56_000.0; // node_c6 to fb (feedback tapped at the collector)
 
 /// Output load at OUT.
 ///
-/// The drawn netlist leaves `out` with only R-9 attached, which is a singular
-/// node for a nodal solve — a load is structurally required. 100K is the value
-/// the re-baselined `tb_preamp_ac` bench measures into, so the Rust and SPICE
-/// gain figures are like-for-like. The real chain here is the R-11 25K trimmer
-/// into the 10K volume pot; modelling that properly is a separate task (the
+/// Not structurally required (R-9 alone gives `out` a nonzero diagonal); it is
+/// here so the Rust and SPICE gain figures are like-for-like — 100K is the load
+/// the re-baselined `tb_preamp_ac` bench measures into. The real load is the
+/// R-11 25K trimmer into the 10K volume pot (10–35 kΩ, ≈−1.7 dB vs 100K at
+/// mid-trim); it is flat, so level calibration absorbs the difference. The
 /// volume path is deliberately decoupled from drive — see the 2026-04-26
-/// drive/volume decoupling).
+/// drive/volume decoupling.
 const RLOAD: f64 = 100_000.0;
 
 // Input two-port reduction (see module docs): Thévenin as seen from base1.
@@ -102,7 +102,11 @@ const C6: f64 = 4.7e-6; // Output coupling (coll2 ↔ node_c6)
 // need the full GP card (VAF/VAR via q1, RE/RB/RC parasitics); that is the
 // melange-generated solver's job (`--features melange-preamp`), not this one.
 const IS: f64 = 3.03e-14; // Saturation current
-const VT: f64 = 0.026; // Thermal voltage (25°C)
+// Thermal voltage. ngspice/melange use kT/q at 27 °C = 0.025852 and 25 °C
+// would be 0.02569; this card (IS/BF/NF) was fitted against the deck WITH
+// 0.026, and moving VT alone shifts TR-1's collector 6 mV off the
+// tb_preamp_dc anchor (±5 mV test). Change them together or not at all.
+const VT: f64 = 0.026;
 const NF: f64 = 1.005; // Forward emission coefficient
 const BF: f64 = 1434.0; // Ideal forward beta
 const ISE: f64 = 2.88e-15; // B-E leakage saturation current
