@@ -873,11 +873,11 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 
 The power amp is driven through the drawn volume network. Measured with the
 engine's drive-headroom probe (`power_amp_drive_headroom_probe`, 2026-09-23,
-R-11 at mid-travel): at vol 0.50, single ff notes 13–26 mV peak at the amp
-input (4–8 % of the 319 mV clip knee) and a worst-phase ff chord 39 mV (12 %);
-at vol 1.0, 65–133 mV peak single (20–42 %) and 197 mV chord (62 %). The output
-mapping is rail = full scale (`POST_SPEAKER_GAIN_DB` = 0 dB); there is no user
-gain after the speaker model.
+Reed Bar Trim at its 17.2K default): at the default pot position (0.80),
+single ff notes 37–70 mV peak at the amp input (11–22 % of the 319 mV clip
+knee) and a worst-phase ff chord 117 mV (37 %); at vol 1.0, 51–98 mV single
+(16–31 %) and 164 mV chord (51 %). The output mapping is `FULL_SCALE_VOLTS` =
+the amp's 22 V rail = 0 dBFS; there is no user gain after the speaker model.
 
 | Point in Chain | Level | Notes |
 |---------------|-------|-------|
@@ -885,14 +885,14 @@ gain after the speaker model.
 | 6-voice chord, ff | ~0.3-0.9 | Sum of voices |
 | After output_scale() | target_db=-35 dBFS | Into DkPreamp |
 | After preamp | ~50 mV RMS (C4 ff) | ≈14 dB closed-loop gain at the idle shunt |
-| After the volume network, vol 0.50 | 2.4–2.9 mV RMS single ff, 5.8 mV RMS ff chord | 4–8 % / 12 % of the 319 mV clip knee |
-| After the volume network, vol 1.0 | 12–15 mV RMS single ff, 29 mV RMS ff chord | 20–42 % / 62 % of the knee (R-11 mid) |
-| After power amp | ~0.2 V RMS single ff at vol 0.50 (69×) | Clean; crossover residual proportionally larger here |
-| After speaker | physics-level output | speaker character defaults to 0 (bypass) |
-| Output (rail = 0 dBFS) | ≈ −29.5 dBFS peak single ff at vol 0.50 | the pot has ~14 dB in hand |
+| After the volume network, vol 0.80 (default) | 7.6–8.3 mV RMS single ff, 17.5 mV RMS ff chord | 11–22 % / 37 % of the 319 mV clip knee |
+| After the volume network, vol 1.0 | 10.6–11.5 mV RMS single ff, 24 mV RMS ff chord | 16–31 % / 51 % of the knee (R-11 17.2K) |
+| After power amp | ~0.5 V RMS single ff at the default (69×) | Clean; crossover residual proportionally larger at low drive |
+| After speaker | physics-level output | speaker character defaults to 0 (true passthrough) |
+| Output (22 V rail = 0 dBFS) | ≈ −18.8 dBFS peak single ff, −11.6 ff chord, at the defaults | the pot has ~3 dB in hand; Reed Bar Trim ~9 dB more |
 
-Polyphonic headroom (measured, ff at default vol=0.50):
-- ff chords peak ~-3 dBFS (4-6 voices)
+Polyphonic headroom (measured 2026-09-23, six-note ff chord, speaker off):
+- −11.6 dBFS peak at the default pot position (0.80); −8.6 at full volume; −1.3 at full volume with Reed Bar Trim at 0 Ω (the amp at its rail = full scale by construction)
 
 ### Input Drive (Historical)
 

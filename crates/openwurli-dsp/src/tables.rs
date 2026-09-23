@@ -808,8 +808,9 @@ pub fn audio_taper(pos: f64) -> f64 {
 /// ```
 ///
 /// `r11` is the trimmer's series resistance in ohms (0..=25K).
-/// Reference points (R-11 mid): vol 0.5 → 0.047 (−26.6 dB), vol 1.0 → 0.237
-/// (−12.5 dB). The pre-2026-09-23 pinned drive was 0.25 at every volume.
+/// Reference points (R-11 at its 17.2K default): vol 0.8 (the plugin default)
+/// → 0.143 (−16.9 dB), vol 1.0 → 0.200 (−14.0 dB). The pre-2026-09-23 pinned
+/// drive was 0.25 at every volume.
 pub fn volume_pot_gain(vol: f64, r11: f64) -> f64 {
     let r11 = r11.clamp(0.0, R11_REED_BAR_VOLUME_MAX);
     let r_lower = VOLUME_POT_R * audio_taper(vol);

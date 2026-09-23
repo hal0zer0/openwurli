@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn test_params_have_correct_defaults() {
         let params = OpenWurliParams::default();
-        assert!((params.volume.default_plain_value() - 0.50).abs() < 0.01);
+        assert!((params.volume.default_plain_value() - 0.80).abs() < 0.01);
         assert!((params.tremolo_depth.default_plain_value() - 0.5).abs() < 0.01);
         assert!((params.speaker_character.default_plain_value()).abs() < 0.01);
         // MLP default OFF (2026-08-20): out-of-distribution velocity

@@ -250,7 +250,7 @@ impl WurliEngine {
             oversample,
             sustain_held: false,
             mlp_enabled: false,
-            volume: LinearSmoother::new(0.5, ramp),
+            volume: LinearSmoother::new(0.8, ramp),
             tremolo_depth: LinearSmoother::new(0.5, ramp),
             speaker_character: LinearSmoother::new(0.0, ramp),
             nan_guard_fires: 0,
@@ -1418,8 +1418,8 @@ mod tests {
     #[ignore = "diagnostic probe"]
     fn power_amp_drive_headroom_probe() {
         let sr = 44_100.0;
-        for vol in [0.5f64, 1.0] {
-            println!("  --- pot position {vol} (R-11 mid-travel) ---");
+        for vol in [0.8f64, 1.0] {
+            println!("  --- pot position {vol} (R-11 at its default) ---");
             let mk = || {
                 let mut e = WurliEngine::new(sr);
                 e.ensure_buffer_capacity(1024);
