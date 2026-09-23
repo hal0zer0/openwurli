@@ -100,7 +100,15 @@ pub fn run() -> AliasAuditResult {
 /// and by [`run_sweep`]. Production regression tests should call [`run_sweep`]
 /// so the gate covers the full canonical stimulus set.
 pub fn run_with_note(note: u8, velocity: u8) -> AliasAuditResult {
-    let signal = render_stimulus(note, velocity);
+    run_with_note_at_volume(note, velocity, STIMULUS_VOLUME)
+}
+
+/// Variant with an overridable pot position. Since 2026-09-23 user volume is
+/// the drawn pot between preamp and power amp, so the amp's drive — and with
+/// it the relative size of its crossover residual in the click band — depends
+/// on it. The canonical stimulus uses `STIMULUS_VOLUME`.
+pub fn run_with_note_at_volume(note: u8, velocity: u8, volume: f64) -> AliasAuditResult {
+    let signal = render_stimulus(note, velocity, volume);
     let nominal_f0 = midi_note_hz(note);
     analyze(&signal, STIMULUS_SAMPLE_RATE, nominal_f0)
 }
@@ -128,11 +136,11 @@ pub fn run_sweep() -> Vec<SweepEntry> {
         .collect()
 }
 
-fn render_stimulus(note: u8, velocity: u8) -> Vec<f64> {
+fn render_stimulus(note: u8, velocity: u8, volume: f64) -> Vec<f64> {
     let sr = STIMULUS_SAMPLE_RATE;
     let mut eng = WurliEngine::new(sr);
     eng.ensure_buffer_capacity(1024);
-    eng.set_volume(STIMULUS_VOLUME);
+    eng.set_volume(volume);
     eng.set_tremolo_depth(0.0); // hold gain steady so harmonics are stationary
     eng.set_speaker_character(0.0);
     eng.set_mlp_enabled(true);

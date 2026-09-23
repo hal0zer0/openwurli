@@ -40,8 +40,17 @@ struct BaselineEntry {
 /// Hand-parsed baseline — small enough that a JSON dep isn't worth pulling in.
 /// Must stay in lockstep with `tests/baselines/alias_audit_v0_5_1.json`.
 ///
-/// REFRESHED 2026-09-13 for the pickup-network refit (corner 2312 Hz -> 880 Hz
-/// on the drawn topology). Deltas vs the v0.5.1 capture:
+/// REFRESHED 2026-09-23 for the drawn volume network: user volume is now the
+/// pot between preamp and power amp, so the canonical stimulus (vol 0.5)
+/// drives the amp ~14 dB less than the pinned drive it replaced. Deltas vs the
+/// 2026-09-13 capture: step_up 72: 3.836 -> 2.401 (-1.44); 84: 1.578 -> 5.408
+/// (+3.83); 91: 7.968 -> 9.991 (+2.02); hf_band unchanged within 0.25 dB on all
+/// three. A volume sweep puts note 84 back at 1.52 at vol 1.0 (old drive), so
+/// the plateau rise is the amp's crossover residual scaling with drive, not
+/// fold-back (a real alias regression moves both metrics together).
+///
+/// Earlier: REFRESHED 2026-09-13 for the pickup-network refit (corner 2312 Hz
+/// -> 880 Hz on the drawn topology). Deltas vs the v0.5.1 capture:
 ///
 /// | note | step_up (aliasing) | hf_band (HF energy) |
 /// |------|--------------------|---------------------|
@@ -60,18 +69,18 @@ struct BaselineEntry {
 const BASELINE: &[BaselineEntry] = &[
     BaselineEntry {
         note: 72,
-        max_step_up_db: 3.836,
-        hf_band_dbc: -48.639,
+        max_step_up_db: 2.401,
+        hf_band_dbc: -49.182,
     },
     BaselineEntry {
         note: 84,
-        max_step_up_db: 1.578,
-        hf_band_dbc: -44.393,
+        max_step_up_db: 5.408,
+        hf_band_dbc: -44.612,
     },
     BaselineEntry {
         note: 91,
-        max_step_up_db: 7.968,
-        hf_band_dbc: -40.854,
+        max_step_up_db: 9.991,
+        hf_band_dbc: -40.733,
     },
 ];
 

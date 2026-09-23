@@ -529,25 +529,37 @@ pub fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
 /// Positive = boost (note too quiet), negative = cut (note too loud).
 /// Linear interpolation between anchor points; clamped outside range.
 pub fn register_trim_db(midi: u8) -> f64 {
-    // Calibrated from zero-trim full-chain (t5_rms) renders at v=127 (2026-03-20).
-    // Reference: C4 = -44.9 dBFS. Trim = t5_rms(C4) - t5_rms(note).
-    // Measured via: preamp-bench calibrate --zero-trim (melange preamp, default)
-    // target_db=-35.0, audio taper (vol²), post-speaker gain +10.5 dB
-    // Speaker LPF=5500 Hz
+    // RE-CALIBRATED 2026-09-23 on the shipping chain (drawn-topology preamp,
+    // 880 Hz pickup corner, R-30/C-10 amp shelf, drawn volume network at
+    // vol 0.50, speaker 0, tremolo 0, MLP off), rendered through the real
+    // engine (preamp-bench render-midi) and metered with an external LUFS/RMS
+    // analyzer over 100–400 ms. The 2026-03-20 values were measured on a
+    // chain that no longer exists (melange preamp, vol², PSG +10.5 dB,
+    // 2312 Hz corner).
+    //
+    // Two velocities disagree in sign (ff says treble ~1.5 dB loud, mf says
+    // treble up to 2.8 dB quiet), and the trim is only ~55 % applied at mf
+    // (vel_blend = 0.63^1.3), so each anchor is the least-squares shift over
+    // both: Δ = (d_ff + 0.548·d_mf) / (1 + 0.548²), d = level(C4) − level(note).
+    // Residuals after this pass (measured): C2–G#4 within ±0.6 dB at ff and
+    // ±1.2 dB at mf; the top octave keeps its structural split (C6: −1.55 dB
+    // at ff, +2.82 dB at mf) because a trim applied at 55 % cannot satisfy
+    // both. That remainder belongs to the velocity curve (`velocity_exponent`
+    // / the vel_blend exponent), not to this table.
     const ANCHORS: [(f64, f64); 13] = [
-        (36.0, -1.3), // C2:  -40.6 → -41.9
-        (40.0, 0.0),  // E2:  -41.9 → -41.9
-        (44.0, -1.3), // G#2: -40.6 → -41.9
-        (48.0, 0.7),  // C3:  -42.5 → -41.9
-        (52.0, 0.2),  // E3:  -42.1 → -41.9
-        (56.0, -1.0), // G#3: -40.8 → -41.9
-        (60.0, 0.0),  // C4:  -41.9 (reference)
-        (64.0, 0.9),  // E4:  -42.7 → -41.9
-        (68.0, 1.2),  // G#4: -43.0 → -41.9
-        (72.0, 0.0),  // C5:  -41.9 → -41.9
-        (76.0, 1.8),  // E5:  -43.6 → -41.9
-        (80.0, 2.4),  // G#5: -44.2 → -41.9
-        (84.0, 3.6),  // C6:  -45.5 → -41.9
+        (36.0, -2.6), // C2   (was -1.3; d_ff -1.90, d_mf +0.30)
+        (40.0, -0.2), // E2   (was  0.0; d_ff -0.25, d_mf +0.07)
+        (44.0, -1.6), // G#2  (was -1.3; d_ff -0.52, d_mf +0.19)
+        (48.0, 1.3),  // C3   (was  0.7; d_ff +0.88, d_mf -0.20)
+        (52.0, 0.5),  // E3   (was  0.2; d_ff +0.56, d_mf -0.25)
+        (56.0, -2.0), // G#3  (was -1.0; d_ff -1.20, d_mf -0.28)
+        (60.0, 0.0),  // C4   (reference)
+        (64.0, 0.7),  // E4   (was  0.9; d_ff -0.55, d_mf +0.47)
+        (68.0, 0.8),  // G#4  (was  1.2; d_ff -0.99, d_mf +0.97)
+        (72.0, -0.6), // C5   (was  0.0; d_ff -1.41, d_mf +1.11)
+        (76.0, 1.4),  // E5   (was  1.8; d_ff -1.47, d_mf +1.68)
+        (80.0, 2.1),  // G#5  (was  2.4; d_ff -1.59, d_mf +2.18)
+        (84.0, 3.6),  // C6   (unchanged; d_ff -1.55, d_mf +2.82 cancel)
     ];
 
     let m = midi as f64;
@@ -580,7 +592,7 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// removal (5fbc4a1, 220a5aa).
 ///
 /// 2026-04-26 (later): sizing lands after the user-volume / circuit-
-/// drive DECOUPLING (see FIXED_CIRCUIT_DRIVE below). With drive pinned at
+/// drive DECOUPLING (see `volume_pot_gain` — the decoupling was itself superseded 2026-09-23). With drive pinned at
 /// 0.25, the amp output peak (chord-ff + tremolo bright) is constant
 /// regardless of user volume; PSG is sized so that user_vol=1.0 puts the
 /// worst documented case at engine peak ≤ 1.0, and user_vol=0.5 lands
@@ -677,32 +689,120 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// gate passes; read as a two-sided bound it fails. Slide to 0.73 if the
 /// harmonic tail is too bright by ear — that is the honest disagreement, and the
 /// curve above is how to settle it.
-pub const POST_SPEAKER_GAIN_DB: f64 = 4.5;
+///
+/// ## 2026-09-23: 4.5 → 0 dB — the pot is back in the circuit
+///
+/// Every entry above sized PSG so that a pinned-drive vol = 1.0 chord could not
+/// exceed full scale. With the drawn volume network restored (`volume_pot_gain`)
+/// the power amp's rail is the physical ceiling, and the output mapping is simply
+/// rail = full scale: the amp's ±22 V (normalized ±1.0 by `HEADROOM`) is 0 dBFS,
+/// and the speaker model is unity in its passband. Nothing is sized to an
+/// invariant any more; `test_engine_peak_below_unity_at_vol_1` now holds by
+/// construction (rail tanh) rather than by trimming. The DAW level at any pot
+/// position is whatever the circuit gives — at vol 0.50 with R-11 mid-travel a
+/// single ff note peaks around −35 dBFS; the pot has ~14 dB in hand above that.
+pub const POST_SPEAKER_GAIN_DB: f64 = 0.0;
 
 /// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 1.678_804_018_122_56; // 10^(4.5/20)
+pub const POST_SPEAKER_GAIN: f64 = 1.0;
 
-/// Fixed circuit-drive level — multiplier applied between preamp output
-/// and power amp input. Historically this was `vol²` (3K audio-taper pot,
-/// physically faithful per docs/research/output-stage.md §3), but coupling
-/// user volume to BJT drive produced an unusable transition: SPICE drive
-/// sweep shows THD jumps from 0.034% at Vin=295 mV to 0.228% at 300 mV
-/// (rail-clip onset is binary, no graceful middle). Real players sit at
-/// vol≈0.1–0.3 (Avenson's 2–7 mV at pot output measurement) where the amp
-/// is essentially a linear 69× gain stage anyway.
+// ─── Volume network: the drawn pot between preamp and power amp ───────────
+//
+// Drawing #203720-S-3: preamp out (after R-9, 6.8K) → R-11 "REED BAR VOLUME"
+// 25K trimmer, wiper-strapped (a series resistor whose value is the factory
+// setting) → 10K main volume pot, bottom to ground → wiper → C-8 (4.7 µF) →
+// TR-7 base, biased by R-27 (15K to ground). C-8 against ~20K puts its corner
+// near 2 Hz, so the network is solved as resistive.
+//
+// 2026-09-23: this REPLACES the 2026-04-26 "drive/volume decoupling", which
+// pinned the amp's drive at 0.25 and made user volume a post-speaker
+// multiplier so that vol = 1.0 could never clip the amp. That was a fudge for
+// a desired result: the real instrument's amp is driven by the pot, and it
+// clips when the pot says so. The user volume is now the pot position; the
+// output level falls where the circuit puts it (the rail is full scale, see
+// `POST_SPEAKER_GAIN_DB`).
+//
+// Two values are ASSUMPTIONS pending a bench measurement (bench list items
+// 11–12): the R-11 setting (mid-travel) and the pot taper (the standard
+// "15 % at center" two-slope audio taper — an industry curve, not a fit).
+
+/// R-11 "REED BAR VOLUME" 25K trimmer, wiper-strapped: series resistance
+/// between the preamp output and the pot top. Factory setting undocumented;
+/// MID-TRAVEL ASSUMED. With R-11 at 0 the amp reaches its clip knee on ff
+/// chords at full volume; at mid-travel it does not.
+pub const R11_REED_BAR_VOLUME: f64 = 12_500.0;
+/// Main volume pot, 10K (part 203643-001), bottom terminal to ground.
+pub const VOLUME_POT_R: f64 = 10_000.0;
+/// R-9, the preamp's output series resistor: the source resistance the pot
+/// network sees (both preamp decks carry it; `open_circuit_output_factor`
+/// returns each model's output to the R-9 terminal's open-circuit value).
+pub const PREAMP_OUTPUT_R9: f64 = 6_800.0;
+/// Power-amp input resistance at the pot wiper: R-27 (15K, TR-7 base bias).
+/// TR-7's own base impedance is bootstrapped by the feedback loop and is
+/// neglected (good to ~1 %).
+pub const POWER_AMP_R_IN: f64 = 15_000.0;
+/// C-9 (1 nF, TR-7 base to ground, drawn). Against the wiper's Thévenin
+/// resistance it makes a VOLUME-DEPENDENT treble pole — the classic
+/// pot-loading treble shift: ≈35 kHz at full pot (−0.3 dB at 10 kHz,
+/// −1.1 dB at 20 kHz), higher at lower settings. See `volume_pot_pole_hz`.
+pub const POWER_AMP_C9: f64 = 1.0e-9;
+
+/// Audio-taper law: wiper-to-ground fraction of the pot's resistance at
+/// rotation `pos` (0..1). Standard carbon "15 % at center" two-slope taper
+/// (Bourns/Alpha convention): 15 % at half rotation, linear on each side.
+/// ASSUMED — the 200A pot's taper code is undocumented.
+pub fn audio_taper(pos: f64) -> f64 {
+    let p = pos.clamp(0.0, 1.0);
+    if p <= 0.5 {
+        0.15 * (p / 0.5)
+    } else {
+        0.15 + 0.85 * ((p - 0.5) / 0.5)
+    }
+}
+
+/// Gain from the preamp's OPEN-CIRCUIT output (at the R-9 terminal) to the
+/// power-amp input, for user volume `vol` (pot position, 0..1), with the
+/// R-11 trimmer ahead of the pot and the amp's R-27 loading the wiper:
 ///
-/// 2026-04-26: decoupled drive from user volume. Pin drive at 0.25 — the
-/// value previous calibration was already balanced against (= old vol²
-/// at vol=0.5). Apply user volume as a linear post-amp multiplier instead.
-/// Result: monotonic, predictable, clip-free across the full vol range.
-/// Loses: vol-dependent rail-clip character at high vol (was crackle, not
-/// music) and crossover-region grit at very low vol (rarely visited in
-/// real play). Preserves: every nonlinearity that defines the 200A sound —
-/// pickup 1/(1-y) bark, preamp asymmetric clipping, tremolo loop-gain
-/// shunt, MLP per-note corrections (rail sag and the divergence guard exist
-/// only on the opt-in melange power-amp path). The BJT solver still runs
-/// every sample; it just runs at one operating point.
-pub const FIXED_CIRCUIT_DRIVE: f64 = 0.25;
+/// ```text
+///   R_lower  = VOLUME_POT_R · taper(vol)          R_upper = VOLUME_POT_R − R_lower
+///   R_low∥   = R_lower ∥ POWER_AMP_R_IN
+///   gain     = R_low∥ / (R9 + R11 + R_upper + R_low∥)
+/// ```
+///
+/// Reference points (R-11 mid): vol 0.5 → 0.047 (−26.6 dB), vol 1.0 → 0.237
+/// (−12.5 dB). The pre-2026-09-23 pinned drive was 0.25 at every volume.
+pub fn volume_pot_gain(vol: f64) -> f64 {
+    let r_lower = VOLUME_POT_R * audio_taper(vol);
+    let r_upper = VOLUME_POT_R - r_lower;
+    let r_low_eff = if r_lower <= 0.0 {
+        0.0
+    } else {
+        r_lower * POWER_AMP_R_IN / (r_lower + POWER_AMP_R_IN)
+    };
+    r_low_eff / (PREAMP_OUTPUT_R9 + R11_REED_BAR_VOLUME + r_upper + r_low_eff)
+}
+
+/// Corner of the C-9 pole at the amp input for pot position `vol`: the
+/// Thévenin resistance seen by C-9 is (R9 + R11 + R_upper) ∥ R_lower ∥ R-27.
+/// ≈35 kHz at vol 1.0 (R-11 mid), rising toward the R-27-only limit as the
+/// wiper approaches ground.
+pub fn volume_pot_pole_hz(vol: f64) -> f64 {
+    let r_lower = VOLUME_POT_R * audio_taper(vol);
+    let r_upper = VOLUME_POT_R - r_lower;
+    let r_src = PREAMP_OUTPUT_R9 + R11_REED_BAR_VOLUME + r_upper;
+    let par = |a: f64, b: f64| a * b / (a + b);
+    let r_th = if r_lower <= 0.0 {
+        0.0
+    } else {
+        par(par(r_src, r_lower), POWER_AMP_R_IN)
+    };
+    if r_th <= 0.0 {
+        f64::INFINITY
+    } else {
+        1.0 / (2.0 * std::f64::consts::PI * r_th * POWER_AMP_C9)
+    }
+}
 
 /// Per-note output scaling to balance the keyboard.
 ///

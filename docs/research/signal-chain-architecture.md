@@ -120,7 +120,7 @@ MIDI note-on (key, velocity, channel, note_id)
               -> Stage 2: Miller pole ~81 kHz
         [H] DC Block (handled internally by DK preamp)
      -> 2x Downsample (matching allpass polyphase IIR)
-     [I] Fixed circuit drive (×0.25, pinned — the real 10K pot sits here; user volume is a linear post-speaker multiplier, see §12)
+     [I] Volume network as drawn: R-11 trimmer → 10K pot at the user's position → amp input, loaded (see §12)
      [K] Power Amplifier (Class AB, crossover distortion at low signal levels)
      [L] Speaker Cabinet (variable: bypass to authentic HPF 30 Hz subsonic + LPF 5.5 kHz)
      [M] Output (no separate limiter — handled by power amp tanh and speaker tanh Xmax)
@@ -716,14 +716,15 @@ In the real 200A, the 3K audio-taper volume potentiometer sits between the pream
 
 **Why placement matters on the real instrument:** at low pot settings the power amp input drops into the crossover region and the distortion character changes (more odd harmonics from the Class AB dead zone).
 
-**What the model does (2026-04-26 drive/volume decoupling):** the pot is NOT modeled as a variable attenuator. Circuit drive is pinned at `FIXED_CIRCUIT_DRIVE = 0.25` (the old vol² value at vol = 0.50, the point every calibration was balanced against) and user volume is applied as a LINEAR multiplier after the speaker model:
+**What the model does (2026-09-23, the drawn network):** user volume is the pot position, and the network is solved loaded:
 
 ```
-drive  = preamp_out * FIXED_CIRCUIT_DRIVE      // into the power amp, pinned
-output = speaker(power_amp(drive)) * POST_SPEAKER_GAIN * user_volume
+v_oc   = preamp_out * open_circuit_output_factor()          // back to the R-9 terminal
+drive  = v_oc * volume_pot_gain(vol)                         // R-9 → R-11 → 10K pot → wiper ∥ R-27
+output = speaker(power_amp(drive)) * POST_SPEAKER_GAIN       // PSG = 0 dB: rail = full scale
 ```
 
-Consequence: the amp always runs at one operating point, so the volume-dependent breakup/crossover interaction of the real instrument does not occur in the model. This is a documented design decision (see `tables.rs` at `FIXED_CIRCUIT_DRIVE` and output-stage §3), flagged again by the 2026-09-22 external circuit review, and remains the maintainer's call.
+`volume_pot_gain` (tables.rs) uses R-11 at mid-travel and a standard 15 %-at-center audio taper, both assumptions pending a bench measurement. Consequence: the amp's operating point follows the pot as on the instrument — the crossover residual is proportionally larger at low settings and the clip knee is reachable at full pot with a hot R-11. From 2026-04-26 to 2026-09-23 the drive was pinned at 0.25 and user volume was a post-speaker multiplier; that departure from the drawing was retired on the maintainer's ruling after the 2026-09-22 external circuit review (output-stage §3.2 has the history).
 
 ---
 
@@ -795,7 +796,7 @@ physically plausible harmonic content at typical drive levels but can't capture
 level-dependent device nonlinearity that naturally emerges from full Gummel-Poon.
 The melange solver is the higher-fidelity path; it is opt-in on CPU grounds.
 
-User volume: linear post-speaker multiplier; circuit drive pinned at 0.25 (§12).
+User volume: the drawn pot network between preamp and amp (§12); no post-speaker user gain.
 
 ---
 
@@ -870,12 +871,13 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 
 ### Plugin Signal Levels (Current)
 
-The power amp sees a pinned drive (`FIXED_CIRCUIT_DRIVE`). Measured with the
-engine's drive-headroom probe (`power_amp_drive_headroom_probe`, 2026-09-22):
-single ff notes 12–15 mV RMS / 64–131 mV peak at the amp input, i.e. 20–41 % of
-the 319 mV clip knee; a worst-phase ff chord reaches 61 %. A post-speaker gain
-stage (`POST_SPEAKER_GAIN_DB` = +4.5 dB) maps the output to DAW-friendly digital
-levels without distorting any circuit model — it sits after all analog stages.
+The power amp is driven through the drawn volume network. Measured with the
+engine's drive-headroom probe (`power_amp_drive_headroom_probe`, 2026-09-23,
+R-11 at mid-travel): at vol 0.50, single ff notes 13–26 mV peak at the amp
+input (4–8 % of the 319 mV clip knee) and a worst-phase ff chord 39 mV (12 %);
+at vol 1.0, 65–133 mV peak single (20–42 %) and 197 mV chord (62 %). The output
+mapping is rail = full scale (`POST_SPEAKER_GAIN_DB` = 0 dB); there is no user
+gain after the speaker model.
 
 | Point in Chain | Level | Notes |
 |---------------|-------|-------|
@@ -883,10 +885,11 @@ levels without distorting any circuit model — it sits after all analog stages.
 | 6-voice chord, ff | ~0.3-0.9 | Sum of voices |
 | After output_scale() | target_db=-35 dBFS | Into DkPreamp |
 | After preamp | ~50 mV RMS (C4 ff) | ≈14 dB closed-loop gain at the idle shunt |
-| After fixed drive (×0.25) | 12–15 mV RMS single ff, 29 mV RMS ff chord | 20–41 % / 61 % of the 319 mV clip knee |
-| After power amp | ~0.9 V RMS single ff (69×) | Clean at normal dynamics |
+| After the volume network, vol 0.50 | 2.4–2.9 mV RMS single ff, 5.8 mV RMS ff chord | 4–8 % / 12 % of the 319 mV clip knee |
+| After the volume network, vol 1.0 | 12–15 mV RMS single ff, 29 mV RMS ff chord | 20–42 % / 62 % of the knee (R-11 mid) |
+| After power amp | ~0.2 V RMS single ff at vol 0.50 (69×) | Clean; crossover residual proportionally larger here |
 | After speaker | physics-level output | speaker character defaults to 0 (bypass) |
-| After post-speaker gain (+4.5 dB) × volume | ≈ −17 dBFS peak single ff at vol 0.50 | DAW-friendly |
+| Output (rail = 0 dBFS) | ≈ −29.5 dBFS peak single ff at vol 0.50 | the pot has ~14 dB in hand |
 
 Polyphonic headroom (measured, ff at default vol=0.50):
 - ff chords peak ~-3 dBFS (4-6 voices)

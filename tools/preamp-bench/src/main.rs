@@ -532,15 +532,17 @@ fn cmd_render(args: &[String]) {
     let mut speaker = Speaker::new(sample_rate);
     speaker.set_character(speaker_char);
 
+    let drive_gain =
+        create_preamp(args).open_circuit_output_factor() * tables::volume_pot_gain(volume);
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
-        let attenuated = preamp_output[i] * tables::FIXED_CIRCUIT_DRIVE; // pinned drive, as the engine
+        let attenuated = preamp_output[i] * drive_gain; // the drawn volume network, as the engine
         let amplified = if no_poweramp {
             attenuated
         } else {
             power_amp.process(attenuated)
         };
-        final_output[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN * volume; // linear post-amp volume
+        final_output[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
     }
 
     // Peak measurement
@@ -1103,8 +1105,9 @@ fn cmd_alias_audit(args: &[String]) {
     let want_json = has_flag(args, "--json");
     let note = parse_flag(args, "--note", alias_audit::STIMULUS_NOTE as f64) as u8;
     let velocity = parse_flag(args, "--velocity", alias_audit::STIMULUS_VELOCITY as f64) as u8;
+    let volume = parse_flag(args, "--volume", alias_audit::STIMULUS_VOLUME);
 
-    let r = alias_audit::run_with_note(note, velocity);
+    let r = alias_audit::run_with_note_at_volume(note, velocity, volume);
 
     if want_json {
         // Tiny hand-rolled JSON to avoid a serde_json dep just for this.
@@ -1327,11 +1330,12 @@ fn run_calibrate(
             let mut speaker = Speaker::new(BASE_SR);
             speaker.set_character(speaker_char);
 
+            let drive_gain = preamp.open_circuit_output_factor() * tables::volume_pot_gain(volume);
             let mut t5_buf = vec![0.0f64; n_samples];
             for i in 0..n_samples {
-                let attenuated = t4_buf[i] * tables::FIXED_CIRCUIT_DRIVE; // pinned drive, as the engine
+                let attenuated = t4_buf[i] * drive_gain; // the drawn volume network, as the engine
                 let amplified = power_amp.process(attenuated);
-                t5_buf[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN * volume; // linear post-amp volume
+                t5_buf[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
             }
             let t5_window = &t5_buf[measure_start..measure_end];
             let t5_pk = peak_db(t5_window);
@@ -1587,15 +1591,17 @@ fn cmd_render_poly(args: &[String]) {
     let mut speaker = Speaker::new(BASE_SR);
     speaker.set_character(speaker_char);
 
+    let drive_gain =
+        create_preamp(args).open_circuit_output_factor() * tables::volume_pot_gain(volume);
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
-        let attenuated = preamp_output[i] * tables::FIXED_CIRCUIT_DRIVE; // pinned drive, as the engine
+        let attenuated = preamp_output[i] * drive_gain; // the drawn volume network, as the engine
         let amplified = if no_poweramp {
             attenuated
         } else {
             power_amp.process(attenuated)
         };
-        final_output[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN * volume; // linear post-amp volume
+        final_output[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
     }
 
     // Also render each voice through its OWN separate chain for comparison
@@ -2060,15 +2066,17 @@ fn cmd_centroid_track(args: &[String]) {
     let mut speaker = Speaker::new(BASE_SR);
     speaker.set_character(speaker_char);
 
+    let drive_gain =
+        create_preamp(args).open_circuit_output_factor() * tables::volume_pot_gain(volume);
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
-        let attenuated = preamp_output[i] * tables::FIXED_CIRCUIT_DRIVE; // pinned drive, as the engine
+        let attenuated = preamp_output[i] * drive_gain; // the drawn volume network, as the engine
         let amplified = if no_poweramp {
             attenuated
         } else {
             power_amp.process(attenuated)
         };
-        final_output[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN * volume; // linear post-amp volume
+        final_output[i] = speaker.process(amplified) * tables::POST_SPEAKER_GAIN;
     }
 
     // Centroid tracking with Hann-windowed frames

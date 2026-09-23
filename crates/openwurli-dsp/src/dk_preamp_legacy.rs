@@ -726,6 +726,10 @@ fn dk_step(
 }
 
 impl PreampModel for DkPreamp {
+    fn open_circuit_output_factor(&self) -> f64 {
+        (R9 + RLOAD) / RLOAD
+    }
+
     fn process_sample(&mut self, input: f64) -> f64 {
         // Run main solver with audio input.
         // Field-level borrow splitting: config fields (&self.xxx) are immutable,
