@@ -5,6 +5,97 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] "WeAreStardust" - 2026-09-23
+
+The gain-staging release: an end-to-end external circuit review of
+v0.7.0 (every netlist against the drawing, every shipping DSP block
+against its netlist) found the last places where the model departed
+from the circuit for a desired result, and this release removes them.
+The volume control is back where the drawing puts it, the power amp
+has its drawn bass shelf, and the plugin's output is referenced to the
+amplifier's rail rather than trimmed to a target. Levels are lower and
+the dynamic range is the instrument's own; level-to-taste belongs
+downstream.
+
+### Changed — the sound
+- **Volume is the drawn pot.** The control now sets the position of the
+  10K main volume pot between the preamp and the power amp, solved as
+  drawn and loaded: preamp output → R-9 → R-11 reed-bar trimmer → pot →
+  wiper against the amp's R-27 input, with C-9 as the volume-dependent
+  treble pole. Since 2026-04 the amp's drive had been pinned and volume
+  applied after the speaker so that full volume could never clip the
+  amp; that was a level-convenience departure from the circuit and is
+  retired. The amp's operating point now follows the pot, as on the
+  instrument, and its clip knee is reachable at full volume with a hot
+  trim. Default position 0.80.
+- **Power amp bass shelf.** The behavioral amp models the drawn R-30 /
+  C-10 feedback leg inside its loop: 69× in band, unity at DC, −3 dB at
+  33 Hz, −1.3 dB at the lowest A. The amp is split-rail and DC-coupled,
+  so this is the circuit's only bass roll-off; the model had none.
+- **Output referenced to the rail.** The post-speaker gain is retired as
+  a gain: the output mapping is stated in circuit units, 22 V at the amp
+  output (its clip ceiling) = 0 dBFS. An "over" can therefore only ever
+  mean the amp clipped, and the output cannot exceed full scale at any
+  setting (a structural test sweeps trim, tremolo and speaker character
+  to prove it; the residual ~1 % is the decimator's response to a
+  clipped edge). At the defaults a fortissimo six-note chord peaks
+  −11.6 dBFS and a fortissimo single note −18.8, speaker bypassed.
+- **Keyboard balance re-trimmed** on this chain through the real engine
+  at two velocities; bass and mid anchors move by up to 1.3 dB. The top
+  octave keeps a residual velocity split that no trim can close.
+- **Speaker character 0 is a true passthrough.** The 20 Hz and 20 kHz
+  "bypass" filters no longer run at zero; neither is a circuit element,
+  and the lowpass overshot rail-clipped edges by up to 0.7 dB.
+
+### Added
+- **Reed Bar Trim** parameter (0–25 kΩ): R-11, the per-unit factory
+  trimmer ahead of the volume pot. The A-series board has no documented
+  setting, and every 200A left the factory somewhere on its travel, so it
+  is exposed as the per-unit setting it is. Its default (17.2K) reproduces
+  the manufacturer's end-to-end sensitivity calibration for the preceding
+  Model 200 board (60 mV in → 4.75 V into 8 Ω at full volume), whose
+  trimmer a drawing trace showed to be the same element — an inference,
+  outranked by a bench reading when one exists. Toward 0 Ω the amp
+  reaches its clip knee on fortissimo chords at full volume.
+- `alias-audit --volume` and `render-midi --r11` in preamp-bench.
+
+### Changed — SPICE
+- **Pickup deck rewritten to a current-source interface**: the polarizing
+  voltage is internal, the plate is an AC node, and R-1 is external, so
+  the pickup and preamp subcircuits no longer instantiate the input
+  network twice in the full-chain and harmonic-audit benches. The
+  pickup → R-1 → base corner measures 836 Hz at the base (987 Hz at the
+  plate); the code's 880 Hz reference is left as is, and the discrepancy
+  is recorded as open.
+- **Power-amp deck corrected to the drawing** (both copies, landed
+  atomically with the sidecar-validation mirror): R-28's tail returns to
+  the +15 V regulated rail, C-13/C-14 across the drivers, and the R-40 /
+  C-15 output Zobel. The opt-in generated solver is regenerated at the
+  pinned compiler. The deck still idles near class B against the
+  manual's 10 mA set point; a sourced card for the house-number driver
+  parts is the outstanding fix.
+
+### Fixed
+- preamp-bench's hand-rolled output chains (render, calibrate, two
+  audits) still ran the pre-2026-04 volume-squared topology; they now
+  follow the engine.
+- Documentation drift across the research docs and source comments:
+  shipping defaults, gain-staging figures (re-measured), the tremolo LED
+  path, the VAS designator, the pickup corner-scaling figures, the
+  oscillator deck header, and the 10 mA output-bias target now sourced
+  to the service manual.
+- tb_power_amp's −3 dB measure never evaluated (braces are literal in a
+  control block).
+
+### Known issues
+- The behavioral amp's crossover notch is the wrong shape and size for
+  this stage (measured on the deck at the factory bias band: shallower
+  and 10–80× wider than modeled), and its open-loop gain lacks the
+  Miller pole. With the pot in the circuit the default drive sits where
+  that residual dominates the click band. Next release.
+- Reed Bar Trim default and the pot taper are inferences pending a bench
+  measurement; so are the pickup capacitance and C-2's return.
+
 ## [0.7.0] "ResponsiblePractical" - 2026-09-15
 
 The drawn-topology revision: instrumented re-reads of schematic
@@ -1167,7 +1258,8 @@ derivation, real-instrument DC measurements) before any code moved.
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/hal0zer0/openwurli/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/hal0zer0/openwurli/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/hal0zer0/openwurli/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/hal0zer0/openwurli/compare/v0.6.0...v0.6.1

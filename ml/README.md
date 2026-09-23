@@ -76,15 +76,16 @@ Outside the training range (MIDI 65-97), corrections fade linearly to identity o
 
 ## Training Details
 
-Shipped model (topology-revision retrain): hidden 16, 507 parameters, seed
-chosen by sweeping {7, 42, 123, 999} at `--epochs 3000 --lr 3e-3 --patience 150`
-(Huber delta 5.0, weight decay 1e-4) and taking the lowest validation loss.
-With only 13 observations `load_data` trains on all of them and reports
-validation on the same set — the "validation" loss is a fit quality number,
-not a generalisation estimate.
+Shipped model (v0.8.0 retrain on the gain-staging chain, 2026-09-23): hidden
+16, 507 parameters, seed 7, chosen by sweeping {7, 42, 123, 999} at
+`--epochs 3000 --lr 3e-3 --patience 150` (Huber delta 5.0, weight decay 1e-4)
+and taking the lowest validation loss (7: 0.0195 · 42: 0.0573 · 123: 0.0458 ·
+999: 0.0453). With only 13 observations `load_data` trains on all of them and
+reports validation on the same set — the "validation" loss is a fit quality
+number, not a generalisation estimate.
 
-- Best loss: 0.045 · freq_H2 1.67 cents MAE · decay_H2 0.69 ratio MAE ·
-  ds_corr 0.09 MAE
+- Best loss: 0.0195 · freq_H2 1.14 cents MAE · decay_H2 0.47 ratio MAE ·
+  ds_corr 0.05 MAE (v0.7.0 model: 0.045 · 1.67 · 0.69 · 0.09)
 - H4-H8 targets are always masked (below the OBM noise floor); H2/H3 are kept
   subject to anomaly detection
 - Reproduce: `python pipeline.py --from-stage 4 --through-stage 5 --obm-only`,
