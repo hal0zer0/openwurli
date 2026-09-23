@@ -11,8 +11,10 @@ pub struct OpenWurliParams {
     /// R-11 "REED BAR VOLUME": the 25K factory trimmer between the preamp
     /// output and the volume pot, in ohms (0 = hottest drive into the power
     /// amp, 25 000 = quietest). A per-unit setting on the real instrument with
-    /// no documented procedure; the default is a declared placeholder
-    /// (mid-travel) pending a bench reading. Lower it toward 0 to reach the
+    /// no documented procedure on this board; the default (17.2K) reproduces
+    /// the manufacturer's factory sensitivity calibration for the preceding
+    /// Model 200 board (60 mV in → 4.75 V into 8 Ω at full volume), an
+    /// inference pending a bench reading. Lower it toward 0 to reach the
     /// amp's clip knee on fortissimo chords at full volume.
     #[id = "reed_bar_trim"]
     pub reed_bar_trim: FloatParam,
@@ -70,7 +72,7 @@ impl Default for OpenWurliParams {
 
             reed_bar_trim: FloatParam::new(
                 "Reed Bar Trim",
-                12_500.0,
+                17_200.0,
                 FloatRange::Linear {
                     min: 0.0,
                     max: 25_000.0,

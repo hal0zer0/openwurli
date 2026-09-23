@@ -724,19 +724,34 @@ pub const POST_SPEAKER_GAIN: f64 = 1.0;
 //
 // Two values are ASSUMPTIONS pending a bench measurement (bench list items
 // 11–12): the R-11 setting (exposed as the "Reed Bar Trim" parameter, default
-// mid-travel as a declared placeholder) and the pot taper (the standard
+// transferred from the non-A factory calibration, see the constant) and the pot taper (the standard
 // "15 % at center" two-slope audio taper — an industry curve, not a fit).
 
 /// R-11 "REED BAR VOLUME" 25K trimmer, wiper strapped to the preamp end
 /// (confirmed on both prints, pixel-traced 2026-09-23): a 0–25K series
 /// resistance between the preamp output and the pot top. It is a per-unit
 /// factory adjustment with NO documented procedure on the A-series board, so
-/// it ships as an explicit user parameter ("Reed Bar Trim") whose default is
-/// a declared PLACEHOLDER: mid-travel, chosen because it claims nothing, not
-/// because it is right (independent review ruling, 2026-09-23). With R-11 at 0 the amp
-/// reaches its clip knee on ff chords at full volume; at mid-travel it does not.
-/// Replace the default with the bench reading when it arrives (bench item 11).
-pub const R11_REED_BAR_VOLUME_DEFAULT: f64 = 12_500.0;
+/// it ships as an explicit user parameter ("Reed Bar Trim").
+///
+/// DEFAULT PROVENANCE (2026-09-23, independent review): TRANSFERRED from the
+/// manufacturer's factory calibration of the non-A Model 200 board, whose
+/// R-48 is the same thing — a 0–25K wiper-strapped reed-bar level trim ahead
+/// of the volume pot (drawing 201904-S-1-E-1, pixel-traced). The service
+/// manual's procedure: "With an input of 60 millivolts at 1 KHz, adjust R-48
+/// for an AC voltage of 4.75 volts at the output of the amplifier with an
+/// 8 ohm, 10 watt load and with the volume control on maximum" — an
+/// END-TO-END sensitivity of 79× from the reed-bar input to the speaker.
+/// Applied to this model (drawn A values; vibrato off at the 13.24K divider
+/// floor; preamp 15.8 dB at node_c6; amp 69.2×; pot at max, wiper 10K ∥ 15K;
+/// generator at the reed-bar end of R-1, junction ≈280K at 1 kHz → k = 0.927)
+/// the setting that reproduces it is R-11 ≈ 17.2K. Grade: inference — the
+/// correspondence is functional, not topological (different amp, different
+/// preamp), and nothing printed says Wurlitzer kept the same sensitivity
+/// target on the A. Better grounded than mid-travel; not a measurement. The
+/// bench reading (list item 11) outranks it the moment it arrives. With R-11
+/// at 0 the amp reaches its clip knee on ff chords at full volume; at 17.2K
+/// it does not.
+pub const R11_REED_BAR_VOLUME_DEFAULT: f64 = 17_200.0;
 /// Full travel of R-11.
 pub const R11_REED_BAR_VOLUME_MAX: f64 = 25_000.0;
 /// Main volume pot, 10K (part 203643-001), bottom terminal to ground.
