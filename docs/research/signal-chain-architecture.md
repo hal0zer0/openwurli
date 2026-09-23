@@ -750,7 +750,7 @@ TIP35C/TIP36C output pair) uses a full Gummel-Poon model with datasheet values
 CJC, VJC, MJC, TF). No `.linearize` hints — every nonlinearity is solved exactly
 at runtime by the Newton-Raphson iteration inside the generated code.
 
-**Solver shape (at openwurli pin `47b2702`):** N=20 nodes, M=16 nonlinear
+**Solver shape (at openwurli pin `7ecb36c`, regenerated 2026-09-23 after the R-28 rail / C-13-C-14 / Zobel corrections):** N=20 nodes, M=14 nonlinear
 dimensions, auto-routed to Nodal with Backward Euler integration (ρ = 1.0041
 makes trapezoidal marginally unstable; BE is L-stable). Generated with
 `--output-clamp 30` so melange's post-DC-block limiter passes the natural

@@ -27,9 +27,12 @@ C9    in_ac  gnd     1N
 * ============================================================
 * DIFFERENTIAL PAIR (TR-7, TR-8: PNP 2N5087)
 * ============================================================
-* R-28 (10K): tail current source for diff pair (emitters to +Vcc).
+* R-28 (10K): tail current source for diff pair, returned to the +15 V REGULATED rail.
 * Schematic note: "select R28 for 0V DC at point [16]"
-R28   emit_pair  vp    10K
+R28   emit_pair  vreg15    10K
+* +15 V REGULATED rail (drawn, 2026-09-22 pixel-walked read): R-28 is the only
+* power-amp part on it. Ideal source standing in for IC-1; static by nature.
+Vreg15 vreg15 gnd DC 15
 Q7    coll7    in_ac     emit_pair   Q2N5087
 Q8    coll8    fb_inv    emit_pair   Q2N5087
 
@@ -91,6 +94,8 @@ R35   bias_mid  drv_bot    220
 Q10   base11   vas_out   nodeC    QMPSA06
 Q11   nodeC    base11    vp       QTIP36C
 R36   base11   vp        270
+* C-13: 100 pF across TR-10 collector-base (drawn).
+C13   base11   vas_out   100P
 
 * ============================================================
 * BOTTOM SZIKLAI: TR-12 (PNP driver) + TR-13 (NPN output)
@@ -100,6 +105,8 @@ R36   base11   vp        270
 Q12   base13   drv_bot   nodeD    QMPSA56
 Q13   nodeD    base13    vn       QTIP35C
 R39   base13   vn        270
+* C-14: 100 pF across TR-12 collector-base (drawn).
+C14   base13   drv_bot   100P
 
 * ============================================================
 * OUTPUT EMITTER RESISTORS
@@ -108,5 +115,9 @@ R39   base13   vn        270
 * (Fuses F-1 and F-2 omitted in simulation)
 R37   nodeC   out   0.47
 R38   nodeD   out   0.47
+
+* --- Output Zobel (drawn): R-40 12 ohm + C-15 0.1 uF, output to ground ---
+R40   out     zob   12
+C15   zob     gnd   0.1U
 
 .ENDS wurli_power_amp

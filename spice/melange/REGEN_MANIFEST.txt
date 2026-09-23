@@ -22,6 +22,12 @@
 # at the melange v0.1.7 pin. wurli-power-amp is UNCHANGED by that revision and
 # its hash is deliberately untouched — the power-amp deck carries no preamp
 # topology and no 14.5 V rail.
+#
+# 2026-09-23: wurli-power-amp hash updated for the drawn corrections from the
+# external circuit review (R-28 tail to a static +15 V regulated source,
+# C-13/C-14 driver collector-base, R-40/C-15 output Zobel), landed atomically
+# with the sidecar-validation repo's copy and the gen_power_amp.rs regen at the
+# melange v0.1.7 pin (7ecb36c; --sample-rate 88200 --output-clamp 30).
 e021197db9c23187  wurli-preamp.cir
-cafa37a933dbc24b  wurli-power-amp.cir
+665e77d284609966  wurli-power-amp.cir
 a323eead31ebf251  wurli-tremolo.cir
