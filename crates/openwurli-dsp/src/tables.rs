@@ -690,21 +690,35 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// harmonic tail is too bright by ear — that is the honest disagreement, and the
 /// curve above is how to settle it.
 ///
-/// ## 2026-09-23: 4.5 → 0 dB — the pot is back in the circuit
+/// ## 2026-09-23: the mapping is a stated reference, not a gain — see `FULL_SCALE_VOLTS`
 ///
 /// Every entry above sized PSG so that a pinned-drive vol = 1.0 chord could not
 /// exceed full scale. With the drawn volume network restored (`volume_pot_gain`)
-/// the power amp's rail is the physical ceiling, and the output mapping is simply
-/// rail = full scale: the amp's ±22 V (normalized ±1.0 by `HEADROOM`) is 0 dBFS,
-/// and the speaker model is unity in its passband. Nothing is sized to an
-/// invariant any more; `test_engine_peak_below_unity_at_vol_1` now holds by
-/// construction (rail tanh) rather than by trimming. The DAW level at any pot
-/// position is whatever the circuit gives — at vol 0.50 with R-11 mid-travel a
-/// single ff note peaks around −35 dBFS; the pot has ~14 dB in hand above that.
+/// the power amp's rail is the physical ceiling, and the output mapping is a
+/// convention stated in circuit units: `FULL_SCALE_VOLTS` volts at the amp
+/// output = 0 dBFS. It is set to the rail (independent review verdict, the
+/// maintainer's decision): the rail is the circuit's only hard limit, so an
+/// "over" can only ever mean the amp clipped and amp clipping can never become a
+/// digital over; the resulting levels sit where analog-referenced alignment puts
+/// nominal (a velocity-100 chord at full volume ≈ −18 dBFS, cf. EBU R68's
+/// 0 dBu = −18 dBFS); and "output never exceeds full scale" then holds at EVERY
+/// setting by construction — `test_output_never_exceeds_full_scale_across_settings`
+/// sweeps trim, volume, tremolo and speaker character to prove it, provided no
+/// downstream stage has gain > 1. A hotter mapping (e.g. +7 dB so the worst ff
+/// chord just reaches full scale) would let deliberate amp clipping exceed full
+/// scale by that margin and could only be guaranteed at default settings. If
+/// hotter default levels are wanted, the circuit-honest lever is the drawn gain
+/// staging (Reed Bar Trim, pot position), not this constant.
 pub const POST_SPEAKER_GAIN_DB: f64 = 0.0;
 
-/// Post-speaker output gain as a linear multiplier (10^(POST_SPEAKER_GAIN_DB/20)).
-pub const POST_SPEAKER_GAIN: f64 = 1.0;
+/// Volts at the power-amp output that map to digital full scale (0 dBFS).
+/// Set to the amp's clip ceiling, `power_amp::HEADROOM_V` (22 V). If rail sag
+/// is ever modeled on the shipping path this becomes the IDLE rail (24.5 V).
+pub const FULL_SCALE_VOLTS: f64 = crate::power_amp::HEADROOM_V;
+
+/// Post-speaker output multiplier: the amp's normalized output (±1.0 = ±HEADROOM_V)
+/// re-referenced to `FULL_SCALE_VOLTS`. Equals 1.0 while the two coincide.
+pub const POST_SPEAKER_GAIN: f64 = crate::power_amp::HEADROOM_V / FULL_SCALE_VOLTS;
 
 // ─── Volume network: the drawn pot between preamp and power amp ───────────
 //

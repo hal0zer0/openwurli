@@ -40,7 +40,16 @@ struct BaselineEntry {
 /// Hand-parsed baseline — small enough that a JSON dep isn't worth pulling in.
 /// Must stay in lockstep with `tests/baselines/alias_audit_v0_5_1.json`.
 ///
-/// REFRESHED 2026-09-23 for the drawn volume network: user volume is now the
+/// REFRESHED 2026-09-23 (b) for the Reed Bar Trim default (12.5K -> 17.2K,
+/// drive -1.3 dB at the canonical stimulus) and for speaker character 0
+/// becoming a true passthrough (the 20 Hz / 20 kHz bypass biquads no longer
+/// run). Deltas: step_up 72: 2.401 -> 2.980; 84: 5.408 -> 8.003; 91: 9.991 ->
+/// 9.631; hf_band unchanged within 0.05 dB on all three. Attribution: note 84
+/// at vol 0.59 (old drive restored) reads 6.3, so ~0.9 dB is the filter
+/// removal and ~1.7 dB the drive; the H9 notch the metric keys on moved
+/// -2.5 dB. No fold-back signature.
+///
+/// REFRESHED 2026-09-23 (a) for the drawn volume network: user volume is now the
 /// pot between preamp and power amp, so the canonical stimulus (vol 0.5)
 /// drives the amp ~14 dB less than the pinned drive it replaced. Deltas vs the
 /// 2026-09-13 capture: step_up 72: 3.836 -> 2.401 (-1.44); 84: 1.578 -> 5.408
@@ -69,18 +78,18 @@ struct BaselineEntry {
 const BASELINE: &[BaselineEntry] = &[
     BaselineEntry {
         note: 72,
-        max_step_up_db: 2.401,
-        hf_band_dbc: -49.182,
+        max_step_up_db: 2.980,
+        hf_band_dbc: -48.751,
     },
     BaselineEntry {
         note: 84,
-        max_step_up_db: 5.408,
-        hf_band_dbc: -44.612,
+        max_step_up_db: 8.003,
+        hf_band_dbc: -44.558,
     },
     BaselineEntry {
         note: 91,
-        max_step_up_db: 9.991,
-        hf_band_dbc: -40.733,
+        max_step_up_db: 9.631,
+        hf_band_dbc: -40.699,
     },
 ];
 

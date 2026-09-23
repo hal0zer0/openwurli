@@ -938,6 +938,127 @@ mod tests {
         );
     }
 
+    /// Structural invariant (2026-09-23): with the mapping FULL_SCALE_VOLTS = the
+    /// amp's rail, the output cannot exceed full scale at ANY setting — the rail
+    /// tanh bounds the amp and nothing downstream has gain > 1. Sweep the
+    /// settings that raise the drive or add downstream stages: trim at its
+    /// hottest (0 Ω) and at default, full volume, tremolo off and full, speaker
+    /// bypass and authentic; worst-phase ff chord.
+    #[test]
+    fn test_output_never_exceeds_full_scale_across_settings() {
+        let mut worst = (0.0f32, String::new());
+        for &trim in &[0.0f64, tables::R11_REED_BAR_VOLUME_DEFAULT] {
+            for &trem in &[0.0f64, 1.0] {
+                for &spk in &[0.0f64, 1.0] {
+                    let mut e = engine();
+                    e.ensure_buffer_capacity(1024);
+                    e.set_volume(1.0);
+                    e.set_reed_bar_trim(trim);
+                    e.set_tremolo_depth(trem);
+                    e.set_speaker_character(spk);
+                    e.set_mlp_enabled(false);
+                    e.set_noise_enabled(false);
+                    e.warm_up();
+                    let mut buf = vec![0.0f32; 1024];
+                    for _ in 0..6 {
+                        e.render(&mut buf);
+                    }
+                    // Worst-phase onset from the peak-invariant probe (≈162 ms).
+                    let delay = 44_100 * 162 / 1000;
+                    let mut pos = 0;
+                    while pos < delay {
+                        let len = 1024.min(delay - pos);
+                        e.render(&mut buf[..len]);
+                        pos += len;
+                    }
+                    for &n in &[48u8, 55, 60, 63, 67, 70] {
+                        e.note_on(n, 1.0);
+                    }
+                    let mut peak = 0.0f32;
+                    let mut pos2 = 0;
+                    while pos2 < 44_100 {
+                        let len = 1024.min(44_100 - pos2);
+                        e.render(&mut buf[..len]);
+                        for &s in &buf[..len] {
+                            peak = peak.max(s.abs());
+                        }
+                        pos2 += len;
+                    }
+                    if peak > worst.0 {
+                        worst = (peak, format!("trim={trim} trem={trem} spk={spk}"));
+                    }
+                }
+            }
+        }
+        // Margin: the 2x decimator's response to a rail-clipped edge overshoots
+        // the flat top by up to ~0.9 % (a bandlimited clipped waveform always
+        // does — a true-peak meter shows the same); nothing else may add level.
+        // Measured 2026-09-23: 1.0089 at trim 0 / tremolo 1 / speaker 0.
+        assert!(
+            worst.0 <= 1.012,
+            "output exceeded full scale beyond the decimator margin: peak {:.4} at {} — a \
+             downstream stage adds level or the mapping no longer equals the rail \
+             (tables::FULL_SCALE_VOLTS)",
+            worst.0,
+            worst.1
+        );
+        println!(
+            "worst-case peak across settings: {:.4} at {}",
+            worst.0, worst.1
+        );
+    }
+
+    /// Where does a rail-clipped chord pick up its overshoot? Compare the
+    /// post-amp buffer (after the decimator, before the speaker) with the
+    /// final output, at 44.1 kHz (oversampled) and 88.2 kHz (no decimator).
+    #[test]
+    #[ignore = "diagnostic probe"]
+    fn full_scale_overshoot_probe() {
+        for &sr in &[44_100.0f64, 88_200.0] {
+            let mut e = WurliEngine::new(sr);
+            e.ensure_buffer_capacity(1024);
+            e.set_volume(1.0);
+            e.set_reed_bar_trim(0.0);
+            e.set_tremolo_depth(1.0);
+            e.set_speaker_character(0.0);
+            e.set_mlp_enabled(false);
+            e.set_noise_enabled(false);
+            e.warm_up();
+            let mut buf = vec![0.0f32; 1024];
+            for _ in 0..6 {
+                e.render(&mut buf);
+            }
+            let delay = (sr as usize) * 162 / 1000;
+            let mut pos = 0;
+            while pos < delay {
+                let len = 1024.min(delay - pos);
+                e.render(&mut buf[..len]);
+                pos += len;
+            }
+            for &n in &[48u8, 55, 60, 63, 67, 70] {
+                e.note_on(n, 1.0);
+            }
+            let (mut pk_amp, mut pk_out) = (0.0f64, 0.0f32);
+            let mut pos2 = 0;
+            let total = sr as usize;
+            while pos2 < total {
+                let len = 1024.min(total - pos2);
+                e.render(&mut buf[..len]);
+                for &v in &e.out_buf[..len] {
+                    pk_amp = pk_amp.max(v.abs());
+                }
+                for &v in &buf[..len] {
+                    pk_out = pk_out.max(v.abs());
+                }
+                pos2 += len;
+            }
+            println!(
+                "sr {sr}: post-amp(+decimator) peak {pk_amp:.4}, output peak {pk_out:.4} (speaker bypass adds {:+.2} dB)",
+                20.0 * (pk_out as f64 / pk_amp).log10()
+            );
+        }
+    }
+
     #[test]
     fn test_user_volume_follows_pot_law() {
         // VOLUME NETWORK (2026-09-23): user volume is the drawn pot between

@@ -9,6 +9,11 @@
 //! per-sample into the melange solver via the `.runtime V` directives on V1/V2.
 //! Calibration anchor: `docs/research/output-stage.md` §4.3.1.
 
+/// The amp's clip ceiling in volts: both models normalize their output by
+/// this, so ±1.0 at the amp output is ±22 V. `tables::FULL_SCALE_VOLTS`
+/// maps it to digital full scale.
+pub const HEADROOM_V: f64 = 22.0;
+
 /// Open-circuit (idle, light-load) rail magnitude in volts.
 /// Service-manual measurement; matches `tb_power_supply.cir` light-load test.
 const RAIL_V_OPEN: f64 = 24.5;
@@ -195,7 +200,7 @@ mod behavioral {
     /// C-10, in series with R-30 to ground [F]. In-band feedback fraction
     /// (C-10 a short) is R30 / (R30 + R31) = 220 / 15220.
     const C10: f64 = 22e-6;
-    const HEADROOM: f64 = 22.0;
+    const HEADROOM: f64 = super::HEADROOM_V;
     const CROSSOVER_VT: f64 = 0.013;
     const QUIESCENT_GAIN: f64 = 0.1;
     const NR_MAX_ITER: usize = 8;
@@ -335,7 +340,7 @@ mod melange_adapter {
     use std::sync::OnceLock;
 
     /// Rail headroom for output normalization (matches behavioral model).
-    const HEADROOM: f64 = 22.0;
+    const HEADROOM: f64 = super::HEADROOM_V;
 
     static SETTLED_STATE: OnceLock<CircuitState> = OnceLock::new();
 

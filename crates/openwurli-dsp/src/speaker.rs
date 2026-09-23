@@ -15,8 +15,13 @@
 /// harmonics maintain natural phase relationships with the fundamental.
 ///
 /// "Speaker Character" parameter blends from bypass (flat, linear) to authentic
-/// (full nonlinearity + HPF + LPF). At character=0.0 all nonlinearity
-/// coefficients are zero — pure linear passthrough.
+/// (full nonlinearity + HPF + LPF). At character=0.0 the stage is a TRUE
+/// passthrough: the nonlinearity coefficients are zero and the two biquads are
+/// skipped (2026-09-23 — with the output mapping "rail = full scale" nothing
+/// downstream of the amp may add level, and the former 20 Hz / 20 kHz "bypass"
+/// filters overshot a rail-clipped waveform by up to 0.7 dB; neither is a
+/// circuit element). The filters keep running so their state is warm when
+/// character rises.
 use crate::filters::Biquad;
 
 /// HPF cutoff at fully authentic position.
@@ -128,9 +133,11 @@ impl Speaker {
         self.thermal_state += (power - self.thermal_state) * self.thermal_alpha;
         let thermal_gain = 1.0 / (1.0 + self.thermal_coeff * self.thermal_state.sqrt());
 
-        // 4. Linear filters (HPF + LPF)
+        // 4. Linear filters (HPF + LPF). At character 0 they are advanced for
+        //    state continuity but bypassed: the stage is a true passthrough.
         let filtered = self.hpf.process(limited * thermal_gain);
-        self.lpf.process(filtered)
+        let out = self.lpf.process(filtered);
+        if self.character < 0.001 { input } else { out }
     }
 
     pub fn reset(&mut self) {
