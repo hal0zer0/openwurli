@@ -3,17 +3,29 @@
 * Wires all four subcircuits: Pickup -> Preamp -> Power Amp -> Speaker
 *
 * Signal chain:
-*   Reed displacement (sine) -> Pickup (B-source variable cap) ->
-*   R-1 (22K) -> Preamp (2-stage CE with feedback) ->
+*   Reed displacement (sine) -> Pickup (B-source variable cap, plate
+*   node) -> R-1 (22K) -> Preamp (owns R-2 1MEG, C-1 0.022uF, C-2;
+*   2-stage CE with feedback) ->
 *   Volume pot (3K wiper Z) -> Power Amp (Class AB, ±22.5V) ->
 *   8 ohm speaker load
 *
 * Tremolo: Static LDR resistance from fb_junct to ground
-*   Rldr=1M: no tremolo (~2.0x preamp gain)
-*   Rldr=19K: tremolo bright (~4.0x preamp gain)
+*   Rldr=1M / Rldr=19K. PENDING: the old "~2.0x / ~4.0x" gain figures
+*   are pre-revision and superseded (see REVISION-NOTES.md). Note that
+*   under the revised topology 1M is NOT the idle shunt: preamp.cir
+*   calls for the divider floor (~13K) for no tremolo; 1M leaves the
+*   full R-10 feedback on the emitter (near-unity closed-loop gain).
 *
-* NOTE: Uses 'reset' between transient runs (not 'destroy all')
-*   because pickup B-source ddt() loses state after 'destroy all'.
+* Wiring REVISED 2026-09-22 (external circuit review): current-source
+* pickup interface. The pickup no longer carries its own 1MEG feed or
+* 0.022uF coupling cap (they were duplicated by preamp.cir's R2/Cin);
+* the polarizing voltage is internal to the pickup, so there is no Vhv
+* supply and the plate is an AC-only node at 0 V DC.
+*
+* NOTE: Uses 'reset' between transient runs. (The pickup no longer
+*   uses B-source ddt(); the old ddt() form also produced a numerical
+*   plate kick at 3520 Hz that railed the speaker output — see
+*   subcircuits/pickup.cir.)
 *
 * Run: ngspice -b tb_full_chain.cir
 
@@ -28,7 +40,6 @@
 * ============================================================
 * POWER SUPPLIES
 * ============================================================
-Vhv    vhv_node   0    DC 147
 Vcc    vcc_node   0    DC 14.5
 Vpos   vp_node    0    DC 22.5
 Vneg   vn_node    0    DC -22.5
@@ -36,7 +47,7 @@ Vneg   vn_node    0    DC -22.5
 * ============================================================
 * PICKUP
 * ============================================================
-Xpickup  pickup_out  reed_disp  vhv_node  0  wurli_pickup
+Xpickup  plate  reed_disp  0  wurli_pickup
 
 * Reed displacement source
 Vdisp  reed_disp  0  DC 0 SIN(0 0.10 440 0 0)
@@ -44,7 +55,7 @@ Vdisp  reed_disp  0  DC 0 SIN(0 0.10 440 0 0)
 * ============================================================
 * R-1: Series input resistor (external to both pickup and preamp)
 * ============================================================
-R1  pickup_out  preamp_in  22K
+R1  plate  preamp_in  22K
 
 * ============================================================
 * PREAMP
@@ -91,17 +102,17 @@ echo "=== DC OPERATING POINT ==="
 op
 
 echo "--- Pickup ---"
-echo "Plate voltage (target 147V):"
-print v(xpickup.plate)
+echo "Plate (target 0 V: AC-only node, V_pol internal to the pickup):"
+print v(plate)
 
 echo "--- Preamp ---"
-echo "TR-1: B (2.45V), E (1.95V), C (4.1V):"
+echo "TR-1: B / E / C (tb_preamp_dc: 2.651 / 2.093 / 4.270 V):"
 print v(xpre.base1) v(xpre.emit1) v(xpre.coll1)
-echo "TR-2: B (4.1V), E (3.4V), C (8.8V):"
-print v(xpre.coll1) v(xpre.emit2) v(xpre.coll2)
-echo "Preamp output (target ~8.8V DC):"
+echo "TR-2: B / E(R-7 top) / E(R-7/R-8) / C (4.270 / 3.602 / 2.710 / 8.561 V):"
+print v(xpre.coll1) v(xpre.emit2a) v(xpre.emit2b) v(xpre.coll2)
+echo "Preamp output (target 0 V DC: C-6 couples the collector out):"
 print v(preamp_out)
-echo "Feedback junction (target ~8V):"
+echo "Feedback junction (target 0 V DC: R-10 hangs off node_c6):"
 print v(fb_junct)
 
 echo "--- Power Amp ---"
@@ -111,8 +122,8 @@ echo "VAS out, drv_bot:"
 print v(xamp.vas_out) v(xamp.drv_bot)
 
 echo "--- Signal levels at boundaries ---"
-echo "pickup_out, preamp_in, preamp_out, vol_wiper, spkr_out:"
-print v(pickup_out) v(preamp_in) v(preamp_out) v(vol_wiper) v(spkr_out)
+echo "plate, preamp_in, preamp_out, vol_wiper, spkr_out:"
+print v(plate) v(preamp_in) v(preamp_out) v(vol_wiper) v(spkr_out)
 reset
 
 * ----------------------------------------------------------
@@ -125,7 +136,7 @@ alter @vdisp[sin] = [ 0 0.10 440 0 0 ]
 tran 1u 200m 100m 1u
 
 echo "Signal levels at each stage:"
-meas tran pickup_pp PP v(pickup_out) from=100m to=200m
+meas tran pickup_pp PP v(plate) from=100m to=200m
 meas tran preamp_in_pp PP v(preamp_in) from=100m to=200m
 meas tran preamp_out_pp PP v(preamp_out) from=100m to=200m
 meas tran vol_wiper_pp PP v(vol_wiper) from=100m to=200m
@@ -147,7 +158,7 @@ alter @vdisp[sin] = [ 0 0.10 440 0 0 ]
 alter rldr = 19000
 tran 1u 200m 100m 1u
 
-meas tran pickup_pp PP v(pickup_out) from=100m to=200m
+meas tran pickup_pp PP v(plate) from=100m to=200m
 meas tran preamp_out_pp PP v(preamp_out) from=100m to=200m
 meas tran spkr_pp PP v(spkr_out) from=100m to=200m
 
@@ -166,7 +177,7 @@ echo "=== TRANSIENT: y=0.30, 440 Hz, Rldr=1M (fortissimo) ==="
 alter @vdisp[sin] = [ 0 0.30 440 0 0 ]
 tran 1u 200m 100m 1u
 
-meas tran pickup_pp PP v(pickup_out) from=100m to=200m
+meas tran pickup_pp PP v(plate) from=100m to=200m
 meas tran preamp_out_pp PP v(preamp_out) from=100m to=200m
 meas tran spkr_pp PP v(spkr_out) from=100m to=200m
 

@@ -1,91 +1,111 @@
-* Wurlitzer 200A Electrostatic Pickup Model
-* ==========================================
-* Behavioral model of the variable-capacitance reed pickup.
+* Wurlitzer 200A Electrostatic Pickup Model (current-source interface)
+* ===================================================================
+* Behavioral model of the variable-capacitance reed pickup, reduced to
+* what the pickup physically is: a displacement-modulated capacitor on
+* the plate node. It contains NO feed resistor and NO coupling cap.
+*
+* ---------------------------------------------------------------------
+* REVISION 2026-09-22 (external circuit review): this subcircuit was
+* pre-revision. It carried R_feed (1MEG vhv->plate) and C_coupling
+* (0.022uF plate->sig_out), and quoted a 2312 Hz corner from a
+* "R-2 2M to Vcc / R-3 470K to ground" input network. The 2026-09-13
+* drawn-topology revision moved the input network INTO
+* subcircuits/preamp.cir, which now owns R-2 (1MEG, the +150V
+* polarizing rail treated as AC ground) and C-1 (0.022uF). Keeping them
+* here as well instantiated both parts TWICE in every chain bench.
+* Superseded, do not re-introduce: the 2312 Hz corner, the 287K
+* R_feed||R_input network, R_feed/C_coupling in this subcircuit.
+* ---------------------------------------------------------------------
+*
+* Revised topology (schematic #203720-S-3, docs/research/preamp-circuit.md
+* §2.3):
+*
+*   +150V line -> R-2 (1M) -> R-1/C-1 junction -> R-1 (22K) -> plate
+*
+*   plate --[R-1 22K, external]-- preamp 'in' pin
+*                                   |-- R-2 1MEG to AC ground  } inside
+*                                   `-- C-1 0.022uF -> base1   } preamp.cir
+*                                                 (C-2 220pF, R-3 470K ...)
+*
+* Why the polarizing voltage is an internal parameter:
+*   A capacitive pickup draws no DC current, so there is no DC drop
+*   across R-2 or R-1 and the plate sits at the full polarizing voltage.
+*   The pickup's physics only needs that total bias V_pol; the signal
+*   is the AC deviation V(plate) about it. Modelling the +150V rail as
+*   AC ground (as preamp.cir's R2-to-gnd does) is then exactly right,
+*   and V(plate) in this deck is an AC-only node at 0 V DC.
 *
 * Physics:
-*   Each reed is a grounded steel tine vibrating near a
-*   polarized pickup plate at +147V DC (through R_feed = 1M).
-*   The reed-plate capacitance varies with displacement:
+*   Each reed is a grounded steel tine vibrating near the plate.
+*   Reed-plate capacitance vs normalized displacement y = x/d_0
+*   (0 = rest, positive = toward plate, y < 1):
 *     C(y) = C_0 / (1 - y)
-*   where y = x/d_0 is the normalized displacement (0 = rest,
-*   positive = toward plate, limited to y < 1).
+*   Charge on that capacitance, with total plate voltage V_pol + V(plate):
+*     Q = C(y) * (V_pol + V(plate))
+*   The pickup draws i = dQ/dt from the plate node. With the plate
+*   deviation small against V_pol, the drive is a current
+*     i ~= V_pol * dC/dt  (proportional to j*omega*y)
+*   plus the C(y)*dV(plate)/dt term that makes the reed part of the
+*   plate capacitance. The 1/(1-y) law is the primary H2 ("bark")
+*   source: H2/H1 ~= y * C_p / (2*(C_0+C_p)) under constant charge.
 *
-*   The pickup operates in "constant charge" mode at low
-*   frequencies (below f_c = 1/(2*pi*R_total*C_total))
-*   and "constant voltage" mode above f_c. This creates a
-*   natural highpass filter characteristic.
-*
-* Implementation:
-*   Uses an ngspice B-source to model the displacement-modulated
-*   current: i = dQ/dt where Q = C(y) * V(plate).
-*
-*   Alternatively (and more robustly for convergence), models
-*   the pickup as a voltage source with the analytically derived
-*   transfer function, avoiding ddt() convergence issues.
+* Frequency response (set by the LOAD, not by this subcircuit):
+*   C_total = C_0 + C_p = 240 pF (LOW confidence, pickup-system.md §3.6)
+*   works against R-1 into the preamp input network (R-2 1M, C-1, C-2
+*   220pF in parallel at audio, R-3 470K). Under the physical j*omega
+*   drive the plate->R-1->preamp response is a high-pass with its
+*   in-band corner at ~880-900 Hz (C-2 grounded). It is NOT one-pole:
+*   the network is second-order-with-zero. Fit to the measured response,
+*   not to a corner frequency. See docs/research/pickup-system.md §3.7.
 *
 * Key parameters:
-*   C_0 = 3 pF (per-reed capacitance at rest)
-*   C_p = 237 pF (parasitic: other 63 reeds + wiring + strays)
-*   C_total = 240 pF
-*   R_feed = 1 MEG (HV supply series resistor)
-*   R_input = R-1 + R-2||R-3 = 22K + 380K = 402K
-*   R_total = R_feed || R_input = 1M || 402K = 287K
-*   f_c = 1/(2*pi*287K*240pF) = 2312 Hz (pickup HPF corner)
-*   V_hv = 147V (polarizing voltage)
-*
-* Simplified model approach:
-*   For small displacements (y << 1), the output voltage is:
-*     V_out(f) ≈ V_hv * (C_0/(C_0+C_p)) * y * H(f)
-*   where H(f) = jf / (jf + f_c) is the HPF transfer function.
-*
-*   For larger displacements, nonlinearity from 1/(1-y) produces
-*   harmonics, primarily H2 at y * C_p / (2*(C_0+C_p)).
-*
-* This subcircuit uses the physical B-source model for accuracy,
-* with the ddt() approach. If convergence is problematic, switch
-* to the analytical voltage source model.
+*   C_0   = 3 pF    (per-reed capacitance at rest, estimated)
+*   C_p   = 237 pF  (other 63 reeds + wiring + strays, estimated)
+*   V_pol = 147 V   (service-manual polarizing voltage)
 *
 * Pins:
-*   sig_out    - output signal (connects to preamp R-1 input)
-*   reed_disp  - normalized reed displacement input (unitless, |y| < 0.5)
-*   vhv        - HV polarizing supply (+147V through filter chain)
-*   gnd        - ground reference
+*   plate      - pickup plate node (AC-only; connect R-1 22K from here
+*                to the preamp 'in' pin)
+*   reed_disp  - normalized reed displacement y (unitless, |y| < 0.5)
+*   gnd        - ground reference (the reed / AC ground)
 *
 * Usage:
-*   Drive reed_disp with a voltage source whose value represents
-*   normalized displacement y = x/d_0 (typically |y| < 0.2).
-*   Connect vhv to +147V through external R_feed (or include it here).
-*   sig_out connects to the preamp input (through R-1 = 22K).
-
-.SUBCKT wurli_pickup sig_out reed_disp vhv gnd
-
-.param C_0 = 3P
-.param C_p = 237P
-
-* ============================================================
-* Polarizing supply through R_feed
-* ============================================================
-* R_feed (1 MEG) is the last series resistor in the HV filter
-* chain. It sets the plate DC voltage and forms part of the
-* pickup's highpass characteristic.
-R_feed  vhv   plate   1MEG
-
-* ============================================================
-* Variable capacitor: behavioral current source
-* ============================================================
-* Physical model: C(y) = C_0 / (1 - V(reed_disp))
-* Charge on plate: Q_reed = C(y) * V(plate)
-* Current: i_reed = dQ/dt = d/dt[C_0/(1-y) * V(plate)]
+*   Xpickup plate reed_disp 0 wurli_pickup
+*   R1      plate preamp_in 22K
+*   Xpre    preamp_in out vcc 0 fb_junct wurli_preamp
 *
-* For the B-source, we model the reed as a current source
-* that represents the displacement-modulated capacitance.
-* The current i = ddt(C(y) * V(plate)) pushes/pulls charge
-* on the plate node.
-*
-* Note: ngspice B-source ddt() can cause convergence issues.
-* If problematic, use the analytical model below instead.
+* NOTE: works in .op, .ac (exact linearization about y = 0) and .tran.
 
-B_reed  plate  gnd  I = ddt({C_0}/(1-V(reed_disp)) * V(plate))
+.SUBCKT wurli_pickup plate reed_disp gnd
+
+.param C_0   = 3P
+.param C_p   = 237P
+.param V_pol = 147
+
+* ============================================================
+* Variable capacitor: charge-based current source
+* ============================================================
+* Physics: i = d/dt[ C_0/(1-y) * (V_pol + V(plate)) ], drawn from the
+* plate node to gnd (at DC the derivative is zero: no DC current).
+*
+* Realization: the charge Q is computed as a voltage on qnode, scaled
+* by C_ref (V(qnode) = Q / C_ref), and differentiated by a REAL
+* capacitor C_ref; F_reed mirrors that capacitor's current (= dQ/dt)
+* out of the plate node. (qnode idles at C_0*V_pol/C_ref = 441 V; it is
+* an internal bookkeeping node, not a circuit voltage.) This is mathematically identical to
+*   B_reed plate gnd I = ddt({C_0}/(1-V(reed_disp)) * ({V_pol} + V(plate)))
+* but the derivative goes through the simulator's own integration
+* and truncation-error control. The direct ddt() form was tried and
+* rejected (2026-09-22): in tb_full_chain at 3520 Hz, y = 0.10 it
+* threw a one-step numerical kick of the plate from 0.03 V to 13.9 V
+* at t = 140.2 ms (with tmax = 1 us), and ngspice does not linearize
+* B-source ddt() in .ac at all (the pickup contributed exactly zero).
+* This form is clean in .tran and linearizes correctly in .ac.
+.param C_ref = 1P
+B_q     qnode  gnd  V = ({C_0}/{C_ref}) / (1 - V(reed_disp)) * ({V_pol} + V(plate))
+V_qsns  qnode  qcap DC 0
+C_q     qcap   gnd  {C_ref}
+F_reed  plate  gnd  V_qsns 1
 
 * ============================================================
 * Parasitic capacitance
@@ -94,39 +114,4 @@ B_reed  plate  gnd  I = ddt({C_0}/(1-V(reed_disp)) * V(plate))
 * C_total = C_0 + C_p = 240 pF at rest.
 C_parasitic  plate  gnd  {C_p}
 
-* ============================================================
-* Coupling capacitor to preamp
-* ============================================================
-* 0.022 uF coupling cap blocks the ~147V DC from the preamp.
-* Corner frequency with preamp input impedance:
-*   f_c = 1/(2*pi*0.022e-6*380K) = 19 Hz (well below audio)
-C_coupling  plate  sig_out  0.022U
-
-* ============================================================
-* Preamp input impedance (external to this subcircuit)
-* ============================================================
-* R-2 (2M to Vcc), R-3 (470K to GND), and C20 (220pF) are
-* part of the preamp subcircuit and should NOT be duplicated
-* here. The sig_out pin connects directly to the preamp's
-* input node (before R-1 = 22K).
-
 .ENDS wurli_pickup
-
-* ============================================================
-* ALTERNATIVE: Analytical voltage source model
-* ============================================================
-* Use this if the B-source ddt() model has convergence issues.
-* Models the pickup as a voltage source with the HPF transfer
-* function applied externally.
-*
-* .SUBCKT wurli_pickup_linear sig_out reed_disp vhv gnd
-*
-* * Signal voltage: V = V_hv * C_0/(C_0+C_p) * y
-* * = 147 * 3/240 * y = 1.8375 * y (volts per unit displacement)
-* B_sig  sig_node  gnd  V = 147 * 3.0/240.0 * V(reed_disp)
-*
-* * HPF: RC highpass at 2312 Hz (R_total=287K, C_total=240pF)
-* R_hpf  sig_node  sig_out  287K
-* C_hpf  sig_out   gnd      240P
-*
-* .ENDS wurli_pickup_linear

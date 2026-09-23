@@ -10,10 +10,17 @@
 *   3. Cascade: pickup feeding preamp (H2 enrichment)
 *   4. Tremolo: LDR modulation effect on harmonic content
 *
-* Key known values (from project memory):
+* Key known values — PENDING, pre-revision, do not trust (the preamp
+* gain and TR-1 asymmetry figures predate the 2026-09 topology revision):
 *   Pickup: y=0.10 @ 440Hz -> ~63 mV pp at preamp_in. H2/H1 = 8.7%.
 *   Preamp gain: 2.0x (no trem) / 4.0x (trem bright)
 *   TR-1 asymmetry: 5.3:1 (sat vs cutoff headroom)
+*
+* Wiring REVISED 2026-09-22 (external circuit review): section 1 now
+* loads the pickup with the REAL input network — R-1 into its own
+* wurli_preamp instance — instead of the hand-built pre-revision
+* 22K/380K/220P load, and the pickup uses the current-source interface
+* (no Vhv supply, no duplicated 1MEG feed / 0.022uF coupling cap).
 *
 * Run: ngspice -b tb_harmonic_audit.cir
 * Expected runtime: ~2-3 minutes (many transient runs)
@@ -32,17 +39,16 @@
 * normalized reed displacement. This generates even harmonics,
 * primarily H2. We measure H2/H1 at y = 0.05, 0.10, 0.20, 0.35.
 
-* HV supply
-Vhv  vhv_node  0  DC 147
+* Pickup instance (plate is an AC-only node; V_pol is internal)
+Xpickup  plate  reed_disp  0  wurli_pickup
 
-* Pickup instance
-Xpickup  sig_out  reed_disp  vhv_node  0  wurli_pickup
-
-* Preamp input load (external to pickup subcircuit)
-* R-1 (22K) series, then R-2||R-3 = 380K shunt, C20 = 220pF shunt
-R1_load   sig_out    preamp_in_load   22K
-R_bias    preamp_in_load  0           380K
-C20_load  preamp_in_load  0           220P
+* Preamp input load: R-1 (22K) into a dedicated wurli_preamp instance,
+* whose own R-2 / C-1 / C-2 / R-3 network IS the pickup's load.
+* Measured at preamp_in_load = that instance's 'in' pin (R-1/C-1
+* junction). Shares the section-2 Vcc; its feedback shunt is fixed.
+R1_load    plate           preamp_in_load  22K
+Xpre_load  preamp_in_load  pre_load_out  vcc  0  fb_load  wurli_preamp
+Rldr_load  fb_load  0  1MEG
 
 * Reed displacement source (altered in .control block)
 Vdisp  reed_disp  0  DC 0 SIN(0 0.05 440 0 0)
@@ -132,14 +138,16 @@ echo ""
 * First verify DC operating point
 op
 echo "=== DC Operating Point ==="
-echo "TR-1: B (2.45V), E (1.95V), C (4.1V):"
+echo "TR-1: B / E / C (tb_preamp_dc: 2.651 / 2.093 / 4.270 V):"
 print v(xpre.base1) v(xpre.emit1) v(xpre.coll1)
-echo "TR-2: B (4.1V), E (3.4V), C (8.8V):"
+echo "TR-2: B / E / C (4.270 / 3.602 / 8.561 V):"
 print v(xpre.coll1) v(xpre.emit2a) v(xpre.coll2)
-echo "Output DC (should be ~8.8V):"
+echo "Output DC (0 V: C-6 couples the collector out):"
 print v(preamp_out)
-echo "Feedback junction (should be ~8.05V):"
+echo "Feedback junction (0 V: R-10 hangs off node_c6):"
 print v(fb_junct)
+echo "Section-1 load instance: plate (0 V), in pin (0 V), base1:"
+print v(plate) v(preamp_in_load) v(xpre_load.base1)
 reset
 
 foreach amp_val 0.00025 0.001 0.0025 0.0075
@@ -236,8 +244,8 @@ echo ""
 *
 * But we can do better: simulate the ACTUAL cascade by connecting
 * the pickup output to the preamp input. We already have both
-* subcircuits in this netlist. However, R1_load and R_bias load
-* the pickup, and R1 feeds the preamp. We need the pickup to
+* subcircuits in this netlist. However, R1_load and [pre-revision:
+* R_bias; now Xpre_load] load the pickup, and R1 feeds the preamp. We need the pickup to
 * drive the preamp directly.
 *
 * The trick: use a voltage-controlled voltage source to bridge
@@ -273,6 +281,11 @@ echo "Pickup produces ~63 mV pp at preamp_in, with H2/H1 ~ 8.7%"
 echo ""
 echo "Test A: Pure 440 Hz sine at equivalent peak amplitude"
 
+* SUPERSEDED 2026-09-22: the arithmetic below assumes the pre-revision
+* 380K resistive load; section 1 now uses the real preamp input network
+* (a frequency-dependent load). Test A's 33 mV level is kept unchanged
+* for continuity; re-derive it before trusting the match.
+*
 * The pickup at y=0.10 produces about 63 mV pp at preamp_in_load.
 * But the preamp sees this AFTER R-1 (22K), so at the base1 node.
 * Actually, preamp_in is after R-1 in our circuit. The pickup signal

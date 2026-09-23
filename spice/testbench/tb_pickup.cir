@@ -1,51 +1,70 @@
 * Wurlitzer 200A Electrostatic Pickup — Validation Testbench
 * ==========================================================
+* REVISED 2026-09-22 (external circuit review): current-source pickup
+* interface. The pickup subcircuit is now only the displacement-
+* modulated plate capacitance; its load is the REAL preamp input
+* network (R-1 22K external, then wurli_preamp's own R-2 1MEG, C-1
+* 0.022uF, C-2 220pF, R-3 470K). The old hand-built 22K/380K/220P load,
+* the Vhv supply and the 2312 Hz one-pole expectation are superseded.
+*
 * Validates:
-*   1. DC operating point (plate at ~147V)
-*   2. HPF frequency response (f_c = 2312 Hz)
-*   3. Signal level (microvolts to millivolts)
-*   4. Nonlinearity (H2/H1 vs displacement)
+*   1. DC operating point (plate = 0 V: AC-only node, polarizing bias is
+*      internal to the pickup; preamp base1 on its R-3 servo anchor)
+*   2. Small-signal response, pickup -> R-1 -> preamp base1:
+*        a. physical j*omega drive (V_pol * dC/dt): AC on the reed
+*           displacement source, through the pickup's own linearization
+*        b. flat-current transimpedance of the same plate network
+*      Target: in-band corner ~880-900 Hz (C-2 grounded), NOT one-pole
+*      (docs/research/preamp-circuit.md §2.3, pickup-system.md §3.7)
+*   3. Transient frequency sweep with the real nonlinear B-source
+*   4. Signal level + nonlinearity (H2/H1 vs displacement)
 *
-* Expected HPF: |H(f)| = f / sqrt(f^2 + 2312^2)
-*   131 Hz (C3): -25 dB   |   523 Hz (C5): -13 dB
-*   1047 Hz (C6): -7.0 dB |   2093 Hz (C7): -3.8 dB
-*   4186 Hz (C8): -1.3 dB
+* Nonlinearity expectation (constant-charge, small y):
+*   H2/H1 ~= y * C_p / (2*(C_0+C_p)) = 0.494*y  (pickup-system.md §4)
+*   At preamp_in the network's own tilt lifts H2 (at 2f) relative to
+*   H1 by the response difference, so the measured ratio is higher.
 *
-* Expected signal: V_peak ~ V_hv * C_0/(C_0+C_p) * y * |H(f)|
-*   = 147 * 3/240 * y * |H(f)| = 1.84 * y * |H(f)| volts
-*   At y=0.10, 440 Hz: 1.84 * 0.10 * 0.187 = 34.4 mV peak (before load)
-*
-* NOTE: B-source ddt() requires 'reset' between transient runs.
-*   'destroy all' corrupts ddt() internal state. Use 'reset' instead.
+* Measured baseline 2026-09-22 (ngspice, Vcc 14.5, C_total 240 pF):
+*   DC: plate 0.000 V, preamp_in 0.000 V, base1 2.651 V
+*   j*omega drive, base1 re 10 kHz: -3 dB at 836 Hz (844 Hz re the
+*     in-band peak at ~6.9 kHz); 55 Hz -24.0, 110 -17.9, 262 -10.6,
+*     440 -6.7, 880 -2.8, 1760 -0.8, 3520 -0.1, 20k -0.4 dB;
+*     mean slope 55-1760 Hz +15.4 dB/dec
+*   flat-current transimpedance at base1: peak 110.0 dB-ohm at 95 Hz;
+*     2k->20k slope -19.8 dB/dec (1k->10k: -17.7 dB/dec)
+*   y=0.05 transient pp at preamp_in: 110 Hz 9.8 mV ... 8 kHz 76.6 mV
+*   440 Hz H2/H1: y=0.02 1.57%, 0.05 3.93%, 0.10 7.88%, 0.20 15.9%,
+*     0.40 32.8%
 *
 * Run: ngspice -b tb_pickup.cir
 
 .title Pickup Model Validation
 
+.include ../models/transistors.lib
+.include ../models/diodes.lib
 .include ../subcircuits/pickup.cir
+.include ../subcircuits/preamp.cir
 
 * ============================================================
-* HV Polarizing Supply
+* Preamp supply
 * ============================================================
-Vhv   vhv_node  0   DC 147
+Vcc   vcc  0  DC 14.5
 
 * ============================================================
-* Pickup Instance
+* Pickup -> R-1 -> preamp (nonlinear, used by .op and .tran)
 * ============================================================
-Xpickup  sig_out  reed_disp  vhv_node  0  wurli_pickup
+Xpickup  plate      reed_disp  0  wurli_pickup
+R1       plate      preamp_in  22K
+Xpre     preamp_in  preamp_out vcc 0 fb_junct wurli_preamp
+* Feedback shunt: the preamp input impedance is independent of the
+* tremolo state (preamp-circuit.md §5.2), so any value serves here.
+Rldr     fb_junct   0  1MEG
 
-* ============================================================
-* Preamp Input Load (external to pickup subcircuit)
-* ============================================================
-* R-1 (22K) in series, then R-2||R-3 = 380K and C20 (220pF).
-R1_ext    sig_out   preamp_in   22K
-R_load    preamp_in 0           380K
-C20       preamp_in 0           220P
+* Reed displacement source
+Vdisp  reed_disp  0  DC 0 AC 1 SIN(0 0.05 440 0 0)
 
-* ============================================================
-* Reed Displacement Source
-* ============================================================
-Vdisp  reed_disp  0  DC 0 SIN(0 0.05 440 0 0)
+* Flat-current probe for the transimpedance case (AC 0 unless altered)
+Iflat    0  plate  DC 0 AC 0
 
 * ============================================================
 .control
@@ -62,29 +81,73 @@ echo "============================================================"
 echo ""
 echo "=== DC OPERATING POINT ==="
 op
-echo "Plate voltage (target ~147V):"
-print v(xpickup.plate)
-echo "Signal output (target ~0V DC):"
-print v(sig_out)
+echo "Plate (target 0 V: AC-only node; V_pol is internal):"
+print v(plate)
+echo "Preamp in pin (target 0 V) and base1 (anchor 2.45-2.65 V):"
+print v(preamp_in) v(xpre.base1)
 reset
 
 * ----------------------------------------------------------
-* 2. FREQUENCY RESPONSE (transient at multiple frequencies)
+* 2a. SMALL-SIGNAL: physical j*omega drive, V(base1)/y
 * ----------------------------------------------------------
 echo ""
-echo "=== FREQUENCY RESPONSE (y=0.05, small signal) ==="
-echo "Expected HPF: f_c ~ 2312 Hz"
-echo "freq_Hz  sig_pp_mV"
+echo "=== AC: j*omega drive (V_pol*dC/dt), base1 per unit y ==="
+ac dec 50 10 100k
+let hj = vdb(xpre.base1)
+meas ac hj_ref FIND hj AT=10k
+let hj_rel = hj - hj_ref
+meas ac f3_jw WHEN hj_rel=-3 RISE=1
+* Same corner referenced to the in-band peak instead of 10 kHz
+meas ac hj_pk MAX hj from=10 to=20k
+let hj_prel = hj - hj_pk
+meas ac f3_jw_pk WHEN hj_prel=-3 RISE=1
+meas ac hj_55 FIND hj_rel AT=55
+meas ac hj_110 FIND hj_rel AT=110
+meas ac hj_262 FIND hj_rel AT=262
+meas ac hj_440 FIND hj_rel AT=440
+meas ac hj_880 FIND hj_rel AT=880
+meas ac hj_1760 FIND hj_rel AT=1760
+meas ac hj_3520 FIND hj_rel AT=3520
+meas ac hj_20k FIND hj_rel AT=20k
+let slope_lo = (hj_1760 - hj_55)/log10(1760/55)
+print slope_lo
+reset
+
+* ----------------------------------------------------------
+* 2b. SMALL-SIGNAL: flat-current transimpedance, base1/I
+* ----------------------------------------------------------
+echo ""
+echo "=== AC: flat current into plate, transimpedance at base1 ==="
+alter vdisp acmag = 0
+alter iflat acmag = 1
+ac dec 50 10 100k
+let zt = vdb(xpre.base1)
+meas ac zt_pk MAX zt from=10 to=10k
+meas ac zt_1k FIND zt AT=1k
+meas ac zt_2k FIND zt AT=2k
+meas ac zt_10k FIND zt AT=10k
+meas ac zt_20k FIND zt AT=20k
+let slope_hi = (zt_20k - zt_2k)/log10(20k/2k)
+print slope_hi
+reset
+
+* ----------------------------------------------------------
+* 3. TRANSIENT FREQUENCY SWEEP (real nonlinear B-source)
+* ----------------------------------------------------------
+echo ""
+echo "=== TRANSIENT SWEEP (y=0.05), pp at preamp_in ==="
+echo "freq_Hz  sig_pp"
 
 foreach freq_val 110 220 440 880 1760 3520 5000 8000
   alter @vdisp[sin] = [ 0 0.05 $freq_val 0 0 ]
   tran 1u 200m 100m 1u
+  echo "--- f = $freq_val Hz ---"
   meas tran sig_pp PP v(preamp_in) from=100m to=200m
   reset
 end
 
 * ----------------------------------------------------------
-* 3. SIGNAL LEVEL + NONLINEARITY vs DISPLACEMENT (440 Hz)
+* 4. SIGNAL LEVEL + NONLINEARITY vs DISPLACEMENT (440 Hz)
 * ----------------------------------------------------------
 echo ""
 echo "=== SIGNAL LEVEL + HARMONICS vs DISPLACEMENT (440 Hz) ==="
