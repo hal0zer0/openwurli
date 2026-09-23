@@ -1,7 +1,8 @@
 //! Wurlitzer 200A power amplifier — feature-toggled between circuit and behavioral models.
 //!
-//! Default: melange-generated 7-BJT Class AB circuit solver.
-//! `--features legacy-power-amp`: behavioral closed-loop NR approximation (A/B diagnostics only).
+//! Shipping default (`legacy-power-amp`, in the default feature set): behavioral
+//! closed-loop NR approximation with the drawn R-30/C-10 feedback shelf.
+//! `--no-default-features`: melange-generated 7-BJT Class AB circuit solver (opt-in).
 //!
 //! Rail sag (melange path only): under load, the unregulated ±22 V rails sag from
 //! their idle ~±24.5 V toward the spec ±22 V. Modeled by [`RailDynamics`] and pushed
@@ -167,9 +168,33 @@ impl RailDynamics {
 #[cfg(feature = "legacy-power-amp")]
 mod behavioral {
     //! Behavioral closed-loop negative feedback model.
+    //!
+    //! The forward path (crossover notch + rail `tanh`) is memoryless; the
+    //! feedback divider is not. On the drawing the inverting-input leg is
+    //! R-31 (15K) from the output down to R-30 (220 Ω) **in series with
+    //! C-10 (22 µF)** to ground, so the feedback fraction is
+    //!
+    //! ```text
+    //!   β(s) = Z30 / (Z30 + R31),  Z30 = R30 + 1/(s·C10)
+    //!        = (1 + s·R30·C10) / (1 + s·(R30 + R31)·C10)
+    //! ```
+    //!
+    //! In band that is R30/(R30+R31) (closed-loop 69×); at DC it is 1
+    //! (closed-loop 1×). The knee is at 1/(2π·R30·C10) ≈ 33 Hz, i.e.
+    //! −3 dB there, −1.3 dB at A1 (55 Hz). The amp is split-rail and
+    //! DC-coupled, so this leg is the circuit's ONLY bass roll-off; nothing
+    //! downstream models it. It is applied inside the NR loop (β is a
+    //! bilinear first-order section on the solved output) so it also shapes
+    //! the loop's clipping behaviour, not just the small-signal response.
 
     const OPEN_LOOP_GAIN: f64 = 19_000.0;
-    const FEEDBACK_BETA: f64 = 220.0 / (220.0 + 15_000.0);
+    /// R-30, feedback shunt leg [Ω].
+    const R30: f64 = 220.0;
+    /// R-31, feedback series leg [Ω].
+    const R31: f64 = 15_000.0;
+    /// C-10, in series with R-30 to ground [F]. In-band feedback fraction
+    /// (C-10 a short) is R30 / (R30 + R31) = 220 / 15220.
+    const C10: f64 = 22e-6;
     const HEADROOM: f64 = 22.0;
     const CROSSOVER_VT: f64 = 0.013;
     const QUIESCENT_GAIN: f64 = 0.1;
@@ -178,47 +203,71 @@ mod behavioral {
 
     pub struct PowerAmp {
         open_loop_gain: f64,
-        feedback_beta: f64,
         crossover_vt: f64,
         rail_limit: f64,
-        closed_loop_gain: f64,
         quiescent_gain: f64,
+        /// β(z) bilinear coefficients: fb[n] = b0·y[n] + b1·y[n−1] − a1·fb[n−1].
+        fb_b0: f64,
+        fb_b1: f64,
+        fb_a1: f64,
+        /// y[n−1] (output, volts).
+        fb_y1: f64,
+        /// fb[n−1] (feedback voltage).
+        fb_prev: f64,
     }
 
     impl PowerAmp {
+        /// Construct at 44.1 kHz. The engine runs the amp at its oversampled
+        /// rate — use [`PowerAmp::new_at_sample_rate`] there.
         pub fn new() -> Self {
+            Self::new_at_sample_rate(44100.0)
+        }
+
+        /// The forward path is closed-form; only the R-30/C-10 feedback
+        /// section depends on the rate (bilinear, prewarp unnecessary at a
+        /// 33 Hz knee).
+        pub fn new_at_sample_rate(sample_rate: f64) -> Self {
+            let k = 2.0 * sample_rate;
+            let tau_zero = R30 * C10; // 4.84 ms  → zero at 33 Hz
+            let tau_pole = (R30 + R31) * C10; // 335 ms  → pole at 0.48 Hz
+            let a0 = 1.0 + tau_pole * k;
             Self {
                 open_loop_gain: OPEN_LOOP_GAIN,
-                feedback_beta: FEEDBACK_BETA,
                 crossover_vt: CROSSOVER_VT,
                 rail_limit: HEADROOM,
-                closed_loop_gain: OPEN_LOOP_GAIN / (1.0 + OPEN_LOOP_GAIN * FEEDBACK_BETA),
                 quiescent_gain: QUIESCENT_GAIN,
+                fb_b0: (1.0 + tau_zero * k) / a0,
+                fb_b1: (1.0 - tau_zero * k) / a0,
+                fb_a1: (1.0 - tau_pole * k) / a0,
+                fb_y1: 0.0,
+                fb_prev: 0.0,
             }
         }
 
-        /// Behavioral model is rate-independent (closed-form `tanh`, no integrator).
-        /// Argument is accepted for API parity with the melange path.
-        pub fn new_at_sample_rate(_sample_rate: f64) -> Self {
-            Self::new()
-        }
-
         pub fn process(&mut self, input: f64) -> f64 {
-            let mut y = (input * self.closed_loop_gain)
+            // History part of the feedback voltage — fixed for this sample.
+            let fb_hist = self.fb_b1 * self.fb_y1 - self.fb_a1 * self.fb_prev;
+            let b0 = self.fb_b0;
+
+            let mut y = ((input - fb_hist) * self.open_loop_gain
+                / (1.0 + self.open_loop_gain * b0))
                 .clamp(-self.rail_limit + NR_TOL, self.rail_limit - NR_TOL);
 
             for _ in 0..NR_MAX_ITER {
-                let error = input - self.feedback_beta * y;
+                let error = input - (b0 * y + fb_hist);
                 let v = self.open_loop_gain * error;
                 let (f_val, f_deriv) = self.forward_path(v);
                 let residual = y - f_val;
-                let jacobian = 1.0 + self.open_loop_gain * self.feedback_beta * f_deriv;
+                let jacobian = 1.0 + self.open_loop_gain * b0 * f_deriv;
                 let delta = residual / jacobian;
                 y -= delta;
                 if delta.abs() < NR_TOL {
                     break;
                 }
             }
+
+            self.fb_prev = b0 * y + fb_hist;
+            self.fb_y1 = y;
 
             y / self.rail_limit
         }
@@ -250,7 +299,10 @@ mod behavioral {
             (0, 0, 0.0)
         }
 
-        pub fn reset(&mut self) {}
+        pub fn reset(&mut self) {
+            self.fb_y1 = 0.0;
+            self.fb_prev = 0.0;
+        }
 
         /// No-op on the behavioral path — rails are folded into the closed-loop
         /// approximation, so dynamic sag isn't separable. Kept for API parity.
@@ -497,6 +549,49 @@ mod tests {
         assert!(
             gain_db > 5.0 && gain_db < 20.0,
             "Gain should be ~10-16 dB (69x normalized): got {gain_db:.1} dB"
+        );
+    }
+
+    /// R-30/C-10 shelf: in-band gain vs the 33 Hz knee and the sub-audio floor.
+    /// Behavioral path only — the melange deck carries C-10 natively and its
+    /// LF response is covered by the SPICE benches.
+    #[cfg(feature = "legacy-power-amp")]
+    #[test]
+    fn test_feedback_shelf_rolls_off_bass() {
+        // Long settle: the shelf's pole sits at 0.48 Hz (τ ≈ 0.33 s).
+        fn gain_db(freq: f64) -> f64 {
+            let mut pa = PowerAmp::new_at_sample_rate(SR);
+            let amp = 0.001;
+            let settle = (SR * 3.0) as usize;
+            for i in 0..settle {
+                pa.process(amp * (2.0 * PI * freq * i as f64 / SR).sin());
+            }
+            let measure = (SR * 1.0) as usize;
+            let mut peak = 0.0f64;
+            for i in 0..measure {
+                let t = (settle + i) as f64 / SR;
+                peak = peak.max(pa.process(amp * (2.0 * PI * freq * t).sin()).abs());
+            }
+            20.0 * (peak / amp).log10()
+        }
+        let g_1k = gain_db(1000.0);
+        let g_knee = gain_db(1.0 / (2.0 * PI * 220.0 * 22e-6)); // 32.9 Hz
+        let g_a1 = gain_db(55.0);
+        let g_sub = gain_db(2.0);
+        // Knee: −3.0 dB (measured on the drawn values; ±0.3 dB for the peak pick)
+        assert!(
+            (g_1k - g_knee - 3.0).abs() < 0.3,
+            "knee should sit −3 dB below 1 kHz: 1k={g_1k:.2} knee={g_knee:.2}"
+        );
+        // A1 (55 Hz): −1.3 dB
+        assert!(
+            (g_1k - g_a1 - 1.3).abs() < 0.3,
+            "A1 should sit −1.3 dB below 1 kHz: 1k={g_1k:.2} a1={g_a1:.2}"
+        );
+        // Sub-audio: heading toward 1× (−36.8 dB re 69×); at 2 Hz ≈ −24 dB.
+        assert!(
+            g_1k - g_sub > 20.0,
+            "sub-audio should be ≥20 dB down: 1k={g_1k:.2} sub={g_sub:.2}"
         );
     }
 

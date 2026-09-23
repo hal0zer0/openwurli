@@ -27,9 +27,11 @@ use crate::filters::Biquad;
 /// The 95 Hz roll-off is the small 4×8" speaker's own bass limit, i.e. cabinet
 /// coloration — which per the openwurli/Vurli scope split belongs downstream in
 /// Vurli, not in the raw-physics circuit model. The circuit's genuine bass
-/// roll-off (power-amp output coupling caps) is already modeled upstream. 30 Hz
-/// here is subsonic protection only, preserving the full musical bass the
-/// circuit produces; Vurli can impose an authentic speaker roll-off on top.
+/// roll-off is the power amp's R-30/C-10 feedback shelf (−3 dB at 33 Hz; the
+/// amp is split-rail and DC-coupled, there are no output caps), modeled in
+/// `power_amp.rs`. 30 Hz here is subsonic protection only, preserving the full
+/// musical bass the circuit produces; Vurli can impose an authentic speaker
+/// roll-off on top.
 const HPF_AUTHENTIC_HZ: f64 = 30.0;
 /// HPF Q (slightly underdamped for speaker resonance bump).
 const HPF_Q: f64 = 0.75;
