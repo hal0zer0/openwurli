@@ -36,6 +36,8 @@ impl OpenWurli {
     fn sync_params(&mut self) {
         self.engine.set_volume(self.params.volume.value() as f64);
         self.engine
+            .set_reed_bar_trim(self.params.reed_bar_trim.value() as f64);
+        self.engine
             .set_tremolo_depth(self.params.tremolo_depth.value() as f64);
         self.engine
             .set_speaker_character(self.params.speaker_character.value() as f64);

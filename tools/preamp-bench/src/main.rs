@@ -532,8 +532,8 @@ fn cmd_render(args: &[String]) {
     let mut speaker = Speaker::new(sample_rate);
     speaker.set_character(speaker_char);
 
-    let drive_gain =
-        create_preamp(args).open_circuit_output_factor() * tables::volume_pot_gain(volume);
+    let drive_gain = create_preamp(args).open_circuit_output_factor()
+        * tables::volume_pot_gain(volume, tables::R11_REED_BAR_VOLUME_DEFAULT);
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
         let attenuated = preamp_output[i] * drive_gain; // the drawn volume network, as the engine
@@ -1330,7 +1330,8 @@ fn run_calibrate(
             let mut speaker = Speaker::new(BASE_SR);
             speaker.set_character(speaker_char);
 
-            let drive_gain = preamp.open_circuit_output_factor() * tables::volume_pot_gain(volume);
+            let drive_gain = preamp.open_circuit_output_factor()
+                * tables::volume_pot_gain(volume, tables::R11_REED_BAR_VOLUME_DEFAULT);
             let mut t5_buf = vec![0.0f64; n_samples];
             for i in 0..n_samples {
                 let attenuated = t4_buf[i] * drive_gain; // the drawn volume network, as the engine
@@ -1591,8 +1592,8 @@ fn cmd_render_poly(args: &[String]) {
     let mut speaker = Speaker::new(BASE_SR);
     speaker.set_character(speaker_char);
 
-    let drive_gain =
-        create_preamp(args).open_circuit_output_factor() * tables::volume_pot_gain(volume);
+    let drive_gain = create_preamp(args).open_circuit_output_factor()
+        * tables::volume_pot_gain(volume, tables::R11_REED_BAR_VOLUME_DEFAULT);
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
         let attenuated = preamp_output[i] * drive_gain; // the drawn volume network, as the engine
@@ -1821,6 +1822,7 @@ fn cmd_render_midi(args: &[String]) {
     let volume = parse_flag(args, "--volume", 0.60);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let tremolo_depth = parse_flag(args, "--tremolo-depth", 0.0);
+    let reed_bar_trim = parse_flag(args, "--r11", tables::R11_REED_BAR_VOLUME_DEFAULT);
     let mlp = has_flag(args, "--mlp");
     let tail_seconds = parse_flag(args, "--tail", 2.0);
     let track_filter: Option<usize> = if has_flag(args, "--track") {
@@ -1938,6 +1940,7 @@ fn cmd_render_midi(args: &[String]) {
     engine.set_volume(volume);
     engine.set_speaker_character(speaker_char);
     engine.set_tremolo_depth(tremolo_depth);
+    engine.set_reed_bar_trim(reed_bar_trim);
     engine.set_mlp_enabled(mlp);
     engine.ensure_buffer_capacity(64);
     engine.warm_up();
@@ -2066,8 +2069,8 @@ fn cmd_centroid_track(args: &[String]) {
     let mut speaker = Speaker::new(BASE_SR);
     speaker.set_character(speaker_char);
 
-    let drive_gain =
-        create_preamp(args).open_circuit_output_factor() * tables::volume_pot_gain(volume);
+    let drive_gain = create_preamp(args).open_circuit_output_factor()
+        * tables::volume_pot_gain(volume, tables::R11_REED_BAR_VOLUME_DEFAULT);
     let mut final_output = vec![0.0f64; n_samples];
     for i in 0..n_samples {
         let attenuated = preamp_output[i] * drive_gain; // the drawn volume network, as the engine

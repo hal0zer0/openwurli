@@ -8,6 +8,14 @@ pub struct OpenWurliParams {
     #[id = "volume"]
     pub volume: FloatParam,
 
+    /// R-11 "REED BAR VOLUME": the 25K factory trimmer between the preamp
+    /// output and the volume pot, in ohms (0 = hottest drive into the power
+    /// amp, 25 000 = quietest). A per-unit setting on the real instrument with
+    /// no documented procedure; the default is a declared placeholder
+    /// (mid-travel) pending a bench reading. Lower it toward 0 to reach the
+    /// amp's clip knee on fortissimo chords at full volume.
+    #[id = "reed_bar_trim"]
+    pub reed_bar_trim: FloatParam,
     /// Tremolo modulation depth (0 = off, 1 = full).
     #[id = "trem_depth"]
     pub tremolo_depth: FloatParam,
@@ -59,6 +67,17 @@ impl Default for OpenWurliParams {
                 .with_unit(" %")
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
                 .with_string_to_value(formatters::s2v_f32_percentage()),
+
+            reed_bar_trim: FloatParam::new(
+                "Reed Bar Trim",
+                12_500.0,
+                FloatRange::Linear {
+                    min: 0.0,
+                    max: 25_000.0,
+                },
+            )
+            .with_unit(" Ω")
+            .with_value_to_string(formatters::v2s_f32_rounded(0)),
 
             tremolo_depth: FloatParam::new(
                 "Tremolo Depth",

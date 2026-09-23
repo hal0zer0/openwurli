@@ -723,15 +723,22 @@ pub const POST_SPEAKER_GAIN: f64 = 1.0;
 // `POST_SPEAKER_GAIN_DB`).
 //
 // Two values are ASSUMPTIONS pending a bench measurement (bench list items
-// 11–12): the R-11 setting (mid-travel) and the pot taper (the standard
+// 11–12): the R-11 setting (exposed as the "Reed Bar Trim" parameter, default
+// mid-travel as a declared placeholder) and the pot taper (the standard
 // "15 % at center" two-slope audio taper — an industry curve, not a fit).
 
 /// R-11 "REED BAR VOLUME" 25K trimmer, wiper strapped to the preamp end
 /// (confirmed on both prints, pixel-traced 2026-09-23): a 0–25K series
-/// resistance between the preamp output and the pot top. Factory setting undocumented;
-/// MID-TRAVEL ASSUMED. With R-11 at 0 the amp reaches its clip knee on ff
-/// chords at full volume; at mid-travel it does not.
-pub const R11_REED_BAR_VOLUME: f64 = 12_500.0;
+/// resistance between the preamp output and the pot top. It is a per-unit
+/// factory adjustment with NO documented procedure on the A-series board, so
+/// it ships as an explicit user parameter ("Reed Bar Trim") whose default is
+/// a declared PLACEHOLDER: mid-travel, chosen because it claims nothing, not
+/// because it is right (independent review ruling, 2026-09-23). With R-11 at 0 the amp
+/// reaches its clip knee on ff chords at full volume; at mid-travel it does not.
+/// Replace the default with the bench reading when it arrives (bench item 11).
+pub const R11_REED_BAR_VOLUME_DEFAULT: f64 = 12_500.0;
+/// Full travel of R-11.
+pub const R11_REED_BAR_VOLUME_MAX: f64 = 25_000.0;
 /// Main volume pot, 10K (part 203643-001), bottom terminal to ground.
 pub const VOLUME_POT_R: f64 = 10_000.0;
 /// R-9, the preamp's output series resistor: the source resistance the pot
@@ -771,9 +778,11 @@ pub fn audio_taper(pos: f64) -> f64 {
 ///   gain     = R_low∥ / (R9 + R11 + R_upper + R_low∥)
 /// ```
 ///
+/// `r11` is the trimmer's series resistance in ohms (0..=25K).
 /// Reference points (R-11 mid): vol 0.5 → 0.047 (−26.6 dB), vol 1.0 → 0.237
 /// (−12.5 dB). The pre-2026-09-23 pinned drive was 0.25 at every volume.
-pub fn volume_pot_gain(vol: f64) -> f64 {
+pub fn volume_pot_gain(vol: f64, r11: f64) -> f64 {
+    let r11 = r11.clamp(0.0, R11_REED_BAR_VOLUME_MAX);
     let r_lower = VOLUME_POT_R * audio_taper(vol);
     let r_upper = VOLUME_POT_R - r_lower;
     let r_low_eff = if r_lower <= 0.0 {
@@ -781,17 +790,18 @@ pub fn volume_pot_gain(vol: f64) -> f64 {
     } else {
         r_lower * POWER_AMP_R_IN / (r_lower + POWER_AMP_R_IN)
     };
-    r_low_eff / (PREAMP_OUTPUT_R9 + R11_REED_BAR_VOLUME + r_upper + r_low_eff)
+    r_low_eff / (PREAMP_OUTPUT_R9 + r11 + r_upper + r_low_eff)
 }
 
 /// Corner of the C-9 pole at the amp input for pot position `vol`: the
 /// Thévenin resistance seen by C-9 is (R9 + R11 + R_upper) ∥ R_lower ∥ R-27.
 /// ≈35 kHz at vol 1.0 (R-11 mid), rising toward the R-27-only limit as the
 /// wiper approaches ground.
-pub fn volume_pot_pole_hz(vol: f64) -> f64 {
+pub fn volume_pot_pole_hz(vol: f64, r11: f64) -> f64 {
+    let r11 = r11.clamp(0.0, R11_REED_BAR_VOLUME_MAX);
     let r_lower = VOLUME_POT_R * audio_taper(vol);
     let r_upper = VOLUME_POT_R - r_lower;
-    let r_src = PREAMP_OUTPUT_R9 + R11_REED_BAR_VOLUME + r_upper;
+    let r_src = PREAMP_OUTPUT_R9 + r11 + r_upper;
     let par = |a: f64, b: f64| a * b / (a + b);
     let r_th = if r_lower <= 0.0 {
         0.0

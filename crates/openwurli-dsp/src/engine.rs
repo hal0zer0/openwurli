@@ -157,6 +157,10 @@ pub struct WurliEngine {
 
     // Shared signal chain (mono, post voice-sum)
     preamp: DkPreamp,
+    /// R-11 "Reed Bar Trim" [Ω], the per-unit factory trimmer ahead of the
+    /// volume pot (see tables::R11_REED_BAR_VOLUME_DEFAULT). Smoothed so a
+    /// host sweep does not step the drive.
+    reed_bar_trim: LinearSmoother,
     /// C-9 pole at the amp input (volume network, see tables::volume_pot_pole_hz):
     /// one-pole lowpass state and its coefficient, refreshed per base-rate sample.
     c9_state: f64,
@@ -219,6 +223,7 @@ impl WurliEngine {
             voices: (0..MAX_VOICES).map(|_| VoiceSlot::default()).collect(),
             age_counter: 0,
             preamp: DkPreamp::new(os_sr),
+            reed_bar_trim: LinearSmoother::new(tables::R11_REED_BAR_VOLUME_DEFAULT, ramp),
             c9_state: 0.0,
             c9_alpha: 1.0,
             #[cfg(test)]
@@ -414,6 +419,14 @@ impl WurliEngine {
         self.volume.set_target(v);
     }
 
+    /// R-11 "Reed Bar Trim", ohms (0..=25 000): the per-unit factory trimmer
+    /// between the preamp output and the volume pot. Undocumented setting;
+    /// the default is a declared placeholder (mid-travel).
+    pub fn set_reed_bar_trim(&mut self, r11_ohms: f64) {
+        self.reed_bar_trim
+            .set_target(r11_ohms.clamp(0.0, tables::R11_REED_BAR_VOLUME_MAX));
+    }
+
     pub fn set_tremolo_depth(&mut self, depth: f64) {
         self.tremolo_depth.set_target(depth);
     }
@@ -570,10 +583,11 @@ impl WurliEngine {
                 // → 10K pot at the user's position → amp input (loaded), with
                 // C-9 against the wiper's source resistance as a one-pole.
                 let vol = self.volume.next();
+                let r11 = self.reed_bar_trim.next();
                 let drive_gain =
-                    self.preamp.open_circuit_output_factor() * tables::volume_pot_gain(vol);
+                    self.preamp.open_circuit_output_factor() * tables::volume_pot_gain(vol, r11);
                 self.c9_alpha =
-                    Self::one_pole_alpha(tables::volume_pot_pole_hz(vol), self.os_sample_rate);
+                    Self::one_pole_alpha(tables::volume_pot_pole_hz(vol, r11), self.os_sample_rate);
 
                 for j in 0..2 {
                     let idx = i * 2 + j;
@@ -604,10 +618,11 @@ impl WurliEngine {
                 self.preamp.set_ldr_resistance(r_ldr);
                 let preamp_out = self.preamp.process_sample(self.sum_buf[i]);
                 let vol = self.volume.next();
+                let r11 = self.reed_bar_trim.next();
                 let drive_gain =
-                    self.preamp.open_circuit_output_factor() * tables::volume_pot_gain(vol);
+                    self.preamp.open_circuit_output_factor() * tables::volume_pot_gain(vol, r11);
                 self.c9_alpha =
-                    Self::one_pole_alpha(tables::volume_pot_pole_hz(vol), self.os_sample_rate);
+                    Self::one_pole_alpha(tables::volume_pot_pole_hz(vol, r11), self.os_sample_rate);
                 self.c9_state += self.c9_alpha * (preamp_out * drive_gain - self.c9_state);
                 let drive = self.c9_state;
                 #[cfg(test)]
@@ -960,7 +975,8 @@ mod tests {
         let p_075 = render_at(0.75);
         let p_10 = render_at(1.0);
         let ratio = (p_10 / p_075) as f64;
-        let expected = tables::volume_pot_gain(1.0) / tables::volume_pot_gain(0.75);
+        let r11 = tables::R11_REED_BAR_VOLUME_DEFAULT;
+        let expected = tables::volume_pot_gain(1.0, r11) / tables::volume_pot_gain(0.75, r11);
         // ±6 % slack: per-voice OU jitter, MLP determinism, and the amp's
         // residual level dependence (crossover notch, shelf) at these drives.
         assert!(
