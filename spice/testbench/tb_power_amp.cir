@@ -61,11 +61,15 @@ destroy all
 
 echo ""
 echo "=== AC FREQUENCY RESPONSE ==="
-ac dec 50 10 100K
+ac dec 50 10 1MEG
 let gain_db = db(v(out))
 meas ac gain_1k FIND gain_db AT=1000
 meas ac gain_10k FIND gain_db AT=10000
-meas ac bw_3db WHEN gain_db = {gain_1k - 3} CROSS=LAST
+meas ac gain_100k FIND gain_db AT=100000
+meas ac gain_1m FIND gain_db AT=1000000
+* Braces are not evaluated inside a .control block; bind the target first.
+let g3 = gain_1k - 3
+meas ac bw_3db WHEN gain_db = g3 CROSS=LAST
 destroy all
 
 echo ""

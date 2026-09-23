@@ -1983,7 +1983,7 @@ fn cmd_render_midi(args: &[String]) {
     println!("  File:      {midi_path}");
     println!("  Notes:     {note_on_count} note-ons");
     println!("  Duration:  {total_duration:.1}s");
-    println!("  Volume:    {volume:.3} (linear, post-speaker — decoupled from drive)");
+    println!("  Volume:    {volume:.3} (pot position: the drawn R-11 → 10K network into the amp)");
     println!("  Speaker:   {speaker_char:.1}");
     println!("  Tremolo:   {tremolo_depth:.2}");
     println!("  MLP:       {}", if mlp { "on" } else { "off (shipped)" });
