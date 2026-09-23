@@ -726,8 +726,9 @@ pub const POST_SPEAKER_GAIN: f64 = 1.0;
 // 11–12): the R-11 setting (mid-travel) and the pot taper (the standard
 // "15 % at center" two-slope audio taper — an industry curve, not a fit).
 
-/// R-11 "REED BAR VOLUME" 25K trimmer, wiper-strapped: series resistance
-/// between the preamp output and the pot top. Factory setting undocumented;
+/// R-11 "REED BAR VOLUME" 25K trimmer, wiper strapped to the preamp end
+/// (confirmed on both prints, pixel-traced 2026-09-23): a 0–25K series
+/// resistance between the preamp output and the pot top. Factory setting undocumented;
 /// MID-TRAVEL ASSUMED. With R-11 at 0 the amp reaches its clip knee on ff
 /// chords at full volume; at mid-travel it does not.
 pub const R11_REED_BAR_VOLUME: f64 = 12_500.0;

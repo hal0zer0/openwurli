@@ -184,7 +184,7 @@ The wiper drives the power amp input through C-8, so the power-amp input impedan
 
 ### 3.2 Shipped architecture (2026-09-23: the drawn network, loaded)
 
-**The plugin models the pot where the drawing puts it.** User volume is the pot position; `tables::volume_pot_gain` solves the network above as drawn — preamp open-circuit output → R-9 (6.8K, source resistance) → R-11 (series, wiper-strapped) → 10K pot → wiper loaded by the power amp's R-27 (15K; TR-7's base is bootstrapped by the loop; C-8's corner is ~2 Hz so the solve is resistive) — and the result multiplies the preamp output into the amp per base-rate sample (`engine.rs`, guarded by `test_user_volume_follows_pot_law`). The output stage carries no user gain: the amp's rail is full scale (`POST_SPEAKER_GAIN_DB` = 0).
+**The plugin models the pot where the drawing puts it.** User volume is the pot position; `tables::volume_pot_gain` solves the network above as drawn — preamp open-circuit output → R-9 (6.8K, source resistance) → R-11 (series, wiper-strapped) → 10K pot → wiper loaded by the power amp's R-27 (15K; TR-7's base is bootstrapped by the loop; C-8's corner is ~2 Hz so the solve is resistive), plus C-9 (1 nF at TR-7's base) against the wiper's Thévenin resistance as a volume-dependent treble pole (`tables::volume_pot_pole_hz`, ≈35 kHz at full pot, the classic pot-loading treble shift) — and the result multiplies the preamp output into the amp per base-rate sample (`engine.rs`, guarded by `test_user_volume_follows_pot_law`). The output stage carries no user gain: the amp's rail is full scale (`POST_SPEAKER_GAIN_DB` = 0).
 
 Two inputs are **assumptions pending bench measurement** (bench list items 11–12): R-11's factory setting (modeled at mid-travel, 12.5K) and the pot taper (standard "15 % at center" two-slope audio taper). With R-11 at mid-travel a worst-phase ff chord reaches ~62 % of the amp's clip knee at full pot; with R-11 at zero it would clip. Reference gains: vol 0.50 → −26.6 dB, vol 1.0 → −12.5 dB from the open-circuit preamp output. A single ff C4 peaks ≈ −29.5 dBFS at vol 0.50 (speaker off).
 
@@ -597,7 +597,7 @@ via `--no-default-features` on CPU grounds. Both are covered by `power_amp::test
 
 **Topology (from `spice/melange/wurli-power-amp.cir`):**
 
-- PNP differential pair (Q7/Q8, 2N5087) with 10 kΩ tail — the deck ties it to Vp (+22.5 V); a 2026-09-22 blind drawing read returns R-28 to the **+15 V regulated** rail (tail 2.18 → 1.43 mA). Deck correction pending.
+- PNP differential pair (Q7/Q8, 2N5087) with 10 kΩ tail to the **+15 V regulated** rail (a static ideal source in the deck standing in for IC-1; corrected 2026-09-23 from Vp after a pixel-walked drawing read — tail 2.18 → 1.43 mA, output offset −63 → +6 mV). R-28 is the only power-amp part on that rail.
 - NPN VAS/pre-driver (Q14, MPSA06) with bootstrapped collector load (R32/R33 + C12)
 - Vbe multiplier bias network (Q9, MPSA06) driving ±0.6 V between drv_bot and vas_out
 - Top Sziklai output pair: Q10 (MPSA06 NPN driver) + Q11 (TIP36C PNP output)
