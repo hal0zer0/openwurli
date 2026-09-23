@@ -237,7 +237,7 @@ The negative feedback through R-31 serves three purposes (from service manual):
 From service manual:
 > "The bias control circuit, TR-9, is a constant current source; its base emitter diode junction is used as a reference voltage. If too much current passes through resistor R-35 and exceeds the threshold of the base emitter junction of TR-9 (.7V), the transistor will turn on more, reducing the excessive current through R-35, establishing the stable bias current."
 
-**Bias current target:** 10 mA quiescent (from schematic specification). Measured as 5 mV across each 0.47-ohm emitter resistor (V = I * R = 0.01 * 0.47 = 0.0047V, approximately 5 mV).
+**Bias current target:** 10 mA quiescent. Sourced (2026-09-23) to the service manual's 200A amplifier description, printed pp. 65–66: "R-38 [sic — the scan is JBIG2 and the drawing's select note names R-58] should be tailored for approximately 10 MA output bias or 4.7 millivolts across R-37 or R-38 with the speaker disconnected." The drawing's own note is "SELECT R58 FOR 1–10 MILLIVOLTS ACROSS R37 OR R38" (2.1–21 mA), so 10 mA sits inside the drawn band. Note for the opt-in circuit solver: with the generic MPSA06/MPSA56 driver cards the deck idles near class B (≈0.7 mA on one half, 2026-09-23), and since R-58 ∥ R-34 can only lower the multiplier spread it cannot be selected up to this target — a sourced card for the real driver parts (house numbers 203718/203719, no industry cross-reference in any held document) is the outstanding fix.
 
 #### Driver Stage (TR-10, TR-12)
 
