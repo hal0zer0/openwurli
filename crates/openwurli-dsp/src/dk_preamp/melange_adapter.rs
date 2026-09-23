@@ -1,4 +1,4 @@
-//! Melange-generated DK preamp adapter with shadow pump cancellation.
+//! Melange-generated DK preamp adapter.
 //!
 //! LDR resistance is declared as `.runtime R` in the netlist (plugin-
 //! driven, not a user knob). `set_runtime_R_r_ldr` marks matrices dirty;
@@ -30,7 +30,6 @@ fn init_state(sample_rate: f64) -> CircuitState {
 
 pub struct DkPreamp {
     main: CircuitState,
-    shadow: CircuitState,
     sample_rate: f64,
     noise_enabled: bool,
     thermal_gain: f64,
@@ -40,7 +39,6 @@ impl DkPreamp {
     pub fn new(sample_rate: f64) -> Self {
         Self {
             main: init_state(sample_rate),
-            shadow: init_state(sample_rate),
             sample_rate,
             noise_enabled: false,
             thermal_gain: 1.0,
@@ -48,9 +46,7 @@ impl DkPreamp {
     }
 
     /// Enable/disable authentic Johnson-Nyquist thermal noise on the preamp
-    /// resistors. Only the `main` state draws noise — the `shadow` state
-    /// stays noiseless so pump subtraction cancels R_ldr DC drift without
-    /// also cancelling the noise we just added.
+    /// resistors.
     pub fn set_noise_enabled(&mut self, on: bool) {
         self.noise_enabled = on;
         self.main.set_noise_enabled(on);
@@ -75,9 +71,7 @@ impl DkPreamp {
 
 impl PreampModel for DkPreamp {
     fn process_sample(&mut self, input: f64) -> f64 {
-        let main_out = gen_preamp::process_sample(input, &mut self.main)[0];
-        let pump = gen_preamp::process_sample(0.0, &mut self.shadow)[0];
-        let result = main_out - pump;
+        let result = gen_preamp::process_sample(input, &mut self.main)[0];
         if !result.is_finite() {
             self.reset();
             return 0.0;
@@ -87,13 +81,32 @@ impl PreampModel for DkPreamp {
 
     fn set_ldr_resistance(&mut self, r_ldr_path: f64) {
         self.main.set_runtime_R_r_ldr(r_ldr_path);
-        self.shadow.set_runtime_R_r_ldr(r_ldr_path);
     }
 
     fn reset(&mut self) {
         self.main = init_state(self.sample_rate);
-        self.shadow = init_state(self.sample_rate);
         self.main.set_noise_enabled(self.noise_enabled);
         self.main.set_thermal_gain(self.thermal_gain);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_input_ldr_sweep_has_no_audible_pump() {
+        let mut state = init_state(88_200.0);
+        let mut peak: f64 = 0.0;
+        for i in 0..176_400 {
+            let phase = i as f64 * std::f64::consts::TAU * 5.63 / 88_200.0;
+            let resistance = 1_000.0 + (1_000_000.0 - 1_000.0) * (0.5 + 0.5 * phase.sin());
+            state.set_runtime_R_r_ldr(resistance);
+            let output = gen_preamp::process_sample(0.0, &mut state)[0];
+            peak = peak.max(output.abs());
+        }
+        // The C-6 coupling capacitor blocks LDR-driven DC pump. Before
+        // retiring the shadow solve, this sweep peaked at 2.75e-7 V.
+        assert!(peak < 1e-6, "unexpected LDR pump: {peak:e} V");
     }
 }
