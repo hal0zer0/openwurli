@@ -33,7 +33,6 @@ venv/
 docs/*.pdf
 *.mid
 midi/
-midis/
 
 # Rendered schematic tiles (large PNGs, regenerate from PDF as needed)
 schematic_tiles/

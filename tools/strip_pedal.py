@@ -6,8 +6,8 @@ simulates that behavior by extending note durations, then removes the CC64 event
 Originals are kept; stripped versions go to a _nopedal.mid suffix.
 
 Usage:
-    python tools/strip_pedal.py midis/           # process all .mid files in directory
-    python tools/strip_pedal.py midis/foo.mid    # process a single file
+    python tools/strip_pedal.py midi/            # process all .mid files in directory
+    python tools/strip_pedal.py midi/foo.mid     # process a single file
 """
 
 import sys
