@@ -200,10 +200,10 @@ Later production and typical service replacements use the 2N5089 (NPN, high-gain
 
 | | TR-1 B | TR-1 E | TR-1 C | TR-2 E | TR-2 B | TR-2 C |
 |---|---|---|---|---|---|---|
-| Schematic marks | 2.45 | — | 4.1 | 3.4 | 4.1 | 8.8 |
+| Schematic marks | 2.45 | 1.95 | 4.1 | 3.4 | 4.1 | 8.8 |
 | GroupDIY hardware (real instrument, DMM) | 2.447 | 1.923 | 3.980 | 3.356 | 3.988 | 8.450 |
 
-**The hardware set is the better anchor.** An Ebers-Moll cross-check on ΔV_BE between the two junctions (predicted 0.103 V for the current ratio) matches the hardware to 5 mV and misses the printed marks by 2× — the marks are values rounded to 0.05 V with "0.70 V" stock-silicon V_BE annotations. (The hardware set even reads one physical node twice — V_C1 3.980 vs V_B2 3.988 — giving its own ±8 mV meter floor.) Use the marks for topology and nominal values; anchor bias arithmetic to hardware.
+**The hardware set is the better anchor.** An Ebers-Moll cross-check on ΔV_BE between the two junctions (predicted 0.103 V for the current ratio) matches the hardware to 5 mV and misses the printed marks by 2× — the marks are values rounded to 0.05 V; TR-2's pair implies a stock-silicon 0.70 V V_BE, TR-1's pair 0.50 V (hardware: 0.524 V). (The hardware set even reads one physical node twice — V_C1 3.980 vs V_B2 3.988 — giving its own ±8 mV meter floor.) Use the marks for topology and nominal values; anchor bias arithmetic to hardware.
 
 ### 4.2 Direct Coupling Verification
 
