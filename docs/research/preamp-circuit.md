@@ -11,7 +11,7 @@ Comprehensive technical reference for implementing a digital model of the Wurlit
 Pixel-level instrumented re-reads of schematic #203720-S-3 (both circulating scan surfaces) overturned four topology readings that earlier revisions of this document were built on. Every corrected reading below has since been **cross-verified by at least two independent methods** (instrumented drawing read, independent SPICE implementation, independent hand derivation, and a real-instrument DC measurement set). The superseded readings are preserved in §11 so they are never re-introduced.
 
 **Still genuinely open** (flagged inline where they matter):
-1. **C-2's return node** — its bottom rail is drawn broken on both surviving scan surfaces (drawing defect). Ground return is the settled working assumption; an emitter return would move the pickup-side corner from ≈900 Hz to ≈1.4 kHz. Needs hardware/board evidence.
+1. **C-2's return node** — D-1's anode, C-2's lower end and R-5's lower end are drawn as one net with **no drawn terminus**: no ground symbol, and not joined to the C-5/R-10/box-1 node (C-5's lead, not R-5's, is the one that reaches that node). The small gap in the rail is a meaningless pen-lift in the artwork, present on every print. Checked 2026-09 on the archive scan, the Tropical Fish print and a third print of the same artwork. Ground return is the working assumption, weakly supported by the board-foil layout (the pads appear to share the ground land; too soft to call at the resolution we have); an emitter return would move the pickup-side corner from ≈900 Hz to ≈1.4 kHz. Needs hardware or a clean foil scan.
 2. **The transistor gain grade** — carried as a documented band (§3), a voicing decision, never a fitted point.
 3. **The Stage-1 clipping story** (§6.2) — its collapse is *inferred* from the verified stage-gain inversion, not yet directly measured; the DSP's asymmetry constants stay until a direct probe.
 
@@ -102,8 +102,8 @@ Reed vibration
                                                              directly on wiper)
                                                                         │
                                                                        GND
- (†) C-2's and D-1's bottom rail is drawn BROKEN on both scan surfaces —
-     ground return is the settled assumption, not a reading.
+ (†) D-1 / C-2 / R-5 lower end form one drawn net with NO terminus on any
+     print — ground return is the working assumption, not a reading (§ open item 1).
 ```
 
 ### 2.2 Component Values Table
@@ -114,7 +114,7 @@ Reed vibration
 | R-2 | **1 MEG** | Polarizing feed: **+150V line → R-1/C-1 junction** (pickup side of the input cap). AC-grounded at audio. See Note 1. |
 | R-3 | 470K | **TR-1 base → R-7/R-8 junction**: DC feedback bias from TR-2's emitter divider — TR-1's only DC bias path |
 | R-4 (Rc1) | 150K | TR-1 collector load resistor |
-| R-5 (Re1) | 33K | TR-1 emitter DC path to ground (lower end: drawn broken; ground by DC analysis, high confidence) |
+| R-5 (Re1) | 33K | TR-1 emitter DC path to ground (lower end: on the D-1/C-2 net, no drawn terminus; ground by DC analysis, high confidence) |
 | Ce1 (C-5) | 4.7 µF | Feedback coupling cap: AC-couples TR-1 emitter to the R-10/LDR feedback junction (NOT a bypass — see §7) |
 | R-6 (Rc2) | 1.8K | TR-2 collector load resistor |
 | R-7 (Re2a) | 270 Ω | TR-2 emitter resistor (upper) |
@@ -125,7 +125,7 @@ Reed vibration
 | R-10 | 56K | Feedback resistor from the C-6-coupled node to fb_junct |
 | C-3 | 100 pF | TR-1 collector-base feedback capacitor |
 | C-4 | 100 pF | TR-2 collector-base feedback capacitor — **the dominant bandwidth-setting element** (§5.5) |
-| C-2 | 220 pF | At TR-1's base (real 200A part — see Note 2). Return assumed ground (broken-rail drawing defect) |
+| C-2 | 220 pF | At TR-1's base (real 200A part — see Note 2). Return assumed ground (its net has no drawn terminus) |
 | D-1 | 25 PIV, 10 mA (part #142136-5) | Reverse-polarity transient protection at the base node |
 | C-1 | .022 µF | Input coupling cap (blocks the polarizing DC from the base) |
 | LG-1 | "Linear Gate", part #142312 — LED + CdS LDR | Tremolo gain modulation in feedback network (LED side: see output-stage.md §2) |
