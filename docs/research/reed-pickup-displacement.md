@@ -1,5 +1,20 @@
 # Reed–Pickup Displacement (d₀) — What We Know, What We've Inferred, and Why
 
+> **⚠ GEOMETRY CORRECTION (2026-09-25) — read before using anything below.**
+> The 200A pickup is a **through-slot, straddling** pickup: the reed and its solder
+> lead pass the plate's fingers across a small side clearance, and the slot has **no
+> floor**. The "U-channel bottom face" and the reed-to-slot-bottom vertical gap used
+> throughout this document have no source. Evidence: the service manual's voicing
+> section (§18 "Voicing", PDF pp.15–16 = printed pp.12–13 of the archive manual: reed face set "in the same plane" as the pickup face; a reed
+> resting *inside* the pickup gives "a very strong undesirable harmonic") and its
+> Figs N/O; Pfeifle & Muenster (DAGA 2017, EP200 FEM: capacitance maximal near rest);
+> US 2,919,616 p.10 (in-plane → doubled frequency; offset → fundamental).
+> Capacitance vs displacement is therefore an **overlap law** (reed+lead thickness band
+> against the finger band, fringe-rounded), not `1/(1−y)`, and the load-bearing
+> unknown is the **rest offset** of the reed+lead against the band, not d₀. The shipping
+> model still uses `1/(1−y)`; a revision is planned. Sections below are kept as the
+> historical record until then.
+
 > **Status: LIVING PROVENANCE DOCUMENT.** The reed-to-pickup rest gap d₀ — the
 > single most load-bearing unknown in the whole model — is **not documented in
 > any patent, service manual, or factory record we have found** (Wurlitzer's
