@@ -408,7 +408,7 @@ freq_detune = 1.0 + hash(key) * 0.00173     // +/-3 cents fundamental detuning
 amp_variation[m] = 1.0 + hash(key, m) * 0.08 // +/-8% per mode
 ```
 
-- Fundamental IS detuned: +/-3 cents (0.00173 ratio), matching factory tuning tolerance per US Patent 2,919,616 (Andersen, 1960)
+- Fundamental IS detuned: +/-3 cents (0.00173 ratio), matching factory tuning tolerance per US Patent 2,919,616 (Miessner, 1960)
 - No per-mode frequency spread — only the fundamental is detuned (applied as a multiplier to all mode frequencies via the detuned fundamental)
 - All modes get +/-8% amplitude variation
 - Hash function must be deterministic: same note always gets same variation

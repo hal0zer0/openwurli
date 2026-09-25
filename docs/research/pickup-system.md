@@ -32,7 +32,7 @@ Measured physical pickup slot widths from EP-Forum thread (140B/200 series, simi
 | Reeds 43-50 | 0.110" (2.79 mm) | 0.114" (2.90 mm) | ~0.002" (0.05 mm) |
 | Reeds 51-64 (treble) | 0.097" (2.46 mm) | 0.114" (2.90 mm) | 0.0085" (0.22 mm) |
 
-**Patent design specification (US 2,919,616, Andersen, 1960):** The pickup slot is specified as **"0.005 inch greater than the width of the associated reed, thereby providing a normal clearance gap of about 0.0025 inch on either side of the reed."** The patent also references spacing tools of ".002, .0025, .003 inch etc." for adjusting pickup sensitivity. The 0.0025"/side (0.064mm) design specification is tighter than the community-measured values above (0.002"-0.012"), likely reflecting manufacturing tolerances and differences between patent ideals and production reality.
+**Patent design specification (US 2,919,616, Miessner, 1960):** The pickup slot is specified as **"0.005 inch greater than the width of the associated reed, thereby providing a normal clearance gap of about 0.0025 inch on either side of the reed."** The patent also references spacing tools of ".002, .0025, .003 inch etc." for adjusting pickup sensitivity. The 0.0025"/side (0.064mm) design specification is tighter than the community-measured values above (0.002"-0.012"), likely reflecting manufacturing tolerances and differences between patent ideals and production reality.
 
 **Critical note:** These are **slot widths** (lateral clearance), not the vertical gap between the reed face and the bottom of the slot. The vertical gap (d₀) is **not documented in any patent, service manual, or academic source** — confirmed by a 99-agent adversarial deep-research pass (2026-07). Service manual procedures describe voicing only qualitatively (reed flat-face coplanar with the pickup face; the over-loud remedy bends the pickup ends up 1/32″–1/16″), with no absolute gap dimension. **Correction:** an earlier version of this doc cited "Pfeifle's 1.5 mm (EP300)" as the only published d₀ — that is a **misattribution**. The Pfeifle DAFx-17 (2017) paper models the **EP200** (not EP300, not 200A), contains no "1.5 mm" and no rest-gap value at all, and reports its instrument's polarizing voltage as 170 V manual / 130 V measured. There is **no published d₀ for any Wurlitzer** that survives verification. The full provenance and the reason d₀ is *structurally* underdetermined (not merely unfound) live in **[Reed–Pickup Displacement](reed-pickup-displacement.md)**; `DISPLACEMENT_SCALE` absorbs the unknown as an OBM-calibrated constant.
 
@@ -68,7 +68,7 @@ Multiple Miessner and Andersen patents specify the pickup electrode position alo
 
 - **US 2,942,512** (Miessner, 1960): "the nodal point of the second partial of the reed vibration (typically removed from the secured end of the reed by approximately 78%, and from the free end by approximately 22%, of the active length of the reed)"
 - **US 2,966,821** (Miessner, 1961): "approximately 78/100 of the reed length away from the fixed extremity"
-- **US 2,919,616** (Andersen, 1960): "Pick-up centers align at approximately 0.22L from the reed's free end"
+- **US 2,919,616** (Miessner, 1960): "Pick-up centers align at approximately 0.22L from the reed's free end"
 
 This position (0.78L from the clamp = 0.22L from the tip) corresponds to the **node of the 2nd partial** for a bare cantilever beam. Placing the pickup at this node strongly suppresses the inharmonic 2nd partial (at 6.27x the fundamental), which would otherwise produce dissonant overtones.
 
@@ -758,7 +758,7 @@ V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
    - [Google Patents](https://patents.google.com/patent/US3038363)
    - U-channel geometry, asymmetric modulation, pickup electrode design
 
-9. **US Patent 2,919,616** — Andersen, C.W. "Clamping and Control Apparatus for Reed Generators." Issued 1960.
+9. **US Patent 2,919,616** — Miessner, B.F. "Clamping and Control Apparatus for Reed Generators." Issued 1960.
    - [Google Patents](https://patents.google.com/patent/US2919616)
    - **Gold standard for manufacturing tolerances**: slot clearance 0.0025"/side, reed material Rockwell C-50, spacing tools, pickup nodal position 0.22L from free end, hammer strike at 0.25-0.35L
 

@@ -20,7 +20,7 @@ fn hash_f64(midi: u8, seed: u32) -> f64 {
 
 /// Frequency detuning factor for a note: multiplier in range [1-max, 1+max].
 /// max = 0.00173 (+/-3 cents), matching factory tuning tolerance per community
-/// standard and US Patent 2,919,616 (Andersen, 1960) manufacturing specs.
+/// standard and US Patent 2,919,616 (Miessner, 1960) manufacturing specs.
 // TODO: A "Condition" parameter could scale this from ±3 cents (factory fresh)
 // to ±14 cents (unserviced vintage) for character variation.
 pub fn freq_detune(midi: u8) -> f64 {

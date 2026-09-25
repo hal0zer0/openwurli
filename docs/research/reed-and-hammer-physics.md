@@ -10,7 +10,7 @@ Comprehensive physical reference for Wurlitzer 200/200A reed and hammer mechanic
 
 ### 1.1 Material
 
-The reeds are made of spring steel. US Patent 2,919,616 (Andersen, 1960) specifies **"high grade of high carbon spring steel having a hardness of Rockwell C-50"** — consistent with AISI 1095 or similar high-carbon steel (0.90-1.05% C). Replacement reed suppliers (Retro Linear, Vintage Vibe) use blue-tempered spring steel strip. The patent also specifies the reed base material as cast bell alloy (13 parts copper, 4 parts tin), glass, porcelain, or high-carbon steel of Rockwell C-50, requiring "inherently low vibration viscosity" to minimize energy loss at the clamping point.
+The reeds are made of spring steel. US Patent 2,919,616 (Miessner, 1960) specifies **"high grade of high carbon spring steel having a hardness of Rockwell C-50"** — consistent with AISI 1095 or similar high-carbon steel (0.90-1.05% C). Replacement reed suppliers (Retro Linear, Vintage Vibe) use blue-tempered spring steel strip. The patent also specifies the reed base material as cast bell alloy (13 parts copper, 4 parts tin), glass, porcelain, or high-carbon steel of Rockwell C-50, requiring "inherently low vibration viscosity" to minimize energy loss at the clamping point.
 
 **Material properties for AISI 1095 blue-tempered spring steel:**
 
@@ -615,7 +615,7 @@ The hammer strikes the reed near but not at the very tip. The exact striking pos
 - Striking at a mode's node produces zero excitation of that mode
 - For a cantilever, ALL modes have their maximum at the tip
 
-**Patent specification (US 2,919,616, Andersen, 1960):** Hammer strikes at **"0.25L to 0.35L from its fixed end"**, where 0.35L corresponds to the nodal point of partial IV and 0.25L to the nodal point of partial V. This places the strike at 65-75% of the reed's vibrating length from the tip — significantly closer to the clamp than the "80-95% from clamp" estimated from visual inspection.
+**Patent specification (US 2,919,616, Miessner, 1960):** Hammer strikes at **"0.25L to 0.35L from its fixed end"**, where 0.35L corresponds to the nodal point of partial IV and 0.25L to the nodal point of partial V. This places the strike at 65-75% of the reed's vibrating length from the tip — significantly closer to the clamp than the "80-95% from clamp" estimated from visual inspection.
 
 **Patent specification (US 2,942,512, Miessner, 1960):** Hammer strikes at "approximately the mid-reed nodal point for the third partial (almost precisely at longitudinal mid-point)."
 

@@ -46,7 +46,7 @@ bound for d₀ is the way out of guess-and-check.
 | Fact | Value | Source / confidence |
 |---|---|---|
 | Pickup type | Electrostatic (capacitive), senses displacement (gap change), `1/(1−y)` transfer | Established; multiple patents + physics. HIGH |
-| Lateral slot clearance | 0.005" wider than reed → **~0.0025"/side (0.064 mm)** | US 2,919,616 (Andersen, 1960). HIGH — but this is LATERAL, not the vertical gap |
+| Lateral slot clearance | 0.005" wider than reed → **~0.0025"/side (0.064 mm)** | US 2,919,616 (Miessner, 1960). HIGH — but this is LATERAL, not the vertical gap |
 | Vertical rest gap d₀ | **UNDOCUMENTED — for the 200A specifically, in every primary source** | Deep-research pass (2026-07, 99 agents): confirmed absent from the 200/200A service manual, all Miessner/Andersen/Vintage-Vibe patents, and the Pfeifle paper. HIGH confidence, unanimous. The load-bearing unknown |
 | ~~"Only published d₀ = Pfeifle 1.5 mm (EP300)"~~ | **RETRACTED — this was a false citation we carried** | The Pfeifle DAFx-17 paper models the **EP200**, contains NO "1.5 mm" and NO "EP300" and NO rest-gap value at all (it computes C by FEM field-slices, no gap in mm). The "1.5 mm/EP300" attribution is unsupported; corrected in pickup-system.md |
 | Polarizing voltage | **147 V DC** via 1 MΩ feed resistor (R_feed) — 200A **manual spec** | 200A service manual. HIGH as a spec. **Caveat (new):** Pfeifle measured an EP200 at **130 V vs its 170 V manual spec** — real instruments can sit ~20–25% below nameplate, so the effective polarizing V in a back-calc may be < 147 |
