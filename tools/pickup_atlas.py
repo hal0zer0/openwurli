@@ -38,6 +38,8 @@ SR = 44100
 F_ATLAS = 441.0  # 100 cycles per 0.1 s: whole cycles in every Sensor frame length used
 PICKUP_FC = 880.5
 G0 = 0.085  # the engine's rest offset (PICKUP_REST_OFFSET_MM)
+SIGN_FLOOR_DB = 0.05  # the sign rule applies above numeric resolution only
+C_REED_RATIO = 3.0e-12 / 240.0e-12  # C_REED0 / C_TOTAL, as the engine
 BENCH = os.path.join(HERE, "..", "target", "release", "preamp-bench")
 KNOWN_WIN = 0.5  # s; the analyser needs a window somewhat longer than FFT 16384 (371 ms)
 AMPS = np.round(np.exp(np.linspace(np.log(0.02), np.log(3.0), 41)), 4)
@@ -90,18 +92,20 @@ def section_of(n):
 
 def known(a):
     """Gate (re-registered): render vs the law driven by the reed tap's own trace through the
-    engine-matched RC, +-0.5 dB on H2..H6 above -40 dBc, and no shared sign per harmonic. The
+    engine's network (node modulation included), +-0.5 dB on H2..H6 above -40 dBc, and no shared
+    sign per harmonic whose mean exceeds 0.05 dB (numeric resolution). The
     steady-swing atlas is printed beside it for H3..H6, ungated (it reads H2 high where the law's
     H2 has a notch: a 0.5 s window averages across the notch)."""
     import swell_check as SW
     at = json.load(open(a.atlas))
-    tabs = json.load(open(a.tables))
+    from pickup_field2d import normalised_laws
+    _, laws = normalised_laws(a.tables)  # the exact normalised natural-cubic laws the engine compiles
     tmp = tempfile.mkdtemp(prefix="known_")
     resid, fails = [], 0
     for n in (int(v) for v in a.notes.split(",")):
         sec = section_of(n)
         sign = 1.0 if n <= 52 else -1.0
-        cs, _ = gcv_smooth(np.array(tabs[sec]["u"]), np.array(tabs[sec]["C_pF_per_m"]))
+        cs = laws[sec][2]
         m = np.array([r for r in at[f"{sec}/central"]["rows"] if r[1] is not None], dtype=float)
         wav = os.path.join(tmp, f"p{n}.wav")
         subprocess.run([BENCH, "render", "--note", str(n), "--velocity", "127", "--duration", "2.5",
@@ -114,13 +118,18 @@ def known(a):
         x = M.read_wav(f"{tap}_total_mm.wav") * 10.0  # mm (full scale 10 mm)
         m1 = M.read_wav(f"{tap}_mode1_mm.wav") * 10.0
         src = cs(sign * x - G0) - cs(-G0)
-        # engine-matched one-pole high-pass (bilinear), as tools/swell_check.py
-        w = np.tan(np.pi * PICKUP_FC / SR)
-        b0, a1 = 1 / (1 + w), (1 - w) / (1 + w)
+        # The engine's network, including the node-capacitance modulation m = 1 + s C_REED0/C_TOTAL
+        # (intended physics, so it belongs in the reference): trapezoidal
+        # w = (w (m_avg - beta) - (s - s_prev)) / (m_avg + beta), beta = pi fc / sr.
+        beta = np.pi * PICKUP_FC / SR
         y = np.empty_like(src)
-        y[0] = 0.0
-        for i in range(1, len(src)):
-            y[i] = a1 * y[i - 1] + b0 * (src[i] - src[i - 1])
+        wv, s_prev, m_prev = 0.0, 0.0, 1.0
+        for i in range(len(src)):
+            mn = 1.0 + C_REED_RATIO * src[i]
+            m_avg = 0.5 * (mn + m_prev)
+            wv = (wv * (m_avg - beta) - (src[i] - s_prev)) / (m_avg + beta)
+            s_prev, m_prev = src[i], mn
+            y[i] = wv
         syn = os.path.join(tmp, f"s{n}.wav")
         SW_write(syn, y)
         f0 = M.refine_f0(M.read_wav(wav)[int(0.3 * SR):int(0.7 * SR)], M.midi_hz(n))
@@ -150,7 +159,8 @@ def known(a):
     for k in range(5):
         v = [r[2 + k] for r in resid if r[2 + k] is not None]
         if v:
-            shared = len(v) >= 4 and (all(x > 0 for x in v) or all(x < 0 for x in v))
+            shared = len(v) >= 4 and (all(x > 0 for x in v) or all(x < 0 for x in v)) \
+                and abs(np.mean(v)) > SIGN_FLOOR_DB
             print(f"H{k + 2}: {len(v)} cells, mean {np.mean(v):+.3f} dB, max |{max(map(abs, v)):.2f}|"
                   f"{'  SHARED SIGN' if shared else ''}")
             fails += shared

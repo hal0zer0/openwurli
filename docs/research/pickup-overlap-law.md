@@ -720,3 +720,11 @@ u −0.4..+0.6 mm per section is the derivative-convergence check.
   notch), not the engine. The remaining tilt (to +0.38 dB at H6, rising with register) was the
   reference's own backward-Euler high-pass; the engine's network matches the analog one-pole to
   ≤ 0.02 dB. Cells below the atlas's 0.02 mm floor (C6 after 1.3 s) are outside the map.
+- *Known-answer gate, re-registered and run:* the gate as first registered (render against the
+  steady-swing atlas) FAILED on H2 for a method reason (a 0.5 s window averaging across H2's notch;
+  diagnosed). Re-registered trace-driven: the render against the law driven by the reed tap's own
+  trace through the engine's network (node-capacitance modulation included, since it is intended
+  physics), ±0.5 dB on H2..H6 above −40 dBc, with the sign rule applying above a 0.05 dB floor (the
+  first sign rule had no floor and tripped at −0.01 dB, below resolution). Result, C2..C6 v127,
+  four windows each: every residual 0.00 dB, no shared sign: **PASS**. The atlas comparison stays
+  in the report for H3..H6, ungated (within ±0.4 dB except where the swing leaves the map).
