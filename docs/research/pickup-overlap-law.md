@@ -236,3 +236,27 @@ sustain organ-like. "A 200A note decays audibly" is admitted only as a FALSIFIER
 Longitudinal averaging (the finger spanning a stretch of the mode shape) was checked as a
 candidate and is not first-order: even a ±25 % amplitude spread moves the bass output slope at
 3–3.5 mm only from 0.00 to +0.12.
+
+**Results as registered (central pick).** (1) v≈80 decay: 7/13 notes pass. v0.8.0 scores 7/12
+(MIDI 98 excluded: its fundamental reaches zero before 1.5 s). Both models decay slower than the
+recordings at MIDI 54–62 and 78–82, so the misses are the reed decay rates, not the pickup law.
+(2) ff falloff: C2 v127 falls 4.5 dB (3.0 required, largest rise +0.3 dB); C4 v127 falls 5.7 dB
+(4.5 required). Both pass, so the central pick is not falsified.
+
+*For anyone comparing by ear:* v0.8.0's bass at v127 fell 21.9 dB over 2 s while its reed decays
+6 dB. The old law's expansion roughly tripled the audible decay rate. Part of the "piano falloff"
+remembered from the old model was that expansion, not reed physics.
+
+*Why it still reads as organ-like:* the 2D static law cannot give strong H3 and a strong ff
+falloff together. Across four middle-section variants, H3 of −15..−20 dB at the preamp always
+coincides with an output slope of 0.4–0.65 against swing; both are faces of the same knee. The
+leading missing physics is amplitude-dependent reed loss (air drag, clamp micro-slip), which
+belongs to the excitation revision. The swing table is not moved to buy decay.
+
+**Registered now for the next round:**
+3. *Fundamental alone at ff:* at C2 and C4, v127, the fundamental (100 ms windows) may not rise
+   beyond the first 0.2 s. This tests the C4 v127 fundamental rise seen here (held out of the
+   verdict above because it was not a registered metric).
+4. *Re-derive criterion 2's threshold* from the reed decay rates in force once the excitation
+   revision changes them. Where the reed decays too slowly, the "half the reed's decay" bar is
+   too lenient by the same factor.
