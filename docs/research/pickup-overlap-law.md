@@ -387,3 +387,17 @@ middle table and an h 0.00125 re-solve of the near-rest window agree to 0.1 dB (
 at the preamp input), and the window passes the gate (−65.0 dB / 0.08 dB). With (2) blocked by the
 analyser and (3) finding no source, the conflict stands as the finding: at the lowest recorded
 notes the prior and the falsifiers disagree.
+
+**Criterion 7 through the Sensor Array (2026-09-26).** The analyser's fundamental lock took the
+loudest peak, an octave error whenever H2 ≥ H1, the recordings' low notes. Its maintainers traced
+it and supplied a cross-checked `--fundamental` option. At FFT 8192 with the nominal pitch, every
+frame confirmed, window 600 ms from 50 ms after onset, full chain (power amp in, speaker
+passthrough): recording MIDI 50 H2/H3 −2.41/−6.23 dB (matching the reference extraction exactly),
+model −5.38/−19.25, so H3 is 13 dB short. Recording MIDI 54 −10.80/−13.99, model −6.24/−39.84: H3
+26 dB short. Bypassing the power amp moves the model's H3 by 0.1–0.2 dB (the shipping behavioural
+amp does not yet carry the factory-bias crossover). At MIDI 54 the gap exceeds what the v≈80/ff
+swing ratio (13–17 dB across its plausible range), middle finger thickness (4–6 dB) and a crossover
+of plausible size (H3 ~−35 dB) could close together. **Finding: an odd-harmonic source is missing
+from the model at MIDI 54**, not only a wrong swing. At MIDI 50 (13 dB) the velocity link alone
+could reach it. First Sensor-grade instance of the recordings' H3 > H2 pattern: MIDI 54 over
+1500 ms, H3 −9.5 dB against H2 −12.4 dB.
