@@ -17,12 +17,18 @@
 *      Target: in-band corner ~880-900 Hz (C-2 grounded), NOT one-pole
 *      (docs/research/preamp-circuit.md §2.3, pickup-system.md §3.7)
 *   3. Transient frequency sweep with the real nonlinear B-source
-*   4. Signal level + nonlinearity (H2/H1 vs displacement)
+*   4. Signal level + nonlinearity (harmonics vs swing)
 *
-* Nonlinearity expectation (constant-charge, small y):
-*   H2/H1 ~= y * C_p / (2*(C_0+C_p)) = 0.494*y  (pickup-system.md §4)
-*   At preamp_in the network's own tilt lifts H2 (at 2f) relative to
-*   H1 by the response difference, so the measured ratio is higher.
+* REVISED 2026-09-25: overlap pickup law (docs/research/pickup-overlap-law.md).
+* reed_disp is now the reed's swing at the pickup in mm (was the gap
+* fraction y of the retired 1/(1-y) law). Middle section (A4 = reed 37),
+* band below the reed. The plugin puts C4 ff at about 0.45 mm (provisional
+* anchor). The law is cross-checked against the plugin's own tables by
+* comparing section 4's harmonics with the static law through the network.
+*
+* Nonlinearity expectation: one-sided source (the reed enters the band
+* on one half of its swing), so even harmonics dominate; at preamp_in
+* the network's own tilt lifts each harmonic by its response difference.
 *
 * Measured baseline 2026-09-22 (ngspice, Vcc 14.5, C_total 240 pF):
 *   DC: plate 0.000 V, preamp_in 0.000 V, base1 2.651 V
@@ -32,9 +38,21 @@
 *     mean slope 55-1760 Hz +15.4 dB/dec
 *   flat-current transimpedance at base1: peak 110.0 dB-ohm at 95 Hz;
 *     2k->20k slope -19.8 dB/dec (1k->10k: -17.7 dB/dec)
-*   y=0.05 transient pp at preamp_in: 110 Hz 9.8 mV ... 8 kHz 76.6 mV
-*   440 Hz H2/H1: y=0.02 1.57%, 0.05 3.93%, 0.10 7.88%, 0.20 15.9%,
-*     0.40 32.8%
+*
+* Re-baselined 2026-09-25 (overlap law; network numbers above unchanged):
+*   0.10 mm transient pp at preamp_in: 110 Hz 15.9 mV, 440 Hz 54.8 mV,
+*     880 Hz 83.5 mV ... 8 kHz 111.8 mV
+*   440 Hz, preamp_in, dB re H1 (H2 / H3 / H4 / H6):
+*     0.02 mm -25.8 / -54.4 / (floor) / (floor)
+*     0.05 mm -18.2 / -40.5 / (floor) / (floor)
+*     0.10 mm -12.9 / -32.1 / -45.5 / -69.6
+*     0.20 mm  -9.4 / -33.8 / -28.8 / -48.7
+*     0.45 mm  -7.4 / -32.8 / -21.3 / -31.3
+*     0.70 mm  -7.3 / -21.2 / -17.0 / -30.6
+*   Cross-check vs the plugin's law (same spline, through its one-pole
+*   880 Hz fit): every harmonic above -50 dB within 0.1 dB; linear
+*   difference <= -53 dB re H1 everywhere. "(floor)": the transient's
+*   numerical floor, ~-58 dB re H1.
 *
 * Run: ngspice -b tb_pickup.cir
 
@@ -53,15 +71,15 @@ Vcc   vcc  0  DC 14.5
 * ============================================================
 * Pickup -> R-1 -> preamp (nonlinear, used by .op and .tran)
 * ============================================================
-Xpickup  plate      reed_disp  0  wurli_pickup
+Xpickup  plate      reed_disp  0  wurli_pickup sec=2 sign=-1
 R1       plate      preamp_in  22K
 Xpre     preamp_in  preamp_out vcc 0 fb_junct wurli_preamp
 * Feedback shunt: the preamp input impedance is independent of the
 * tremolo state (preamp-circuit.md §5.2), so any value serves here.
 Rldr     fb_junct   0  1MEG
 
-* Reed displacement source
-Vdisp  reed_disp  0  DC 0 AC 1 SIN(0 0.05 440 0 0)
+* Reed swing at the pickup (mm as volts)
+Vdisp  reed_disp  0  DC 0 AC 1 SIN(0 0.10 440 0 0)
 
 * Flat-current probe for the transimpedance case (AC 0 unless altered)
 Iflat    0  plate  DC 0 AC 0
@@ -88,10 +106,10 @@ print v(preamp_in) v(xpre.base1)
 reset
 
 * ----------------------------------------------------------
-* 2a. SMALL-SIGNAL: physical j*omega drive, V(base1)/y
+* 2a. SMALL-SIGNAL: physical j*omega drive, V(base1)/mm
 * ----------------------------------------------------------
 echo ""
-echo "=== AC: j*omega drive (V_pol*dC/dt), base1 per unit y ==="
+echo "=== AC: j*omega drive (V_pol*dC/dt), base1 per mm of swing ==="
 ac dec 50 10 100k
 let hj = vdb(xpre.base1)
 meas ac hj_ref FIND hj AT=10k
@@ -135,11 +153,11 @@ reset
 * 3. TRANSIENT FREQUENCY SWEEP (real nonlinear B-source)
 * ----------------------------------------------------------
 echo ""
-echo "=== TRANSIENT SWEEP (y=0.05), pp at preamp_in ==="
+echo "=== TRANSIENT SWEEP (0.10 mm), pp at preamp_in ==="
 echo "freq_Hz  sig_pp"
 
 foreach freq_val 110 220 440 880 1760 3520 5000 8000
-  alter @vdisp[sin] = [ 0 0.05 $freq_val 0 0 ]
+  alter @vdisp[sin] = [ 0 0.10 $freq_val 0 0 ]
   tran 1u 200m 100m 1u
   echo "--- f = $freq_val Hz ---"
   meas tran sig_pp PP v(preamp_in) from=100m to=200m
@@ -153,11 +171,11 @@ echo ""
 echo "=== SIGNAL LEVEL + HARMONICS vs DISPLACEMENT (440 Hz) ==="
 echo ""
 
-foreach amp_val 0.02 0.05 0.10 0.20 0.40
+foreach amp_val 0.02 0.05 0.10 0.20 0.45 0.70
   alter @vdisp[sin] = [ 0 $amp_val 440 0 0 ]
   tran 0.5u 200m 100m 0.5u
 
-  echo "--- y = $amp_val ---"
+  echo "--- swing = $amp_val mm ---"
   meas tran sig_pp PP v(preamp_in) from=100m to=200m
   fourier 440 v(preamp_in)
 

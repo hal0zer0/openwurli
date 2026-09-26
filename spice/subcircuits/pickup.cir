@@ -35,19 +35,26 @@
 *   AC ground (as preamp.cir's R2-to-gnd does) is then exactly right,
 *   and V(plate) in this deck is an AC-only node at 0 V DC.
 *
-* Physics:
-*   Each reed is a grounded steel tine vibrating near the plate.
-*   Reed-plate capacitance vs normalized displacement y = x/d_0
-*   (0 = rest, positive = toward plate, y < 1):
-*     C(y) = C_0 / (1 - y)
+* Physics (REVISED 2026-09-25, overlap law — docs/research/pickup-overlap-law.md):
+*   The 200A pickup is a through-slot comb. Each reed is a grounded steel
+*   tine swinging between two fingers of the charged comb, across a small
+*   side clearance, resting just outside the finger band (about a sheet of
+*   paper, G0). Its capacitance
+*   follows the reed-to-finger overlap, fringe-rounded at the band edges:
+*   a field-solved law per keyboard section (subcircuits/pickup_law.inc,
+*   GENERATED from the same tables the plugin runs). It is NOT the
+*   parallel-plate C_0/(1-y) this deck used before; that geometry has no
+*   plate facing the reed.
+*     u     = SIGN * reed_disp - G0          (penetration past the near
+*                                             finger face, mm)
+*     C(u)  = C_0 * (1 + law(u) - law(-G0)) (= C_0 at rest)
 *   Charge on that capacitance, with total plate voltage V_pol + V(plate):
-*     Q = C(y) * (V_pol + V(plate))
-*   The pickup draws i = dQ/dt from the plate node. With the plate
-*   deviation small against V_pol, the drive is a current
-*     i ~= V_pol * dC/dt  (proportional to j*omega*y)
-*   plus the C(y)*dV(plate)/dt term that makes the reed part of the
-*   plate capacitance. The 1/(1-y) law is the primary H2 ("bark")
-*   source: H2/H1 ~= y * C_p / (2*(C_0+C_p)) under constant charge.
+*     Q = C(u) * (V_pol + V(plate))
+*   The pickup draws i = dQ/dt from the plate node: a drive current
+*   ~= V_pol * dC/dt plus the C(u)*dV(plate)/dt term that makes the reed
+*   part of the plate capacitance. The law is the primary H2 ("bark")
+*   source; it is one-sided (the reed enters the band on one half of its
+*   swing only), so even harmonics dominate.
 *
 * Frequency response (set by the LOAD, not by this subcircuit):
 *   C_total = C_0 + C_p = 240 pF (LOW confidence, pickup-system.md §3.6)
@@ -59,33 +66,46 @@
 *   not to a corner frequency. See docs/research/pickup-system.md §3.7.
 *
 * Key parameters:
-*   C_0   = 3 pF    (per-reed capacitance at rest, estimated)
+*   C_0   = 3 pF    (per-reed capacitance at rest, estimated; also the
+*                    scale of the law's normalised swing, as in the plugin)
+*   G0    = 0.085 mm (rest offset outside the band; 0.07-0.10 evidence)
 *   C_p   = 237 pF  (other 63 reeds + wiring + strays, estimated)
 *   V_pol = 147 V   (service-manual polarizing voltage)
 *
 * Pins:
 *   plate      - pickup plate node (AC-only; connect R-1 22K from here
 *                to the preamp 'in' pin)
-*   reed_disp  - normalized reed displacement y (unitless, |y| < 0.5)
+*   reed_disp  - reed tip displacement at the pickup, mm as volts
+*                (positive = hammer direction, upward). C4 ff is about
+*                0.45 mm in the plugin (PICKUP_MM_PER_DS, provisional).
+*
+* Instance params:
+*   sec   - keyboard section: 1 bass (reeds 1-20), 2 middle (21-42),
+*           3 treble (43-64). Default 2 (A4 = reed 37).
+*   sign  - +1 where the band is above the reed (bass), -1 below (treble
+*           and middle). Default -1.
 *   gnd        - ground reference (the reed / AC ground)
 *
 * Usage:
-*   Xpickup plate reed_disp 0 wurli_pickup
+*   Xpickup plate reed_disp 0 wurli_pickup sec=2 sign=-1
 *   R1      plate preamp_in 22K
 *   Xpre    preamp_in out vcc 0 fb_junct wurli_preamp
 *
-* NOTE: works in .op, .ac (exact linearization about y = 0) and .tran.
+* NOTE: works in .op, .ac (linearization about rest) and .tran.
 
-.SUBCKT wurli_pickup plate reed_disp gnd
+.include pickup_law.inc
+
+.SUBCKT wurli_pickup plate reed_disp gnd params: sec=2 sign=-1
 
 .param C_0   = 3P
 .param C_p   = 237P
 .param V_pol = 147
+.param G0    = 0.085
 
 * ============================================================
 * Variable capacitor: charge-based current source
 * ============================================================
-* Physics: i = d/dt[ C_0/(1-y) * (V_pol + V(plate)) ], drawn from the
+* Physics: i = d/dt[ C(u) * (V_pol + V(plate)) ], drawn from the
 * plate node to gnd (at DC the derivative is zero: no DC current).
 *
 * Realization: the charge Q is computed as a voltage on qnode, scaled
@@ -93,7 +113,7 @@
 * capacitor C_ref; F_reed mirrors that capacitor's current (= dQ/dt)
 * out of the plate node. (qnode idles at C_0*V_pol/C_ref = 441 V; it is
 * an internal bookkeeping node, not a circuit voltage.) This is mathematically identical to
-*   B_reed plate gnd I = ddt({C_0}/(1-V(reed_disp)) * ({V_pol} + V(plate)))
+*   B_reed plate gnd I = ddt(C(u) * ({V_pol} + V(plate)))
 * but the derivative goes through the simulator's own integration
 * and truncation-error control. The direct ddt() form was tried and
 * rejected (2026-09-22): in tb_full_chain at 3520 Hz, y = 0.10 it
@@ -102,7 +122,11 @@
 * B-source ddt() in .ac at all (the pickup contributed exactly zero).
 * This form is clean in .tran and linearizes correctly in .ac.
 .param C_ref = 1P
-B_q     qnode  gnd  V = ({C_0}/{C_ref}) / (1 - V(reed_disp)) * ({V_pol} + V(plate))
+* law(u) selected per section; the rest value keeps C = C_0 at rest.
+B_law   lawn   gnd  V = {sec} == 1 ? pickup_law_bass({sign}*V(reed_disp) - {G0}) - pickup_law_bass(-{G0})
++                     : {sec} == 2 ? pickup_law_middle({sign}*V(reed_disp) - {G0}) - pickup_law_middle(-{G0})
++                     : pickup_law_treble({sign}*V(reed_disp) - {G0}) - pickup_law_treble(-{G0})
+B_q     qnode  gnd  V = ({C_0}/{C_ref}) * (1 + V(lawn)) * ({V_pol} + V(plate))
 V_qsns  qnode  qcap DC 0
 C_q     qcap   gnd  {C_ref}
 F_reed  plate  gnd  V_qsns 1

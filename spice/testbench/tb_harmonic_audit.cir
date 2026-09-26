@@ -5,14 +5,15 @@
 * come from, and why does our DSP model sound too clean?"
 *
 * Four sections:
-*   1. Pickup 1/(1-y) nonlinearity at 4 displacement levels
+*   1. Pickup nonlinearity (overlap law) at 4 swing levels
 *   2. Preamp THD at 4 realistic input levels (0.5-15 mV pp)
 *   3. Cascade: pickup feeding preamp (H2 enrichment)
 *   4. Tremolo: LDR modulation effect on harmonic content
 *
 * Key known values — PENDING, pre-revision, do not trust (the preamp
 * gain and TR-1 asymmetry figures predate the 2026-09 topology revision):
-*   Pickup: y=0.10 @ 440Hz -> ~63 mV pp at preamp_in. H2/H1 = 8.7%.
+*   Pickup (2026-09-25, overlap law; see tb_pickup.cir for the baseline):
+*     0.10 mm @ 440 Hz -> ~55 mV pp at preamp_in, H2/H1 -12.9 dB.
 *   Preamp gain: 2.0x (no trem) / 4.0x (trem bright)
 *   TR-1 asymmetry: 5.3:1 (sat vs cutoff headroom)
 *
@@ -35,12 +36,13 @@
 * ===============================================================
 * SECTION 1: PICKUP NONLINEARITY CHARACTERIZATION
 * ===============================================================
-* The electrostatic pickup has 1/(1-y) nonlinearity where y is
-* normalized reed displacement. This generates even harmonics,
-* primarily H2. We measure H2/H1 at y = 0.05, 0.10, 0.20, 0.35.
+* The pickup's capacitance follows the reed's overlap with the finger
+* band (overlap law, 2026-09-25); reed_disp is the swing at the pickup
+* in mm. The source is one-sided, so even harmonics dominate. We measure
+* the harmonics at 0.05, 0.10, 0.20 and 0.45 mm (plugin C4 ff ~0.45 mm).
 
 * Pickup instance (plate is an AC-only node; V_pol is internal)
-Xpickup  plate  reed_disp  0  wurli_pickup
+Xpickup  plate  reed_disp  0  wurli_pickup sec=2 sign=-1
 
 * Preamp input load: R-1 (22K) into a dedicated wurli_preamp instance,
 * whose own R-2 / C-1 / C-2 / R-3 network IS the pickup's load.
@@ -94,20 +96,20 @@ echo ""
 * =================================================================
 echo ""
 echo "================================================================="
-echo "SECTION 1: PICKUP 1/(1-y) NONLINEARITY"
+echo "SECTION 1: PICKUP NONLINEARITY (OVERLAP LAW)"
 echo "================================================================="
 echo ""
-echo "Testing at 440 Hz with displacements y = 0.05, 0.10, 0.20, 0.35"
-echo "Expected: H2/H1 grows approximately as y/2 for small y."
+echo "Testing at 440 Hz with swings 0.05, 0.10, 0.20, 0.45 mm"
+echo "Expected: H2/H1 -18 / -13 / -9 / -7 dB (tb_pickup.cir baseline)."
 echo ""
 
-foreach amp_val 0.05 0.10 0.20 0.35
+foreach amp_val 0.05 0.10 0.20 0.45
   alter @vdisp[sin] = [ 0 $amp_val 440 0 0 ]
 
   * Long enough for good Fourier resolution; skip startup transient
   tran 0.5u 250m 100m 0.5u
 
-  echo "--- Pickup: y = $amp_val at 440 Hz ---"
+  echo "--- Pickup: swing = $amp_val mm at 440 Hz ---"
   meas tran pk_pp PP v(preamp_in_load) from=150m to=250m
   fourier 440 v(preamp_in_load)
 
@@ -276,8 +278,8 @@ echo ""
 * preamp is essentially linear. So the cascade effect would be
 * tiny. Let's verify this quantitatively.
 
-echo "Running cascade comparison at mf level (pickup y=0.10)..."
-echo "Pickup produces ~63 mV pp at preamp_in, with H2/H1 ~ 8.7%"
+echo "Running cascade comparison at mf level (pickup 0.10 mm)..."
+echo "Pickup produces ~55 mV pp at preamp_in, with H2/H1 ~ -13 dB"
 echo ""
 echo "Test A: Pure 440 Hz sine at equivalent peak amplitude"
 
