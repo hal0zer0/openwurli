@@ -694,3 +694,29 @@ while H3 falls as A³, the small-signal signature of a rest point near the law's
 hot unit. The inflection's location is not converged between the raw and smoothed tables (smoothed:
 one C″ zero per section, u 0.084–0.137 mm; raw: dozens of ripple zeros); an h 0.00125 re-solve of
 u −0.4..+0.6 mm per section is the derivative-convergence check.
+
+**Registered checks, results (2026-09-26 evening; CONDITIONAL on the h/2 gate).**
+- *No-fit swell check (all band ends; synth high-pass corrected to the engine's bilinear form):*
+  3/8 cells pass (H2 at 42, 46, 50). Misses: H2 at 38 (model-low) and RMS at all four notes, every
+  one model-high (the model's RMS falls 1–3 dB less over 2 s than the recording's). Count fails and
+  the RMS misses share a sign: the transducer explanation is **NOT SUPPORTED** as registered, and
+  nothing is calibrated from the swell. The identified swings (2.0–2.6 mm) are recorded, not used.
+- *Steepness (Δ(H3/H1) over 0.7→1.3 s):* 38 PASS (−1.42 in [−4.40, −0.05]); 50 FAIL model-high
+  (−8.09 against [−7.86, −1.15]); 62 table-limited (would read pass); 78 no solution (the
+  recording's H3/H1 rises −49.3 → −44.5 dB while H1 falls 11 dB; no decaying swing through the law
+  does that). The side gap's consistency support is mixed; the gap stands on the 140B measurement.
+- *Criterion 1 (decay, true pitch, `tools/decay_check.py`):* 5/13 pass (54, 66, 74, 78, 86). True
+  38–50: the recordings' fundamental rises over the window (+0.6..+2.4 dB/s, the mf swell) while the
+  model's decays (−1.3..−2.5). 58, 62, 70, 82: the recordings decay much faster (e.g. −23.6 against
+  −9.6 dB/s at 70): the linear decay law, fitted an octave off. The Sensor decay-mode cross-check
+  cannot run on this span (it refuses: needs ≥ 4.5 s at its band; over the whole tail the
+  fundamentals are two poles ~0.1 Hz apart).
+- *Criterion 7 (report-only):* true 38: recording H2/H1 +9.3, H3/H1 +6.9 dB; model −32.2, −5.5.
+  True 42: recording +3.9, +6.4; model −23.4, −8.1.
+- *Known-answer check (render against the atlas):* H3–H6 agree within ±0.4 dB with mixed signs
+  (including the fold-through cell, C2 v127). H2 reads high in 17 of 20 cells (to +2.3 dB) where
+  the law's H2 has a notch; driving the law with the reed tap's own trace instead matches the
+  render's H2 to ≤ 0.10 dB, so the bias is the atlas method (a 0.5 s window averaging across a
+  notch), not the engine. The remaining tilt (to +0.38 dB at H6, rising with register) was the
+  reference's own backward-Euler high-pass; the engine's network matches the analog one-pole to
+  ≤ 0.02 dB. Cells below the atlas's 0.02 mm floor (C6 after 1.3 s) are outside the map.
