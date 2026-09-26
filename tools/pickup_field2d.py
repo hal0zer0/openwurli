@@ -384,11 +384,13 @@ def _solve_point(args):
     return float(solve_case(W, t_r, t_p, g_s, np.array([u]), h=h)[0])
 
 
-def run_refine(section, u_lo, u_hi, h, step, out, jobs):
+def run_refine(section, u_lo, u_hi, h, step, out, jobs, t_p=None):
     """Re-solve one shipping section on a sub-range of u at a finer grid, one point per job —
     for a targeted convergence check where a table is resolution-limited."""
     from multiprocessing import Pool
-    s = CHOSEN[section]
+    s = dict(CHOSEN[section])
+    if t_p is not None:  # band-end case: same section, finger thickness overridden
+        s["t_p"] = t_p
     us = np.round(np.arange(u_lo, u_hi + 1e-9, step), 5)
     with Pool(jobs) as pool:
         C = pool.map(_solve_point, [(s["W"], s["t_r"], s["t_p"], CHOSEN_GS, u, h) for u in us])
@@ -451,6 +453,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", nargs=2, metavar=("A.json", "B.json"),
                     help="harmonic-convergence gate between two table sets")
+    ap.add_argument("--t-p", type=float, default=None,
+                    help="--refine: override the section's finger thickness (band-end cases)")
     ap.add_argument("--a-max", type=float, default=None,
                     help="--check: largest swing (mm) to gate; default min(t_p, 1 mm)")
     ap.add_argument("--out", default=None)
@@ -471,7 +475,7 @@ def main():
     a = ap.parse_args()
     if a.refine:
         run_refine(a.refine[0], float(a.refine[1]), float(a.refine[2]), a.h, a.u_step, a.out,
-                   a.jobs)
+                   a.jobs, a.t_p)
         return
     if a.emit_rust:
         emit_rust(*a.emit_rust)

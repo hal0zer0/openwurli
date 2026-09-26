@@ -222,16 +222,18 @@ pub fn reed_compliance(midi: u8) -> f64 {
 
 /// Which point of the provisional swing band to use (see [`PROVISIONAL_FF_SWING_MM`]).
 ///
-/// `Central` is the shipping pick. `P10` / `P90` are the band corners: a conclusion drawn from a
-/// render only counts if it holds at both corners too.
+/// `Central` is the shipping pick. `Low` / `High` are the band ends: a conclusion drawn from a
+/// render only counts if it holds at both ends too. Treble side (MIDI 53+): the input grid's p10 /
+/// p90. Bass side (MIDI 33-52): the all-inputs-low corner / the fundamental-swell bound (Rule B,
+/// see [`PROVISIONAL_FF_SWING_MM`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwingPick {
     Central,
-    P10,
-    P90,
+    Low,
+    High,
 }
 
-/// **PROVISIONAL** ff reed swing at the pickup, mm: `(midi, central, p10, p90)`.
+/// **PROVISIONAL** ff reed swing at the pickup, mm: `(midi, central, low, high)`.
 ///
 /// Physics only, from a bottom-up hammer-impact model (Euler-Bernoulli reed, 80 elements, this
 /// file's reed lengths and widths; tip solder solved to put each reed on pitch; swing taken as the
@@ -258,19 +260,30 @@ pub enum SwingPick {
 /// (MIDI 52 -> 53) follows from the blank change there (thin uniform bass reeds, thick-rooted
 /// treble reeds) and is kept: it sits where the 200A also changes solder side and pickup side.
 ///
+/// **Bass (reeds 1-20): Rule B, a stopgap.** The bottom-up central values for the bass (A1 3.26
+/// through E3 2.16 mm) reproduced the defect Andersen (US 2,974,555) reports in a Wurlitzer comb:
+/// at ff the reed folds through the fingers and the fundamental swells for seconds after the strike.
+/// That falsifies the register-independent hammer inputs for the bass (jointly with the bass finger
+/// thickness and geometry). The fundamental starts to swell at a swing of g0 + t_p and reaches
+/// +1 dB at g0 + t_p + 0.28 mm, so the admissible bass band is [all-inputs-low corner, that bound]
+/// (1.64 mm at t_p 1.275). The bass values are the geometric centre of that band, by the rule
+/// already in force. They are not a physics-derived bass. Bass hammer data (mass, covering grading)
+/// and the bass finger thickness replace them. The bound, and so the high end, moves with t_p
+/// (1.45 mm at t_p 1.08, 1.80 at 1.44).
+///
 /// Replaced by the technician's bench numbers (a weighed hammer assembly and key speed narrow the
 /// band most), or by the excitation revision's contact integration.
 const PROVISIONAL_FF_SWING_MM: [(u8, f64, f64, f64); 24] = [
-    // Bass reeds 1-20 (MIDI 33-52)
-    (33, 3.26, 1.40, 9.55),
-    (36, 3.13, 1.37, 8.94),
-    (39, 2.97, 1.30, 8.38),
-    (42, 2.78, 1.26, 7.62),
-    (45, 2.56, 1.16, 6.80),
-    (48, 2.55, 1.20, 6.37),
-    (51, 2.25, 1.07, 5.54),
-    (52, 2.16, 1.04, 5.29),
-    // Reeds 21-64 (MIDI 53-96)
+    // Bass reeds 1-20 (MIDI 33-52): Rule B at t_p 1.275 (centre, all-low corner, swell bound)
+    (33, 0.99, 0.60, 1.64),
+    (36, 0.98, 0.59, 1.64),
+    (39, 0.97, 0.57, 1.64),
+    (42, 0.95, 0.55, 1.64),
+    (45, 0.92, 0.52, 1.64),
+    (48, 0.95, 0.55, 1.64),
+    (51, 0.90, 0.50, 1.64),
+    (52, 0.88, 0.48, 1.64),
+    // Reeds 21-64 (MIDI 53-96): bottom-up central, grid p10, grid p90
     (53, 1.25, 0.56, 3.45),
     (54, 1.25, 0.56, 3.40),
     (57, 1.23, 0.58, 3.25),
@@ -320,8 +333,8 @@ pub fn provisional_ff_swing_mm(midi: u8, pick: SwingPick) -> f64 {
     let knots = PROVISIONAL_FF_SWING_MM.iter().map(move |k| {
         let v = match pick {
             SwingPick::Central => k.1,
-            SwingPick::P10 => k.2,
-            SwingPick::P90 => k.3,
+            SwingPick::Low => k.2,
+            SwingPick::High => k.3,
         };
         (k.0, v)
     });
@@ -1650,8 +1663,8 @@ mod tests {
         for k in PROVISIONAL_FF_SWING_MM.iter() {
             for (pick, want) in [
                 (SwingPick::Central, k.1),
-                (SwingPick::P10, k.2),
-                (SwingPick::P90, k.3),
+                (SwingPick::Low, k.2),
+                (SwingPick::High, k.3),
             ] {
                 let got = provisional_ff_swing_mm(k.0, pick);
                 assert!(
@@ -1661,8 +1674,8 @@ mod tests {
                 );
             }
         }
-        // No interpolation across reeds 20|21: the step is kept, not smoothed.
-        assert_eq!(provisional_ff_swing_mm(52, SwingPick::Central), 2.16);
+        // No interpolation across reeds 20|21: each side keeps its own values.
+        assert_eq!(provisional_ff_swing_mm(52, SwingPick::Central), 0.88);
         assert_eq!(provisional_ff_swing_mm(53, SwingPick::Central), 1.25);
         // Between knots: log-linear, so C4-D4 sits between its neighbours.
         let d4 = provisional_ff_swing_mm(62, SwingPick::Central);
@@ -1689,21 +1702,23 @@ mod tests {
     #[test]
     fn test_provisional_swing_band_is_ordered() {
         for midi in 33u8..=96 {
-            let lo = provisional_ff_swing_mm(midi, SwingPick::P10);
+            let lo = provisional_ff_swing_mm(midi, SwingPick::Low);
             let c = provisional_ff_swing_mm(midi, SwingPick::Central);
-            let hi = provisional_ff_swing_mm(midi, SwingPick::P90);
+            let hi = provisional_ff_swing_mm(midi, SwingPick::High);
             assert!(lo < c && c < hi, "MIDI {midi}: {lo} / {c} / {hi}");
         }
     }
 
     #[test]
-    fn test_swing_falls_bass_to_treble() {
-        let (a1, c4, c7) = (
-            pickup_swing_mm(33),
-            pickup_swing_mm(60),
-            pickup_swing_mm(96),
-        );
-        assert!(a1 > c4 && c4 > c7, "A1 {a1} / C4 {c4} / C7 {c7}");
-        assert!(a1 / c7 > 10.0, "bass/treble swing ratio {:.1}", a1 / c7);
+    fn test_treble_side_swing_falls_with_pitch() {
+        // Reeds 21-64: lighter, stiffer reeds swing less under the same hammer. (No source compares
+        // bass swing with treble swing, so nothing is asserted across the reed-20|21 break.)
+        let mut prev = f64::INFINITY;
+        for midi in 53u8..=96 {
+            let a = pickup_swing_mm(midi);
+            assert!(a <= prev + 1e-12, "MIDI {midi}: {a} > {prev}");
+            prev = a;
+        }
+        assert!(pickup_swing_mm(53) / pickup_swing_mm(96) > 5.0);
     }
 }

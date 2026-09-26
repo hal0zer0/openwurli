@@ -300,3 +300,26 @@ alone: Andersen's cure was geometry. Registered before the next pick is rendered
    so they support "no rise is normal" only by extrapolation across register and velocity.
    Andersen is what speaks directly to the ff bass. The criterion is deliberately lenient (a
    falsifier should fire only on clear defects).
+
+**The finding of this round, and the bass stopgap (Rule B).** The register-independent hammer
+inputs over-drive the bass relative to Andersen's defect boundary, so that assumption is refuted
+for the bass (jointly with bass finger thickness and geometry). The fundamental starts to swell at a
+swing of g0 + t_p and reaches +1 dB at g0 + t_p + 0.28 mm (verified on four tables). The admissible
+bass band is therefore [all-inputs-low corner, that bound]: 1.45 / 1.64 / 1.80 mm at t_p
+1.08 / 1.275 / 1.44. The bass swing is the geometric centre of that band, the rule already in force:
+A1 0.99, C2 0.98, C3 0.95, E3 0.88 mm at t_p 1.275. It is a stopgap inside the surviving band, not a
+physics-derived bass. Clipping at the bound (Rule A) was rejected because it would let the falsifier
+select a value. No source compares bass swing with treble swing, so the bass sitting below C4's
+1.19 mm contradicts nothing on record. The inputs that would settle it are bass hammer data (mass,
+covering grading) and the bass finger thickness (a photo). Band ends travel with the pick. Bass:
+low = the all-inputs-low corner, high = the swell bound; treble: the grid's p10/p90.
+Bound confirmed on the band-end tables: the +1 dB swell edge sits g0 + t_p + 0.261/0.262/0.265 mm
+(t_p 1.08/1.275/1.44), inside voltron's ±0.05 of +0.28.
+
+**Rule B results (as registered; level anchor unchanged, C4 v100 −55.64 dBFS at the preamp input).**
+Criterion 6 (bass swell): C2 central +0.03 dB (pass), low pass, high +1.58 dB peaking at 0.7 s
+(fail on timing: the high end sits at the static +1 dB edge by construction). C3 passes at all
+three. Criterion 2 (ff falloff, thresholds re-derived per pick): C2 passes at all three; C4 passes
+at central and low and FAILS at its high end (3.04 mm), where the fundamental swells +14.3 dB. The
+same Andersen signature in the middle section: its upper band is not admissible either. The swell
+bound formula assumes t_p ≥ t_r, so it does not transfer directly to the thin middle fingers.

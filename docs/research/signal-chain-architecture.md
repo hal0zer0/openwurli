@@ -452,8 +452,9 @@ The reed enters the band on one half of its swing only, so the source is strongl
 Per-note ff swing at the pickup (mm) = `tables::pickup_swing_mm(midi)`, a **PROVISIONAL** table from a bottom-up hammer-impact model (reed mass and frequency per note; hammer mass, ff hammer speed from the service manual's action dimensions, restitution and contact factor at the geometric centre of their bands). The velocity curve scales it down from ff.
 
 ```
-A1 3.26 mm | C3 2.55 | E3 2.16 || F3 1.25 | C4 1.19 | C5 0.82 | C6 0.45 | C7 0.22
-(p10/p90 band corners carried alongside; the step at E3|F3 is the reed-20|21 blank change)
+A1 0.99 mm | C3 0.95 | E3 0.88 || F3 1.25 | C4 1.19 | C5 0.82 | C6 0.45 | C7 0.22
+(bass: Rule B stopgap inside the fundamental-swell bound, see pickup-overlap-law.md §8;
+ band ends carried alongside)
 ```
 
 It replaced the recording-fitted `DS_AT_C4 × compliance^0.75` scaling, whose C4 anchor (0.45 mm) sat below every plausible hammer-physics combination. The velocity curve is still recording-fitted and goes with the excitation revision (hammer–felt contact integration).

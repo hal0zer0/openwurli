@@ -437,12 +437,12 @@ fn cmd_render(args: &[String]) {
     } else {
         None
     };
-    // Which point of the provisional swing band: central (shipping), p10, p90 (band corners).
+    // Which point of the provisional swing band: central (shipping), low, high (band ends).
     let swing_pick = match parse_flag_str(args, "--swing-pick", "central") {
-        "p10" => tables::SwingPick::P10,
-        "p90" => tables::SwingPick::P90,
+        "low" => tables::SwingPick::Low,
+        "high" => tables::SwingPick::High,
         "central" => tables::SwingPick::Central,
-        other => panic!("--swing-pick must be central, p10 or p90 (got {other})"),
+        other => panic!("--swing-pick must be central, low or high (got {other})"),
     };
     // Air drag on mode 1: 1.0 = C_d 4.47 (shipping), 0.447 / 2.236 = C_d 2 / 10 corners, 0 = off.
     let air_drag_scale = parse_flag(args, "--air-drag-scale", 1.0);
