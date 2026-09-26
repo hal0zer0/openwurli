@@ -6,8 +6,10 @@ peak as the swing decays through it. One extraction function (ENVELOPE) is appli
 reference recordings (at their true pitch, assigned MIDI - 12) and to model signals synthesised
 from the field-solved law, so both sides come from the same code:
 
-    ENVELOPE: Hann-windowed DFT at a refined f0 (search +-15 cents), 200 ms windows starting
-              0.05 s after onset, hop 0.2 s; H1, H2 and RMS per window, in dB.
+    ENVELOPE: Hann-windowed DFT, 200 ms windows starting 0.05 s after onset, hop 0.2 s; f0 refined
+              once (search +-15 cents); each partial's level taken as the maximum of the DTFT within
+              +-1/T of k*f0 (partials drift off exact multiples; Hann scalloping at half a bin costs
+              1.4 dB); H1, H2 and RMS per window, in dB. Times are window STARTS on both sides.
 
 Model: swing A(t) = A0 exp(-r t / 8.686) (A in mm at the finger region, r in dB/s), source = the
 section's static law C(-g0 + A sin), through the pickup network's one-pole high-pass (PICKUP_FC).
@@ -48,10 +50,13 @@ def envelope(x, sr, onset, f0_guess, t_max=3.7):
     f0 = cands[int(np.argmax([mag(seg, c) for c in cands]))]
     starts = np.arange(START_S, t_max, HOP_S)
     h1, h2, rms = [], [], []
+    def partial(w, k):  # max of the DTFT within +-1/T of k*f0
+        span = 1.0 / WIN_S
+        return max(mag(w, k * f0 + d) for d in np.linspace(-span, span, 21))
     for t in starts:
         w = x[onset + int(t * sr):onset + int((t + WIN_S) * sr)]
-        h1.append(20 * np.log10(mag(w, f0) + 1e-30))
-        h2.append(20 * np.log10(mag(w, 2 * f0) + 1e-30))
+        h1.append(20 * np.log10(partial(w, 1) + 1e-30))
+        h2.append(20 * np.log10(partial(w, 2) + 1e-30))
         rms.append(20 * np.log10(np.sqrt(np.mean(w ** 2)) + 1e-30))
     return starts, np.array(h1), np.array(h2), np.array(rms)
 
