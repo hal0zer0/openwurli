@@ -288,10 +288,11 @@ pub const PICKUP_REST_OFFSET_MM: f64 = 0.085;
 /// Reed swing at the pickup, in mm, per unit of `tables::pickup_displacement_scale`.
 ///
 /// **PROVISIONAL — the single calibration anchor of the pickup law.** No document gives the
-/// reed's tip swing. This value puts middle C at ff (DS 0.85) at about 0.45 mm: inside the
-/// evidence prior (the swing stays within about a finger's thickness — the user's read of the
-/// technician's video — and bass ff swings are large enough that the solder faces down to clear
-/// the dampers). A scope reading of the preamp output on a real 200A replaces it. The per-note
+/// reed's tip swing, and nothing bounds it yet except physics (a visual guess from video that it
+/// stays within a finger's thickness was withdrawn as evidence). This value puts middle C at ff
+/// (DS 0.85) at about 0.45 mm. Bass ff swings are known to be large enough that the solder faces
+/// down to clear the dampers. A measurement (reed tracking, or a scope reading of the pickup on a
+/// real 200A) or the excitation revision's hammer physics replaces it. The per-note
 /// scaling it multiplies (`pickup_displacement_scale`) is shipped unchanged and is top-down debt
 /// for the excitation revision.
 pub const PICKUP_MM_PER_DS: f64 = 0.53;

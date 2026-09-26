@@ -412,7 +412,7 @@ def static_harmonics(u, C, g0, A, kmax=8, n=1024):
 def check_convergence(path_a, path_b, rel_above_db=-30.0, rel_tol_db=0.5, abs_tol_db=-45.0):
     """Harmonic-convergence gate between an h and an h/2 table set (static law, H2..H8).
 
-    Within the swing prior (0.02 mm .. min(t_p, 1 mm), g0 0.07-0.10 mm, and only swings that stay
+    Over swings 0.02 mm .. min(t_p, 1 mm) (extend once the real swing is known), g0 0.07-0.10 mm, and only swings that stay
     inside both tables' u range — so a --refine window can be gated against its partner): every
     harmonic above rel_above_db re H1 agrees to rel_tol_db, and the linear difference re H1 is
     <= abs_tol_db everywhere. A dB gap alone is ill-posed for harmonics far below H1.

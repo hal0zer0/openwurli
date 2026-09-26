@@ -45,7 +45,7 @@ source ever gave, has no counterpart in this geometry and is retired.
 | Reed thickness t_r | reeds 1–20 .020″ unground (0.51 mm); 21–64 tongue .020–.026″ (0.51–0.66 mm) | S (Vintage Vibe case study; docwurly: thickening "reportedly … to be verified", undated) |
 | Finger thickness t_p ordering | thick 1–20 · thin, bendable 21–42 · thick 43–64, uniform to the top | T (video, user read); S (docwurly: only F-21..D-42 thinned in 1963); D (frame at the break: bass edge 1.8–2.4× the section to its right) |
 | t_p absolutes | 21–42: 0.4–0.8 mm · 1–20: 0.85–1.7 mm · 43–64: 0.85–2.0 mm | **G** — no measurement exists; middle bounded by "bendable by hand" and "somewhat thicker than the reed" (P, US 2,966,821); bass = middle × ratio; treble ≥ bass |
-| Tip swing | at normal playing, of the order of the finger thickness or less (the reed and lead never swing fully clear of the band) | D (user's visual judgement of scale), low grade — a prior on the amplitude scale, not a value |
+| Tip swing | **unknown** — no measurement or document gives it | An earlier visual guess from video ("of the order of the finger thickness or less") is WITHDRAWN as a bound (2026-09-26): a guess from a camera angle that cannot show vertical scale, not evidence. Only physics (hammer impact) or a measurement may bound it |
 | Era | early flat bass pickups (later units: bass fingers angled up 20–30°, from about mid-1978) | T; S (docwurly) |
 
 ## 3. The law
@@ -74,8 +74,8 @@ tying the source to the plate node (the geometric value is nearer 0.4 pF than 3 
 near-LTI either way).
 
 **What is evidence and what is tuned.** Pinned from evidence (with bands): g_s, g0, t_r, t_p, sign,
-finger position. Tuned, because nothing measures them: the amplitude scale A at C4 (prior: swing ≲
-t_p) and its register slope (the reed-compliance exponent), and at most g0 held **inside** its paper
+finger position. Tuned, because nothing measures them: the amplitude scale A at C4 (no evidence bound; see §2)
+and its register slope (the reed-compliance exponent), and at most g0 held **inside** its paper
 band. The fringe width is not a knob — it comes out of the field solve. If the model cannot reach
 reality inside these bands, that is the result: some physics is still missing, and the bands are not
 widened to close it.
@@ -115,7 +115,8 @@ The model targets the most typical setup of one configuration:
   cross-validation; the chosen λ and the residual (≤ 3.2e-4 of range) are recorded in the generated
   `pickup_tables.rs`. The two grids are smoothed independently, so part of their difference is
   smoothing.
-- **Convergence gate** (static law, h vs h/2, within the swing prior): every harmonic above −30 dB
+- **Convergence gate** (static law, h vs h/2, swings 0.02 mm to min(t_p, 1 mm) — a range set by the
+  withdrawn swing guess; extend it to the reachable swing once the swing scale is known): every harmonic above −30 dB
   re H1 agrees to 0.5 dB, and the absolute (linear) difference is ≤ −45 dB re H1 everywhere.
   (`tools/pickup_field2d.py --check A.json B.json`.) h 0.005 vs 0.0025: bass −65.8 dB / 0.06 dB,
   middle −47.2 dB / 0.34 dB, pass; the treble misses marginally at small swings (−43.4 dB /
@@ -137,8 +138,8 @@ Only the pickup law changes. The amplitude path is shipped as it was — per-not
 exponent, the velocity exponent, reed blank thicknesses) are recorded as top-down debt for the
 excitation revision (per-note hammer–felt contact integration). One exception: the DS upper clamp is
 removed, because it existed only to keep `1/(1−y)` away from its singularity. Consequence: bass ff
-swings (~1.6 mm at C2) exceed the swing prior and reach the finger's far face, a region the tables
-do not resolve — bass ff harmonics mean nothing until the swing scale is calibrated (a scope reading
+swings (~1.6 mm at C2) reach the finger's far face, beyond the range the convergence gate has
+checked — bass ff harmonics mean nothing until the swing scale is calibrated (a scope reading
 of a real 200A, or the excitation revision).
 
 Second consequence: **less velocity span.** The overlap law is linear in swing over the operating
