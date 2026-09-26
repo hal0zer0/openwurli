@@ -746,3 +746,17 @@ Both central picks pass criteria 2 and 6. At C2 v100 (100–500 ms) H2/H1 is −
 −15.3 in B; the middle is identical within 0.5 dB. What settles it with evidence: a bench ff DI of
 a bass note (the fundamental's time course), or, if the operator allows it, the multi-velocity
 set's ff-layer H1 time course, report-only.
+
+**h/2 gate: like-for-like method (registered 2026-09-26 evening, before any reach window was
+scored).** A dry run showed the original check compares smoothers, not grids: each table was
+GCV-smoothed over its own u range, and the same h 0.0025 data smoothed full-range versus over a
+window already differs by 0.78 dB (r21_42, H2, small swing), while h and h/2 smoothed alike agree
+to 0.16–0.17 dB. Registered: (1) the gate compares the shipping-grid data cropped to the window
+with the h/2 window, both smoothed with the same λ, the smallest decade (1e-7..1e-3) at which C″
+agrees between the grids within 10 % (smoothing chosen by h-convergence); thresholds unchanged
+(`tools/pickup_field2d.py --check-window`). (2) The shipping table's own smoothing error (full-range
+GCV against the converged window smoothing) is reported beside it. (3) The shipping tables are
+regenerated in this revision with λ chosen by h-convergence per section (GCV was the last place the
+data chose the smoothing); the level is re-anchored and the alias baseline and known-answer gate
+re-run before the listening build. Near-rest windows (u −0.4..0.6, all four sections): λ 1e-4;
+grid 0.07–0.33 dB (PASS); shipping smoothing error 0.13–0.54 dB.

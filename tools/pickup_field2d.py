@@ -419,6 +419,69 @@ def static_harmonics(u, C, g0, A, kmax=8, n=1024):
     return 20 * np.log10(np.maximum(X[1:], 1e-300) / X[0])
 
 
+def check_window(path_ship, path_half, rel_above_db=-30.0, rel_tol_db=0.5, abs_tol_db=-45.0,
+                 c2_tol=0.10):
+    """h/2 gate on a --refine window, like for like (registered 2026-09-26).
+
+    The shipping-grid table is CROPPED to the window and both are smoothed with the SAME lambda,
+    the smallest of 1e-7..1e-3 (decades) at which C'' agrees between the grids within c2_tol of its
+    peak: the smoothing is chosen by h-convergence, not by the data, so the gate measures the grid.
+    Swings 0.02 mm up to the window's edge, g0 0.07-0.10 mm; thresholds as in check_convergence.
+    Also reported (not the gate): the SHIPPING table's own smoothing error, i.e. the full-range GCV
+    spline the plugin compiles against the converged window spline of the h/2 data.
+    """
+    from scipy.interpolate import make_smoothing_spline
+    a, b = json.load(open(path_ship)), json.load(open(path_half))
+    th = np.arange(1024) * 2 * np.pi / 1024
+
+    def harm(sp, g0, A):
+        X = np.abs(np.fft.rfft(sp(-g0 + A * np.sin(th))))[1:9]
+        return 20 * np.log10(np.maximum(X[1:], 1e-300) / X[0])
+
+    def compare(spa, spb, lo, hi):
+        wl, wr = -np.inf, 0.0
+        for g0 in (0.07, 0.085, 0.10):
+            for A in np.arange(0.02, min(-g0 - lo, hi + g0) + 1e-9, 0.01):
+                ha, hb = harm(spa, g0, A), harm(spb, g0, A)
+                big = (ha > rel_above_db) | (hb > rel_above_db)
+                if (~big).any():
+                    lin = np.abs(10 ** (ha / 20) - 10 ** (hb / 20))[~big]
+                    wl = max(wl, 20 * np.log10(max(float(lin.max()), 1e-300)))
+                if big.any():
+                    wr = max(wr, float(np.max(np.abs(ha - hb)[big])))
+        return wl, wr
+
+    ok = True
+    for key in sorted(set(a) & set(b)):
+        ua, Ca = np.array(a[key]["u"]), np.array(a[key]["C_pF_per_m"])
+        ub, Cb = np.array(b[key]["u"]), np.array(b[key]["C_pF_per_m"])
+        m = (ua >= ub[0] - 1e-9) & (ua <= ub[-1] + 1e-9)
+        uc, Cc = ua[m], Ca[m]
+        uu = np.linspace(ub[0], ub[-1], 4001)
+        lam = None
+        for lv in (1e-7, 1e-6, 1e-5, 1e-4, 1e-3):
+            d2a = make_smoothing_spline(uc, Cc, lam=lv)(uu, 2)
+            d2b = make_smoothing_spline(ub, Cb, lam=lv)(uu, 2)
+            if np.abs(d2a - d2b).max() <= c2_tol * np.abs(d2b).max():
+                lam = lv
+                break
+        if lam is None:
+            print(f"{key}: C'' never converges between the grids up to lam 1e-3 -> FAIL")
+            ok = False
+            continue
+        spa = make_smoothing_spline(uc, Cc, lam=lam)
+        spb = make_smoothing_spline(ub, Cb, lam=lam)
+        wl, wr = compare(spa, spb, ub[0], ub[-1])
+        passed = wl <= abs_tol_db and wr <= rel_tol_db
+        ok &= passed
+        sl, sr = compare(gcv_smooth(ua, Ca)[0], spb, ub[0], ub[-1])
+        print(f"{key} window u [{ub[0]}, {ub[-1]}], lam {lam:.0e}: GRID linear {wl:6.1f} dB | "
+              f"above {rel_above_db:.0f} dB: {wr:.2f} dB | {'PASS' if passed else 'FAIL'} || "
+              f"shipping smoothing vs converged: linear {sl:6.1f} dB, rel {sr:.2f} dB (reported)")
+    print("GATE (window, like for like):", "PASS" if ok else "FAIL")
+    return ok
+
+
 def check_convergence(path_a, path_b, rel_above_db=-30.0, rel_tol_db=0.5, abs_tol_db=-45.0,
                       a_max=None):
     """Harmonic-convergence gate between an h and an h/2 table set (static law, H2..H8).
@@ -480,6 +543,8 @@ def main():
                     help="write the per-section laws as ngspice .func pwl() tables")
     ap.add_argument("--emit-rust", nargs=2, metavar=("CHOSEN.json", "OUT.rs"),
                     help="generate the plugin's pickup_tables.rs from a --chosen solve")
+    ap.add_argument("--check-window", nargs=2, metavar=("SHIPPING.json", "HALF_H_WINDOW.json"),
+                    help="h/2 gate on a --refine window, like for like (same lambda, by h-convergence)")
     ap.add_argument("--refine", nargs=3, metavar=("SECTION", "U_LO", "U_HI"),
                     help="re-solve one shipping section on a u sub-range (finer --h)")
     a = ap.parse_args()
@@ -498,6 +563,8 @@ def main():
         return
     if a.check:
         check_convergence(*a.check, a_max=a.a_max)
+    if a.check_window:
+        check_window(*a.check_window)
         return
     if a.tables:
         run_tables(a.h, a.u_step, a.out, a.jobs)
