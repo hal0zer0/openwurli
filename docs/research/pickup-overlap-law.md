@@ -348,3 +348,18 @@ make the band so wide that the robustness check is vacuous. Dynamic edges (mm, f
 (heard on the corner-based Rule B build, bass 0.9–1.0 mm, which is superseded). No recording or
 number exists for ff bass, so no threshold is set. The technician's bass data is what answers it.
 The previous release is never the reference, in either direction.
+
+**Conditioned-prior pick: results as registered (level anchor re-held, `target_db` −30.06).**
+Survival in the prior: 15–44 % in the bass, 39–90 % in the middle, 100 % in the treble (MIDI 72 up
+the edges sit above the whole prior). Criteria 2 and 6 pass at the pick and at both band ends at
+C2, C3 and C4 (worst: C3 high end +1.42 dB at 0.5 s). Criterion 1: 7/12. **Criterion 7 FAILS on
+H3 at both notes** (MIDI 50: −15.7 dB against a floor of −12.2; MIDI 54: −35.8 against −28.1): the
+pick is too clean at v≈80 in the low register, the same direction as the user's "bass lacking"
+report. Criterion 7 conditions the prior from below too. Scanning ff swing at v≈80 gives the
+smallest passing swing at 1.54 mm (MIDI 50; H2 and H3 trade off as fold-through begins) and
+0.98 mm (MIDI 54). With the upper edges (~1.78 and 1.02 mm) the admissible windows are 0.24 mm and
+0.04 mm wide. Prior survival in them: 8–10 % (MIDI 48–51 reed data) and 2.9 % (MIDI 54), both
+under the 10 % flag. **Finding:** at the lowest recorded notes, the ff swell bound and the v≈80
+harmonic floor nearly collide. Candidates, none tested yet: the recording-fitted velocity curve,
+which sets the v≈80/ff swing ratio; the guessed middle finger thickness (0.6 mm, below the reed's
+own thickness); and the unbounded recording chain (transformer and tube can add H3).
