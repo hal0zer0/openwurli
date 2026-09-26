@@ -453,3 +453,28 @@ inherits the same octave error and is suspect until re-derived.
   ear-voiced velocity curve, not the recordings.
 - *Suspect until checked for recording input:* the velocity curve, the register trims, and the level
   anchor's provenance.
+
+**First real-instrument finding at the true pitch: the bass fundamental swells at mf.** Relative
+to its first 200 ms window, the fundamental of the reference recordings rises +1.9 dB (D2, peak at
+2.25 s), +3.4 dB (F#2, 1.65 s), +2.3 dB (A#2, 1.05 s) and +2.0 dB (D3, 0.85 s), and not at all
+from F#3 up, while H2 and the overall level fall steadily (F#2: H2 −22 dB by 2 s). The
+fundamental is strong from the start. Caveats: one unit, v≈80, voicing unknown, and a transformer
++ tube recording chain that, if compressive at that level, could lift the fundamental slightly as
+H2 decays. That is carried as a caveat, not a refutation (a linear chain cannot make a swell).
+
+**Criterion 6 re-registered (arbiter, 2026-09-26).** A falsifier that rejects the reference
+instrument is wrong by construction: the old criterion (peak within 0.5 s, rise ≤ 3 dB) rejects
+the real unit, and its "the recordings show no rise" support was the octave error. Andersen's defect
+is a WEAK early fundamental ("a very strong harmonic … with a very weak fundamental", peaking up to
+two seconds later), and lateness alone no longer discriminates. New criterion: at C2 and C3, v127
+(100 ms windows from onset), the fundamental's rise above its first window must not exceed 6 dB;
+no timing clause. The 6 dB is a judgement, not a sourced number (about 2.6 dB of headroom over the
+real unit's largest mf swell for ff growth, well below the falsified +11.7 dB); the operator can
+override it. The old bass pick stays falsified. The bass prior is reconditioned on the new
+criterion, so the bass pick moves up.
+
+**Criterion 2 re-checked against the recordings at the true pitch:** it passes the real unit at all
+13 notes (no window-to-window rise above 0.5 dB; the level falls 5–57 dB over 2 s against the
+required 3–28 dB), so it stands. Side observation: the real notes' level falls far faster than the
+model reed decays in the middle register (true MIDI 58: 25.6 dB in 2 s against the reed's 7.8 dB),
+consistent with the linear decay law having been fitted an octave off.
