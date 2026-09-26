@@ -414,3 +414,22 @@ directions (the near-empty admissible windows at MIDI 50/54), so no single swing
 both. The pair is a joint constraint on the geometry or law (rest gap, finger shape, Andersen-style
 ears or angled fingers, longitudinal overlap) together with the swing. It is not only an amplitude
 correction.
+
+## 9. The reference recordings are an octave below their assigned notes (2026-09-26)
+
+All 13 reference recordings (Freesound pack 5726) sound one octave below the notes our analysis
+assigned them. Every file carries a full harmonic series on half the assigned pitch (floor between
+those partials −50 to −80 dB); in the treble that half-pitch partial is 17–30 dB louder than the
+assumed fundamental. The file labelled d7 was assigned MIDI 98, above a 200A's top note (C7, MIDI
+96). The pack's octave labels run one above scientific pitch, and the extraction refined the
+fundamental within ±8 cents of the label, so it locked onto the true second harmonic. **True note
+= assigned MIDI − 12** (D2–D6, MIDI 38–86). Found when the Sensor Array's corrected fundamental
+lock settled on half the nominal pitch.
+
+**Void until re-extracted at the true pitch:** criterion 1 (decay rates were of the true H2),
+criterion 7 and its Sensor re-measurement (the "H2/H3" were the true H4/H6 of a note an octave
+lower), the steepness tests at MIDI 50/54/62, the "odd-harmonic source missing at MIDI 54"
+finding, the recordings' "H3 > H2" pattern, and the early-H3-rise observation. The side-gap
+re-ruling stands on the 140B measurement alone until the steepness test is redone. Beyond this
+revision: every constant or training target documented as "OBM-calibrated" or "fitted to OBM"
+inherits the same octave error and is suspect until re-derived.
