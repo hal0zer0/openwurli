@@ -101,16 +101,21 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--n", type=int, default=200_000)
     ap.add_argument("--rust", action="store_true", help="print PROVISIONAL_FF_SWING_MM entries")
+    ap.add_argument("--edges", default=None,
+                    help="JSON {midi: edge_mm} replacing EDGES (e.g. variant A, criterion 6 report-only)")
     a = ap.parse_args()
     data = json.load(open(os.path.join(HERE, "data", "reed_swing_inputs.json")))
+    edges = dict(EDGES)
+    if a.edges:
+        edges.update({int(k): float(v) for k, v in json.load(open(a.edges)).items()})
     rows = []
     print(f"{'MIDI':>4} {'edge':>5} {'surv':>6} | {'p10':>5} {'med':>5} {'p90':>5} | unconditioned"
           f" p10/med/p90 | seed-to-seed max change")
     for midi in sorted(int(k) for k in data):
-        s1, q1, u1 = conditioned(data[str(midi)], EDGES[midi], a.n, 1)
-        s2, q2, _ = conditioned(data[str(midi)], EDGES[midi], a.n, 2)
+        s1, q1, u1 = conditioned(data[str(midi)], edges[midi], a.n, 1)
+        s2, q2, _ = conditioned(data[str(midi)], edges[midi], a.n, 2)
         flag = "  <10% SURVIVE" if s1 < 0.10 else ""
-        print(f"{midi:4d} {EDGES[midi]:5.2f} {s1:6.1%} | {q1[0]:5.2f} {q1[1]:5.2f} {q1[2]:5.2f} | "
+        print(f"{midi:4d} {edges[midi]:5.2f} {s1:6.1%} | {q1[0]:5.2f} {q1[1]:5.2f} {q1[2]:5.2f} | "
               f"{u1[0]:5.2f}/{u1[1]:5.2f}/{u1[2]:5.2f} | {np.max(np.abs(q1 - q2)):.4f} mm{flag}")
         rows.append((midi, q1[1], q1[0], q1[2]))
     if a.rust:

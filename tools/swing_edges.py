@@ -17,7 +17,10 @@ default speaker). Both taps use the bench's per-note seed. The edge is bisected 
 nine halvings, assuming pass-below / fail-above; every probe is printed so a non-monotone case
 shows.
 
-Usage: python tools/swing_edges.py --notes 33,36 --cap 3.5 [--work DIR] [--out edges.json]
+With --no-crit6 only criterion 2 decides (the operator's variant A, criterion 6 report-only);
+criterion 6's rise is still printed for every probe.
+
+Usage: python tools/swing_edges.py --notes 33,36 --cap 3.5 [--work DIR] [--out edges.json] [--no-crit6]
 """
 
 import argparse
@@ -104,7 +107,7 @@ def checks(n, A, work):
             "rise_full": float(h_full.max() - h_full[0])}
 
 
-def edge(n, lo, hi, work):
+def edge(n, lo, hi, work, use_c6=True):
     probes = []
     for _ in range(9):
         mid = 0.5 * (lo + hi)
@@ -114,7 +117,7 @@ def edge(n, lo, hi, work):
               f"{r['need_measured']:.2f} [computed {r['need_computed']:.2f}], jump "
               f"{r['max_jump']:+.2f}) crit6 {r['c6']} (pickup {r['rise_pickup']:+.2f} dB @ "
               f"{r['t_peak_pickup']:.1f} s, full {r['rise_full']:+.2f})", flush=True)
-        lo, hi = (mid, hi) if (r["c2"] and r["c6"]) else (lo, mid)
+        lo, hi = (mid, hi) if (r["c2"] and (r["c6"] or not use_c6)) else (lo, mid)
     return lo, probes
 
 
@@ -124,12 +127,14 @@ def main():
     ap.add_argument("--cap", type=float, required=True, help="upper end of the search (mm)")
     ap.add_argument("--work", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--no-crit6", action="store_true",
+                    help="criterion 2 only (variant A: criterion 6 report-only)")
     a = ap.parse_args()
     work = a.work or tempfile.mkdtemp(prefix="swing_edges_")
     os.makedirs(work, exist_ok=True)
     res = {}
     for n in (int(v) for v in a.notes.split(",")):
-        e, probes = edge(n, 0.4, a.cap, work)
+        e, probes = edge(n, 0.4, a.cap, work, use_c6=not a.no_crit6)
         cap_hit = e > a.cap - 0.01
         print(f"EDGE MIDI {n}: {e:.3f} mm{' (>= search cap)' if cap_hit else ''}", flush=True)
         res[n] = {"edge": e, "cap": a.cap, "cap_hit": cap_hit, "probes": probes}
