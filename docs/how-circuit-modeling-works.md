@@ -52,7 +52,7 @@ The preamp is the most complex piece, but the full model includes:
 
 - **Reed oscillator** — each of the 64 keys drives a steel reed. We model this as a sum of 7 vibration modes (like harmonics, but slightly inharmonic because real reeds aren't perfect). Each mode is a sine wave with its own frequency, amplitude, and decay rate derived from beam physics.
 
-- **Electrostatic pickup** — each reed sits between two fingers of a charged metal comb, resting just outside them. As it swings, it slides into the gap between the fingers on one half of its swing only, so the capacitance (and the signal) rises lopsidedly. We compute that capacitance-vs-position curve from a 2D electric-field simulation of the pickup's cross-section. The lopsidedness is the primary source of Wurlitzer "bark".
+- **Electrostatic pickup** — each reed sits between two fingers of a charged metal comb, resting just outside them. As it swings, it slides into the gap between the fingers on one half of its swing only, so the capacitance (and the signal) rises lopsidedly. We compute that capacitance-vs-position curve from a 2D electric-field simulation of the pickup's cross-section. That lopsided curve is the main source of the instrument's harmonics.
 
 - **Power amplifier** — a Class AB push-pull amp with +-24V rails. Modeled with Newton-Raphson feedback, including the crossover distortion where the NPN and PNP output transistors hand off to each other.
 

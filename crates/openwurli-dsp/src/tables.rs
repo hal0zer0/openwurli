@@ -26,8 +26,8 @@ pub const MIDI_HI: u8 = 96;
 /// is -36 dB at the pickup output — below the audibility threshold for an
 /// inharmonic partial. This is within the OBM calibration uncertainty (±5 dB).
 ///
-/// The real 200A's "bark" comes primarily from the pickup's nonlinearity (the
-/// reed entering the finger band) generating H2 at 2×fundamental, NOT from
+/// The low-order harmonics (H2, H3, ...) come from the pickup's nonlinearity (the
+/// reed entering the finger band) at integer multiples of the fundamental, NOT from
 /// physical mode 2 oscillation at ~6.3×fundamental.
 pub const BASE_MODE_AMPLITUDES: [f64; NUM_MODES] =
     [1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005];
@@ -213,7 +213,7 @@ pub(crate) fn reed_blank_dims(midi: u8) -> (f64, f64) {
 /// Higher compliance = more physical tip deflection for a given hammer force.
 /// Bass reeds (long, thin) have ~25× the compliance of treble reeds (short, thick).
 /// This determines how far the reed swings into the pickup's finger band,
-/// which controls the strength of the pickup nonlinearity ("bark").
+/// which controls how strongly the pickup nonlinearity acts.
 pub fn reed_compliance(midi: u8) -> f64 {
     let l = reed_length_mm(midi);
     let (w, t) = reed_blank_dims(midi);

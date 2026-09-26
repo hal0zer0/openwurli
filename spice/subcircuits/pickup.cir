@@ -52,7 +52,7 @@
 *     Q = C(u) * (V_pol + V(plate))
 *   The pickup draws i = dQ/dt from the plate node: a drive current
 *   ~= V_pol * dC/dt plus the C(u)*dV(plate)/dt term that makes the reed
-*   part of the plate capacitance. The law is the primary H2 ("bark")
+*   part of the plate capacitance. The law is the primary harmonic
 *   source; it is one-sided (the reed enters the band on one half of its
 *   swing only), so even harmonics dominate.
 *

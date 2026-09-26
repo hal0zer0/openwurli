@@ -336,7 +336,7 @@ Based on musician feedback (KVR Audio forums, Gearspace, VI-Control, AudioThing 
 
 | Priority | What the Ear Cares About | What FFT Shows | Correlation |
 |----------|--------------------------|----------------|-------------|
-| 1 | Velocity-to-bark transition smoothness | H2/H1 vs velocity curve | MODERATE -- H2/H1 correlates with perceived bark, but the SHARPNESS of the transition (the knee) is not captured by steady-state spectrum |
+| 1 | Velocity-to-bark transition smoothness | H2/H1 vs velocity curve | MODERATE -- ASSUMED (unsourced) that H2/H1 correlates with perceived bark, but the SHARPNESS of the transition (the knee) is not captured by steady-state spectrum |
 | 2 | Attack "feel" -- percussive but not clicky | Overshoot dB, spectral flatness | LOW -- overshoot dB can be correct but still sound wrong if temporal shape is unnatural |
 | 3 | Warmth vs harshness of distortion | H2/H3 ratio, THD | MODERATE -- H2>H3 is necessary for warmth, but the shape of the nonlinearity matters more than the ratio |
 | 4 | Register variation (bass/mid/treble character) | Spectral envelope by register | MODERATE -- overall spectral shape correlates, but timbral "character" is multi-dimensional |
@@ -378,7 +378,7 @@ From the design evaluation document (musician evaluator):
 | Metric | What It Measures | Why It Correlates | Caveat |
 |--------|-----------------|-------------------|--------|
 | H2>H3 compliance | Even harmonic dominance | Directly audible as warm vs harsh distortion | Must be checked at ALL velocities, not just mf |
-| H2/H1 vs velocity slope | Bark-velocity coupling strength | ~0.92 dB/dB is the target; too flat = lifeless, too steep = harsh | Steady-state only; says nothing about the attack |
+| H2/H1 vs velocity slope | Bark-velocity coupling strength (assumes bark = H2; unsourced) | ~0.92 dB/dB was the target; too flat = lifeless, too steep = harsh | Steady-state only; says nothing about the attack |
 | Spectral centroid drift (atk->sus) | Timbral darkening | Directly audible as "percussive bell -> warm sustain" | Only valid for atk-to-300ms, not late sustain |
 | Decay rate by register | Sustain envelope shape | Wrong decay is immediately audible (too long = organ, too short = pluck) | Must check MULTIPLE registers, not just C4 |
 | Dynamic range (pp to ff dBFS) | Velocity response range | Should be 20-30 dB; < 10 dB means velocity compression | Must be measured POST-preamp including all gain stages |
@@ -681,7 +681,7 @@ These differentiate a good model from a mediocre one:
 
 ### 11.3 Pitfall: Symmetric Nonlinearity Producing Correct THD
 
-**What happens:** `tanh(x)` produces reasonable THD levels but generates only odd harmonics (H3, H5, H7). The ear perceives this as "harsh" or "buzzy" rather than "warm" or "barky."
+**What happens:** `tanh(x)` produces reasonable THD levels but generates only odd harmonics (H3, H5, H7). The ear perceives this as "harsh" or "buzzy" rather than "warm" or "barky." (Unsourced claim from the tanh/1/(1-y) era. Which harmonics carry "bark" has not been established; do not use this to rule out odd harmonics.)
 
 **How to detect:** Always check H2/H3 ratio, never just THD. If H3 > H2 at any velocity, the nonlinearity is symmetric and must be replaced with an asymmetric function.
 

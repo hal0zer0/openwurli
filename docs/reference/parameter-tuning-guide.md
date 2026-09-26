@@ -31,7 +31,7 @@ exists for diagnostic sweeps only. Register balance belongs to the output mappin
 ```
 swing ↑
   → per-note swing ↑ (mm at the pickup)
-  → reed enters the finger band deeper ↑ (more bark, more harmonics)
+  → reed enters the finger band deeper ↑ (more harmonics)
   → pickup output ↑
   → output_scale proxy tries to compensate
     → BUT proxy doesn't model preamp Cin HPF or speaker
@@ -180,7 +180,7 @@ Based on today's lessons, now automated via `calibrate`/`sensitivity`:
 
 4. **Full audit**
    ```bash
-   cargo run -p preamp-bench -- bark-audit
+   cargo run -p preamp-bench -- h2-audit
    ```
 
 ## Open Questions

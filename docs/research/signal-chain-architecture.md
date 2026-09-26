@@ -1186,7 +1186,7 @@ This is the most complex and sonically important stage. Component values and top
 5. Implement emitter feedback path: R-10 (56K) -> fb_junction -> Ce1 (4.7µF) -> TR-1 emitter
 6. Validate DkPreamp gain against SPICE targets (2.0x no-trem, 4.0x trem-bright)
 
-**Test:** Verify H2 > H3 on all notes at mf. Check that pp is clean, mf has moderate bark, ff has aggressive bark. Check dynamic range: pp should be at least 15 dB quieter than ff. Cross-validate gain and THD against SPICE measurements.
+**Test:** (1/(1-y)-era expectation, unsourced — see calibration-and-evaluation.md §3 note) Verify H2 > H3 on all notes at mf. Check that pp is clean, mf has moderate bark, ff has aggressive bark. Check dynamic range: pp should be at least 15 dB quieter than ff. Cross-validate gain and THD against SPICE measurements.
 
 ### Phase 5: Post-Processing (1-2 days)
 

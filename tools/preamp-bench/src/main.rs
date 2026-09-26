@@ -41,7 +41,8 @@ fn main() {
         "harmonics" => cmd_harmonics(&args[2..]),
         "tremolo-sweep" => cmd_tremolo_sweep(&args[2..]),
         "render" => cmd_render(&args[2..]),
-        "bark-audit" => cmd_bark_audit(&args[2..]),
+        // "bark-audit" kept as an alias: it measures H2/H1, not "bark" (an undefined percept).
+        "h2-audit" | "bark-audit" => cmd_h2_audit(&args[2..]),
         "intermod-audit" => cmd_intermod_audit(&args[2..]),
         "alias-audit" => cmd_alias_audit(&args[2..]),
         "pump-sweep" => cmd_pump_sweep(&args[2..]),
@@ -72,7 +73,7 @@ fn print_usage() {
     eprintln!("  harmonics       Measure harmonic distortion (H2/H3)");
     eprintln!("  tremolo-sweep   Gain vs LDR resistance sweep");
     eprintln!("  render          Reed -> preamp -> WAV output");
-    eprintln!("  bark-audit      Measure H2/H1 at each signal chain stage");
+    eprintln!("  h2-audit        Measure H2/H1 at each signal chain stage (alias: bark-audit)");
     eprintln!("  intermod-audit  Detect inharmonic intermodulation beating risk");
     eprintln!("  alias-audit     Detect power-amp click-band aliasing (H6-H11 plateau + HF hash)");
     eprintln!("  pump-sweep      Steady-state shadow-preamp pump vs R_ldr (CSV)");
@@ -613,13 +614,14 @@ fn cmd_render(args: &[String]) {
 
 // ─── Bark audit ─────────────────────────────────────────────────────────────
 
-/// Measure H2/H1 at every stage of the signal chain to diagnose bark deficiency.
+/// Measure H2/H1 at every stage of the signal chain. (Formerly "bark audit"; which harmonics
+/// carry the perceived bark has not been established, so the name says what is measured.)
 ///
 /// Stages measured:
 ///   1. Raw reed (modal synthesis)
 ///   2. After pickup (time-varying RC — coupled NL + HPF)
 ///   3. After preamp (oversampled)
-fn cmd_bark_audit(args: &[String]) {
+fn cmd_h2_audit(args: &[String]) {
     use openwurli_dsp::pickup::Pickup;
 
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,60,72,84");
@@ -628,7 +630,7 @@ fn cmd_bark_audit(args: &[String]) {
     let duration = 0.5; // seconds
     let measure_start = 0.25; // start measuring at 250ms (steady state)
 
-    println!("=== BARK AUDIT: H2/H1 at each signal chain stage ===");
+    println!("=== H2 AUDIT: H2/H1 at each signal chain stage ===");
     println!();
     println!(
         "{:>6} {:>4}  {:>10} {:>10} {:>10} {:>10} {:>10}",
@@ -2218,26 +2220,26 @@ fn cmd_centroid_track(args: &[String]) {
 /// Measure onset overshoot per calibration spec (Section 10.1):
 ///   overshoot = 20*log10(peak_0_10ms / rms_100_200ms)
 ///
-/// Also reports "bark decay" — the perceptual brightness contrast over
+/// Also reports the early/late ratio — the contrast over
 /// the full note that was measured as "16.7 dB overshoot":
-///   bark_decay = 20*log10(peak_0_50ms / rms_1000_1500ms)
+///   early_late = 20*log10(peak_0_50ms / rms_1000_1500ms)
 ///
 /// These are fundamentally different metrics:
 /// - Overshoot measures modal superposition energy at onset (milliseconds)
-/// - Bark decay measures pickup nonlinearity fading with reed decay (seconds)
+/// - Early/late measures level and nonlinearity fading with reed decay (seconds)
 fn cmd_overshoot(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,60,72,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "64,127");
 
-    let duration = 2.0; // Need at least 1.5s for bark decay window
+    let duration = 2.0; // Need at least 1.5s for the early/late window
 
     println!("=== OVERSHOOT AUDIT ===");
     println!("Spec metric:  0-10ms peak vs 100-200ms RMS (calibration-and-evaluation.md §10.1)");
-    println!("Bark decay:   0-50ms peak vs 1000-1500ms RMS (perceptual bark fade, NOT overshoot)");
+    println!("Early/late:   0-50ms peak vs 1000-1500ms RMS (decay contrast, NOT overshoot)");
     println!();
     println!(
         "{:>6} {:>4}  {:>8} {:>8} {:>8}  {:>10} {:>10}",
-        "Note", "Vel", "Pk(0-10)", "RMS(sus)", "RMS(late)", "Overshoot", "BarkDecay"
+        "Note", "Vel", "Pk(0-10)", "RMS(sus)", "RMS(late)", "Overshoot", "EarlyLate"
     );
     println!(
         "{:>6} {:>4}  {:>8} {:>8} {:>8}  {:>10} {:>10}",
@@ -2264,7 +2266,7 @@ fn cmd_overshoot(args: &[String]) {
                 .map(|x| x.abs())
                 .fold(0.0f64, f64::max);
 
-            // Peak in 0-50ms (wider attack window for bark decay metric)
+            // Peak in 0-50ms (wider attack window for the early/late metric)
             let peak_0_50 = output[..t_50ms.min(output.len())]
                 .iter()
                 .map(|x| x.abs())
@@ -2273,7 +2275,7 @@ fn cmd_overshoot(args: &[String]) {
             // RMS in 100-200ms (early sustain — spec reference)
             let rms_100_200 = rms_window(&output, t_100ms, t_200ms);
 
-            // RMS in 1000-1500ms (late sustain — bark decay reference)
+            // RMS in 1000-1500ms (late sustain — early/late reference)
             let rms_1000_1500 = rms_window(&output, t_1000ms, t_1500ms);
 
             // Overshoot (calibration spec §10.1)
@@ -2283,8 +2285,8 @@ fn cmd_overshoot(args: &[String]) {
                 f64::NAN
             };
 
-            // Bark decay (what was measured — NOT the same as overshoot)
-            let bark_decay_db = if rms_1000_1500 > 1e-15 {
+            // Early/late ratio (what was measured — NOT the same as overshoot)
+            let early_late_db = if rms_1000_1500 > 1e-15 {
                 20.0 * (peak_0_50 / rms_1000_1500).log10()
             } else {
                 f64::NAN
@@ -2297,7 +2299,7 @@ fn cmd_overshoot(args: &[String]) {
             let note_name = midi_note_name(note);
             println!(
                 "{:>6} {:>4}  {:>7.1} {:>7.1} {:>7.1}  {:>9.1} {:>9.1}",
-                note_name, vel_byte, pk_dbfs, rms1_dbfs, rms2_dbfs, overshoot_db, bark_decay_db,
+                note_name, vel_byte, pk_dbfs, rms1_dbfs, rms2_dbfs, overshoot_db, early_late_db,
             );
         }
         println!();
@@ -2306,7 +2308,7 @@ fn cmd_overshoot(args: &[String]) {
     println!("Targets (from calibration-and-evaluation.md §4.1 & §10.1):");
     println!("  Overshoot at mf (v64):   2-5 dB   (from modal superposition)");
     println!("  Overshoot at ff (v127):  5-10 dB  (from modal superposition)");
-    println!("  Bark decay:              no target (physics-correct bark fade, not a defect)");
+    println!("  Early/late:              no target (physics-correct decay contrast, not a defect)");
 }
 
 fn rms_window(signal: &[f64], start: usize, end: usize) -> f64 {

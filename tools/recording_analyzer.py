@@ -577,7 +577,7 @@ def print_report(results, stats, source_file):
                 print(f"    {k}: {v['mean']:>6.1f} +/- {v['std']:.1f} (n={v['n']})")
 
         if stats.get("h2_h1_ratio"):
-            print(f"\n  H2/H1 ratio by octave (bark indicator):")
+            print(f"\n  H2/H1 ratio by octave :")
             for k, v in stats["h2_h1_ratio"].items():
                 pct = v['mean'] * 100
                 print(f"    {k}: {pct:>5.1f}% +/- {v['std']*100:.1f}% (n={v['n']})")

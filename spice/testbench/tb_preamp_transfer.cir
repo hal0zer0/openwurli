@@ -1,7 +1,7 @@
 * Wurlitzer 200A Preamp — Static Transfer Curve Testbench
 * ========================================================
 * Slow ramp input to map Vin→Vout transfer curve.
-* Reveals asymmetric clipping behavior (the "bark" source).
+* Reveals asymmetric clipping behavior (a harmonic source).
 *
 * Stage 1 clipping headroom: ~1.86V toward saturation vs ~10.9V toward cutoff
 * → Asymmetric soft-clip, H2 > H3

@@ -93,8 +93,8 @@ The model targets the most typical setup of one configuration:
 
 ## 5. Checks this law must pass
 
-- **Bark vs velocity:** real 200As bark more at ff than pp. The law's H2/H1 and H3/H1 trajectories
-  over velocity (C2, C4, C6) must rise toward ff. A law that barks most at mf is a falsification of
+- **Harmonics vs velocity:** real 200As bark more at ff than pp. The law's H2/H1 and H3/H1 trajectories
+  over velocity (C2, C4, C6) must rise toward ff. A law whose harmonics peak at mf is a falsification of
   its parameters, not a voicing choice.
 - **Held-out reference:** the OldBassMan recordings (13 notes, one velocity, recorded through a
   transformer and tube preamp that add their own H2) are used for trends only — register slope,
