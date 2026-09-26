@@ -6,8 +6,10 @@ Criterion 1 (decay, graded): the fundamental in 100 ms Hann windows starting 0.1
     dB/s; the same code on the recording and on the model (full chain, v80, MLP off, speaker
     passthrough). Pass per note: within +-30 % of the recording's rate or +-1.5 dB/s, whichever is
     larger. A note is dropped (reported) if its recorded fundamental falls below the floor + 6 dB
-    before 1.5 s (floor = median DTFT level at half-integer multiples of f0 in the same window). The
-    Sensor Array's decay mode is run beside it on both sides and reported, not graded.
+    before 1.5 s (floor = median DTFT level at half-integer multiples of f0 in the same window).
+    The registered Sensor decay-mode cross-check cannot run on this span: at its +-4 Hz band a fit
+    needs >= 4.5 s, and over the whole tail it refuses the recordings' fundamentals (two poles
+    ~0.1 Hz apart: not one exponential). Reported as such; nothing graded depends on it.
 Criterion 7 (report-only): at true 38 and 42, v80, Sensor with the fundamental pinned, FFT 16384,
     600 ms from 50 ms after onset; model H2/H1 and H3/H1 against the recording's (a floor 6 dB below
     the recording's is the registered reading; chain EQ unbounded, so no verdict).
@@ -55,22 +57,6 @@ def decay_rate(x, sr, onset, f_nom):
     return float(np.polyfit(TIMES, lv, 1)[0]), dropped
 
 
-def sensor_decay(an, path, onset_s, f0):
-    out = subprocess.run([an, path, "--mode", "decay", "--skip-ms", f"{(onset_s + 0.1) * 1000:.0f}",
-                          "--json"], capture_output=True, text=True)
-    try:
-        d = json.loads(out.stdout)
-    except json.JSONDecodeError:
-        return None
-    parts = d.get("partials") or d.get("decay", {}).get("partials") or []
-    best = None
-    for p in parts:
-        f, t60 = p.get("frequency_hz") or p.get("hz"), p.get("t60_s")
-        if f and t60 and abs(f / f0 - 1) < 0.03:
-            best = -60.0 / t60
-    return best
-
-
 def sensor_ratios(an, path, onset_s, f0):
     d = json.loads(subprocess.run([an, path, "--skip-ms", f"{(onset_s + 0.05) * 1000:.0f}",
                                    "--window-ms", "600", "--fft", "16384", "--fundamental",
@@ -97,7 +83,7 @@ def main():
                                                                          "harmonics.json")))}
     tmp = tempfile.mkdtemp(prefix="decay_")
     res, npass, ngraded = {}, 0, 0
-    print("true  rec dB/s  model dB/s  band        verdict   | Sensor decay rec / model")
+    print("true  rec dB/s  model dB/s  band        verdict")
     for n in NOTES:
         f0 = 440 * 2 ** ((n - 69) / 12)
         x, sr = SW.read_wav(ref[n]["source_file"])
@@ -111,12 +97,8 @@ def main():
         if not dropped:
             ngraded += 1
             npass += v == "PASS"
-        sd = (sensor_decay(a.sensor, ref[n]["source_file"], onset / sr, f0),
-              sensor_decay(a.sensor, mp, 0.0, f0))
-        fmt = lambda z: "  --" if z is None else f"{z:+5.1f}"  # noqa: E731
-        print(f"{n:4d}  {rr:+7.2f}   {mr:+7.2f}    [{rr - tol:+.1f},{rr + tol:+.1f}]  {v:8s}  | "
-              f"{fmt(sd[0])} / {fmt(sd[1])}")
-        res[n] = {"rec": rr, "model": mr, "tol": tol, "verdict": v, "sensor_decay": sd}
+        print(f"{n:4d}  {rr:+7.2f}   {mr:+7.2f}    [{rr - tol:+.1f},{rr + tol:+.1f}]  {v}")
+        res[n] = {"rec": rr, "model": mr, "tol": tol, "verdict": v}
     print(f"CRITERION 1: {npass}/{ngraded} pass")
     print("\nCriterion 7 (report-only): true  rec H2/H1 H3/H1 | model H2/H1 H3/H1")
     for n in (38, 42):
