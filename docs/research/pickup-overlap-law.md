@@ -614,3 +614,63 @@ vibrato rate).
 6. *Housekeeping:* analysis windows are integer multiples of the ~9.4 Hz modulation period (e.g.
    0.213 s) or every tolerance widens by ±0.4 dB; windows end ≥ 0.3 s before truncation; each file is
    checked for a fade-out; the lowest notes use the analyser's fundamental pinned to the true pitch.
+
+**Registered 2026-09-26 (evening), before extraction: steepness mechanics.** No numeric tolerance had
+ever been registered for the steepness test; the earlier "the 140B gaps pass" readings were informal,
+so the side gap's consistency support is PENDING until this runs, and the side-gap re-ruling rests on
+the 140B measurement alone. Recording side: Sensor, true fundamental pinned, FFT 16384 below ~100 Hz
+else 8192, 600 ms windows starting 0.7 s and 1.3 s after onset. Model side: a pure exponentially
+decaying swing through the section's static law and the pickup's high-pass, the same Sensor
+settings on the synthesised audio. Swelling notes (38, 50) reuse the swell check's (A0, r) solution
+set; non-swelling notes (62, 78) identify (A0, r) from ΔH1 and Δ(H2/H1) over 0.7→1.3 s. Every
+solution is kept; disagreement is INDETERMINATE. Predicted: Δ(H3/H1) over 0.7→1.3 s at every band
+end; pass = the recording inside [min, max] ± 2 dB. A predicted H3/H1 below −35 dB re H1 at either
+window (middle/treble) is table-limited: reported, not graded. Note 78 without its r43_64 band-end
+tables is "partial band" and not graded. Consistency check only; it cannot select g_s. Tool:
+`tools/steepness_check.py`.
+
+**Registered 2026-09-26 (evening), before extraction: multi-velocity identification mechanics.**
+Two collisions with item 5 above: the full chain pins the reed decay to the model's (suspect) law,
+and band-end tables are not compiled into the engine. Resolution: (1) Sensor windows 0.639 s (3 ×
+0.213 s; 0.426 s yields no FFT-8192 frame at 22.05 kHz), hop 0.213 s, from 0.2 s after onset to
+≥ 0.3 s before the usable end (fade-out detected per file); the last window is the last where H1,
+H2 and H3 are all reported; fewer than 3 usable windows = TOO SHORT. Spans are therefore
+layer-dependent: each result carries its span, and Δ values are never compared across layers with
+different spans without saying so. (2) Unknowns per layer (A0, r) as in the swell and steepness
+checks; r is an EFFECTIVE decay over that file's span (a fit statistic, not the mode-1 constant).
+A layer swells if its H1 peak is not in the first window and is ≥ 0.5 dB above it. Swelling
+layers: identify from swell size + peak time, predict Δ(H2/H1) and Δ(H3/H1); others: identify
+from ΔH1 and Δ(H2/H1), predict Δ(H3/H1); ±2 dB; mixed = INDETERMINATE. (3) Search on the law-only
+path, then CONFIRM each accepted layer through the full chain at the identified (A0, r)
+(`preamp-bench render --decay-db-s`, analysis-only: mode 1 at a fixed decay, drag off); a layer
+that fails confirmation is CHAIN-REJECTED and reported apart from identification failures.
+(4) Band robustness of the span ratio on the law-only path. (5) r is reported for the decay-law
+rebuild with the "effective" label. Early-window misses systematic across layers point at mode 2:
+the sign pattern is reported. Every prediction uses its own file's span. The vendor files carry a
+non-standard (legal) fmt chunk the analyser refused; they are analysed as a byte-identical re-wrap
+(PCM data hashes recorded). **Pre-stated:** if the measured span (admitted layers, band-robust)
+implies bass ff swings that criterion 6 rejects, the measurement wins: criterion 6's magnitude is
+re-set from the measured ff swell, and the old +11.7 dB pick stays falsified only if it exceeds what
+the measured span produces. Criterion 6's binding fraction is reported beside the span.
+
+**Results so far (CONDITIONAL: the h/2 table gate has not run on the four-range tables).**
+- *Edge-regime test re-derived.* Its −22 dB H2 floor had no source and was set on the patent gap;
+  the 140B gaps give −21.6..−26.0 dB at 0.2 mm. The test now checks the sourced claims
+  (fundamental dominant, H3 well below H2, H2/H1 growing with swing).
+- *GCV residual.* Up to ~1 % of range, but concentrated past the far face (u > t_r + t_p + 0.3 mm,
+  outside every reach window), where the per-point solver's mesh jitter sits at the same u in
+  different tables (residual lag-1 autocorrelation −0.67: noise removed). Inside the reach windows:
+  rms ≤ 7.5e-4 of range. In r21_42 the global GCV λ is ~150× the bass λ and its residual is
+  positively correlated (+0.72: real curvature smoothed). Choosing λ by GCV on the reach window
+  instead moves the operating-range harmonics by ≤ 0.47 dB (above −30 dB) and ≤ −51 dB linear:
+  inside the gate thresholds, though at small swings in r21_42 smoothing alone uses most of the
+  0.5 dB budget. The §6 figure "≤ 3.2e-4" belongs to the earlier tables. Whether the residual is
+  within the solver's own error is read against the h/2 gate solves.
+- *Dynamic edges re-bisected* (`tools/swing_edges.py`; criterion 2 threshold measured at the reed
+  tap, agreeing with the computed value to ~0.03 dB; criterion 6 at the pickup tap, agreeing with
+  the full chain to ~0.1 dB): bass 2.71–3.26 mm, middle 2.13–2.48 mm, treble ≥ 2.89 mm (search
+  cap). Criterion 6 binds at every knot up to MIDI 72; criterion 2 binds nowhere. Applying the
+  6 dB judgement (registered at C2/C3) to middle knots follows the per-knot edge rule.
+- *Prior reconditioned:* bass picks 1.75–2.08 mm (survival 47–77 %), middle 0.76–1.10 mm
+  (88–100 %), C4 1.08 mm, treble unchanged; no note under 10 %. Level anchor re-held (C4 v100 at
+  the preamp tap −55.644 dBFS): `target_db` −30.06 → −29.41.

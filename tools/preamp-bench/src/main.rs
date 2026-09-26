@@ -475,6 +475,10 @@ fn cmd_render(args: &[String]) {
         if let Some(swing) = swing_override {
             voice.set_swing_mm(swing);
         }
+        if has_flag(args, "--decay-db-s") {
+            // Analysis-only: mode 1 at a fixed decay, air drag off (KW identification check).
+            voice.override_mode1_decay(parse_flag(args, "--decay-db-s", 3.0));
+        }
         if no_attack_noise {
             voice.disable_attack_noise();
         }
@@ -659,6 +663,11 @@ fn cmd_reed_tap(args: &[String]) {
         if has_flag(args, "--swing-mm") {
             swing = parse_flag(args, "--swing-mm", swing);
             reed.set_air_drag(drag, swing, sr);
+        }
+        if has_flag(args, "--decay-db-s") {
+            // Analysis-only: mode 1 at a fixed decay, air drag off (as `render --decay-db-s`).
+            reed.set_air_drag(0.0, 0.0, sr);
+            reed.set_mode_decay_db(0, parse_flag(args, "--decay-db-s", 3.0), sr);
         }
         let mut buf = vec![0.0f64; n];
         reed.render(&mut buf);
