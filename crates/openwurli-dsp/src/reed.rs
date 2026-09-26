@@ -195,12 +195,6 @@ impl ModalReed {
         self.drag_k = beta_nepers * self.modes[0].amplitude.abs() * swing_mm / sample_rate;
     }
 
-    /// Replace one mode's natural decay rate (dB/s). Analysis-only: lets a measurement tool drive
-    /// the reed at a decay identified from a recording instead of the tabulated one.
-    pub fn set_mode_decay_db(&mut self, mode: usize, decay_db_per_s: f64, sample_rate: f64) {
-        self.modes[mode].decay_mult = (-decay_db_per_s / 8.686 / sample_rate).exp();
-    }
-
     /// Start the damper (called on note_off).
     ///
     /// Three-phase progressive model: felt progressively contacts the reed,
@@ -414,23 +408,6 @@ mod tests {
             (crossings as f64 - 440.0).abs() < 3.0,
             "Average frequency should be ~440 Hz, got {crossings} crossings"
         );
-    }
-
-    #[test]
-    fn test_set_mode_decay_db_sets_the_rate() {
-        // Mode 1 only, no drag: after overriding to 20 dB/s the envelope falls 20 dB in 1 s.
-        let sr = 44100.0;
-        let ratios = [1.0, 6.3, 17.6, 34.4, 56.9, 85.0, 118.7];
-        let mut amps = [0.0f64; NUM_MODES];
-        amps[0] = 1.0;
-        let decays = [3.0f64; NUM_MODES];
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
-        reed.set_mode_decay_db(0, 20.0, sr);
-        let mut buf = vec![0.0f64; (1.1 * sr) as usize];
-        reed.render(&mut buf);
-        let peak = |a: usize| buf[a..a + 441].iter().fold(0.0f64, |m, x| m.max(x.abs()));
-        let drop_db = 20.0 * (peak(2205) / peak(2205 + sr as usize)).log10();
-        assert!((drop_db - 20.0).abs() < 0.3, "drop {drop_db:.2} dB");
     }
 
     #[test]

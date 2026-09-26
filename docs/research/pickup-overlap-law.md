@@ -674,3 +674,17 @@ the measured span produces. Criterion 6's binding fraction is reported beside th
 - *Prior reconditioned:* bass picks 1.75–2.08 mm (survival 47–77 %), middle 0.76–1.10 mm
   (88–100 %), C4 1.08 mm, treble unchanged; no note under 10 %. Level anchor re-held (C4 v100 at
   the preamp tap −55.644 dBFS): `target_db` −30.06 → −29.41.
+
+**Operator ruling on the multi-velocity set (2026-09-26, supersedes the identification above).**
+The set is not a calibration target and not a sound to match: only within-note spectral shape
+against mapped velocity is used, read as one hot-voiced, peak-normalised instrument; no levels, no
+decays, no fitting to its timbre. The per-layer swing identification (which fitted swing, decay and
+a per-unit rest offset to decay trajectories, and whose span was to re-set criterion 6) is stood
+down before any unseen note was extracted; criterion 6 stays as registered. Two facts from the
+audit carry forward: every file is peak-normalised, and the filename velocity codes do not match the
+key map (the vendor re-slotted takes). Observation kept from the smoke run (not a criterion): at C4
+the softest zone is odd-dominant (H3 −28, H2 −45 dBc at 0.2 s) and its H2 falls faster than A²
+while H3 falls as A³, the small-signal signature of a rest point near the law's inflection in one
+hot unit. The inflection's location is not converged between the raw and smoothed tables (smoothed:
+one C″ zero per section, u 0.084–0.137 mm; raw: dozens of ripple zeros); an h 0.00125 re-solve of
+u −0.4..+0.6 mm per section is the derivative-convergence check.

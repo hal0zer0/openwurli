@@ -189,15 +189,6 @@ impl Voice {
             .set_air_drag(self.air_drag_db_per_mm, swing_mm, self.sample_rate);
     }
 
-    /// Analysis-only: run mode 1 at a fixed exponential decay (dB/s) with air drag off, so a
-    /// measurement tool can drive the full chain at a decay identified from a recording.
-    pub fn override_mode1_decay(&mut self, decay_db_per_s: f64) {
-        self.air_drag_db_per_mm = 0.0;
-        self.reed.set_air_drag(0.0, 0.0, self.sample_rate);
-        self.reed
-            .set_mode_decay_db(0, decay_db_per_s, self.sample_rate);
-    }
-
     /// Disable attack noise (for A/B testing of transient artifacts).
     pub fn disable_attack_noise(&mut self) {
         self.noise.disable();
