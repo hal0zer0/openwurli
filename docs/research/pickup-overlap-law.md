@@ -544,3 +544,19 @@ changing it is a method change that is re-registered first.
   at a given swing must match the describing-function map at that A, modulo the RC tilt.
 - The reed tap exposes modal amplitudes (mode 1, mode 2), not only displacement. Every tap renders at
   a stated seed and velocity, recorded with the result.
+- *Physics additions (2026-09-26).* A linear, time-invariant stage multiplies each harmonic by a
+  fixed complex gain. So self-normalised TIME-COURSE metrics (a harmonic's decay, swell size and
+  timing, each relative to itself) are identical at every tap downstream of the last nonlinearity,
+  while RATIO metrics (H2/H1, spectral balance) change at every linear stage. The recording chain
+  gives every harmonic an unknown fixed gain, so recording criteria are preferably built on
+  self-normalised time courses (the bass swell is chain-invariant; H2/H1 is not). Ratio criteria
+  against the recordings stay at the full chain and carry the unknown chain EQ as an open error
+  term. Planned taps and tests: a reed tap exposing per-mode displacement at the finger region, the
+  total swing, an operating-point trace (fraction of each cycle past full overlap and past the far
+  face) and instantaneous frequency; a raw pickup tap before the RC network as well as the node
+  after it; polyphonic ff bass chords (all reeds share one plate node, so chords drive the preamp
+  harder than any single note); volume swept in the stage characterisation (the real amp clips at
+  high volume: 60 mV in for 4.75 V out); the factory-bias crossover added to the behavioural amp
+  before low-level results are read; a Sensor-measured pickup atlas (amplitude sweep per section
+  and gap), a decaying-sweep stimulus for the swell check, two-tone attack intermod, and Emitter log
+  sweeps per linear stage.
