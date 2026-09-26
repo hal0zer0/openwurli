@@ -267,3 +267,9 @@ belongs to the excitation revision. The swing table is not moved to buy decay.
 4. *Re-derive criterion 2's threshold* from the reed decay rates in force once the excitation
    revision changes them. Where the reed decays too slowly, the "half the reed's decay" bar is
    too lenient by the same factor.
+5. *Expected treble reading after air drag (registered before the change):* the treble already
+   falls faster early than the recordings, and drag adds ~5–6 dB/s at MIDI 78–96 at the central ff
+   swing (less at v80), so the treble gap widens. That points at the linear decay rates
+   (`0.005 f^1.22`, fitted through the old expansive law, which inflated apparent output decay),
+   recorded top-down debt. It is not a drag regression, and the drag coefficient is not the thing
+   to cut.
