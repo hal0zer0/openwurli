@@ -486,3 +486,24 @@ at that small swing); patent gap −57.0. The 140B gaps pass; the patent gap fai
 The earlier "21–42 misses by 15 dB" came from the octave error. At true D2 (38) and at MIDI 78 the
 test is undefined as registered: the recording's fundamental rises over 0.7→1.3 s at D2, and its
 H3 rises at 78. Reported, not redefined.
+
+**Registered before any fine-table run (2026-09-26): the no-fit swell check.** Hypothesis: the
+real bass swell is the transducer operating past its fundamental peak as the swing decays through
+it. Per bass note (true MIDI 38, 42, 46, 50):
+- *Identify:* solve for the initial swing A0 and the reed's decay rate from the recorded
+  fundamental swell's SIZE and PEAK TIME only (two observables, two unknowns, nothing else
+  fitted). If the solution is not unique, report every solution; a cell where solutions disagree
+  on a prediction is INDETERMINATE, not a pass.
+- *Predict, out of sample:* (ii) the H2 change and (iii) the RMS change at the recording's 2.05 s
+  point, with the same windows and analyser settings as the recording values (D2: H2 −3.3, RMS
+  −5.4; F#2: −22.3, −7.6; A#2: −13.2, −9.4; D3: −16.7, −10.6 dB).
+- *Band:* compute each prediction at the input band ends (bass finger thickness band, side gap
+  ±0.05 mm, rest offset 0.07–0.10 mm), re-solving A0 and the decay at each end. A cell passes if
+  the recording lies inside [min, max] of the predictions, widened by ±2 dB for H2 and ±1 dB for
+  RMS.
+- *Verdict:* the transducer explanation is SUPPORTED if at least 6 of the 8 cells pass AND the
+  misses show no common sign (all model-high or all model-low). A systematic sign means a missing
+  mechanism even if the count passes. All 8 are reported either way.
+- *Use:* if supported, the identified A0 and decay are measurement-derived inputs at the
+  recording's own dynamic, the first swing in this revision with no velocity curve in its path. If
+  not supported, nothing is calibrated from the swell.
