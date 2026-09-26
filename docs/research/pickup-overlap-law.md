@@ -519,3 +519,28 @@ from a section read before its window passes are conditional. If the h/2 windows
 jitter ratio, the tool needs fixing (a fixed background mesh with u stepped in whole cells), not a
 finer grid. The steepness check is unchanged on the smooth tables: true D3 −12.5 dB (recording
 −11.6), true D4 −37.1 dB (recording −34.4).
+
+**Measurement taps (registered 2026-09-26, before any measurement at a new tap).** Principle: measure
+each claim at the tap where its source speaks; the tap is part of the criterion's definition, and
+changing it is a method change that is re-registered first.
+- Recording comparisons (criteria 1, 7, steepness, swell check): at the tap matching the recording
+  (full chain). Caveat on every one: the recording chain beyond our full-chain tap (transformer and
+  tube) is unmodelled.
+- Criterion 6 (Andersen): at the PICKUP tap, since his text concerns the pickup's capacitance;
+  the full-chain value is reported beside it. A linear chain cannot change H1's time envelope, so
+  they should agree; a disagreement is a finding about the chain.
+- Criterion 2 (ff falloff): the verdict stays at the full chain (a heard property); its threshold
+  ("half the reed's mode-1 decay") is MEASURED at a reed-only tap, with the computed value (decay
+  formula + drag) reported beside it. A difference is a finding about the implementation.
+- The table gate: no tap (a static-law property).
+- Every registered check reports two values: its registered tap and the pickup tap. Once per build,
+  a Sensor/Emitter characterisation of each stage (reed → pickup → preamp → amp → speaker):
+  small-signal response and level-dependent distortion at 3–4 levels including real ff signal
+  levels.
+- Stimuli: (1) a pickup describing-function map (the law alone, clean sinusoidal swing, amplitude
+  swept at fixed frequency, per section and band end; H1..H6 against A); (2) check 2a: the swell
+  check driven by a pure exponentially decaying swing through the law alone (as the committed tool
+  does), then confirmed on the full render, same tolerances; (3) a known-answer gate: a full render
+  at a given swing must match the describing-function map at that A, modulo the RC tilt.
+- The reed tap exposes modal amplitudes (mode 1, mode 2), not only displacement. Every tap renders at
+  a stated seed and velocity, recorded with the result.
