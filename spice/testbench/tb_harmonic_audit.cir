@@ -39,7 +39,7 @@
 * The pickup's capacitance follows the reed's overlap with the finger
 * band (overlap law, 2026-09-25); reed_disp is the swing at the pickup
 * in mm. The source is one-sided, so even harmonics dominate. We measure
-* the harmonics at 0.05, 0.10, 0.20 and 0.45 mm (plugin C4 ff ~0.45 mm).
+* the harmonics at 0.05, 0.10, 0.20 and 0.45 mm (fixed test swings; plugin C4 ff is 1.19 mm, provisional).
 
 * Pickup instance (plate is an AC-only node; V_pol is internal)
 Xpickup  plate  reed_disp  0  wurli_pickup sec=2 sign=-1

@@ -133,14 +133,12 @@ The model targets the most typical setup of one configuration:
 
 ## 7. What this revision deliberately leaves alone
 
-Only the pickup law changes. The amplitude path is shipped as it was — per-note swing =
-`pickup_displacement_scale × PICKUP_MM_PER_DS` — and its recording-fitted pieces (the compliance
-exponent, the velocity exponent, reed blank thicknesses) are recorded as top-down debt for the
-excitation revision (per-note hammer–felt contact integration). One exception: the DS upper clamp is
-removed, because it existed only to keep `1/(1−y)` away from its singularity. Consequence: bass ff
-swings (~1.6 mm at C2) reach the finger's far face, beyond the range the convergence gate has
-checked — bass ff harmonics mean nothing until the swing scale is calibrated (a scope reading
-of a real 200A, or the excitation revision).
+The revision first shipped the law alone, keeping the recording-fitted amplitude path
+(`DS_AT_C4 × compliance^0.75`, anchored at C4 ff ≈ 0.45 mm). The ear test showed that anchor was
+load-bearing (§8), so the per-note ff swing is now a provisional bottom-up table. What stays
+recording-fitted, and belongs to the excitation revision (per-note hammer–felt contact
+integration): the velocity curve (`velocity_scurve`, `velocity_exponent`) and the reed blank
+thicknesses.
 
 Second consequence: **less velocity span.** The overlap law is linear in swing over the operating
 range (fundamental ∝ A^1.00±0.06 up to about 0.45 mm in all three sections), while `1/(1−y)`
@@ -164,3 +162,61 @@ measured for these pads), contact time shortens with hammer velocity. Near Miess
 velocity range "should" have is a controller convention. Physics fixes level against hammer
 velocity, so the excitation revision maps MIDI velocity to physical hammer velocity once and lets
 the span emerge.
+
+## 8. The swing is load-bearing: provisional bottom-up swing (2026-09-26)
+
+**Ear test.** With the law in and the old anchor (C4 ff ≈ 0.45 mm), the core waveform read as
+more Wurlitzer-like than any earlier build, but the whole instrument sounded muffled. Measured: not
+a filter (energy above 1 kHz rose in every band; onsets were not duller). The odd harmonics had
+collapsed in the middle and treble: at C4 v100, H2 −7.3 dB and H3 −42.6 dB (v0.8.0: −15.0). An
+ideal half-wave-rectified sine gives H2 −7.4 dB and no odd harmonics at all.
+
+**Mechanism.** With the reed resting just outside the band, the law is a biased half-wave
+rectifier. Odd harmonics come from only two places: the conduction angle departing from 180°
+(which scales with g0/A), and the plateau once the reed reaches full overlap (~0.6 mm in the
+middle section). No setting of g0 or swing inside the old guesses restored H3. Averaging effects
+(bent or tilted fingers, mode shape along the overlap) only smooth the law. Lateral reed motion
+contributes nothing at 3f (its mode sits near 4.7 f1, and the side-gap capacitance is even in the
+lateral offset). Wurlitzer's own comb-pickup patent (Andersen, US 2,974,555, filed 1955) states
+the same physics: a reed swinging through the plate gives capacitance peaks twice per cycle,
+one-sided coupling gives the fundamental, and the timbre changes as the swing decays across the
+band.
+
+**Provisional swing.** `tables::pickup_swing_mm` is a per-note table from a bottom-up
+hammer-impact model (see the `PROVISIONAL_FF_SWING_MM` doc comment for the model and inputs). The
+ff hammer speed comes from the service manual's action dimensions (blow distance 27.4 mm, key dip
+9.5 mm). The other inputs are guess-grade bands, and the value is picked by a rule fixed before
+any render was heard: the geometric centre of each input band. Central values run from A1 3.26 mm
+through C4 1.19 mm to C7 0.22 mm, with p10/p90 corners carried alongside. An ear-test conclusion
+counts only if it holds at both corners. The same hammer inputs are assumed for every note; that
+is an assumption, since the patents describe graded coverings. Bench measurements (a weighed
+hammer assembly, key speed) replace the table. The level anchor (C4 v100 at the preamp input) is
+unchanged: the swing changes timbre, not the level evidence.
+
+**Convergence for the new swings.** The bass table was re-solved whole over u −4.5..+4.5 mm, per
+point, at h 0.005 and 0.0025. One solve path per table: the two paths differ by ~0.05 %, and a
+splice would show in C″. The gate is read as confirmed on 2026-09-26: harmonics above −30 dB re H1
+agree to 0.5 dB, and harmonics at or below −30 dB differ by ≤ −45 dB re H1 (linear). As first
+worded, the linear bound also bit on fold-through harmonics louder than H1, where it demands
+~0.05 dB. Reach = central ff swing × ~1.19 (per-note offset and mode sums):
+
+| Section | Reach | h 0.005 vs 0.0025 | Verdict |
+|---|---|---|---|
+| bass | 3.86 mm | 0.44 dB / −54.9 dB | pass (3 misses at A ≥ 3.88 mm, H6 ~−25 dB) |
+| middle | 1.6 mm | 0.34 dB / −48.4 dB | pass |
+| treble | 0.85 mm | 0.59 dB near rest | pass on the SHIPPED table: its window checked directly against h 0.00125 (−73.9 dB smoothed, −62.9 dB raw) |
+
+**What is and isn't gated.** The p10/p90 band corners are not gated beyond these reaches (bass p90
+runs to 9.5 mm), so no conclusion about bass ff holds beyond "central pick only; band not checked".
+Fold-through also depends on finger thickness. Bass t_p (1.8–2.4× the thin section) and middle t_p
+(0.4–0.8 mm) are bands, and bass or C4-ff conclusions need renders at both band ends first.
+
+**First results** (full metric set, `local-docs/pickup-rev/metrics-swing-v1.json`; level
+re-anchored, `target_db` −32.53, C4 v100 at the preamp input unchanged):
+- C4 v100 H3 −18.1 dB (law with the old anchor: −42.6; v0.8.0: −15.0). The odd harmonics return.
+- C4 v127: fold-through of the 0.6 mm middle band. H2 −19.5, H3 −2.6, H4 −4.4 dB: the fundamental
+  weakens against its harmonics, the regime Andersen describes.
+- C2 ff: gross fold-through, every harmonic 1–15 dB above H1 (central pick only; band not checked).
+- Velocity span C4 v64→v110 at the pickup: 6.7 dB (v0.8.0 12.0, law-only 8.7). The plateau now
+  clips ff; the span belongs to the contact integration (§7).
+

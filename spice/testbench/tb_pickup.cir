@@ -22,8 +22,8 @@
 * REVISED 2026-09-25: overlap pickup law (docs/research/pickup-overlap-law.md).
 * reed_disp is now the reed's swing at the pickup in mm (was the gap
 * fraction y of the retired 1/(1-y) law). Middle section (A4 = reed 37),
-* band below the reed. The plugin puts C4 ff at about 0.45 mm (provisional
-* anchor). The law is cross-checked against the plugin's own tables by
+* band below the reed. The plugin puts C4 ff at 1.19 mm (provisional, bottom-up
+* table). The law is cross-checked against the plugin's own tables by
 * comparing section 4's harmonics with the static law through the network.
 *
 * Nonlinearity expectation: one-sided source (the reed enters the band

@@ -285,18 +285,6 @@ pub fn pickup_band_sign(midi: u8) -> f64 {
 /// evidence band.
 pub const PICKUP_REST_OFFSET_MM: f64 = 0.085;
 
-/// Reed swing at the pickup, in mm, per unit of `tables::pickup_displacement_scale`.
-///
-/// **PROVISIONAL — the single calibration anchor of the pickup law.** No document gives the
-/// reed's tip swing, and nothing bounds it yet except physics (a visual guess from video that it
-/// stays within a finger's thickness was withdrawn as evidence). This value puts middle C at ff
-/// (DS 0.85) at about 0.45 mm. Bass ff swings are known to be large enough that the solder faces
-/// down to clear the dampers. A measurement (reed tracking, or a scope reading of the pickup on a
-/// real 200A) or the excitation revision's hammer physics replaces it. The per-note
-/// scaling it multiplies (`pickup_displacement_scale`) is shipped unchanged and is top-down debt
-/// for the excitation revision.
-pub const PICKUP_MM_PER_DS: f64 = 0.53;
-
 pub struct Pickup {
     /// Network state: normalized plate-node voltage perturbation `w = v / SENSITIVITY`.
     w: f64,
@@ -385,8 +373,8 @@ mod tests {
     use super::*;
     use std::f64::consts::PI;
 
-    /// Middle C at ff, as the voice drives it (DS 0.85).
-    const A_C4: f64 = 0.85 * PICKUP_MM_PER_DS;
+    /// Middle C at ff, as the voice drives it (provisional swing, mm).
+    const A_C4: f64 = 1.19;
 
     fn render(midi: u8, amp: f64, freq: f64, secs: f64) -> Vec<f64> {
         let sr = 44100.0;
@@ -475,11 +463,12 @@ mod tests {
 
     #[test]
     fn test_nonlinearity_produces_h2() {
-        // At ff drive the reed enters the finger band once per cycle: a second harmonic well
-        // above the linear floor, and H3 below it (the reed is not yet near the far face).
+        // Below full overlap (C4 at 0.3 of its ff swing, ~0.36 mm) the reed only enters the
+        // finger band on one half of its swing: an edge rectifier, so a second harmonic well
+        // above the linear floor, with H3 below it.
         let sr = 44100.0;
         for freq in [880.0f64, 2000.0] {
-            let buf = render(60, 1.0, freq, 0.2);
+            let buf = render(60, 0.3, freq, 0.2);
             let signal = &buf[buf.len() * 3 / 4..];
             let h1 = dft_magnitude(signal, freq, sr);
             let h2 = dft_magnitude(signal, 2.0 * freq, sr);
@@ -491,6 +480,23 @@ mod tests {
                 h2 / h1
             );
         }
+    }
+
+    #[test]
+    fn test_full_overlap_brings_odd_harmonics() {
+        // At its ff swing (1.19 mm) a middle reed passes full overlap with the 0.6 mm fingers:
+        // the law bends at the plateau and far face, which is what produces odd harmonics. An
+        // edge rectifier alone (the law below full overlap) has almost none.
+        let sr = 44100.0;
+        let freq = 880.0;
+        let ratio = |amp: f64| {
+            let buf = render(60, amp, freq, 0.2);
+            let signal = &buf[buf.len() * 3 / 4..];
+            dft_magnitude(signal, 3.0 * freq, sr) / dft_magnitude(signal, freq, sr)
+        };
+        let (edge, full) = (ratio(0.3), ratio(1.0));
+        assert!(full > 0.1, "H3/H1 at full swing only {full:.4}");
+        assert!(full > 10.0 * edge, "H3/H1 full {full:.4} vs edge {edge:.4}");
     }
 
     #[test]

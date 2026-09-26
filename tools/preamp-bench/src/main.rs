@@ -83,7 +83,7 @@ fn print_usage() {
     eprintln!("  pump-step       Step response: settle at R_a, snap to R_b, capture pump (CSV)");
     eprintln!("  pump-sinusoid   Sinusoidal log-R modulation (tremolo-like), capture pump (CSV)");
     eprintln!("  calibrate       Measure gain chain at 5 tap points → CSV");
-    eprintln!("  sensitivity     Multi-DS grid sweep → CSV");
+    eprintln!("  sensitivity     Swing-scale sweep → CSV");
     eprintln!("  centroid-track  Spectral centroid tracking over time");
     eprintln!("  overshoot       Measure onset overshoot (spec: 0-10ms peak vs 100-200ms RMS)");
     eprintln!("  render-poly     Render multiple simultaneous notes through shared chain");
@@ -431,10 +431,21 @@ fn cmd_render(args: &[String]) {
     let no_attack_noise = has_flag(args, "--no-attack-noise");
     let no_mlp = has_flag(args, "--no-mlp");
     let normalize = has_flag(args, "--normalize");
-    let disp_scale: Option<f64> = if has_flag(args, "--displacement-scale") {
-        Some(parse_flag(args, "--displacement-scale", 0.30))
+    let swing_override: Option<f64> = if has_flag(args, "--swing-mm") {
+        Some(parse_flag(args, "--swing-mm", 1.0))
     } else {
         None
+    };
+    // Which point of the provisional swing band: central (shipping), p10, p90 (band corners).
+    let swing_pick = match parse_flag_str(args, "--swing-pick", "central") {
+        "p10" => tables::SwingPick::P10,
+        "p90" => tables::SwingPick::P90,
+        "central" => tables::SwingPick::Central,
+        other => panic!("--swing-pick must be central, p10 or p90 (got {other})"),
+    };
+    let calib = CalibrationConfig {
+        swing_pick,
+        ..CalibrationConfig::default()
     };
     let default_out = temp_default("preamp_render.wav");
     let output_path = parse_flag_str(args, "--output", &default_out);
@@ -451,9 +462,10 @@ fn cmd_render(args: &[String]) {
     let reed_output = {
         let vel_norm = velocity as f64 / 127.0;
         let noise_seed = (note as u32).wrapping_mul(2654435761);
-        let mut voice = Voice::note_on(note, vel_norm, sample_rate, noise_seed, !no_mlp);
-        if let Some(scale) = disp_scale {
-            voice.set_displacement_scale(scale);
+        let mut voice =
+            Voice::note_on_with_config(note, vel_norm, sample_rate, noise_seed, !no_mlp, &calib);
+        if let Some(swing) = swing_override {
+            voice.set_swing_mm(swing);
         }
         if no_attack_noise {
             voice.disable_attack_noise();
@@ -575,8 +587,9 @@ fn cmd_render(args: &[String]) {
     }
     println!("  Volume:    {volume:.3} (PA gain: 69x, headroom: 22V)");
     println!("  Speaker:   {speaker_char:.1}");
-    if let Some(ds) = disp_scale {
-        println!("  Disp scale: {ds:.3}");
+    println!("  Swing:     {swing_pick:?} pick (provisional)");
+    if let Some(swing) = swing_override {
+        println!("  Swing override: {swing:.3} mm");
     }
     if no_preamp {
         println!("  Preamp:    BYPASSED");
@@ -607,7 +620,7 @@ fn cmd_render(args: &[String]) {
 ///   2. After pickup (time-varying RC — coupled NL + HPF)
 ///   3. After preamp (oversampled)
 fn cmd_bark_audit(args: &[String]) {
-    use openwurli_dsp::pickup::{PICKUP_MM_PER_DS, Pickup};
+    use openwurli_dsp::pickup::Pickup;
 
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,60,72,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,100,127");
@@ -661,12 +674,11 @@ fn cmd_bark_audit(args: &[String]) {
 
             let reed_steady = &reed_buf[measure_offset..];
             let reed_peak = peak_abs(reed_steady);
-            let displacement_scale = tables::pickup_displacement_scale(note);
-            let y_peak = reed_peak * displacement_scale * PICKUP_MM_PER_DS;
+            let swing_mm = tables::pickup_swing_mm(note);
+            let y_peak = reed_peak * swing_mm;
 
             // ── Stage 2: After pickup (overlap law + RC network) ──
-            let mut pickup =
-                Pickup::new_for_note(BASE_SR, note, displacement_scale * PICKUP_MM_PER_DS);
+            let mut pickup = Pickup::new_for_note(BASE_SR, note, swing_mm);
             let mut pu_buf = reed_buf.clone();
             pickup.process(&mut pu_buf);
             let pu_steady = &pu_buf[measure_offset..];
@@ -706,7 +718,7 @@ fn cmd_bark_audit(args: &[String]) {
     // Summary
     println!("Legend:");
     println!("  Reed pk   = peak reed displacement (model units)");
-    println!("  y_peak    = reed swing at the pickup, mm (reed_pk * DS * PICKUP_MM_PER_DS)");
+    println!("  y_peak    = reed swing at the pickup, mm (reed_pk * ff swing)");
     println!(
         "  PU H2/H1  = H2/H1 after time-varying RC pickup (coupled NL + HPF at {:.0} Hz)",
         openwurli_dsp::pickup::PICKUP_FC
@@ -1187,11 +1199,8 @@ fn cmd_alias_audit(args: &[String]) {
 fn cmd_calibrate(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,40,44,48,52,56,60,64,68,72,76,80,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
-    let ds_at_c4 = parse_flag(args, "--ds-at-c4", 0.75);
-    // Upper clamp on the register-scaled DS. The in-tree default is no cap: the old
-    // 1/(1-y) law needed one to stay off its pole, the overlap law does not. Exposed as a
-    // CLI flag so sweeps can probe bass swing without rebuilds. Lower clamp stays at 0.02.
-    let ds_clamp_max = parse_flag(args, "--ds-clamp-max", f64::INFINITY);
+    // Multiplier on the provisional per-note ff swing (1.0 = the shipping pick).
+    let swing_scale = parse_flag(args, "--swing-scale", 1.0);
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let zero_trim = has_flag(args, "--zero-trim");
@@ -1200,8 +1209,7 @@ fn cmd_calibrate(args: &[String]) {
     let output_path = parse_flag_str(args, "--output", &default_out);
 
     let cfg = CalibrationConfig {
-        ds_at_c4,
-        ds_clamp: (0.02, ds_clamp_max),
+        swing_scale,
         zero_trim,
         ..CalibrationConfig::default()
     };
@@ -1222,8 +1230,8 @@ fn cmd_calibrate(args: &[String]) {
 struct CalibrateRow {
     midi: u8,
     velocity: u8,
-    ds_at_c4: f64,
-    ds_actual: f64,
+    swing_scale: f64,
+    swing_mm: f64,
     y_peak: f64,
     t2_peak_db: f64,
     t2_rms_db: f64,
@@ -1251,7 +1259,7 @@ fn run_calibrate(
     _mlp: bool,
     args: &[String],
 ) -> Vec<CalibrateRow> {
-    use openwurli_dsp::pickup::{PICKUP_MM_PER_DS, Pickup};
+    use openwurli_dsp::pickup::Pickup;
 
     let duration = 0.5;
     let measure_start = (0.100 * BASE_SR) as usize; // 100ms
@@ -1262,7 +1270,7 @@ fn run_calibrate(
     for &note in notes {
         let params = tables::note_params(note);
         let freq = params.fundamental_hz;
-        let ds_actual = tables::pickup_displacement_scale_with_config(note, cfg);
+        let swing_mm = tables::pickup_swing_mm_with_config(note, cfg);
 
         for &vel_byte in velocities {
             let velocity = vel_byte as f64 / 127.0;
@@ -1295,10 +1303,10 @@ fn run_calibrate(
             reed.render(&mut reed_buf);
 
             let reed_peak = peak_abs(&reed_buf[measure_start..measure_end]);
-            let y_peak = reed_peak * ds_actual * PICKUP_MM_PER_DS;
+            let y_peak = reed_peak * swing_mm;
 
             // ── T2: After pickup (overlap law + RC network) ──
-            let mut pickup = Pickup::new_for_note(BASE_SR, note, ds_actual * PICKUP_MM_PER_DS);
+            let mut pickup = Pickup::new_for_note(BASE_SR, note, swing_mm);
             let mut t2_buf = reed_buf.clone();
             pickup.process(&mut t2_buf);
             let t2_window = &t2_buf[measure_start..measure_end];
@@ -1354,8 +1362,8 @@ fn run_calibrate(
             rows.push(CalibrateRow {
                 midi: note,
                 velocity: vel_byte,
-                ds_at_c4: cfg.ds_at_c4,
-                ds_actual,
+                swing_scale: cfg.swing_scale,
+                swing_mm,
                 y_peak,
                 t2_peak_db: t2_pk,
                 t2_rms_db: t2_rm,
@@ -1385,7 +1393,7 @@ fn write_calibrate_csv(path: &str, rows: &[CalibrateRow]) {
     let mut f = std::fs::File::create(path).expect("Failed to create CSV");
     writeln!(
         f,
-        "midi,note_name,velocity,ds_at_c4,ds_actual,y_peak,\
+        "midi,note_name,velocity,swing_scale,swing_mm,y_peak,\
          t2_peak_db,t2_rms_db,t2_h2_h1_db,\
          t3_peak_db,t3_rms_db,\
          t4_peak_db,t4_rms_db,t4_h2_h1_db,\
@@ -1405,8 +1413,8 @@ fn write_calibrate_csv(path: &str, rows: &[CalibrateRow]) {
             r.midi,
             midi_note_name(r.midi),
             r.velocity,
-            r.ds_at_c4,
-            r.ds_actual,
+            r.swing_scale,
+            r.swing_mm,
             r.y_peak,
             r.t2_peak_db,
             r.t2_rms_db,
@@ -1430,15 +1438,11 @@ fn write_calibrate_csv(path: &str, rows: &[CalibrateRow]) {
 
 // ─── Sensitivity subcommand ────────────────────────────────────────────────
 
-/// Multi-DS grid sweep: run calibrate at each DS_AT_C4 value.
+/// Swing-scale sweep: run calibrate at each multiplier on the provisional ff swing.
 fn cmd_sensitivity(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,54,60,66,72,78,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
-    let ds_values: Vec<f64> = parse_csv_list(
-        args,
-        "--ds-range",
-        "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85",
-    );
+    let ds_values: Vec<f64> = parse_csv_list(args, "--swing-range", "0.5,0.75,1.0,1.5,2.0");
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let scale_mode_raw = parse_flag_str(args, "--scale-mode", "track");
@@ -1454,7 +1458,7 @@ fn cmd_sensitivity(args: &[String]) {
 
     let total = ds_values.len() * notes.len() * velocities.len();
     eprintln!(
-        "Sensitivity: {} DS × {} notes × {} vel = {} renders",
+        "Sensitivity: {} swing scales × {} notes × {} vel = {} renders",
         ds_values.len(),
         notes.len(),
         velocities.len(),
@@ -1465,22 +1469,22 @@ fn cmd_sensitivity(args: &[String]) {
 
     for &ds in &ds_values {
         let cfg = match scale_mode {
-            // "freeze" = output_scale at original DS=0.85, pickup at test DS.
-            // Since run_calibrate uses cfg for both, freeze just keeps original.
-            // The ds_at_c4 column reports the sweep value for plotting.
+            // "freeze" = the shipping swing; run_calibrate uses cfg for both pickup and
+            // output_scale, so freeze just keeps it. The swing_scale column reports the sweep
+            // value for plotting.
             "freeze" => CalibrationConfig {
-                ds_at_c4: 0.85,
+                swing_scale: 1.0,
                 zero_trim: false,
                 ..CalibrationConfig::default()
             },
             "zero-trim" => CalibrationConfig {
-                ds_at_c4: ds,
+                swing_scale: ds,
                 zero_trim: true,
                 ..CalibrationConfig::default()
             },
-            // "track" (default): override DS, keep trim
+            // "track" (default): override the swing scale, keep trim
             _ => CalibrationConfig {
-                ds_at_c4: ds,
+                swing_scale: ds,
                 zero_trim: false,
                 ..CalibrationConfig::default()
             },
@@ -1488,9 +1492,9 @@ fn cmd_sensitivity(args: &[String]) {
 
         let mut rows = run_calibrate(&notes, &velocities, &cfg, volume, speaker_char, mlp, args);
 
-        // Stamp the ds_at_c4 column to the sweep value for analysis
+        // Stamp the swing_scale column to the sweep value for analysis
         for r in &mut rows {
-            r.ds_at_c4 = ds;
+            r.swing_scale = ds;
         }
 
         all_rows.extend(rows);
@@ -2040,15 +2044,20 @@ fn cmd_centroid_track(args: &[String]) {
     let no_poweramp = has_flag(args, "--no-poweramp");
     let no_preamp = has_flag(args, "--no-preamp");
     let csv_path = parse_flag_str(args, "--csv", "");
-    let disp_scale: Option<f64> = if has_flag(args, "--displacement-scale") {
-        Some(parse_flag(args, "--displacement-scale", 0.30))
+    let swing_override: Option<f64> = if has_flag(args, "--swing-mm") {
+        Some(parse_flag(args, "--swing-mm", 1.0))
     } else {
         None
     };
 
     // Render full signal chain (reuse render infrastructure)
-    let reed_output =
-        Voice::render_note_with_scale(note, velocity as f64 / 127.0, duration, BASE_SR, disp_scale);
+    let reed_output = Voice::render_note_with_scale(
+        note,
+        velocity as f64 / 127.0,
+        duration,
+        BASE_SR,
+        swing_override,
+    );
 
     let n_samples = reed_output.len();
 

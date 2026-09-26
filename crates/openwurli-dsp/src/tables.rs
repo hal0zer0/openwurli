@@ -220,85 +220,113 @@ pub fn reed_compliance(midi: u8) -> f64 {
     (l * l * l) / (w * t * t * t)
 }
 
-/// Per-note displacement scale for the pickup nonlinearity.
+/// Which point of the provisional swing band to use (see [`PROVISIONAL_FF_SWING_MM`]).
 ///
-/// Derived from beam compliance: stiffer treble reeds deflect less → less bark.
-/// Exponent 0.75 gives steeper bass-to-treble gradient than sqrt(0.5), needed
-/// to match OBM's ~10:1 H2/H1 ratio range (D3 bark ~0.5 vs Bb6 clean ~0.06).
+/// `Central` is the shipping pick. `P10` / `P90` are the band corners: a conclusion drawn from a
+/// render only counts if it holds at both corners too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SwingPick {
+    Central,
+    P10,
+    P90,
+}
+
+/// **PROVISIONAL** ff reed swing at the pickup, mm: `(midi, central, p10, p90)`.
 ///
-/// Physical note: the 200A's actual rest gap d₀ between reed and pickup has
-/// never been published — factory records destroyed 1988, no service manual
-/// or patent specifies it for this model. DISPLACEMENT_SCALE absorbs this
-/// unknown. Calibrated by ear + measurement against a moving baseline chain;
-/// not a physics claim. When the chain changes, DS gets re-calibrated to
-/// restore the previous effective working point.
+/// Physics only, from a bottom-up hammer-impact model (Euler-Bernoulli reed, 80 elements, this
+/// file's reed lengths and widths; tip solder solved to put each reed on pitch; swing taken as the
+/// tip swing times the mode shape averaged over the finger region just behind the solder):
 ///
-/// Apr 2026 retune: after Phase 2 (melange power amp), Phase 4 (full
-/// Gummel-Poon 2N5089 junction caps), and the Apr tremolo depth-curve fix,
-/// the effective working point had drifted cooler. Raised DS_AT_C4 0.75 → 0.85
-/// and DS_CLAMP upper 0.82 → 0.88 to recover ~+1 dB H2/H1 across register
-/// without pushing y_peak past ~0.90 (still safely below PICKUP_MAX_Y=0.98).
-/// Measured with `preamp-bench calibrate`; see `memory/calibration-history.md`.
+/// ```text
+///   V_tip = (1+e) m_h v_h D / (phi_s (m_h + M1/phi_s^2)),  capped at v_h sqrt(m_h/M1)
+///   A     = V_tip / omega
+/// ```
 ///
-/// Approximate post-retune values across the keyboard:
-///   A1 (MIDI 33): 0.88  (clamped — heavy bass bark/growl)
-///   D3 (MIDI 50): 0.88  (clamped — solid bark)
-///   C4 (MIDI 60): 0.85  (reference, strong bark)
-///   D5 (MIDI 74): 0.59  (moderate bark)
-///   D6 (MIDI 86): 0.45  (lighter)
-///   C7 (MIDI 96): 0.24  (clean, bell-like)
+/// Inputs (guess-grade except the hammer speed, which comes from the service manual's action
+/// dimensions — blow distance 27.4 mm over key dip 9.5 mm): hammer mass m_h 1-5 g, ff hammer speed
+/// v_h 1.4-3.5 m/s, restitution e 0.3-0.7, contact factor D 0.33-0.8, strike point 0.5 L, bass
+/// blank .020" or .026" (disputed; both carried).
 ///
-/// ## 2026-09-14 re-fit for the pickup modulation-depth restructure
+/// **Selection rule, fixed before any render was heard:** `central` evaluates the model once with
+/// every scale input at the geometric centre of its band (m_h 2.24 g, v_h 2.21 m/s, D 0.51; e at
+/// its arithmetic middle, 0.5), geometric mean over the two bass-thickness variants. `p10`/`p90`
+/// span the input grid. Nothing here was adjusted by ear or fitted to a recording.
 ///
-/// `DS_AT_C4` **0.85 → 0.73**, `DS_CLAMP` upper **0.95 → 0.90**
-/// (`DS_EXPONENT` unchanged at 0.75).
+/// **ASSUMPTION, not a default:** the hammer inputs are the same for every note, so the register
+/// shape comes from each reed's mass and frequency alone. The patents describe graded hammer
+/// coverings (thicker in the bass), which would reshape it. The step between reeds 20 and 21
+/// (MIDI 52 -> 53) follows from the blank change there (thin uniform bass reeds, thick-rooted
+/// treble reeds) and is kept: it sits where the 200A also changes solder side and pickup side.
 ///
-/// DS now means what its name says. The previous pickup model modulated the
-/// whole plate node as `1/(1-y)` — 80x the physical depth — and DS was silently
-/// absorbing the ratio; `pickup.rs` carries the derivation. With the
-/// nonlinearity moved into the source term where it belongs, the same y
-/// produces a much stronger and (correctly) frequency-independent harmonic
-/// series, so the old DS over-drove it.
-///
-/// **`DS_CLAMP` upper 0.95 → 0.90** is the better-determined of the two: two
-/// independent criteria land on it. (i) It puts C2 ff H2/H1 at 107.8% against
-/// the pre-restructure branch's 109.5% — a 0.14 dB match on the bass-ladder
-/// gate. (ii) It makes the C2 ff harmonic ladder track the pre-revision
-/// reference (the one the perceptual review blessed as real-200A behaviour) to
-/// **0.89 dB RMS across H2-H8**, versus 4.97 dB at the old 0.95 and 4.34 dB at
-/// 0.86. A gap fraction of 0.95 — reed within 5% of touching — was survivable
-/// when the nonlinearity was weak per unit y; with the correct one it is not.
-///
-/// **`DS_AT_C4` 0.85 → 0.73 → back to 0.85** (2026-09-14, Task D). The 0.73 step
-/// was a level-budget stopgap taken while `POST_SPEAKER_GAIN_DB` was ringfenced;
-/// with PSG free to move, DS returns to its ear-blessed value and PSG absorbs
-/// the level instead. See the tradeoff curve on `POST_SPEAKER_GAIN_DB`.
-///
-/// At 0.85, C4 ff pickup H2/H1 is **73.0%** — H2 lands within 0.0 dB of the
-/// pre-revision build at the same note (both +0.2 dB rel H1) — and the C4
-/// velocity span recovers to **44.75 dB** against pre-revision's 43.14 dB.
-///
-/// ⚠ **`DS_AT_C4` is now the one true ear knob in this file.** It trades harmonic
-/// richness against output level at roughly **1.5 dB of level per 1 dB of H2**,
-/// and it is the constant to move first in a voicing session. `DS_CLAMP` pins
-/// the bass independently (C2 is clamped at every DS in the useful range, so
-/// the bass ladder does not move with this constant).
-const DS_AT_C4: f64 = 0.85;
-const DS_EXPONENT: f64 = 0.75;
-/// Upper bound REMOVED with the overlap pickup law (2026-09): the 0.90 cap existed only to keep
-/// the old law's `1/(1-y)` away from its singularity at y = 1. The overlap law has no singularity,
-/// and the cap was holding every note below about G3 to middle C's swing — bass reeds could not
-/// swing further than C4, against the evidence that bass ff swings are large (the bass solder
-/// faces down to clear the dampers). The lower bound only keeps the proxy away from zero.
-const DS_CLAMP: (f64, f64) = (0.02, f64::INFINITY);
+/// Replaced by the technician's bench numbers (a weighed hammer assembly and key speed narrow the
+/// band most), or by the excitation revision's contact integration.
+const PROVISIONAL_FF_SWING_MM: [(u8, f64, f64, f64); 24] = [
+    // Bass reeds 1-20 (MIDI 33-52)
+    (33, 3.26, 1.40, 9.55),
+    (36, 3.13, 1.37, 8.94),
+    (39, 2.97, 1.30, 8.38),
+    (42, 2.78, 1.26, 7.62),
+    (45, 2.56, 1.16, 6.80),
+    (48, 2.55, 1.20, 6.37),
+    (51, 2.25, 1.07, 5.54),
+    (52, 2.16, 1.04, 5.29),
+    // Reeds 21-64 (MIDI 53-96)
+    (53, 1.25, 0.56, 3.45),
+    (54, 1.25, 0.56, 3.40),
+    (57, 1.23, 0.58, 3.25),
+    (60, 1.19, 0.57, 3.04),
+    (63, 1.14, 0.54, 2.84),
+    (66, 1.06, 0.51, 2.55),
+    (69, 0.96, 0.47, 2.24),
+    (72, 0.82, 0.40, 1.89),
+    (75, 0.71, 0.35, 1.63),
+    (78, 0.60, 0.29, 1.37),
+    (81, 0.51, 0.25, 1.15),
+    (84, 0.45, 0.22, 1.00),
+    (87, 0.38, 0.18, 0.84),
+    (90, 0.32, 0.15, 0.70),
+    (93, 0.26, 0.13, 0.58),
+    (96, 0.22, 0.11, 0.49),
+];
+
+/// Last bass reed (reed 20). Interpolation never crosses 52 -> 53.
+const BASS_TOP_MIDI: u8 = 52;
+
+/// Provisional ff swing at the pickup for one note and band point, mm. Linear in log(swing) vs
+/// MIDI between knots, within each side of the reed-20|21 break.
+pub fn provisional_ff_swing_mm(midi: u8, pick: SwingPick) -> f64 {
+    let value = |k: &(u8, f64, f64, f64)| match pick {
+        SwingPick::Central => k.1,
+        SwingPick::P10 => k.2,
+        SwingPick::P90 => k.3,
+    };
+    let bass = midi <= BASS_TOP_MIDI;
+    let side: Vec<&(u8, f64, f64, f64)> = PROVISIONAL_FF_SWING_MM
+        .iter()
+        .filter(|k| (k.0 <= BASS_TOP_MIDI) == bass)
+        .collect();
+    let m = midi.clamp(side[0].0, side[side.len() - 1].0);
+    let i = side
+        .iter()
+        .rposition(|k| k.0 <= m)
+        .unwrap()
+        .min(side.len() - 2);
+    let (k0, k1) = (side[i], side[i + 1]);
+    let t = (m - k0.0) as f64 / (k1.0 - k0.0) as f64;
+    (value(k0).ln() * (1.0 - t) + value(k1).ln() * t).exp()
+}
+
+/// Lower bound on the swing, mm: keeps the level proxy away from zero.
+const SWING_MIN_MM: f64 = 0.02;
 
 /// Runtime-overridable calibration parameters.
 /// All fields default to the current hardcoded constants.
 #[derive(Debug, Clone)]
 pub struct CalibrationConfig {
-    pub ds_at_c4: f64,
-    pub ds_exponent: f64,
-    pub ds_clamp: (f64, f64),
+    /// Which point of the provisional swing band drives the pickup.
+    pub swing_pick: SwingPick,
+    /// Multiplier on the provisional swing (1.0 in the shipping build; for bench sweeps).
+    pub swing_scale: f64,
     pub target_db: f64,
     pub voicing_slope: f64,
     pub zero_trim: bool,
@@ -307,30 +335,26 @@ pub struct CalibrationConfig {
 impl Default for CalibrationConfig {
     fn default() -> Self {
         Self {
-            ds_at_c4: DS_AT_C4,
-            ds_exponent: DS_EXPONENT,
-            ds_clamp: DS_CLAMP,
-            // Re-anchored for the overlap pickup law (was -35.0 under 1/(1-y)): the new law's
-            // source term swings ~10.3 dB less at middle C, so +10.3 dB holds C4 v100 at the
-            // preamp input exactly where v0.8.0 put it (measured with
-            // tools/pickup_rev_metrics.py). That level, ~18 mV, also matches the physical
-            // estimate for the plate swing at TR-1 (147 V x dC/C_node through the network).
-            target_db: -24.7,
+            swing_pick: SwingPick::Central,
+            swing_scale: 1.0,
+            // Level anchor: C4 v100 at the preamp input held where v0.8.0 put it (~18 mV, which
+            // also matches the physical estimate for the plate swing at TR-1, 147 V x dC/C_node).
+            // No evidence moves that level; the provisional swing changes timbre, not the
+            // anchor. Re-measured with tools/pickup_rev_metrics.py whenever the swing changes.
+            target_db: -32.53,
             voicing_slope: -0.04,
             zero_trim: false,
         }
     }
 }
 
-pub fn pickup_displacement_scale(midi: u8) -> f64 {
-    pickup_displacement_scale_with_config(midi, &CalibrationConfig::default())
+/// ff reed swing at the pickup for this note, mm (the velocity curve scales it down from here).
+pub fn pickup_swing_mm(midi: u8) -> f64 {
+    pickup_swing_mm_with_config(midi, &CalibrationConfig::default())
 }
 
-pub fn pickup_displacement_scale_with_config(midi: u8, cfg: &CalibrationConfig) -> f64 {
-    let c = reed_compliance(midi);
-    let c_ref = reed_compliance(60); // C4 reference
-    let ds = cfg.ds_at_c4 * (c / c_ref).powf(cfg.ds_exponent);
-    ds.clamp(cfg.ds_clamp.0, cfg.ds_clamp.1)
+pub fn pickup_swing_mm_with_config(midi: u8, cfg: &CalibrationConfig) -> f64 {
+    (provisional_ff_swing_mm(midi, cfg.swing_pick) * cfg.swing_scale).max(SWING_MIN_MM)
 }
 
 /// Cantilever beam mode shape phi_n(xi) with tip mass.
@@ -532,14 +556,12 @@ fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
 }
 
 /// RMS proxy for a note's actual pickup: its section's field-solved law, the side of the finger
-/// band it sits on, and its swing (`ds` in units of `pickup_displacement_scale`), through the
-/// pickup's high-pass. This is what `output_scale` normalises by.
-pub fn pickup_rms_proxy_law(midi: u8, ds: f64, f0: f64, fc: f64) -> f64 {
-    use crate::pickup::{
-        PICKUP_MM_PER_DS, PICKUP_REST_OFFSET_MM, pickup_band_sign, pickup_law_for,
-    };
+/// band it sits on, and its swing (`swing_mm`, mm at the pickup), through the pickup's high-pass.
+/// This is what `output_scale` normalises by.
+pub fn pickup_rms_proxy_law(midi: u8, swing_mm: f64, f0: f64, fc: f64) -> f64 {
+    use crate::pickup::{PICKUP_REST_OFFSET_MM, pickup_band_sign, pickup_law_for};
     let law = pickup_law_for(midi);
-    let a = pickup_band_sign(midi) * ds * PICKUP_MM_PER_DS;
+    let a = pickup_band_sign(midi) * swing_mm;
     let rest = law.eval(-PICKUP_REST_OFFSET_MM);
     pickup_rms_proxy_numeric(|st| law.eval(a * st - PICKUP_REST_OFFSET_MM) - rest, f0, fc)
 }
@@ -925,7 +947,7 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
     // measurement of C_TOTAL moves it here too.
     let hpf_fc = crate::pickup::PICKUP_FC;
 
-    let ds = pickup_displacement_scale_with_config(midi, cfg);
+    let swing = pickup_swing_mm_with_config(midi, cfg);
     let f0 = midi_to_freq(midi);
 
     // Velocity-aware proxy: compute at the actual swing the pickup sees at this
@@ -934,11 +956,11 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
     let scurve_v = velocity_scurve(velocity_norm);
     let vel_scale = scurve_v.powf(velocity_exponent(midi));
     let vel_scale_c4 = scurve_v.powf(velocity_exponent(60));
-    let effective_ds = (ds * vel_scale).max(1e-6);
-    let effective_ds_ref = (cfg.ds_at_c4 * vel_scale_c4).max(1e-6);
+    let effective_swing = (swing * vel_scale).max(1e-6);
+    let effective_swing_ref = (pickup_swing_mm_with_config(60, cfg) * vel_scale_c4).max(1e-6);
 
-    let rms = pickup_rms_proxy_law(midi, effective_ds, f0, hpf_fc);
-    let rms_ref = pickup_rms_proxy_law(60, effective_ds_ref, midi_to_freq(60), hpf_fc);
+    let rms = pickup_rms_proxy_law(midi, effective_swing, f0, hpf_fc);
+    let rms_ref = pickup_rms_proxy_law(60, effective_swing_ref, midi_to_freq(60), hpf_fc);
 
     let flat_db = -20.0 * (rms / rms_ref).log10();
     let voicing_db = cfg.voicing_slope * (midi as f64 - 60.0).max(0.0);
@@ -1543,12 +1565,12 @@ mod tests {
 
     #[test]
     fn test_ff_swing_stays_inside_the_solved_law() {
-        // With no DS cap, every note's ff swing (with the +8% per-note amplitude offset and some
-        // margin for mode sums) must stay inside the range its section's field solve covers —
-        // the law is held flat outside it.
-        use crate::pickup::{PICKUP_MM_PER_DS, PICKUP_REST_OFFSET_MM, pickup_law_for};
+        // Every note's ff swing (with the +8% per-note amplitude offset and some margin for mode
+        // sums) must stay inside the range its section's field solve covers — the law is held
+        // flat outside it. Checked at the central pick, the shipping one.
+        use crate::pickup::{PICKUP_REST_OFFSET_MM, pickup_law_for};
         for midi in 33u8..=96 {
-            let a = pickup_displacement_scale(midi) * PICKUP_MM_PER_DS * 1.08 * 1.1;
+            let a = pickup_swing_mm(midi) * 1.08 * 1.1;
             let law = pickup_law_for(midi);
             assert!(
                 a - PICKUP_REST_OFFSET_MM < law.u_max() && -a - PICKUP_REST_OFFSET_MM > law.u0,
@@ -1560,53 +1582,47 @@ mod tests {
     }
 
     #[test]
-    fn test_displacement_scale_monotone_decreasing() {
-        // Displacement scale should generally decrease from bass to treble
-        // (more compliance → more deflection → more bark)
-        // Bass notes may clamp at DS_CLAMP upper bound, so use >= for bass vs mid.
-        let ds_33 = pickup_displacement_scale(33); // A1
-        let ds_60 = pickup_displacement_scale(60); // C4
-        let ds_96 = pickup_displacement_scale(96); // C7
-
-        assert!(
-            ds_33 >= ds_60,
-            "A1 ({ds_33:.3}) should have >= bark than C4 ({ds_60:.3})"
-        );
-        assert!(
-            ds_60 > ds_96,
-            "C4 ({ds_60:.3}) should have more bark than C7 ({ds_96:.3})"
-        );
+    fn test_provisional_swing_hits_knots_and_keeps_the_break() {
+        for k in PROVISIONAL_FF_SWING_MM.iter() {
+            for (pick, want) in [
+                (SwingPick::Central, k.1),
+                (SwingPick::P10, k.2),
+                (SwingPick::P90, k.3),
+            ] {
+                let got = provisional_ff_swing_mm(k.0, pick);
+                assert!(
+                    (got - want).abs() < 1e-12,
+                    "MIDI {} {pick:?}: {got} vs knot {want}",
+                    k.0
+                );
+            }
+        }
+        // No interpolation across reeds 20|21: the step is kept, not smoothed.
+        assert_eq!(provisional_ff_swing_mm(52, SwingPick::Central), 2.16);
+        assert_eq!(provisional_ff_swing_mm(53, SwingPick::Central), 1.25);
+        // Between knots: log-linear, so C4-D4 sits between its neighbours.
+        let d4 = provisional_ff_swing_mm(62, SwingPick::Central);
+        assert!(d4 < 1.19 && d4 > 1.14, "MIDI 62: {d4}");
     }
 
     #[test]
-    fn test_displacement_scale_c4_calibration() {
-        // C4 is the reference point — should be exactly DS_AT_C4
-        let ds = pickup_displacement_scale(60);
-        assert!(
-            (ds - DS_AT_C4).abs() < 0.001,
-            "C4 displacement scale = {ds:.4}, expected {DS_AT_C4}"
-        );
+    fn test_provisional_swing_band_is_ordered() {
+        for midi in 33u8..=96 {
+            let lo = provisional_ff_swing_mm(midi, SwingPick::P10);
+            let c = provisional_ff_swing_mm(midi, SwingPick::Central);
+            let hi = provisional_ff_swing_mm(midi, SwingPick::P90);
+            assert!(lo < c && c < hi, "MIDI {midi}: {lo} / {c} / {hi}");
+        }
     }
 
     #[test]
-    fn test_displacement_scale_range() {
-        // Bass should be high (strong bark), treble should be low (clean)
-        let ds_bass = pickup_displacement_scale(33);
-        let ds_treb = pickup_displacement_scale(96);
-
-        assert!(
-            ds_bass > 0.50,
-            "Bass ds ({ds_bass:.3}) should give strong bark"
+    fn test_swing_falls_bass_to_treble() {
+        let (a1, c4, c7) = (
+            pickup_swing_mm(33),
+            pickup_swing_mm(60),
+            pickup_swing_mm(96),
         );
-        assert!(
-            ds_treb < 0.35,
-            "Treble ds ({ds_treb:.3}) should be nearly clean"
-        );
-        // Ratio should be at least 2.5:1 (bass is barkier, but clamp compresses range)
-        assert!(
-            ds_bass / ds_treb > 2.5,
-            "Bass/treble ratio = {:.1}x, expected >2.5x",
-            ds_bass / ds_treb
-        );
+        assert!(a1 > c4 && c4 > c7, "A1 {a1} / C4 {c4} / C7 {c7}");
+        assert!(a1 / c7 > 10.0, "bass/treble swing ratio {:.1}", a1 / c7);
     }
 }

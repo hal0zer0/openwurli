@@ -49,9 +49,9 @@ Vneg   vn_node    0    DC -22.5
 * PICKUP
 * ============================================================
 Xpickup  plate  reed_disp  0  wurli_pickup sec=2 sign=-1
-
-* Reed swing at the pickup, mm as volts (2026-09-25 overlap law). Levels from
-* the plugin's swing map: 0.20 mm ~ C4 v80 (normal), 0.45 mm ~ C4 v127 (ff).
+* Reed swing at the pickup, mm as volts (2026-09-25 overlap law). Drive levels are
+* fixed test swings: 0.20 mm (mid) and 0.45 mm (loud). The plugin's provisional ff swing
+* at C4 is 1.19 mm (tables::pickup_swing_mm, 2026-09-26); these stay as test levels.
 Vdisp  reed_disp  0  DC 0 SIN(0 0.20 440 0 0)
 
 * ============================================================

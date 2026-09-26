@@ -77,7 +77,7 @@
 *                to the preamp 'in' pin)
 *   reed_disp  - reed tip displacement at the pickup, mm as volts
 *                (positive = hammer direction, upward). C4 ff is about
-*                0.45 mm in the plugin (PICKUP_MM_PER_DS, provisional).
+*                1.19 mm in the plugin (tables::pickup_swing_mm, provisional).
 *
 * Instance params:
 *   sec   - keyboard section: 1 bass (reeds 1-20), 2 middle (21-42),

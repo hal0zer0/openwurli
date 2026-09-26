@@ -11,7 +11,7 @@ speaker saturation.
 
 | Parameter | Location | Current | Role |
 |-----------|----------|---------|------|
-| `DS_AT_C4` | tables.rs | 0.75 | Pickup displacement anchor at C4 |
+| `pickup_swing_mm` | tables.rs | per note (C4 1.19 mm) | Provisional ff swing at the pickup — physics-set, NOT a voicing knob |
 | `DS_CLAMP` | tables.rs | [0.02, 0.82] | Physical limit on displacement |
 | `DS_EXPONENT` | tables.rs | 0.75 | Compliance-to-displacement curve shape |
 | `TARGET_DB` | tables.rs | -35.0 | Absolute output level target |
@@ -22,12 +22,15 @@ speaker saturation.
 
 ## Known Interaction Chains
 
-### DS_AT_C4 → everything
+### Swing → everything
+
+The per-note ff swing (`tables::pickup_swing_mm`, provisional, physics-derived) is NOT a voicing
+knob: it is set by hammer physics and replaced by measurement. `CalibrationConfig::swing_scale`
+exists for diagnostic sweeps only. Register balance belongs to the output mapping.
 
 ```
-DS_AT_C4 ↑
-  → per-note DS ↑ (via compliance curve, clamped)
-  → swing ↑ (DS × PICKUP_MM_PER_DS, mm at the pickup)
+swing ↑
+  → per-note swing ↑ (mm at the pickup)
   → reed enters the finger band deeper ↑ (more bark, more harmonics)
   → pickup output ↑
   → output_scale proxy tries to compensate
@@ -72,7 +75,7 @@ Trim calibrated at Tier 3 (speaker ON, tanh active)
 ## Sweep Methodology — `calibrate` and `sensitivity` Subcommands
 
 Implemented as Rust-native preamp-bench subcommands. No source patching, no rebuilds.
-`CalibrationConfig` in `tables.rs` makes DS_AT_C4 and trim overridable at runtime.
+`CalibrationConfig` in `tables.rs` makes the swing (pick + diagnostic scale) and trim overridable at runtime.
 
 ### Single-config measurement: `calibrate`
 
@@ -86,7 +89,7 @@ Renders each (note, velocity) pair and measures at 5 tap points in the signal ch
 | T4  | After preamp | Oversampled DK preamp |
 | T5  | After volume + PA + speaker | Full Tier 3 chain |
 
-> **Note:** T1 (raw reed displacement) is computed internally but is **not** included as `t1_*` columns in the CSV output. Only T2-T5 appear as CSV columns. The reed peak is captured as `y_peak` (reed_peak × ds_actual).
+> **Note:** T1 (raw reed displacement) is computed internally but is **not** included as `t1_*` columns in the CSV output. Only T2-T5 appear as CSV columns. The reed peak is captured as `y_peak` (reed_peak × swing_mm).
 
 Metrics per tap: `peak_db`, `rms_db`, `h2_h1_db` (where applicable).
 Measurement window: 100-400ms of a 500ms render.
@@ -95,29 +98,30 @@ Measurement window: 100-400ms of a 500ms render.
 cargo run -p preamp-bench -- calibrate \
     --notes 36,40,44,48,52,56,60,64,68,72,76,80,84 \
     --velocities 40,80,127 \
-    --ds-at-c4 0.75 \
+    --swing-scale 1.0 \
     --volume 0.50 --speaker 0.0 \
     --zero-trim \
     --output /tmp/calibrate.csv
 ```
 
-### Multi-DS grid sweep: `sensitivity`
+### Swing-scale sweep: `sensitivity` (diagnostic)
 
-Iterates over a range of DS_AT_C4 values, runs calibrate at each.
+Iterates over multipliers on the provisional swing, runs calibrate at each. A diagnostic of how
+level and harmonics respond to swing — not a way to choose the swing.
 
 ```bash
 cargo run -p preamp-bench -- sensitivity \
     --notes 36,48,54,60,66,72,78,84 \
     --velocities 40,80,127 \
-    --ds-range 0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85 \
+    --swing-range 0.5,0.75,1.0,1.5,2.0 \
     --scale-mode track \
     --output /tmp/sensitivity.csv
 ```
 
 Scale modes:
-- `track` (default): Override DS + keep current trim → "how much trim error remains?"
-- `zero-trim`: Override DS + zero trim → "what's the natural imbalance?"
-- `freeze`: Original DS=0.75 + current trim → "raw level change from DS alone"
+- `track` (default): Override the swing scale + keep current trim → "how much trim error remains?"
+- `zero-trim`: Override the swing scale + zero trim → "what's the natural imbalance?"
+- `freeze`: Shipping swing + current trim → "raw level change from swing alone"
 
 Grid: 8 DS × 8 notes × 3 velocities = 192 renders. ~90 seconds.
 
@@ -158,17 +162,18 @@ Based on today's lessons, now automated via `calibrate`/`sensitivity`:
    ```
    - Shows true proxy error without trim distortion
 
-2. **Find optimal DS** (sensitivity sweep)
+2. **Swing sensitivity (diagnostic)**
    ```bash
-   cargo run -p preamp-bench -- sensitivity --ds-range 0.60,0.65,0.70,0.75,0.80,0.85 --zero-trim
+   cargo run -p preamp-bench -- sensitivity --swing-range 0.5,0.75,1.0,1.5,2.0 --zero-trim
    python tools/analyze_calibration.py /tmp/sensitivity.csv
    ```
-   - Script reports optimal DS (minimizes register spread) + suggested trim anchors
+   - Shows how register spread responds to swing. Do NOT pick the swing from it: the swing is
+     physics-set; fix register balance in the output mapping (trim anchors).
 
 3. **Apply and verify**
    ```bash
-   # Update DS_AT_C4 and ANCHORS in tables.rs from script output
-   cargo run -p preamp-bench -- calibrate --ds-at-c4 <new_ds>
+   # Update the register-trim ANCHORS in tables.rs from script output
+   cargo run -p preamp-bench -- calibrate
    python tools/analyze_calibration.py /tmp/calibrate.csv
    ```
    - Verify spread < 5 dB, tanh compression < 3 dB at mf, DR 18-22 dB mid-register

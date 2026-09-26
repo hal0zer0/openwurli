@@ -32,6 +32,27 @@ impl Voice {
         noise_seed: u32,
         mlp_enabled: bool,
     ) -> Self {
+        Self::note_on_with_config(
+            midi_note,
+            velocity,
+            sample_rate,
+            noise_seed,
+            mlp_enabled,
+            &tables::CalibrationConfig::default(),
+        )
+    }
+
+    /// [`Voice::note_on`] with explicit calibration: the swing pick (central or a band corner)
+    /// and scale reach both the pickup and the output normalisation, so a corner render is
+    /// levelled the same way the shipping pick is.
+    pub fn note_on_with_config(
+        midi_note: u8,
+        velocity: f64,
+        sample_rate: f64,
+        noise_seed: u32,
+        mlp_enabled: bool,
+        cfg: &tables::CalibrationConfig,
+    ) -> Self {
         let params = tables::note_params(midi_note);
 
         let detuned_fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
@@ -83,10 +104,11 @@ impl Voice {
             *decay /= ratio;
         }
 
-        // Pickup drive. The MLP's ds_correction is NOT applied: its training target assumed the
-        // old 1/(1-y) law (H2/H1 proportional to the gap fraction), which the overlap law does not
-        // obey. It stays pinned out until the MLP is retrained against the new law.
-        let corrected_ds = tables::pickup_displacement_scale(midi_note);
+        // Pickup drive: the note's ff swing at the pickup (mm, provisional; the velocity curve
+        // scales the reed's amplitude from there). The MLP's ds_correction is NOT applied: its
+        // training target assumed the old 1/(1-y) law (H2/H1 proportional to the gap fraction),
+        // which the overlap law does not obey. It stays pinned out until the MLP is retrained.
+        let swing_mm = tables::pickup_swing_mm_with_config(midi_note, cfg);
 
         let reed = ModalReed::new(
             detuned_fundamental,
@@ -99,16 +121,12 @@ impl Voice {
             noise_seed,
         );
 
-        let pickup = Pickup::new_for_note(
-            sample_rate,
-            midi_note,
-            corrected_ds * crate::pickup::PICKUP_MM_PER_DS,
-        );
+        let pickup = Pickup::new_for_note(sample_rate, midi_note, swing_mm);
         let noise = AttackNoise::new(velocity, detuned_fundamental, sample_rate, noise_seed);
 
         // Post-pickup gain: technician voicing (gap adjustment) affects volume
         // without changing the reed's swing.
-        let base_output_scale = tables::output_scale(midi_note, velocity);
+        let base_output_scale = tables::output_scale_with_config(midi_note, velocity, cfg);
 
         let post_pickup_gain = base_output_scale;
 
@@ -122,10 +140,9 @@ impl Voice {
         }
     }
 
-    /// Override the pickup drive, in units of `tables::pickup_displacement_scale`.
-    pub fn set_displacement_scale(&mut self, scale: f64) {
-        self.pickup
-            .set_amplitude_mm(scale * crate::pickup::PICKUP_MM_PER_DS);
+    /// Override the ff swing at the pickup, mm.
+    pub fn set_swing_mm(&mut self, swing_mm: f64) {
+        self.pickup.set_amplitude_mm(swing_mm);
     }
 
     /// Disable attack noise (for A/B testing of transient artifacts).
@@ -179,18 +196,18 @@ impl Voice {
         Self::render_note_with_scale(midi_note, velocity, duration_secs, sample_rate, None)
     }
 
-    /// Render a complete note with optional displacement scale override.
+    /// Render a complete note with an optional ff-swing override (mm).
     pub fn render_note_with_scale(
         midi_note: u8,
         velocity: f64,
         duration_secs: f64,
         sample_rate: f64,
-        displacement_scale: Option<f64>,
+        swing_mm: Option<f64>,
     ) -> Vec<f64> {
         let noise_seed = (midi_note as u32).wrapping_mul(2654435761);
         let mut voice = Voice::note_on(midi_note, velocity, sample_rate, noise_seed, false);
-        if let Some(scale) = displacement_scale {
-            voice.set_displacement_scale(scale);
+        if let Some(swing) = swing_mm {
+            voice.set_swing_mm(swing);
         }
         let num_samples = (duration_secs * sample_rate) as usize;
         let mut output = vec![0.0f64; num_samples];
