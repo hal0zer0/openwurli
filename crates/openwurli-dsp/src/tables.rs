@@ -243,20 +243,17 @@ pub enum SwingPick {
 /// uniform 0.51-0.66 mm above the bass.
 ///
 /// **The falsifiers condition the prior:** samples whose swing exceeds the note's dynamic admitted
-/// edge (the largest ff swing passing the registered decay criteria, including Andersen's
-/// bass-swell defect, bisected per note) are discarded. `pick` = median of the survivors, `low` /
-/// `high` = their p10 / p90 (the band an ear-test conclusion must survive). Nothing here was
-/// adjusted by ear or fitted to a recording. Survival: 15-44 % in the bass, 39-90 % in the middle,
-/// 100 % in the treble. The bass and low-middle survival is low because the same hammer inputs for
-/// every note over-drive those reeds: that assumption is refuted there, and graded hammers
-/// (mass, covering) are the likely missing input.
+/// edge (the largest ff swing passing ff-falloff criterion 2 and Andersen's bass-swell criterion 6,
+/// bisected per note by `tools/swing_edges.py` on the four-range 140B-gap tables) are discarded.
+/// `pick` = median of the survivors, `low` / `high` = their p10 / p90 (the band an ear-test
+/// conclusion must survive). Nothing here was adjusted by ear or fitted to a recording. Criterion 6
+/// (fundamental rise <= 6 dB, no timing clause) binds at every knot up to MIDI 72; survival is
+/// 47-77 % in the bass, 88-100 % in the middle, 100 % in the treble.
 ///
-/// **Biased low, knowingly.** Only the upper falsifiers condition the pick. A registered lower
-/// bound (harmonic floor against the recordings at MIDI 50/54, v~80) fails at these picks but cannot
-/// condition them: its link to the ff swing is the ear-voiced velocity curve, and the sanctioned
-/// analyser cannot yet measure the recordings. So the pick sits low relative to a world where that
-/// bound were admissible. At the lowest recorded notes, the upper and lower bounds nearly collide
-/// (admissible windows 0.24 mm at MIDI 50, 0.04 mm at MIDI 54).
+/// **Biased low, knowingly.** Only upper falsifiers condition the pick; no admissible lower bound
+/// exists yet (the harmonic floor against the recordings is report-only: its link to the ff swing
+/// is the ear-voiced velocity curve, and the recordings' chain EQ is unbounded). So the pick sits
+/// low relative to a world where a lower bound were admissible.
 ///
 /// Known model debt: above about MIDI 72 the tabulated reed lengths and thicknesses cannot reach
 /// pitch even without solder. The swing barely depends on it there (the hammer dominates), but
@@ -266,23 +263,23 @@ pub enum SwingPick {
 /// band most), or by the excitation revision's contact integration.
 const PROVISIONAL_FF_SWING_MM: [(u8, f64, f64, f64); 24] = [
     // Bass reeds 1-20 (MIDI 33-52)
-    (33, 1.33, 0.84, 1.68),
-    (36, 1.22, 0.79, 1.50),
-    (39, 1.28, 0.82, 1.60),
-    (42, 1.38, 0.86, 1.75),
-    (45, 1.35, 0.84, 1.72),
-    (48, 1.41, 0.91, 1.77),
-    (51, 1.32, 0.85, 1.66),
-    (52, 1.39, 0.87, 1.79),
+    (33, 2.08, 1.11, 2.98),
+    (36, 1.92, 1.06, 2.67),
+    (39, 1.98, 1.08, 2.79),
+    (42, 2.05, 1.10, 2.98),
+    (45, 1.94, 1.06, 2.83),
+    (48, 1.92, 1.10, 2.72),
+    (51, 1.75, 1.01, 2.48),
+    (52, 1.77, 1.01, 2.62),
     // Reeds 21-64 (MIDI 53-96)
-    (53, 0.76, 0.47, 0.99),
-    (54, 0.75, 0.47, 0.97),
-    (57, 0.80, 0.50, 1.04),
-    (60, 0.86, 0.53, 1.17),
-    (63, 0.88, 0.54, 1.24),
-    (66, 0.87, 0.53, 1.27),
-    (69, 0.83, 0.50, 1.25),
-    (72, 0.73, 0.43, 1.13),
+    (53, 1.10, 0.57, 1.83),
+    (54, 1.09, 0.58, 1.79),
+    (57, 1.09, 0.59, 1.81),
+    (60, 1.08, 0.59, 1.80),
+    (63, 1.03, 0.58, 1.75),
+    (66, 0.98, 0.55, 1.69),
+    (69, 0.90, 0.51, 1.56),
+    (72, 0.76, 0.44, 1.33),
     (75, 0.67, 0.39, 1.17),
     (78, 0.57, 0.33, 0.98),
     (81, 0.48, 0.28, 0.83),
@@ -409,7 +406,7 @@ impl Default for CalibrationConfig {
             // also matches the physical estimate for the plate swing at TR-1, 147 V x dC/C_node).
             // No evidence moves that level; the provisional swing changes timbre, not the
             // anchor. Re-measured with tools/pickup_rev_metrics.py whenever the swing changes.
-            target_db: -30.06,
+            target_db: -29.41,
             voicing_slope: -0.04,
             zero_trim: false,
         }
@@ -1666,11 +1663,11 @@ mod tests {
             }
         }
         // No interpolation across reeds 20|21: each side keeps its own values.
-        assert_eq!(provisional_ff_swing_mm(52, SwingPick::Central), 1.39);
-        assert_eq!(provisional_ff_swing_mm(53, SwingPick::Central), 0.76);
+        assert_eq!(provisional_ff_swing_mm(52, SwingPick::Central), 1.77);
+        assert_eq!(provisional_ff_swing_mm(53, SwingPick::Central), 1.10);
         // Between knots: log-linear, so D4 sits between its neighbours.
         let d4 = provisional_ff_swing_mm(62, SwingPick::Central);
-        assert!(d4 > 0.86 && d4 < 0.88, "MIDI 62: {d4}");
+        assert!(d4 > 1.03 && d4 < 1.08, "MIDI 62: {d4}");
     }
 
     #[test]
