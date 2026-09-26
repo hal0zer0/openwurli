@@ -247,8 +247,10 @@ pub enum SwingPick {
 /// bisected per note by `tools/swing_edges.py` on the four-range 140B-gap tables) are discarded.
 /// `pick` = median of the survivors, `low` / `high` = their p10 / p90 (the band an ear-test
 /// conclusion must survive). Nothing here was adjusted by ear or fitted to a recording. Criterion 6
-/// (fundamental rise <= 6 dB, no timing clause) binds at every knot up to MIDI 72; survival is
-/// 47-77 % in the bass, 88-100 % in the middle, 100 % in the treble.
+/// (fundamental rise <= 6 dB, no timing clause; the 6 dB is a judgement with no source number)
+/// binds at every knot up to MIDI 72; survival is 47-77 % in the bass, 88-100 % in the middle,
+/// 100 % in the treble. Open issue: the bass ff pick lands near the swing the recordings' mf swell
+/// implies, i.e. almost no velocity span, which no instrument plays like.
 ///
 /// **Biased low, knowingly.** Only upper falsifiers condition the pick; no admissible lower bound
 /// exists yet (the harmonic floor against the recordings is report-only: its link to the ff swing

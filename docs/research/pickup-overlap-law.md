@@ -676,11 +676,17 @@ the measured span produces. Criterion 6's binding fraction is reported beside th
   the preamp tap −55.644 dBFS): `target_db` −30.06 → −29.41.
 
 **Operator ruling on the multi-velocity set (2026-09-26, supersedes the identification above).**
-The set is not a calibration target and not a sound to match: only within-note spectral shape
-against mapped velocity is used, read as one hot-voiced, peak-normalised instrument; no levels, no
-decays, no fitting to its timbre. The per-layer swing identification (which fitted swing, decay and
+The operator's words: "let's not make the OBM mistake of treating it as a gold standard to work
+toward. just get the genuinely useful data". Read (a reading, not the operator's list) as: the set
+is not a calibration target and not a sound to match; only within-note spectral shape against
+mapped velocity is used, as one hot-voiced, peak-normalised instrument; no levels, no decays, no
+fitting to its timbre. A decay-based use would be put to the operator directly. Remaining use,
+report-only: Sensor, one fixed early window (0.2 s + 0.639 s) per key-map zone, H2/H1 and H3/H1
+against mapped zone order beside the model's same-window trend at the same notes: a picture, not a
+score (no thresholds, no parameter moves, no match/miss language). The identification/held-out split
+is dropped; the set is now fully seen and cannot serve as a blind test. The per-layer swing identification (which fitted swing, decay and
 a per-unit rest offset to decay trajectories, and whose span was to re-set criterion 6) is stood
-down before any unseen note was extracted; criterion 6 stays as registered. Two facts from the
+down before any unseen note was extracted; criterion 6 stays as registered. Its 6 dB magnitude is a judgement with no source number, and it binds the bass ff pick at every knot up to MIDI 72, which puts the bass ff pick near the swing the recordings' mf swell implies. An instrument with ff ≈ mf swing has almost no velocity span, so this is an OPEN issue, for bench hammer data or physics to settle. Two facts from the
 audit carry forward: every file is peak-normalised, and the filename velocity codes do not match the
 key map (the vendor re-slotted takes). Observation kept from the smoke run (not a criterion): at C4
 the softest zone is odd-dominant (H3 −28, H2 −45 dBc at 0.2 s) and its H2 falls faster than A²
