@@ -94,11 +94,14 @@ def synth(cs, f0, g0, A0, r, dur=3.8):
     t = np.arange(int(dur * SR)) / SR
     A = A0 * np.exp(-r * t / 8.686)
     s = cs(-g0 + A * np.sin(2 * np.pi * f0 * t))
-    a = 1 / (1 + 2 * np.pi * FC / SR)  # one-pole high-pass
+    # One-pole high-pass, bilinear (as the engine's network): a backward-Euler form puts the
+    # effective corner near 825 Hz and tilts H6 of C4 by -0.36 dB against the engine.
+    w = np.tan(np.pi * FC / SR)
+    b0, a1 = 1 / (1 + w), (1 - w) / (1 + w)
     y = np.empty_like(s)
     y[0] = 0.0
     for i in range(1, len(s)):
-        y[i] = a * (y[i - 1] + s[i] - s[i - 1])
+        y[i] = a1 * y[i - 1] + b0 * (s[i] - s[i - 1])
     return y
 
 

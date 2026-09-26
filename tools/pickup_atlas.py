@@ -7,9 +7,10 @@ atlas:  the static law alone, driven by a clean sinusoidal swing u = -g0 + A sin
         frequency, amplitude swept; H1..H6 measured with the Sensor Array on the raw source (before
         the pickup's RC network). One map per table case (section x band end).
 known:  a pickup-tap render of the engine (preamp, power amp and attack noise off, speaker
-        passthrough) against the atlas at the swing the reed tap reports for the same window,
+        passthrough) against the atlas at the swing the reed tap reports for the same window (Hann-weighted mean mode-1
+        amplitude over the analysed window),
         after removing the RC network's per-harmonic tilt (one-pole high-pass at PICKUP_FC).
-        Windows start after mode 2 has died (reed tap: mode2/mode1 below -60 dB). Reported as
+        0.5 s windows start after mode 2 has died (reed tap: mode2/mode1 below -60 dB). Reported as
         measured differences; the pass threshold is registered separately.
 
 Usage:
@@ -25,6 +26,7 @@ import sys
 import tempfile
 
 import numpy as np
+from scipy.signal import hilbert
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -36,6 +38,7 @@ SR = 44100
 F_ATLAS = 441.0  # 100 cycles per 0.1 s: whole cycles in every Sensor frame length used
 PICKUP_FC = 880.5
 BENCH = os.path.join(HERE, "..", "target", "release", "preamp-bench")
+KNOWN_WIN = 0.5  # s; the analyser needs a window somewhat longer than FFT 16384 (371 ms)
 AMPS = np.round(np.exp(np.linspace(np.log(0.02), np.log(3.0), 41)), 4)
 
 
@@ -87,6 +90,7 @@ def section_of(n):
 def known(a):
     at = json.load(open(a.atlas))
     tmp = tempfile.mkdtemp(prefix="known_")
+    resid = []
     for n in (int(v) for v in a.notes.split(",")):
         sec = section_of(n)
         m = np.array([r for r in at[f"{sec}/central"]["rows"] if r[1] is not None], dtype=float)
@@ -103,23 +107,34 @@ def known(a):
         f0 = M.refine_f0(M.read_wav(wav)[int(0.3 * SR):int(0.7 * SR)], M.midi_hz(n))
         worst = 0.0
         for t0 in (0.3, 0.8, 1.3, 1.8):
-            seg = slice(int(t0 * SR), int((t0 + 0.4) * SR))
-            A = np.abs(m1[seg]).max()
+            seg = slice(int(t0 * SR), int((t0 + KNOWN_WIN) * SR))
+            env = np.abs(hilbert(m1))[seg]  # mode-1 amplitude envelope
+            w = np.hanning(len(env))
+            A = float(np.sum(env * w) / np.sum(w))  # Hann-weighted mean over the analysed window
             m2db = 20 * np.log10(np.abs(m2[seg]).max() / A + 1e-30)
-            h = sensor_dbc(a.sensor, wav, f0, int(t0 * 1000), 400)
+            h = sensor_dbc(a.sensor, wav, f0, int(t0 * 1000), int(KNOWN_WIN * 1000))
             if h is None:
                 print(f"  MIDI {n} t {t0}: Sensor refused")
                 continue
             exp = [float(np.interp(np.log(A), np.log(m[:, 0]), m[:, k])) + hpf_tilt_db(f0, k + 1)
                    for k in range(1, 6)]
-            d = [h[i] - exp[i] for i in range(5)]
-            strong = [abs(d[i]) for i in range(5) if max(h[i], exp[i]) > -40]
+            d = [None if h[i] is None else h[i] - exp[i] for i in range(5)]
+            strong = [abs(d[i]) for i in range(5) if d[i] is not None and max(h[i], exp[i]) > -40]
             worst = max([worst] + strong)
+            resid.append([n, t0] + [d[i] if d[i] is not None and max(h[i], exp[i]) > -40 else None
+                                    for i in range(5)])
             print(f"  MIDI {n} t {t0:.1f} s: A {A:.3f} mm (mode2 {m2db:+.0f} dB) | render H2..H6 "
-                  + " ".join(f"{v:+6.1f}" for v in h) + " | atlas+RC "
-                  + " ".join(f"{v:+6.1f}" for v in exp), flush=True)
+                  + " ".join("   --" if v is None else f"{v:+6.1f}" for v in h) + " | atlas+RC "
+                  + " ".join(f"{v:+6.1f}" for v in exp) + " | resid "
+                  + " ".join("  --" if v is None else f"{v:+5.2f}" for v in d), flush=True)
         print(f"KNOWN MIDI {n} ({sec}): worst |diff| on harmonics above -40 dBc {worst:.2f} dB",
               flush=True)
+    # Sign pattern: a shared sign per harmonic across all cells is a bug even inside tolerance.
+    for k in range(5):
+        v = [r[2 + k] for r in resid if r[2 + k] is not None]
+        if v:
+            print(f"H{k + 2}: {len(v)} cells, mean {np.mean(v):+.2f} dB, "
+                  f"{sum(x > 0 for x in v)} positive / {sum(x < 0 for x in v)} negative")
 
 
 def main():
