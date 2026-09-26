@@ -254,9 +254,16 @@ leading missing physics is amplitude-dependent reed loss (air drag, clamp micro-
 belongs to the excitation revision. The swing table is not moved to buy decay.
 
 **Registered now for the next round:**
-3. *Fundamental alone at ff:* at C2 and C4, v127, the fundamental (100 ms windows) may not rise
-   beyond the first 0.2 s. This tests the C4 v127 fundamental rise seen here (held out of the
-   verdict above because it was not a registered metric).
+3. *Fundamental alone at ff:* at C2 and C4, v127, report the fundamental's early rise (size and
+   duration, 100 ms windows) as a MEASUREMENT, not pass/fail. Miessner (US 2,966,821) states that
+   tones from electrostatically translated struck reeds "frequently" show "slight initial
+   increments", so a rise may be correct physics. At v≈80 the recordings are roughly flat over the
+   first 0.25 s: MIDI 50–78 fall about 1 dB, and the model matches (−0.5 to −1.4 dB at MIDI
+   50–62). No mf early decrement is missing. The ff and sub-MIDI-50 behaviour has no recording to
+   check against.
+   (The 200A's mode-2 tilt at the pickup is ~0.1°, far inside Miessner's face-proportion rule, so
+   his increment mechanism is minor here. The model's early rise at C4 v127 comes from
+   fold-through.)
 4. *Re-derive criterion 2's threshold* from the reed decay rates in force once the excitation
    revision changes them. Where the reed decays too slowly, the "half the reed's decay" bar is
    too lenient by the same factor.
