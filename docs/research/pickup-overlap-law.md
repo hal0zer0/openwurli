@@ -560,3 +560,26 @@ changing it is a method change that is re-registered first.
   before low-level results are read; a Sensor-measured pickup atlas (amplitude sweep per section
   and gap), a decaying-sweep stimulus for the swell check, two-tone attack intermod, and Emitter log
   sweeps per linear stage.
+
+**Adopted (2026-09-26): recording criteria as self-normalised trajectories.** Criteria against the
+recordings are registered preferentially as self-normalised trajectories (a harmonic relative to
+itself over time) or differences of them. Absolute ratios against the recordings stay at the
+full-chain tap, carry the recording chain's EQ as an explicit error term, and are REPORT-ONLY
+while that term is unbounded (criterion 7 is report-only for this second reason too). Validity
+conditions, stated on every trajectory criterion: (1) the invariance holds only after the last
+nonlinearity. The recording's transformer + tube is not known to be linear at that level, and a
+compressive recovery would break the invariance exactly as it would create a swell, so that caveat
+stands until the recording chain is known. (2) The chain's time constants must be short against
+the envelope change. That is true for the audio stages; any coupling or DC-block corner near a
+bass fundamental (73 Hz) would add a small group-delay effect on its decaying envelope, probably
+negligible, stated rather than assumed.
+
+**Steepness test re-registered.** Its end reading (the change in H3/H1) is a trajectory difference
+and is chain-invariant, but its start point located A0 from an absolute H3/H1, which is
+chain-dependent. From now on A0 is identified from trajectories only: where the note swells, from
+the fundamental's swell size and time (as in the swell check); elsewhere, jointly from the
+fundamental's decay trajectory and the Δ(H2/H1) trajectory. The Δ(H3/H1) trajectory is then
+predicted, with the same tolerances as before. Earlier steepness numbers used the old start rule
+and are superseded by this definition once re-run. Criterion 2: the threshold is defined as half
+the reed's mode-1 decay; the reed tap measures that quantity directly, so where computed and
+measured values differ, the measured one is the definition's value and the computation is the bug.
