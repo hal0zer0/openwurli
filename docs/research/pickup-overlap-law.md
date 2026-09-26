@@ -583,3 +583,34 @@ predicted, with the same tolerances as before. Earlier steepness numbers used th
 and are superseded by this definition once re-run. Criterion 2: the threshold is defined as half
 the reed's mode-1 decay; the reed tap measures that quantity directly, so where computed and
 measured values differ, the measured one is the definition's value and the computation is the bug.
+
+
+**Multi-velocity reference: Keyboard Waves "Wurlitzer 200a" (registered 2026-09-26, before any
+criterion number is extracted).** One 200A, described by the vendor and heard by the user as
+"hot" (barkier than typical), sampled through its own electronics (tap point, tremolo state and
+per-layer processing unknown); 38 white notes, true A1–C7 (the file labels run one octave BELOW
+true pitch); 12 velocity layers (vendor labels 0x0a–0x7e, some missing); 16-bit mono, the lowest 16
+notes at 22.05 kHz; truncated at ~3–5.5 s. Data QA: a small steady ~9.4 Hz amplitude modulation
+(typically 0.2–0.4 dB p5–p95) at the same rate on every note, cause unknown (not the 5.63 Hz
+vibrato rate).
+0. *Split:* IDENTIFICATION notes = every other white note from A1 (A1, C2, E2, G2, B2, D3, F3, A3, C4, E4, G4, B4, D5, F5, A5, C6, E6, G6, B6);
+   HELD-OUT = B1, D2, F2, A2, C3, E3, G3, B3, D4, F4, A4, C5, E5, G5, B5, D6, F6, A6, C7. Held-out notes are not extracted until the model built from the
+   identification half is frozen (commit recorded), then scored once on (a)–(c) at these tolerances.
+1. *Claim:* per note, the measured ff/pp swing ratio (hardest layer over softest), read as a LOWER
+   BOUND on the instrument's physical span (the sampling may not reach the extremes). Layers are
+   vendor labels, not key speeds, so the velocity curve's SHAPE stays ear-voiced and is labelled so;
+   only its unsourced SPAN is replaced.
+2. *Acceptance per layer:* a layer's identified swing enters the map only if its out-of-sample
+   Δ(H2/H1) and Δ(H3/H1) trajectory predictions pass within ±2 dB. Non-unique identifications are
+   INDETERMINATE and left out.
+3. *Robustness:* the span ratio is computed at the g0, finger-thickness and side-gap band ends; it
+   is admissible where it moves by no more than ±15 % across them. Absolute swings are reported as
+   unit-specific only (a hot unit likely differs in g0).
+4. *Cross-layer ratio differences at a fixed window:* admissible only if per-layer processing was a
+   scalar gain, tested against the per-layer trajectories; if they disagree, these are void for
+   this set.
+5. *Instrument:* identification runs through the model's full chain (the samples include the unit's
+   own preamp and amp); the last-nonlinearity caveat applies (a hot unit drives its preamp harder).
+6. *Housekeeping:* analysis windows are integer multiples of the ~9.4 Hz modulation period (e.g.
+   0.213 s) or every tolerance widens by ±0.4 dB; windows end ≥ 0.3 s before truncation; each file is
+   checked for a fade-out; the lowest notes use the analyser's fundamental pinned to the true pitch.
