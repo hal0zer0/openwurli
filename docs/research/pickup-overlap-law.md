@@ -399,5 +399,11 @@ amp does not yet carry the factory-bias crossover). At MIDI 54 the gap exceeds w
 swing ratio (13–17 dB across its plausible range), middle finger thickness (4–6 dB) and a crossover
 of plausible size (H3 ~−35 dB) could close together. **Finding: an odd-harmonic source is missing
 from the model at MIDI 54**, not only a wrong swing. At MIDI 50 (13 dB) the velocity link alone
-could reach it. First Sensor-grade instance of the recordings' H3 > H2 pattern: MIDI 54 over
-1500 ms, H3 −9.5 dB against H2 −12.4 dB.
+could reach it. (An earlier reading that the recordings' H3 grows as the note decays came from
+comparing a 600 ms with a 1500 ms window and is retracted.) Successive 600 ms windows through the
+analyser show the opposite. At MIDI 50, H1 falls 5.6 dB from 0.1 s to 2.5 s while H3 falls 23 dB
+(H3/H1 −6.4 → −24.1). The same sign appears at MIDI 58, 62, 70 and 74, and at equal output level
+H3/H1 depends strongly on register (−6.4 dB at MIDI 50 to −28.9 at MIDI 62). The recordings' odd
+source is therefore level-increasing, steep (H3 roughly ∝ H1⁴ at D3) and concentrated in the low
+register. That is a threshold-type, pickup-side behaviour, and it rules out an under-biased
+output-stage crossover (which would be level-inverse and register-independent).
