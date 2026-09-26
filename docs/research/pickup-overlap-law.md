@@ -728,3 +728,21 @@ u −0.4..+0.6 mm per section is the derivative-convergence check.
   first sign rule had no floor and tripped at −0.01 dB, below resolution). Result, C2..C6 v127,
   four windows each: every residual 0.00 dB, no shared sign: **PASS**. The atlas comparison stays
   in the report for H3..H6, ungated (within ±0.4 dB except where the swing leaves the map).
+
+**Criterion 6's magnitude: an operator decision (2026-09-26 evening, pending).** A no-fit reading
+from the recordings (inverting the chain-invariant mf swell for the swing, then predicting the
+chain-dependent harmonic ratios at that swing) puts the real bass at mf in fold-through (swing
+~2.0–2.35 mm > g0 + t_r + t_p = 1.87 mm): F#2 H2/H1 +2.7, H3/H1 +5.7 dB predicted against +3.9,
++6.4 recorded; D2 short by ~10 dB on H2. Graded PLAUSIBLE, NOT ESTABLISHED (it rests on the same
+inversion as the unsupported swell check; the new support is one note on a report-only ratio).
+Criterion 6's existence rests on Andersen's documented defect; its 6 dB magnitude has no ff
+evidence. Two builds for the operator, both at the same level anchor:
+- **A** — criterion 6 report-only. Edges = the solved tables' reach (criterion 2 never binds), so
+  the upper tail is cut by numerics, not physics. Bass ff 1.98–2.46 mm, C4 1.11 mm; `target_db`
+  −29.56. Branch `pickup-overlap-law-variant-A`. C2 v127 fundamental rise +4.2 dB (peak 1.5 s).
+- **B** — criterion 6 kept (a judgement). Bass ff 1.75–2.08 mm, C4 1.08 mm; `target_db` −29.41.
+  This branch. C2 v127 fundamental rise +1.7 dB.
+Both central picks pass criteria 2 and 6. At C2 v100 (100–500 ms) H2/H1 is −4.3 dB in A against
+−15.3 in B; the middle is identical within 0.5 dB. What settles it with evidence: a bench ff DI of
+a bass note (the fundamental's time course), or, if the operator allows it, the multi-velocity
+set's ff-layer H1 time course, report-only.
