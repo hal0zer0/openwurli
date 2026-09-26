@@ -323,3 +323,28 @@ three. Criterion 2 (ff falloff, thresholds re-derived per pick): C2 passes at al
 at central and low and FAILS at its high end (3.04 mm), where the fundamental swells +14.3 dB. The
 same Andersen signature in the middle section: its upper band is not admissible either. The swell
 bound formula assumes t_p ≥ t_r, so it does not transfer directly to the thin middle fingers.
+
+**Swing pick, final rule for this revision (2026-09-26; replaces Rule B and the corner
+convention).** One rule for every note. (1) Prior: independent distributions per hammer input,
+log-uniform for m_h (1–5 g), v_h (1.4–3.5 m/s), e (0.3–0.7) and D (0.33–0.8), uniform for the
+strike point (0.4–0.6 L), stated in code before any render. (2) The falsifier conditions the prior:
+samples whose ff swing exceeds the note's dynamic admitted edge (the largest swing passing criteria
+2 and 6, bisected per knot) are discarded. (3) Pick = median of the surviving samples; band for the
+ear-test robustness check = their p10/p90. Notes where fewer than ~10 % of samples survive are
+reported as a finding (prior and falsifier in conflict). Corners were dropped: they assume every
+input is at its extreme at once, which is improbable for physically independent inputs, and they
+make the band so wide that the robustness check is vacuous. Dynamic edges (mm, finger region): 33
+1.76, 36 1.57, 39 1.67, 42 1.84, 45 1.80, 48 1.85, 51 1.74, 52 1.89 | 53 1.05, 54 1.02, 57 1.11, 60
+1.26, 63 1.36, 66 1.42, 69 1.44, 72 1.35 | 75 2.50, 78 2.77, 81 2.53, 84 2.74, 87 3.28, 90 3.50, 93
+4.39, 96 ≥ 5.99.
+
+**Registered before the next pick is rendered:**
+7. *Harmonic lower bound, v≈80, against the recordings:* at MIDI 50 and 54, the model's H2/H1 and
+   H3/H1 (full chain, speaker passthrough; the recordings' early-sustain window, 50–250 ms, same
+   method) may not fall more than 6 dB below the recordings'. Recordings: MIDI 50 H2 −2.4, H3 −6.2
+   dB; MIDI 54 H2 −9.0, H3 −22.1 dB. Lenient on purpose: the recording chain (transformer and tube
+   preamp) is unbounded.
+*Report, not a criterion:* the user's ear says the bass at ff lacks growl compared with real units
+(heard on the corner-based Rule B build, bass 0.9–1.0 mm, which is superseded). No recording or
+number exists for ff bass, so no threshold is set. The technician's bass data is what answers it.
+The previous release is never the reference, in either direction.
