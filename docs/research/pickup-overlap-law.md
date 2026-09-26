@@ -296,4 +296,7 @@ alone: Andersen's cure was geometry. Registered before the next pick is rendered
    at v≈80 show no rise at all on their five lowest notes (MIDI 50–66; the peak is in the first
    window, then monotonic decay, MIDI 50 −2.6 dB over 2 s). Miessner allows "slight initial
    increments" (C4's +1.5 dB by 0.5 s was accepted as such). Andersen's two-second swell is the
-   defect end.
+   defect end. Evidence standing: the recordings are MIDI 50–66 at v≈80, above C2/C3 and softer,
+   so they support "no rise is normal" only by extrapolation across register and velocity.
+   Andersen is what speaks directly to the ff bass. The criterion is deliberately lenient (a
+   falsifier should fire only on clear defects).
