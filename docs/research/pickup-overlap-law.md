@@ -220,3 +220,19 @@ re-anchored, `target_db` −32.53, C4 v100 at the preamp input unchanged):
 - Velocity span C4 v64→v110 at the pickup: 6.7 dB (v0.8.0 12.0, law-only 8.7). The plateau now
   clips ff; the span belongs to the contact integration (§7).
 
+
+**Decay criteria, fixed before measuring (2026-09-26).** The ear test found the central pick's ff
+sustain organ-like. "A 200A note decays audibly" is admitted only as a FALSIFIER of the joint pick
+{swing, finger thickness, g0, 2D law}, never as a way to choose a value.
+1. *v≈80, against the recordings (13 notes, MIDI 50–98):* fundamental decay rate fitted over
+   0.1–1.5 s, the same window and fit as the reference analysis (`ml/harmonics.json`,
+   `decay_rate_dB_s`). Pass per note: within ±30 % of the recording's rate, or ±1.5 dB/s,
+   whichever is larger (the recording chain adds a transformer and tube preamp; this tolerance is
+   set before any comparison).
+2. *ff (v127), no recording:* full-chain RMS in 100 ms windows from 0.1 s to 2.1 s. Pass at C2 and
+   C4 if (a) no window rises more than 0.5 dB above the one before it, and (b) the total fall is at
+   least half the reed's own mode-1 decay over the same 2 s. That is, output tracks the reed's
+   swing with a slope of at least 0.5.
+Longitudinal averaging (the finger spanning a stretch of the mode shape) was checked as a
+candidate and is not first-order: even a ±25 % amplitude spread moves the bass output slope at
+3–3.5 mm only from 0.00 to +0.12.
