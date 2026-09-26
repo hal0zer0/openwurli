@@ -11,9 +11,9 @@
 > US 2,919,616 p.10 (in-plane → doubled frequency; offset → fundamental).
 > Capacitance vs displacement is therefore an **overlap law** (reed+lead thickness band
 > against the finger band, fringe-rounded), not `1/(1−y)`, and the load-bearing
-> unknown is the **rest offset** of the reed+lead against the band, not d₀. The shipping
-> model still uses `1/(1−y)`; a revision is planned. Sections below are kept as the
-> historical record until then.
+> unknown is the **rest offset** of the reed+lead against the band, not d₀. The model
+> now runs that law — see [pickup-overlap-law.md](pickup-overlap-law.md). Geometry and
+> `1/(1−y)` sections below are the historical record; the RC network sections still hold.
 
 ## Document Purpose and Audience
 

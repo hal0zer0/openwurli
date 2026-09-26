@@ -140,7 +140,7 @@ Source: Wikipedia (Wurlitzer electronic piano), Abbey Road Institute blog, multi
 
 **The "bark breakpoint":**
 The transition from clean to distorted is not gradual -- it has a knee around velocity 0.6 (MIDI ~76). Below this point, the sound warms up gently. Above it, harmonic distortion increases rapidly. This is because:
-1. The reed's displacement approaches the pickup gap at higher velocities, increasing the 1/(1-y) nonlinearity (primary H2 source)
+1. The reed swings deeper into the pickup's finger band at higher velocities, increasing the pickup nonlinearity (primary H2 source)
 2. At extreme dynamics, the preamp also enters saturation, adding further H2 from its asymmetric headroom
 
 The abruptness of this knee is what musicians call "bark." A model with a smooth, linear velocity-to-distortion curve will sound "flat" or "lifeless" even if the steady-state spectrum matches perfectly.
@@ -207,7 +207,7 @@ Based on Improv source (G3, MIDI 55) and extrapolated from physics:
 | f (vel 80-100) | +1 to +4 dB | +2 to +5 dB stronger | Pronounced bark |
 | ff (vel 100-127) | +4 to +8 dB | +5 to +8 dB stronger | Aggressive growl/bark |
 
-**Velocity-H2 coupling:** ~0.92 dB increase in H2/H1 per 1 dB increase in signal level. This is the pickup's 1/(1-y) nonlinearity at work — larger displacement means more H2, and the preamp adds to it at higher levels.
+**Velocity-H2 coupling:** ~0.92 dB increase in H2/H1 per 1 dB increase in signal level. This is the pickup nonlinearity at work — larger displacement means more H2, and the preamp adds to it at higher levels.
 
 **Non-negotiable:** H2 must exceed H3 at ALL velocities. If ff produces H3>H2, the saturation model is wrong (likely using symmetric function like tanh instead of asymmetric exponential).
 
@@ -221,7 +221,9 @@ Level:     0 dB      -11 dB  -28 dB  -35 dB  -42 dB  -48 dB
            (ref)     (strong) (weak)  (very weak) ...decreasing...
 ```
 
-The spectrum is NOT a smooth rolloff. The H2 "bump" above the otherwise decreasing harmonic series is the signature of the pickup's 1/(1-y) nonlinearity (with additional contribution from the preamp at high dynamics). The spectral envelope should approximate:
+> **Note (2026-09):** this expected spectrum and the "H2 must exceed H3" rule above were written for the parallel-plate `1/(1-y)` pickup, which forces H3/H1 = (H2/H1)². The overlap law ([pickup-overlap-law.md](../research/pickup-overlap-law.md)) predicts a one-sided source with strong H4/H6 once the reed is fully inside the finger band, and H3 above H2 if it reaches the band's far side. Treat both as trend expectations to re-derive after the swing scale is calibrated, not as gates.
+
+The spectrum is NOT a smooth rolloff. The H2 "bump" above the otherwise decreasing harmonic series is the signature of the pickup nonlinearity (with additional contribution from the preamp at high dynamics). The spectral envelope should approximate:
 - H2/H1 ~ -11 dB (H2 from pickup nonlinearity + preamp asymmetry)
 - H_n/H1 ~ -7*n dB for n>=3 (approximately exponential rolloff)
 

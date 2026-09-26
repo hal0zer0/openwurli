@@ -27,8 +27,8 @@ speaker saturation.
 ```
 DS_AT_C4 ↑
   → per-note DS ↑ (via compliance curve, clamped)
-  → y_peak ↑ (pickup displacement)
-  → 1/(1-y) nonlinearity ↑ (more bark, more harmonics)
+  → swing ↑ (DS × PICKUP_MM_PER_DS, mm at the pickup)
+  → reed enters the finger band deeper ↑ (more bark, more harmonics)
   → pickup output ↑
   → output_scale proxy tries to compensate
     → BUT proxy doesn't model preamp Cin HPF or speaker
