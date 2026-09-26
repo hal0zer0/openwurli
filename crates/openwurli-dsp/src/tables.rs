@@ -251,6 +251,13 @@ pub enum SwingPick {
 /// every note over-drive those reeds: that assumption is refuted there, and graded hammers
 /// (mass, covering) are the likely missing input.
 ///
+/// **Biased low, knowingly.** Only the upper falsifiers condition the pick. A registered lower
+/// bound (harmonic floor against the recordings at MIDI 50/54, v~80) fails at these picks but cannot
+/// condition them: its link to the ff swing is the ear-voiced velocity curve, and the sanctioned
+/// analyser cannot yet measure the recordings. So the pick sits low relative to a world where that
+/// bound were admissible. At the lowest recorded notes, the upper and lower bounds nearly collide
+/// (admissible windows 0.24 mm at MIDI 50, 0.04 mm at MIDI 54).
+///
 /// Known model debt: above about MIDI 72 the tabulated reed lengths and thicknesses cannot reach
 /// pitch even without solder. The swing barely depends on it there (the hammer dominates), but
 /// mode ratios and decay do.

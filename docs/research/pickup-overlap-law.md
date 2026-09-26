@@ -363,3 +363,27 @@ under the 10 % flag. **Finding:** at the lowest recorded notes, the ff swell bou
 harmonic floor nearly collide. Candidates, none tested yet: the recording-fitted velocity curve,
 which sets the v≈80/ff swing ratio; the guessed middle finger thickness (0.6 mm, below the reed's
 own thickness); and the unbounded recording chain (transformer and tube can add H3).
+
+**Admissibility, and the cost of the shipped pick.** Every criterion gets the same test: does it
+speak to the variable being picked (the ff swing) through measured or sourced links only, with the
+sanctioned ruler? Criteria 2 and 6 pass it (measured at ff, sourced by Andersen and practitioner
+knowledge), so they condition the prior. Criterion 7 fails it twice. It is measured at v≈80, and
+the link from v≈80 to ff is the velocity curve. And the Sensor Array refuses the recordings (no
+frame of a decaying note passes its stationarity test; reported to its maintainers). So criterion 7
+is reported, not conditioned. **Cost, stated on the shipped label:** conditioning on the upper
+bounds only biases the pick LOW relative to a world where criterion 7 were admissible, which is the
+same direction as the criterion-7 miss and the user's "bass lacking" report.
+
+**The velocity curve inherits the retired law.** `velocity_exponent` was voiced by ear in 2026-07
+through the old `1/(1−y)` law, and `velocity_scurve` cites Miessner's pads only qualitatively. It
+fixes the v≈80/ff swing ratio (0.53 at MIDI 50, 0.50 at 54, 0.47 at C4), which the analysis ranks
+first-order for H3 at v≈80 (13–17 dB across ratios 0.5–0.8). Every velocity-dependent comparison
+in the new model inherits a fit to a law that no longer exists, so any v≈80-versus-ff statement is
+provisional, including the ear test's "at every velocity from v40". The curve moves into the
+excitation revision, re-derived from the contact physics. The technician's DI notes at stated
+dynamics (pp/mf/ff on one note, read with the Sensor Array) would give the mf/ff ratio directly.
+Check (1) done: MIDI 54's H3 miss is not table-limited. At its v≈80 swing (0.37 mm) the shipped
+middle table and an h 0.00125 re-solve of the near-rest window agree to 0.1 dB (−36.1 vs −36.2 dB
+at the preamp input), and the window passes the gate (−65.0 dB / 0.08 dB). With (2) blocked by the
+analyser and (3) finding no source, the conflict stands as the finding: at the lowest recorded
+notes the prior and the falsifiers disagree.
