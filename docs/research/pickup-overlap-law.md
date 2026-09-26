@@ -433,3 +433,23 @@ finding, the recordings' "H3 > H2" pattern, and the early-H3-rise observation. T
 re-ruling stands on the 140B measurement alone until the steepness test is redone. Beyond this
 revision: every constant or training target documented as "OBM-calibrated" or "fitted to OBM"
 inherits the same octave error and is suspect until re-derived.
+
+**Re-registered before any re-extracted number is looked at (2026-09-26).**
+- *Note map:* true MIDI = assigned − 12: 38, 42, 46, 50, 54, 58, 62, 66, 70, 74, 78, 82, 86
+  (reeds 6–54). Row by true pitch (reed = MIDI − 32): 1–14 → 38, 42, 46; 15–20 → 50; 21–42 → 54,
+  58, 62, 66, 70, 74; 43–64 → 78, 82, 86.
+- *Criterion 1 (decay):* same thresholds (±30 % or ±1.5 dB/s), same method (fundamental in 100 ms
+  windows at 0.1/0.3/0.5/0.8/1.0/1.5 s, log-linear fit), now at the true fundamental, all 13 notes.
+  A note is dropped only if its fundamental falls below the floor before 1.5 s, reported as such.
+  The Sensor Array's decay mode is run alongside as a cross-check and reported, not graded.
+- *Criterion 7 (harmonic floor):* same 6 dB floor, same tap (full chain, speaker passthrough, v≈80,
+  MLP off), measured with the Sensor Array (true fundamental, FFT 8192, 600 ms window from 50 ms
+  after onset, the window the analyser can judge), at the two lowest true notes: MIDI 38 and 42.
+- *Steepness (scale-free, a consistency check):* post-attack rule for every note: start at the
+  recording's 0.7 s window, end at its 1.3 s window, H1 drop = the recording's own H1 change over
+  that interval (Sensor, true fundamental, 600 ms windows). Notes, one per row, chosen now: 38
+  (1–14), 50 (15–20), 62 (21–42), 78 (43–64).
+- The velocity-link objection to conditioning on criterion 7 is unchanged: it concerns the
+  ear-voiced velocity curve, not the recordings.
+- *Suspect until checked for recording input:* the velocity curve, the register trims, and the level
+  anchor's provenance.
