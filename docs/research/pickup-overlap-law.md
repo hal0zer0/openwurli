@@ -507,3 +507,15 @@ it. Per bass note (true MIDI 38, 42, 46, 50):
 - *Use:* if supported, the identified A0 and decay are measurement-derived inputs at the
   recording's own dynamic, the first swing in this revision with no velocity curve in its path. If
   not supported, nothing is calibrated from the swell.
+
+**Four-range tables (140B gaps): numerics.** The per-point solver re-aligns its mesh at every u;
+at h 0.005 that makes a table jagged (median second difference 0.64 pF/m, with a 19 pF/m spike at
+u 1.55 mm in the 43–64 table), while h 0.0025 is smooth (0.03 pF/m). Halving h cut the jitter
+~20×, where a smooth O(h²) error would fall ~4×, so the 0.005/0.0025 pair is not asymptotic and
+its gate failures measure mesh jitter, not the shipping table's error. The gate is therefore run
+as h 0.0025 against an h 0.00125 re-solve of each section's reach window (bass u −3.1..+2.9,
+middle −1.9..+1.7, treble −1.6..+1.4), same thresholds, in the order bass, middle, treble. Results
+from a section read before its window passes are conditional. If the h/2 windows show the same
+jitter ratio, the tool needs fixing (a fixed background mesh with u stepped in whole cells), not a
+finer grid. The steepness check is unchanged on the smooth tables: true D3 −12.5 dB (recording
+−11.6), true D4 −37.1 dB (recording −34.4).
