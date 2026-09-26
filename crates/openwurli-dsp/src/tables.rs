@@ -292,28 +292,88 @@ const PROVISIONAL_FF_SWING_MM: [(u8, f64, f64, f64); 24] = [
 /// Last bass reed (reed 20). Interpolation never crosses 52 -> 53.
 const BASS_TOP_MIDI: u8 = 52;
 
+/// Linear-in-log interpolation of per-note knots `(midi, value)` (sorted by MIDI), within one side
+/// of the reed-20|21 break: never interpolates across MIDI 52 -> 53, clamps at the ends of a side.
+/// No allocation (called at note-on on the audio thread).
+fn log_interp_by_side(midi: u8, knots: impl Iterator<Item = (u8, f64)> + Clone) -> f64 {
+    let bass = midi <= BASS_TOP_MIDI;
+    let side = knots.filter(move |k| (k.0 <= BASS_TOP_MIDI) == bass);
+    let mut prev: Option<(u8, f64)> = None;
+    for k in side {
+        if k.0 >= midi {
+            return match prev {
+                Some(p) if k.0 > midi => {
+                    let t = (midi - p.0) as f64 / (k.0 - p.0) as f64;
+                    (p.1.ln() * (1.0 - t) + k.1.ln() * t).exp()
+                }
+                _ => k.1,
+            };
+        }
+        prev = Some(k);
+    }
+    prev.expect("empty knot side").1
+}
+
 /// Provisional ff swing at the pickup for one note and band point, mm. Linear in log(swing) vs
 /// MIDI between knots, within each side of the reed-20|21 break.
 pub fn provisional_ff_swing_mm(midi: u8, pick: SwingPick) -> f64 {
-    let value = |k: &(u8, f64, f64, f64)| match pick {
-        SwingPick::Central => k.1,
-        SwingPick::P10 => k.2,
-        SwingPick::P90 => k.3,
-    };
-    let bass = midi <= BASS_TOP_MIDI;
-    let side: Vec<&(u8, f64, f64, f64)> = PROVISIONAL_FF_SWING_MM
-        .iter()
-        .filter(|k| (k.0 <= BASS_TOP_MIDI) == bass)
-        .collect();
-    let m = midi.clamp(side[0].0, side[side.len() - 1].0);
-    let i = side
-        .iter()
-        .rposition(|k| k.0 <= m)
-        .unwrap()
-        .min(side.len() - 2);
-    let (k0, k1) = (side[i], side[i + 1]);
-    let t = (m - k0.0) as f64 / (k1.0 - k0.0) as f64;
-    (value(k0).ln() * (1.0 - t) + value(k1).ln() * t).exp()
+    let knots = PROVISIONAL_FF_SWING_MM.iter().map(move |k| {
+        let v = match pick {
+            SwingPick::Central => k.1,
+            SwingPick::P10 => k.2,
+            SwingPick::P90 => k.3,
+        };
+        (k.0, v)
+    });
+    log_interp_by_side(midi, knots)
+}
+
+/// **PROVISIONAL** amplitude-dependent reed loss (quadratic air drag on mode 1): extra decay in
+/// dB/s per mm of swing at the pickup's finger region, `(midi, beta)`.
+///
+/// Textbook quadratic drag on an oscillating plate (force per unit length `0.5 rho C_d W |v| v`)
+/// integrated over the mode shape, per note, with the same finite-element reeds and conventions as
+/// [`PROVISIONAL_FF_SWING_MM`] (tip-normalised mode, solder solved to pitch, referred to the finger
+/// region): `beta_tip = (4/3) rho_air C_d W L I3 f / M1`, `I3 = (1/L) int |phi|^3 dx ~ 0.16-0.18`,
+/// `beta_p = beta_tip / phi_p`. Drag coefficient C_d 2-10 for a sharp-edged plate at
+/// Keulegan-Carpenter number ~0.7-6 (guess-grade); the table is at the geometric centre, 4.47. The
+/// band corners are x0.447 and x2.236 (`CalibrationConfig::air_drag_scale`).
+///
+/// Mode 1 only: higher modes are 36-48 dB down. Clamp micro-slip, another amplitude-dependent loss,
+/// cannot be bounded from any source and is left out. The linear decay rates are unchanged: the old
+/// expansive pickup law made the output decay faster than the reed, so their fit (at mf)
+/// under-estimates the reed's true decay rather than containing this term.
+const PROVISIONAL_AIR_DRAG_DB_PER_MM: [(u8, f64); 24] = [
+    (33, 0.259),
+    (36, 0.356),
+    (39, 0.485),
+    (42, 0.651),
+    (45, 0.863),
+    (48, 1.125),
+    (51, 1.417),
+    (52, 1.519),
+    (53, 0.664),
+    (54, 0.756),
+    (57, 1.114),
+    (60, 1.633),
+    (63, 2.381),
+    (66, 3.446),
+    (69, 4.863),
+    (72, 5.921),
+    (75, 7.116),
+    (78, 8.562),
+    (81, 10.32),
+    (84, 12.45),
+    (87, 15.05),
+    (90, 18.24),
+    (93, 22.16),
+    (96, 27.02),
+];
+
+/// Mode-1 air-drag coefficient for this note, dB/s per mm of finger-region swing, scaled by
+/// `cfg.air_drag_scale` (1.0 = C_d 4.47; 0 = off).
+pub fn air_drag_db_per_mm_with_config(midi: u8, cfg: &CalibrationConfig) -> f64 {
+    log_interp_by_side(midi, PROVISIONAL_AIR_DRAG_DB_PER_MM.iter().copied()) * cfg.air_drag_scale
 }
 
 /// Lower bound on the swing, mm: keeps the level proxy away from zero.
@@ -327,6 +387,9 @@ pub struct CalibrationConfig {
     pub swing_pick: SwingPick,
     /// Multiplier on the provisional swing (1.0 in the shipping build; for bench sweeps).
     pub swing_scale: f64,
+    /// Multiplier on the air-drag coefficient: 1.0 = C_d 4.47 (shipping), 0.447 / 2.236 = the
+    /// C_d 2 / 10 band corners, 0 = off.
+    pub air_drag_scale: f64,
     pub target_db: f64,
     pub voicing_slope: f64,
     pub zero_trim: bool,
@@ -337,11 +400,12 @@ impl Default for CalibrationConfig {
         Self {
             swing_pick: SwingPick::Central,
             swing_scale: 1.0,
+            air_drag_scale: 1.0,
             // Level anchor: C4 v100 at the preamp input held where v0.8.0 put it (~18 mV, which
             // also matches the physical estimate for the plate swing at TR-1, 147 V x dC/C_node).
             // No evidence moves that level; the provisional swing changes timbre, not the
             // anchor. Re-measured with tools/pickup_rev_metrics.py whenever the swing changes.
-            target_db: -32.53,
+            target_db: -32.34,
             voicing_slope: -0.04,
             zero_trim: false,
         }
@@ -1603,6 +1667,23 @@ mod tests {
         // Between knots: log-linear, so C4-D4 sits between its neighbours.
         let d4 = provisional_ff_swing_mm(62, SwingPick::Central);
         assert!(d4 < 1.19 && d4 > 1.14, "MIDI 62: {d4}");
+    }
+
+    #[test]
+    fn test_air_drag_knots_break_and_scale() {
+        let cfg = CalibrationConfig::default();
+        for &(m, v) in PROVISIONAL_AIR_DRAG_DB_PER_MM.iter() {
+            let got = air_drag_db_per_mm_with_config(m, &cfg);
+            assert!((got - v).abs() < 1e-12, "MIDI {m}: {got} vs {v}");
+        }
+        // The 52 -> 53 step is kept (it follows the reed-mass step), not interpolated across.
+        assert_eq!(air_drag_db_per_mm_with_config(52, &cfg), 1.519);
+        assert_eq!(air_drag_db_per_mm_with_config(53, &cfg), 0.664);
+        let off = CalibrationConfig {
+            air_drag_scale: 0.0,
+            ..CalibrationConfig::default()
+        };
+        assert_eq!(air_drag_db_per_mm_with_config(60, &off), 0.0);
     }
 
     #[test]

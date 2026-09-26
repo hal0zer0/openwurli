@@ -444,8 +444,11 @@ fn cmd_render(args: &[String]) {
         "central" => tables::SwingPick::Central,
         other => panic!("--swing-pick must be central, p10 or p90 (got {other})"),
     };
+    // Air drag on mode 1: 1.0 = C_d 4.47 (shipping), 0.447 / 2.236 = C_d 2 / 10 corners, 0 = off.
+    let air_drag_scale = parse_flag(args, "--air-drag-scale", 1.0);
     let calib = CalibrationConfig {
         swing_pick,
+        air_drag_scale,
         ..CalibrationConfig::default()
     };
     let default_out = temp_default("preamp_render.wav");
@@ -589,6 +592,7 @@ fn cmd_render(args: &[String]) {
     println!("  Volume:    {volume:.3} (PA gain: 69x, headroom: 22V)");
     println!("  Speaker:   {speaker_char:.1}");
     println!("  Swing:     {swing_pick:?} pick (provisional)");
+    println!("  Air drag:  x{air_drag_scale:.3} (1.0 = C_d 4.47)");
     if let Some(swing) = swing_override {
         println!("  Swing override: {swing:.3} mm");
     }
@@ -667,6 +671,11 @@ fn cmd_h2_audit(args: &[String]) {
                 velocity,
                 BASE_SR,
                 (note as u32).wrapping_mul(2654435761),
+            );
+            reed.set_air_drag(
+                tables::air_drag_db_per_mm_with_config(note, &CalibrationConfig::default()),
+                tables::pickup_swing_mm(note),
+                BASE_SR,
             );
 
             let n_samples = (duration * BASE_SR) as usize;
@@ -1298,6 +1307,11 @@ fn run_calibrate(
                 velocity,
                 BASE_SR,
                 (note as u32).wrapping_mul(2654435761),
+            );
+            reed.set_air_drag(
+                tables::air_drag_db_per_mm_with_config(note, cfg),
+                swing_mm,
+                BASE_SR,
             );
 
             let n_samples = (duration * BASE_SR) as usize;
@@ -2366,7 +2380,7 @@ fn cmd_bench_reed(args: &[String]) {
         let seed = (note as u32)
             .wrapping_mul(2654435761)
             .wrapping_add(i as u32);
-        reeds.push(ModalReed::new(
+        let mut reed = ModalReed::new(
             detuned,
             &params.mode_ratios,
             &amps,
@@ -2375,7 +2389,13 @@ fn cmd_bench_reed(args: &[String]) {
             vel,
             sr,
             seed,
-        ));
+        );
+        reed.set_air_drag(
+            tables::air_drag_db_per_mm_with_config(note, &CalibrationConfig::default()),
+            tables::pickup_swing_mm(note),
+            sr,
+        );
+        reeds.push(reed);
     }
 
     let mut scratch = vec![0.0f64; 1024];

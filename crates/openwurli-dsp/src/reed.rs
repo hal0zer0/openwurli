@@ -82,6 +82,9 @@ pub struct ModalReed {
     jitter_state: u32,
     jitter_revert: f64,
     jitter_diffusion: f64,
+    /// Amplitude-dependent loss on mode 1 (air drag), per sample, per unit of mode-1 envelope:
+    /// `envelope *= 1 - drag_k * envelope`. Zero = off. See [`ModalReed::set_air_drag`].
+    drag_k: f64,
 }
 
 /// LCG PRNG → scaled uniform noise with unit variance.
@@ -178,7 +181,18 @@ impl ModalReed {
             jitter_state,
             jitter_revert,
             jitter_diffusion,
+            drag_k: 0.0,
         }
+    }
+
+    /// Enable amplitude-dependent loss on mode 1: quadratic air drag on the moving reed, which
+    /// decays the mode as `dA/dt = -beta |A| A`. `beta_db_per_mm` is the extra decay in dB/s per
+    /// mm of swing at the pickup's finger region; `swing_mm` is the swing that one unit of model
+    /// displacement stands for there. The mode's current amplitude (initial amplitude x envelope)
+    /// sets the loss, so a loud note loses energy faster early and slower once it has decayed.
+    pub fn set_air_drag(&mut self, beta_db_per_mm: f64, swing_mm: f64, sample_rate: f64) {
+        let beta_nepers = beta_db_per_mm / 8.686;
+        self.drag_k = beta_nepers * self.modes[0].amplitude.abs() * swing_mm / sample_rate;
     }
 
     /// Start the damper (called on note_off).
@@ -290,6 +304,14 @@ impl ModalReed {
                 mode.envelope *= mode.decay_mult;
             }
 
+            // Amplitude-dependent loss on mode 1 (air drag): the decay rate grows with the
+            // mode's current amplitude. Per-sample change is tiny, so the linearised update is
+            // exact to well below audibility.
+            if self.drag_k > 0.0 {
+                let env = self.modes[0].envelope;
+                self.modes[0].envelope = env * (1.0 - self.drag_k * env);
+            }
+
             // Renormalize quadrature radius every 1024 samples
             if self.sample & (RENORM_INTERVAL - 1) == 0 && self.sample > 0 {
                 for mode in &mut self.modes {
@@ -331,6 +353,38 @@ impl ModalReed {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_air_drag_is_amplitude_dependent() {
+        // Quadratic drag: dA/dt = -beta |A| A. A loud reed loses more dB per second than a soft
+        // one, and the loss rate falls as the reed decays. With drag off, the decay in dB is the
+        // same at every amplitude.
+        let sr = 44100.0;
+        let ratios = [1.0, 6.27, 17.55, 34.39, 56.84, 84.91, 118.6];
+        let decays = [4.0, 30.0, 60.0, 90.0, 120.0, 150.0, 180.0];
+        let fall_db = |amp: f64, beta: f64| {
+            let amps = [amp, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+            let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 1);
+            reed.set_air_drag(beta, 1.2, sr);
+            let mut buf = vec![0.0f64; sr as usize];
+            reed.render(&mut buf);
+            let pk = |s: &[f64]| s.iter().fold(0.0f64, |a, x| a.max(x.abs()));
+            20.0 * (pk(&buf[..2000]) / pk(&buf[buf.len() - 2000..])).log10()
+        };
+        let (loud, soft) = (fall_db(1.0, 1.6), fall_db(0.1, 1.6));
+        let (loud_off, soft_off) = (fall_db(1.0, 0.0), fall_db(0.1, 0.0));
+        assert!(
+            (loud_off - soft_off).abs() < 0.05,
+            "no drag: {loud_off} vs {soft_off}"
+        );
+        // Expected extra over ~1 s at A0 1.2 mm, beta 1.6 dB/s/mm: roughly 1.5-1.9 dB.
+        assert!(
+            loud - loud_off > 1.2 && loud - loud_off < 2.2,
+            "loud extra {}",
+            loud - loud_off
+        );
+        assert!(soft - soft_off < 0.25, "soft extra {}", soft - soft_off);
+    }
 
     #[test]
     fn test_single_mode_sine() {

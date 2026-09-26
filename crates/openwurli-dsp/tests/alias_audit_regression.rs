@@ -40,6 +40,14 @@ struct BaselineEntry {
 /// Hand-parsed baseline — small enough that a JSON dep isn't worth pulling in.
 /// Must stay in lockstep with `tests/baselines/alias_audit_v0_5_1.json`.
 ///
+/// REFRESHED 2026-09-26 for the pickup overlap-law revision (field-solved law, provisional
+/// bottom-up reed swing, mode-1 air drag). step_up 72: 2.980 -> 9.513; 84: 8.003 -> 5.096;
+/// 91: 9.631 -> 7.509. hf_band: 72 improved 6.0 dB, 84 +0.74, 91 -0.06. The note-72 rise is a
+/// notch at H6 (-75 dBc beside H7 -62 dBc): a conduction-angle cancellation of the one-sided law
+/// at the swing in the analysis window (it moved with the air-drag change). Not aliasing: note 72
+/// at 44.1 and 176.4 kHz gives the same H6/H7. Sign split as before: the broadband metric did not
+/// move with the plateau metric.
+///
 /// REFRESHED 2026-09-23 (b) for the Reed Bar Trim default (12.5K -> 17.2K,
 /// drive -1.3 dB at the canonical stimulus) and for speaker character 0
 /// becoming a true passthrough (the 20 Hz / 20 kHz bypass biquads no longer
@@ -78,18 +86,18 @@ struct BaselineEntry {
 const BASELINE: &[BaselineEntry] = &[
     BaselineEntry {
         note: 72,
-        max_step_up_db: 2.980,
-        hf_band_dbc: -48.751,
+        max_step_up_db: 9.513,
+        hf_band_dbc: -54.778,
     },
     BaselineEntry {
         note: 84,
-        max_step_up_db: 8.003,
-        hf_band_dbc: -44.558,
+        max_step_up_db: 5.096,
+        hf_band_dbc: -43.823,
     },
     BaselineEntry {
         note: 91,
-        max_step_up_db: 9.631,
-        hf_band_dbc: -40.699,
+        max_step_up_db: 7.509,
+        hf_band_dbc: -40.639,
     },
 ];
 

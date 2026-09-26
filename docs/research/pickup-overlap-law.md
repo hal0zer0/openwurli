@@ -273,3 +273,14 @@ belongs to the excitation revision. The swing table is not moved to buy decay.
    (`0.005 f^1.22`, fitted through the old expansive law, which inflated apparent output decay),
    recorded top-down debt. It is not a drag regression, and the drag coefficient is not the thing
    to cut.
+
+**Air drag added (mode 1, C_d 4.47 centre; `tables::PROVISIONAL_AIR_DRAG_DB_PER_MM`).** Level
+anchor re-held (`target_db` −32.34). Registered checks: (1) v≈80 decay 8/12 (was 7/12); every note
+from MIDI 50 to 82 moved toward the recordings. (2) ff falloff, threshold re-derived from the reed's
+decay with drag: C2 5.85 dB (needs ≥ 3.71), C4 7.67 dB (needs ≥ 5.45); both pass. (3) Reported:
+the fundamental's early rise is +1.5 dB at C4 v127 (peak at 0.5 s) and +11.7 dB at C2 v127, still
+rising at 2.0 s. At ff the bass fundamental starts weak (the reed folds through its fingers) and
+swells as the swing decays. Andersen (US 2,974,555) describes that same defect for the in-plane
+design ("the fundamental may reach a peak as much as two seconds later"), and the 200A's offset
+design exists to prevent it. Treble: as pre-registered, the early-window gap to the recordings
+widens slightly (linear-rate debt).

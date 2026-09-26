@@ -16,6 +16,8 @@ pub struct Voice {
     post_pickup_gain: f64,
     sample_rate: f64,
     midi_note: u8,
+    /// Mode-1 air-drag coefficient, dB/s per mm of finger-region swing (0 = off).
+    air_drag_db_per_mm: f64,
 }
 
 impl Voice {
@@ -110,7 +112,7 @@ impl Voice {
         // which the overlap law does not obey. It stays pinned out until the MLP is retrained.
         let swing_mm = tables::pickup_swing_mm_with_config(midi_note, cfg);
 
-        let reed = ModalReed::new(
+        let mut reed = ModalReed::new(
             detuned_fundamental,
             &corrected_ratios,
             &amplitudes,
@@ -120,6 +122,10 @@ impl Voice {
             sample_rate,
             noise_seed,
         );
+        // Amplitude-dependent loss (air drag on mode 1), referred to the same finger-region
+        // swing as the pickup drive.
+        let air_drag_db_per_mm = tables::air_drag_db_per_mm_with_config(midi_note, cfg);
+        reed.set_air_drag(air_drag_db_per_mm, swing_mm, sample_rate);
 
         let pickup = Pickup::new_for_note(sample_rate, midi_note, swing_mm);
         let noise = AttackNoise::new(velocity, detuned_fundamental, sample_rate, noise_seed);
@@ -137,12 +143,15 @@ impl Voice {
             post_pickup_gain,
             sample_rate,
             midi_note,
+            air_drag_db_per_mm,
         }
     }
 
     /// Override the ff swing at the pickup, mm.
     pub fn set_swing_mm(&mut self, swing_mm: f64) {
         self.pickup.set_amplitude_mm(swing_mm);
+        self.reed
+            .set_air_drag(self.air_drag_db_per_mm, swing_mm, self.sample_rate);
     }
 
     /// Disable attack noise (for A/B testing of transient artifacts).
