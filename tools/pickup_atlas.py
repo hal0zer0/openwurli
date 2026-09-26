@@ -37,6 +37,7 @@ from steepness_check import write_wav  # noqa: E402
 SR = 44100
 F_ATLAS = 441.0  # 100 cycles per 0.1 s: whole cycles in every Sensor frame length used
 PICKUP_FC = 880.5
+G0 = 0.085  # the engine's rest offset (PICKUP_REST_OFFSET_MM)
 BENCH = os.path.join(HERE, "..", "target", "release", "preamp-bench")
 KNOWN_WIN = 0.5  # s; the analyser needs a window somewhat longer than FFT 16384 (371 ms)
 AMPS = np.round(np.exp(np.linspace(np.log(0.02), np.log(3.0), 41)), 4)
@@ -88,11 +89,19 @@ def section_of(n):
 
 
 def known(a):
+    """Gate (re-registered): render vs the law driven by the reed tap's own trace through the
+    engine-matched RC, +-0.5 dB on H2..H6 above -40 dBc, and no shared sign per harmonic. The
+    steady-swing atlas is printed beside it for H3..H6, ungated (it reads H2 high where the law's
+    H2 has a notch: a 0.5 s window averages across the notch)."""
+    import swell_check as SW
     at = json.load(open(a.atlas))
+    tabs = json.load(open(a.tables))
     tmp = tempfile.mkdtemp(prefix="known_")
-    resid = []
+    resid, fails = [], 0
     for n in (int(v) for v in a.notes.split(",")):
         sec = section_of(n)
+        sign = 1.0 if n <= 52 else -1.0
+        cs, _ = gcv_smooth(np.array(tabs[sec]["u"]), np.array(tabs[sec]["C_pF_per_m"]))
         m = np.array([r for r in at[f"{sec}/central"]["rows"] if r[1] is not None], dtype=float)
         wav = os.path.join(tmp, f"p{n}.wav")
         subprocess.run([BENCH, "render", "--note", str(n), "--velocity", "127", "--duration", "2.5",
@@ -102,39 +111,55 @@ def known(a):
         tap = os.path.join(tmp, f"t{n}")
         subprocess.run([BENCH, "reed-tap", "--note", str(n), "--velocity", "127", "--duration", "2.5",
                         "--output-prefix", tap], check=True, capture_output=True)
-        m1 = M.read_wav(f"{tap}_mode1_mm.wav") * 10.0  # mm (full scale 10 mm)
-        m2 = M.read_wav(f"{tap}_mode2_mm.wav") * 10.0
+        x = M.read_wav(f"{tap}_total_mm.wav") * 10.0  # mm (full scale 10 mm)
+        m1 = M.read_wav(f"{tap}_mode1_mm.wav") * 10.0
+        src = cs(sign * x - G0) - cs(-G0)
+        # engine-matched one-pole high-pass (bilinear), as tools/swell_check.py
+        w = np.tan(np.pi * PICKUP_FC / SR)
+        b0, a1 = 1 / (1 + w), (1 - w) / (1 + w)
+        y = np.empty_like(src)
+        y[0] = 0.0
+        for i in range(1, len(src)):
+            y[i] = a1 * y[i - 1] + b0 * (src[i] - src[i - 1])
+        syn = os.path.join(tmp, f"s{n}.wav")
+        SW_write(syn, y)
         f0 = M.refine_f0(M.read_wav(wav)[int(0.3 * SR):int(0.7 * SR)], M.midi_hz(n))
-        worst = 0.0
         for t0 in (0.3, 0.8, 1.3, 1.8):
             seg = slice(int(t0 * SR), int((t0 + KNOWN_WIN) * SR))
-            env = np.abs(hilbert(m1))[seg]  # mode-1 amplitude envelope
-            w = np.hanning(len(env))
-            A = float(np.sum(env * w) / np.sum(w))  # Hann-weighted mean over the analysed window
-            m2db = 20 * np.log10(np.abs(m2[seg]).max() / A + 1e-30)
+            env = np.abs(hilbert(m1))[seg]
+            wn = np.hanning(len(env))
+            A = float(np.sum(env * wn) / np.sum(wn))
             h = sensor_dbc(a.sensor, wav, f0, int(t0 * 1000), int(KNOWN_WIN * 1000))
-            if h is None:
+            g = sensor_dbc(a.sensor, syn, f0, int(t0 * 1000), int(KNOWN_WIN * 1000))
+            if h is None or g is None:
                 print(f"  MIDI {n} t {t0}: Sensor refused")
                 continue
-            exp = [float(np.interp(np.log(A), np.log(m[:, 0]), m[:, k])) + hpf_tilt_db(f0, k + 1)
-                   for k in range(1, 6)]
-            d = [None if h[i] is None else h[i] - exp[i] for i in range(5)]
-            strong = [abs(d[i]) for i in range(5) if d[i] is not None and max(h[i], exp[i]) > -40]
-            worst = max([worst] + strong)
-            resid.append([n, t0] + [d[i] if d[i] is not None and max(h[i], exp[i]) > -40 else None
-                                    for i in range(5)])
-            print(f"  MIDI {n} t {t0:.1f} s: A {A:.3f} mm (mode2 {m2db:+.0f} dB) | render H2..H6 "
-                  + " ".join("   --" if v is None else f"{v:+6.1f}" for v in h) + " | atlas+RC "
-                  + " ".join(f"{v:+6.1f}" for v in exp) + " | resid "
-                  + " ".join("  --" if v is None else f"{v:+5.2f}" for v in d), flush=True)
-        print(f"KNOWN MIDI {n} ({sec}): worst |diff| on harmonics above -40 dBc {worst:.2f} dB",
-              flush=True)
-    # Sign pattern: a shared sign per harmonic across all cells is a bug even inside tolerance.
+            d = [None if (h[i] is None or g[i] is None or max(h[i], g[i]) <= -40) else h[i] - g[i]
+                 for i in range(5)]
+            bad = [v for v in d if v is not None and abs(v) > 0.5]
+            fails += len(bad)
+            resid.append([n, t0] + d)
+            inmap = m[0, 0] <= A <= m[-1, 0]
+            atl = [float(np.interp(np.log(A), np.log(m[:, 0]), m[:, k])) + hpf_tilt_db(f0, k + 1)
+                   for k in range(1, 6)] if inmap else [None] * 5
+            print(f"  MIDI {n} t {t0:.1f} s: A {A:.3f} mm | gated resid H2..H6 "
+                  + " ".join("  --" if v is None else f"{v:+5.2f}" for v in d)
+                  + " | atlas H3..H6 (ungated) "
+                  + " ".join("  --" if (atl[i] is None or h[i] is None) else f"{h[i] - atl[i]:+5.2f}"
+                             for i in range(1, 5)), flush=True)
     for k in range(5):
         v = [r[2 + k] for r in resid if r[2 + k] is not None]
         if v:
-            print(f"H{k + 2}: {len(v)} cells, mean {np.mean(v):+.2f} dB, "
-                  f"{sum(x > 0 for x in v)} positive / {sum(x < 0 for x in v)} negative")
+            shared = len(v) >= 4 and (all(x > 0 for x in v) or all(x < 0 for x in v))
+            print(f"H{k + 2}: {len(v)} cells, mean {np.mean(v):+.3f} dB, max |{max(map(abs, v)):.2f}|"
+                  f"{'  SHARED SIGN' if shared else ''}")
+            fails += shared
+    print(f"KNOWN-ANSWER GATE: {'PASS' if fails == 0 else 'FAIL'} ({fails} cell/sign failures)")
+
+
+def SW_write(path, y):
+    from steepness_check import write_wav
+    write_wav(path, y)
 
 
 def main():
@@ -147,6 +172,7 @@ def main():
     p = sub.add_parser("known")
     p.add_argument("--sensor", required=True)
     p.add_argument("--atlas", required=True)
+    p.add_argument("--tables", required=True, help="the section tables compiled into the engine")
     p.add_argument("--notes", default="36,48,60,72,84")
     a = ap.parse_args()
     atlas(a) if a.cmd == "atlas" else known(a)
