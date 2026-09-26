@@ -409,13 +409,16 @@ def static_harmonics(u, C, g0, A, kmax=8, n=1024):
     return 20 * np.log10(np.maximum(X[1:], 1e-300) / X[0])
 
 
-def check_convergence(path_a, path_b, rel_above_db=-30.0, rel_tol_db=0.5, abs_tol_db=-45.0):
+def check_convergence(path_a, path_b, rel_above_db=-30.0, rel_tol_db=0.5, abs_tol_db=-45.0,
+                      a_max=None):
     """Harmonic-convergence gate between an h and an h/2 table set (static law, H2..H8).
 
     Over swings 0.02 mm .. min(t_p, 1 mm) (extend once the real swing is known), g0 0.07-0.10 mm, and only swings that stay
     inside both tables' u range — so a --refine window can be gated against its partner): every
-    harmonic above rel_above_db re H1 agrees to rel_tol_db, and the linear difference re H1 is
-    <= abs_tol_db everywhere. A dB gap alone is ill-posed for harmonics far below H1.
+    harmonic above rel_above_db re H1 agrees to rel_tol_db, and every harmonic at or below it
+    differs by <= abs_tol_db re H1 (linear). Each bound governs where it is well-posed: a dB gap is
+    meaningless far below H1, and a linear bound re H1 is over-strict on a harmonic louder than H1
+    (fold-through).
     """
     a, b = json.load(open(path_a)), json.load(open(path_b))
     ok = True
@@ -426,12 +429,14 @@ def check_convergence(path_a, path_b, rel_above_db=-30.0, rel_tol_db=0.5, abs_to
         u_lo, u_hi = max(ua[0], ub[0]), min(ua[-1], ub[-1])
         worst_lin, worst_rel = -np.inf, 0.0
         for g0 in (0.07, 0.085, 0.10):
-            a_max = min(ta["t_p"], 1.0, -g0 - u_lo, u_hi + g0)
-            for A in np.arange(0.02, a_max + 1e-9, 0.01):
+            reach = min(ta["t_p"], 1.0) if a_max is None else a_max
+            a_top = min(reach, -g0 - u_lo, u_hi + g0)
+            for A in np.arange(0.02, a_top + 1e-9, 0.01):
                 ha, hb = static_harmonics(ua, Ca, g0, A), static_harmonics(ub, Cb, g0, A)
-                lin = np.abs(10 ** (ha / 20) - 10 ** (hb / 20))
-                worst_lin = max(worst_lin, 20 * np.log10(max(float(lin.max()), 1e-300)))
                 big = (ha > rel_above_db) | (hb > rel_above_db)
+                if (~big).any():
+                    lin = np.abs(10 ** (ha / 20) - 10 ** (hb / 20))[~big]
+                    worst_lin = max(worst_lin, 20 * np.log10(max(float(lin.max()), 1e-300)))
                 if big.any():
                     worst_rel = max(worst_rel, float(np.max(np.abs(ha - hb)[big])))
         passed = worst_lin <= abs_tol_db and worst_rel <= rel_tol_db
@@ -446,6 +451,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", nargs=2, metavar=("A.json", "B.json"),
                     help="harmonic-convergence gate between two table sets")
+    ap.add_argument("--a-max", type=float, default=None,
+                    help="--check: largest swing (mm) to gate; default min(t_p, 1 mm)")
     ap.add_argument("--out", default=None)
     ap.add_argument("--h", type=float, default=0.005)  # converged: 0.005 vs 0.0025 agree to 0.1%
     ap.add_argument("--tables", action="store_true",
@@ -476,7 +483,7 @@ def main():
         run_chosen(a.h, a.u_step, a.out, a.jobs)
         return
     if a.check:
-        check_convergence(*a.check)
+        check_convergence(*a.check, a_max=a.a_max)
         return
     if a.tables:
         run_tables(a.h, a.u_step, a.out, a.jobs)
