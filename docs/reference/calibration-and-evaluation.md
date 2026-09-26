@@ -424,7 +424,7 @@ This happened in Round 40 of this project. Root cause analysis:
 
 | Source | Type | Quality | Location | Use For |
 |--------|------|---------|----------|---------|
-| OldBassMan 200A (Freesound 5726) | 13 isolated notes | 48kHz/24bit, Lundahl+tube chain | [Freesound #5726](https://freesound.org/people/oldbassman/packs/91/) | Harmonic ratios, decay rates, spectral evolution. PRIMARY calibration source. |
+| OldBassMan 200A (Freesound 5726) | 13 isolated notes | 48kHz/24bit, Lundahl+tube chain | [Freesound #5726](https://freesound.org/people/oldbassman/packs/5726/) | Harmonic ratios, decay rates, spectral evolution. PRIMARY calibration source. |
 | Unplugged 200A (Pianobook) | 3 dynamic layers x 2 RR | 48kHz/24bit stereo | Pianobook free download | Multi-velocity comparison, attack character |
 | VReeds (Acoustic Samples) | Multi-velocity DI + speaker | Commercial | acousticsamples.net | DI recording reference (no recording chain coloration) |
 | PM-200 (Puremagnetik) | Hi-res multi-velocity | Commercial | puremagnetik.com | Detailed velocity layering reference |
