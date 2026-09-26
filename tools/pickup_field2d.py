@@ -147,11 +147,285 @@ CASES = {
 GAPS = (0.064, 0.13, 0.25)  # side gap g_s (mm): patent spec .0025" .. field-measured ~.010"
 
 
+# Evidence bands per keyboard section (mm). Every absolute is a graded guess; see
+# docs/research/pickup-overlap-law.md for sources. Tables are generated at both ends of each band.
+SECTIONS = {
+    # reeds 1-20: unground .020" reed; fingers ~2x the middle section (photo ratio 1.8-2.4x)
+    "bass": {"W": 3.84, "t_r": (0.51,), "t_p": (0.85, 1.7)},
+    # reeds 21-42: thin, bendable fingers; tongue .020" (200) .. .026" (200A, supplier figure)
+    "middle": {"W": 3.07, "t_r": (0.51, 0.66), "t_p": (0.4, 0.8)},
+    # reeds 43-64: "a lot thicker" than the middle, uniform to the top
+    "treble": {"W": 2.64, "t_r": (0.51, 0.66), "t_p": (0.85, 2.0)},
+}
+SIDE_GAPS = (0.051, 0.064, 0.076)  # .002 / .0025 / .003" per side (patent spacer set)
+U_STEP = 0.025
+
+
+def table_cases():
+    for sec, s in SECTIONS.items():
+        for t_r in s["t_r"]:
+            for t_p in s["t_p"]:
+                for g_s in SIDE_GAPS:
+                    yield sec, s["W"], t_r, t_p, g_s
+
+
+def _solve_table(args):
+    sec, W, t_r, t_p, g_s, h, step = args
+    us = np.round(np.arange(-2.0, t_r + t_p + 0.5 + 1e-9, step), 5)
+    C = solve_case(W, t_r, t_p, g_s, us, h=h)
+    key = f"{sec}/tr={t_r}/tp={t_p}/gs={g_s}"
+    return key, {"section": sec, "W": W, "t_r": t_r, "t_p": t_p, "g_s": g_s, "h": h,
+                 "u": us.tolist(), "C_pF_per_m": (C * 1e12).tolist()}
+
+
+def run_tables(h, step, out, jobs):
+    from multiprocessing import Pool
+    work = [(*c, h, step) for c in table_cases()]
+    with Pool(jobs) as pool:
+        res = dict(pool.imap_unordered(_solve_table, work))
+    with open(out, "w") as f:
+        json.dump(res, f)
+    print(f"wrote {len(res)} tables (h={h}, u step={step}) to {out}")
+
+
+# The configuration the plugin ships: one table per section at the reference geometry.
+# t_p mid-band where the sensitivity check showed it harmless (bass, treble); the middle section's
+# t_p is load-bearing and provisional until measured. t_r: .020" bass, .026" above. g_s .0025".
+CHOSEN = {
+    "bass": {"W": 3.84, "t_r": 0.51, "t_p": 1.275},
+    "middle": {"W": 3.07, "t_r": 0.66, "t_p": 0.6},
+    "treble": {"W": 2.64, "t_r": 0.66, "t_p": 1.425},
+}
+CHOSEN_GS = 0.064
+
+
+def run_chosen(h, step, out, jobs):
+    from multiprocessing import Pool
+    work = []
+    for sec, s in CHOSEN.items():
+        work.append((sec, s["W"], s["t_r"], s["t_p"], CHOSEN_GS, h, step))
+    with Pool(jobs) as pool:
+        res = dict(pool.imap_unordered(_solve_chosen, work))
+    with open(out, "w") as f:
+        json.dump(res, f)
+    print(f"wrote {len(res)} shipping tables (h={h}) to {out}")
+
+
+def _solve_chosen(args):
+    sec, W, t_r, t_p, g_s, h, step = args
+    us = np.round(np.arange(-3.0, t_r + t_p + 1.0 + 1e-9, step), 5)
+    C = solve_case(W, t_r, t_p, g_s, us, h=h)
+    return sec, {"section": sec, "W": W, "t_r": t_r, "t_p": t_p, "g_s": g_s, "h": h,
+                 "u": us.tolist(), "C_pF_per_m": (C * 1e12).tolist()}
+
+
+def gcv_smooth(u, C):
+    """Smoothing spline with lambda chosen by generalized cross-validation; returns (spline, lambda).
+
+    scipy does not expose the chosen lambda, so the (private) GCV routine is wrapped to record it —
+    the provenance must let a reader separate smoothing from grid differences.
+    """
+    import scipy.interpolate._bsplines as bs
+    from scipy.interpolate import make_smoothing_spline
+    seen = {}
+    orig = bs._compute_optimal_gcv_parameter
+
+    def capture(*args):
+        seen["lam"] = orig(*args)
+        return seen["lam"]
+
+    bs._compute_optimal_gcv_parameter = capture
+    try:
+        sm = make_smoothing_spline(u, C)
+    finally:
+        bs._compute_optimal_gcv_parameter = orig
+    return sm, float(seen["lam"])
+
+
+def emit_rust(path_in, path_out):
+    """Write crates/openwurli-dsp/src/pickup_tables.rs from a --chosen JSON.
+
+    Each section's C(u) is first denoised with a smoothing spline whose strength is chosen by
+    generalized cross-validation (scipy make_smoothing_spline): the solver's discretization noise is
+    tiny in C (~1e-4 of range) but double differentiation amplifies it into C'' — and harmonics come
+    from C'' — so the raw table would inject spurious harmonics. The fitted residual is reported and
+    must stay within the solver's own error. The smoothed values then become a natural cubic spline
+    (values + second derivatives on a uniform grid). All sections share one normalisation — the middle section's full swing, C(max) minus its
+    far-field value — so the physical coupling differences between sections survive.
+    """
+    from scipy.interpolate import CubicSpline
+    T = json.load(open(path_in))
+    smooth, prov = {}, {}
+    for sec in ("bass", "middle", "treble"):
+        u = np.array(T[sec]["u"])
+        C = np.array(T[sec]["C_pF_per_m"])
+        sm, lam = gcv_smooth(u, C)
+        res = sm(u) - C
+        rms, mx = np.sqrt(np.mean(res ** 2)) / np.ptp(C), np.abs(res).max() / np.ptp(C)
+        prov[sec] = f"GCV lambda {lam:.4e}, residual rms {rms:.2e} / max {mx:.2e} of range"
+        print(f"{sec}: {prov[sec]}")
+        smooth[sec] = sm(u)
+    ref = smooth["middle"]
+    dc_ref = ref.max() - ref[0]
+    lines = [
+        "//! Pickup capacitance-vs-position tables, one per keyboard section.",
+        "//!",
+        "//! GENERATED by `tools/pickup_field2d.py --emit-rust` from a 2D field solve of the pickup",
+        "//! cross-section (see docs/research/pickup-overlap-law.md). Do not edit by hand.",
+        "//!",
+        "//! `u` is the reed's penetration past the near finger face (mm). Values are the reed-to-pickup",
+        "//! capacitance normalised by the middle section's full swing; `m` holds the natural cubic",
+        "//! spline's second derivatives at the same knots.",
+        "",
+        "#![allow(clippy::unreadable_literal, clippy::excessive_precision)]",
+        "",
+        "use crate::pickup::PickupLawTable;",
+        "",
+    ]
+    for sec in ("bass", "middle", "treble"):
+        t = T[sec]
+        u = np.array(t["u"])
+        du = float(np.diff(u).mean())
+        assert np.allclose(np.diff(u), du), "non-uniform grid"
+        y = (smooth[sec] - ref[0]) / dc_ref
+        cs = CubicSpline(u, y, bc_type="natural")
+        m = cs(u, 2)
+        # off-knot reference values for the Rust spline test
+        probe = u[:-1][:: max(1, len(u) // 16)] + 0.37 * du
+        check = [(float(p), float(cs(p))) for p in probe]
+        fmt = lambda arr: ",\n".join("    " + ", ".join(f"{v:.12e}" for v in arr[i:i + 4])
+                                     for i in range(0, len(arr), 4))
+        name = sec.upper()
+        lines += [
+            f"/// {sec}: W {t['W']} mm, t_r {t['t_r']} mm, t_p {t['t_p']} mm, g_s {t['g_s']} mm,"
+            f" grid h {t['h']} mm.",
+            f"/// Smoothing: {prov[sec]}.",
+            f"pub static {name}: PickupLawTable = PickupLawTable {{",
+            f"    u0: {u[0]:.6},",
+            f"    du: {du:.6},",
+            f"    t_r: {t['t_r']},",
+            f"    t_p: {t['t_p']},",
+            f"    y: &{name}_Y,",
+            f"    m: &{name}_M,",
+            "};",
+            "",
+            f"static {name}_Y: [f64; {len(y)}] = [",
+            fmt(y),
+            "];",
+            "",
+            f"static {name}_M: [f64; {len(m)}] = [",
+            fmt(m),
+            "];",
+            "",
+            "/// Off-knot (u, value) pairs from the generator's own spline, for the evaluation test.",
+            "#[cfg(test)]",
+            f"pub static {name}_CHECK: [(f64, f64); {len(check)}] = [",
+            *[f"    ({p:.12e}, {v:.12e})," for p, v in check],
+            "];",
+            "",
+        ]
+    with open(path_out, "w") as f:
+        f.write("\n".join(lines))
+    print(f"wrote {path_out}")
+
+
+def _solve_point(args):
+    W, t_r, t_p, g_s, u, h = args
+    return float(solve_case(W, t_r, t_p, g_s, np.array([u]), h=h)[0])
+
+
+def run_refine(section, u_lo, u_hi, h, step, out, jobs):
+    """Re-solve one shipping section on a sub-range of u at a finer grid, one point per job —
+    for a targeted convergence check where a table is resolution-limited."""
+    from multiprocessing import Pool
+    s = CHOSEN[section]
+    us = np.round(np.arange(u_lo, u_hi + 1e-9, step), 5)
+    with Pool(jobs) as pool:
+        C = pool.map(_solve_point, [(s["W"], s["t_r"], s["t_p"], CHOSEN_GS, u, h) for u in us])
+    res = {section: {"section": section, "W": s["W"], "t_r": s["t_r"], "t_p": s["t_p"],
+                     "g_s": CHOSEN_GS, "h": h, "u": us.tolist(),
+                     "C_pF_per_m": (np.array(C) * 1e12).tolist()}}
+    with open(out, "w") as f:
+        json.dump(res, f)
+    print(f"wrote refined {section} u [{u_lo}, {u_hi}] (h={h}) to {out}")
+
+
+def static_harmonics(u, C, g0, A, kmax=8, n=1024):
+    """Harmonics (dB re H1) of the static law C(-g0 + A sin), through the same GCV smoothing
+    spline the plugin's tables are built from."""
+    cs, _ = gcv_smooth(u, C)
+    th = np.arange(n) * 2 * np.pi / n
+    X = np.abs(np.fft.rfft(cs(-g0 + A * np.sin(th))))[1:kmax + 1]
+    return 20 * np.log10(np.maximum(X[1:], 1e-300) / X[0])
+
+
+def check_convergence(path_a, path_b, rel_above_db=-30.0, rel_tol_db=0.5, abs_tol_db=-45.0):
+    """Harmonic-convergence gate between an h and an h/2 table set (static law, H2..H8).
+
+    Within the swing prior (0.02 mm .. min(t_p, 1 mm), g0 0.07-0.10 mm, and only swings that stay
+    inside both tables' u range — so a --refine window can be gated against its partner): every
+    harmonic above rel_above_db re H1 agrees to rel_tol_db, and the linear difference re H1 is
+    <= abs_tol_db everywhere. A dB gap alone is ill-posed for harmonics far below H1.
+    """
+    a, b = json.load(open(path_a)), json.load(open(path_b))
+    ok = True
+    for key in sorted(set(a) & set(b)):
+        ta, tb = a[key], b[key]
+        ua, Ca = np.array(ta["u"]), np.array(ta["C_pF_per_m"])
+        ub, Cb = np.array(tb["u"]), np.array(tb["C_pF_per_m"])
+        u_lo, u_hi = max(ua[0], ub[0]), min(ua[-1], ub[-1])
+        worst_lin, worst_rel = -np.inf, 0.0
+        for g0 in (0.07, 0.085, 0.10):
+            a_max = min(ta["t_p"], 1.0, -g0 - u_lo, u_hi + g0)
+            for A in np.arange(0.02, a_max + 1e-9, 0.01):
+                ha, hb = static_harmonics(ua, Ca, g0, A), static_harmonics(ub, Cb, g0, A)
+                lin = np.abs(10 ** (ha / 20) - 10 ** (hb / 20))
+                worst_lin = max(worst_lin, 20 * np.log10(max(float(lin.max()), 1e-300)))
+                big = (ha > rel_above_db) | (hb > rel_above_db)
+                if big.any():
+                    worst_rel = max(worst_rel, float(np.max(np.abs(ha - hb)[big])))
+        passed = worst_lin <= abs_tol_db and worst_rel <= rel_tol_db
+        ok &= passed
+        print(f"{key:40s} linear {worst_lin:6.1f} dB re H1 | above {rel_above_db:.0f} dB: "
+              f"{worst_rel:.2f} dB | {'PASS' if passed else 'FAIL'}")
+    print("GATE:", "PASS" if ok else "FAIL")
+    return ok
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--check", nargs=2, metavar=("A.json", "B.json"),
+                    help="harmonic-convergence gate between two table sets")
     ap.add_argument("--out", default=None)
     ap.add_argument("--h", type=float, default=0.005)  # converged: 0.005 vs 0.0025 agree to 0.1%
+    ap.add_argument("--tables", action="store_true",
+                    help="solve every evidence-band case (SECTIONS x SIDE_GAPS) instead of the fit survey")
+    ap.add_argument("--u-step", type=float, default=U_STEP)
+    ap.add_argument("--jobs", type=int, default=4,
+                    help="worker processes; each holds one solve (~1 GB at --h 0.0025, ~4 GB at 0.00125)")
+    ap.add_argument("--chosen", action="store_true",
+                    help="solve only the shipping configuration (CHOSEN), one table per section")
+    ap.add_argument("--emit-rust", nargs=2, metavar=("CHOSEN.json", "OUT.rs"),
+                    help="generate the plugin's pickup_tables.rs from a --chosen solve")
+    ap.add_argument("--refine", nargs=3, metavar=("SECTION", "U_LO", "U_HI"),
+                    help="re-solve one shipping section on a u sub-range (finer --h)")
     a = ap.parse_args()
+    if a.refine:
+        run_refine(a.refine[0], float(a.refine[1]), float(a.refine[2]), a.h, a.u_step, a.out,
+                   a.jobs)
+        return
+    if a.emit_rust:
+        emit_rust(*a.emit_rust)
+        return
+    if a.chosen:
+        run_chosen(a.h, a.u_step, a.out, a.jobs)
+        return
+    if a.check:
+        check_convergence(*a.check)
+        return
+    if a.tables:
+        run_tables(a.h, a.u_step, a.out, a.jobs)
+        return
     results = {}
     for name, (W, t_r, t_p) in CASES.items():
         us = np.round(np.arange(-1.5, t_r + t_p + 0.5 + 1e-9, 0.05), 4)
