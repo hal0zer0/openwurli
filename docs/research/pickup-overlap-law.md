@@ -284,3 +284,16 @@ swells as the swing decays. Andersen (US 2,974,555) describes that same defect f
 design ("the fundamental may reach a peak as much as two seconds later"), and the 200A's offset
 design exists to prevent it. Treble: as pre-registered, the early-window gap to the recordings
 widens slightly (linear-rate debt).
+
+**Bass ff fundamental — falsified, and a criterion registered (2026-09-26).** Andersen reports, in
+a Wurlitzer comb pickup, that the bass fundamental "may reach a peak as much as two seconds later
+than the second harmonic", names it a defect, and designs it out. The central pick reproduces it
+(C2 v127: +11.7 dB, still rising at 2.0 s), so the bass central pick at ff is FALSIFIED. The
+falsification covers the joint pick (swing, bass finger thickness, bass geometry), not the swing
+alone: Andersen's cure was geometry. Registered before the next pick is rendered:
+6. *Bass ff fundamental swell:* at C2 and C3, v127, the fundamental (100 ms windows from onset) must
+   peak within 0.5 s and rise no more than 3 dB above its first window. Sources: the recordings
+   at v≈80 show no rise at all on their five lowest notes (MIDI 50–66; the peak is in the first
+   window, then monotonic decay, MIDI 50 −2.6 dB over 2 s). Miessner allows "slight initial
+   increments" (C4's +1.5 dB by 0.5 s was accepted as such). Andersen's two-second swell is the
+   defect end.
