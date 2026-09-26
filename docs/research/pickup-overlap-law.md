@@ -478,3 +478,11 @@ criterion, so the bass pick moves up.
 required 3–28 dB), so it stands. Side observation: the real notes' level falls far faster than the
 model reed decays in the middle register (true MIDI 58: 25.6 dB in 2 s against the reed's 7.8 dB),
 consistent with the linear decay law having been fitted an octave off.
+
+**Steepness at the true pitch, as re-registered (consistency check, coarse h 0.005 tables).** True
+D3 (MIDI 50, 15–20 row): recording −11.6 dB; 140B gap (0.229 mm) −12.5; patent gap −14.8. True
+D4 (MIDI 62, 21–42 row): recording −34.4; 140B gap −38.1 (inside the ±4 dB table-limited zone
+at that small swing); patent gap −57.0. The 140B gaps pass; the patent gap fails at D4 by 23 dB.
+The earlier "21–42 misses by 15 dB" came from the octave error. At true D2 (38) and at MIDI 78 the
+test is undefined as registered: the recording's fundamental rises over 0.7→1.3 s at D2, and its
+H3 rises at 78. Reported, not redefined.
