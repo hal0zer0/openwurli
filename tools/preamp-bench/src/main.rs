@@ -41,6 +41,7 @@ fn main() {
         "harmonics" => cmd_harmonics(&args[2..]),
         "tremolo-sweep" => cmd_tremolo_sweep(&args[2..]),
         "render" => cmd_render(&args[2..]),
+        "reed-tap" => cmd_reed_tap(&args[2..]),
         // "bark-audit" kept as an alias: it measures H2/H1, not "bark" (an undefined percept).
         "h2-audit" | "bark-audit" => cmd_h2_audit(&args[2..]),
         "intermod-audit" => cmd_intermod_audit(&args[2..]),
@@ -74,6 +75,9 @@ fn print_usage() {
     eprintln!("  tremolo-sweep   Gain vs LDR resistance sweep");
     eprintln!("  render          Reed -> preamp -> WAV output");
     eprintln!("  h2-audit        Measure H2/H1 at each signal chain stage (alias: bark-audit)");
+    eprintln!(
+        "  reed-tap        Reed displacement (per mode) + raw pickup source, before any electronics"
+    );
     eprintln!("  intermod-audit  Detect inharmonic intermodulation beating risk");
     eprintln!("  alias-audit     Detect power-amp click-band aliasing (H6-H11 plateau + HF hash)");
     eprintln!("  pump-sweep      Steady-state shadow-preamp pump vs R_ldr (CSV)");
@@ -614,6 +618,102 @@ fn cmd_render(args: &[String]) {
     println!("  Peak:      {peak_dbfs:.1} dBFS (raw)");
     println!("  Build:     v{}", env!("CARGO_PKG_VERSION"));
     println!("  Output:    {output_path}");
+}
+
+// ─── Reed tap ───────────────────────────────────────────────────────────────
+
+/// The signal BEFORE any electronics: the reed's displacement at the pickup's finger region (mm),
+/// per mode, and the pickup law's raw source term (before its RC network), from the same reed
+/// construction the plugin uses (`Voice::build_reed`). Writes 24-bit WAVs (full scale stated in
+/// the JSON summary) and prints an operating-point summary per 100 ms window: the fraction of each
+/// cycle the reed spends past full overlap with the fingers and past the far face.
+fn cmd_reed_tap(args: &[String]) {
+    use openwurli_dsp::pickup::{PICKUP_REST_OFFSET_MM, pickup_band_sign, pickup_law_for};
+    let note = parse_flag(args, "--note", 60.0) as u8;
+    let velocity = parse_flag(args, "--velocity", 100.0);
+    let duration = parse_flag(args, "--duration", 2.0);
+    let sr = parse_flag(args, "--sample-rate", BASE_SR);
+    let seed = parse_flag(
+        args,
+        "--seed",
+        (note as u32).wrapping_mul(2654435761) as f64,
+    ) as u32;
+    let swing_pick = match parse_flag_str(args, "--swing-pick", "central") {
+        "low" => tables::SwingPick::Low,
+        "high" => tables::SwingPick::High,
+        _ => tables::SwingPick::Central,
+    };
+    let cfg = CalibrationConfig {
+        swing_pick,
+        air_drag_scale: parse_flag(args, "--air-drag-scale", 1.0),
+        ..CalibrationConfig::default()
+    };
+    let default_prefix = temp_default("reed_tap");
+    let prefix = parse_flag_str(args, "--output-prefix", &default_prefix);
+    let n = (duration * sr) as usize;
+    let vel = velocity / 127.0;
+
+    let render = |keep: Option<usize>| -> (Vec<f64>, f64) {
+        let (mut reed, mut swing, _, drag) =
+            Voice::build_reed(note, vel, sr, seed, false, &cfg, keep);
+        if has_flag(args, "--swing-mm") {
+            swing = parse_flag(args, "--swing-mm", swing);
+            reed.set_air_drag(drag, swing, sr);
+        }
+        let mut buf = vec![0.0f64; n];
+        reed.render(&mut buf);
+        (buf.iter().map(|d| d * swing).collect(), swing)
+    };
+    let (total, swing) = render(None);
+    let (m1, _) = render(Some(0));
+    let (m2, _) = render(Some(1));
+    let rest: Vec<f64> = (0..n).map(|i| total[i] - m1[i] - m2[i]).collect();
+
+    let law = pickup_law_for(note);
+    let sign = pickup_band_sign(note);
+    let g0 = PICKUP_REST_OFFSET_MM;
+    let c_rest = law.eval(-g0);
+    let u: Vec<f64> = total.iter().map(|x| sign * x - g0).collect();
+    let source: Vec<f64> = u.iter().map(|&uu| law.eval(uu) - c_rest).collect();
+
+    const MM_FULL_SCALE: f64 = 10.0;
+    let src_fs = source.iter().fold(1e-12f64, |a, b| a.max(b.abs()));
+    for (name, data, fs) in [
+        ("total_mm", &total, MM_FULL_SCALE),
+        ("mode1_mm", &m1, MM_FULL_SCALE),
+        ("mode2_mm", &m2, MM_FULL_SCALE),
+        ("modes3to7_mm", &rest, MM_FULL_SCALE),
+        ("pickup_source", &source, src_fs),
+    ] {
+        write_wav_24bit(&format!("{prefix}_{name}.wav"), data, sr, 1.0 / fs);
+    }
+
+    let full = law.t_r.min(law.t_p);
+    let far = law.t_p;
+    println!(
+        "{{\"note\": {note}, \"velocity\": {velocity}, \"seed\": {seed}, \"sample_rate\": {sr}, \
+         \"ff_swing_mm\": {swing:.4}, \"g0_mm\": {g0}, \"t_r_mm\": {}, \"t_p_mm\": {}, \
+         \"band_sign\": {sign}, \"mm_full_scale\": {MM_FULL_SCALE}, \"source_full_scale\": {src_fs:.6e}}}",
+        law.t_r, law.t_p
+    );
+    println!("window_s  peak_mm  mode2/mode1_dB  frac_past_full_overlap  frac_past_far_face");
+    let w = (0.1 * sr) as usize;
+    for k in 0..(n / w) {
+        let r = k * w..(k + 1) * w;
+        let pk = total[r.clone()].iter().fold(0.0f64, |a, b| a.max(b.abs()));
+        let p1 = m1[r.clone()].iter().fold(1e-30f64, |a, b| a.max(b.abs()));
+        let p2 = m2[r.clone()].iter().fold(1e-30f64, |a, b| a.max(b.abs()));
+        let past_full = u[r.clone()].iter().filter(|&&x| x > full).count() as f64 / w as f64;
+        let past_far = u[r.clone()].iter().filter(|&&x| x > far).count() as f64 / w as f64;
+        println!(
+            "{:8.2} {:8.4} {:14.1} {:22.3} {:18.3}",
+            k as f64 * 0.1,
+            pk,
+            20.0 * (p2 / p1).log10(),
+            past_full,
+            past_far
+        );
+    }
 }
 
 // ─── Bark audit ─────────────────────────────────────────────────────────────

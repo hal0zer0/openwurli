@@ -71,7 +71,7 @@ Vcc   vcc  0  DC 14.5
 * ============================================================
 * Pickup -> R-1 -> preamp (nonlinear, used by .op and .tran)
 * ============================================================
-Xpickup  plate      reed_disp  0  wurli_pickup sec=2 sign=-1
+Xpickup  plate      reed_disp  0  wurli_pickup sec=3 sign=-1
 R1       plate      preamp_in  22K
 Xpre     preamp_in  preamp_out vcc 0 fb_junct wurli_preamp
 * Feedback shunt: the preamp input impedance is independent of the

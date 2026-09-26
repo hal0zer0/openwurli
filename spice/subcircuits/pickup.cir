@@ -77,17 +77,17 @@
 *                to the preamp 'in' pin)
 *   reed_disp  - reed tip displacement at the pickup, mm as volts
 *                (positive = hammer direction, upward). C4 ff is about
-*                1.19 mm in the plugin (tables::pickup_swing_mm, provisional).
+*                0.86 mm in the plugin (tables::pickup_swing_mm, provisional).
 *
 * Instance params:
-*   sec   - keyboard section: 1 bass (reeds 1-20), 2 middle (21-42),
-*           3 treble (43-64). Default 2 (A4 = reed 37).
+*   sec   - measured reed range: 1 (reeds 1-14), 2 (15-20), 3 (21-42),
+*           4 (43-64). Default 3 (A4 = reed 37).
 *   sign  - +1 where the band is above the reed (bass), -1 below (treble
 *           and middle). Default -1.
 *   gnd        - ground reference (the reed / AC ground)
 *
 * Usage:
-*   Xpickup plate reed_disp 0 wurli_pickup sec=2 sign=-1
+*   Xpickup plate reed_disp 0 wurli_pickup sec=3 sign=-1
 *   R1      plate preamp_in 22K
 *   Xpre    preamp_in out vcc 0 fb_junct wurli_preamp
 *
@@ -95,7 +95,7 @@
 
 .include pickup_law.inc
 
-.SUBCKT wurli_pickup plate reed_disp gnd params: sec=2 sign=-1
+.SUBCKT wurli_pickup plate reed_disp gnd params: sec=3 sign=-1
 
 .param C_0   = 3P
 .param C_p   = 237P
@@ -123,9 +123,10 @@
 * This form is clean in .tran and linearizes correctly in .ac.
 .param C_ref = 1P
 * law(u) selected per section; the rest value keeps C = C_0 at rest.
-B_law   lawn   gnd  V = {sec} == 1 ? pickup_law_bass({sign}*V(reed_disp) - {G0}) - pickup_law_bass(-{G0})
-+                     : {sec} == 2 ? pickup_law_middle({sign}*V(reed_disp) - {G0}) - pickup_law_middle(-{G0})
-+                     : pickup_law_treble({sign}*V(reed_disp) - {G0}) - pickup_law_treble(-{G0})
+B_law   lawn   gnd  V = {sec} == 1 ? pickup_law_r01_14({sign}*V(reed_disp) - {G0}) - pickup_law_r01_14(-{G0})
++                     : {sec} == 2 ? pickup_law_r15_20({sign}*V(reed_disp) - {G0}) - pickup_law_r15_20(-{G0})
++                     : {sec} == 3 ? pickup_law_r21_42({sign}*V(reed_disp) - {G0}) - pickup_law_r21_42(-{G0})
++                     : pickup_law_r43_64({sign}*V(reed_disp) - {G0}) - pickup_law_r43_64(-{G0})
 B_q     qnode  gnd  V = ({C_0}/{C_ref}) * (1 + V(lawn)) * ({V_pol} + V(plate))
 V_qsns  qnode  qcap DC 0
 C_q     qcap   gnd  {C_ref}

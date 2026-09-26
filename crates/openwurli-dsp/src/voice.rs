@@ -55,6 +55,50 @@ impl Voice {
         mlp_enabled: bool,
         cfg: &tables::CalibrationConfig,
     ) -> Self {
+        let (reed, swing_mm, detuned_fundamental, air_drag_db_per_mm) = Self::build_reed(
+            midi_note,
+            velocity,
+            sample_rate,
+            noise_seed,
+            mlp_enabled,
+            cfg,
+            None,
+        );
+        let pickup = Pickup::new_for_note(sample_rate, midi_note, swing_mm);
+        let noise = AttackNoise::new(velocity, detuned_fundamental, sample_rate, noise_seed);
+
+        // Post-pickup gain: technician voicing (gap adjustment) affects volume
+        // without changing the reed's swing.
+        let base_output_scale = tables::output_scale_with_config(midi_note, velocity, cfg);
+
+        let post_pickup_gain = base_output_scale;
+
+        Self {
+            reed,
+            pickup,
+            noise,
+            post_pickup_gain,
+            sample_rate,
+            midi_note,
+            air_drag_db_per_mm,
+        }
+    }
+
+    /// The reed exactly as [`Voice::note_on_with_config`] builds it, plus the ff swing (mm) that
+    /// one unit of its displacement stands for at the pickup's finger region. `keep_mode = Some(k)`
+    /// zeroes every other mode's amplitude, for measuring one mode on its own (the modes are
+    /// independent, so the per-mode renders superpose to the full reed apart from jitter streams).
+    /// Returns (reed, swing_mm, detuned fundamental Hz, air-drag coefficient dB/s/mm).
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_reed(
+        midi_note: u8,
+        velocity: f64,
+        sample_rate: f64,
+        noise_seed: u32,
+        mlp_enabled: bool,
+        cfg: &tables::CalibrationConfig,
+        keep_mode: Option<usize>,
+    ) -> (ModalReed, f64, f64, f64) {
         let params = tables::note_params(midi_note);
 
         let detuned_fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
@@ -112,6 +156,14 @@ impl Voice {
         // which the overlap law does not obey. It stays pinned out until the MLP is retrained.
         let swing_mm = tables::pickup_swing_mm_with_config(midi_note, cfg);
 
+        if let Some(k) = keep_mode {
+            for (i, a) in amplitudes.iter_mut().enumerate() {
+                if i != k {
+                    *a = 0.0;
+                }
+            }
+        }
+
         let mut reed = ModalReed::new(
             detuned_fundamental,
             &corrected_ratios,
@@ -127,24 +179,7 @@ impl Voice {
         let air_drag_db_per_mm = tables::air_drag_db_per_mm_with_config(midi_note, cfg);
         reed.set_air_drag(air_drag_db_per_mm, swing_mm, sample_rate);
 
-        let pickup = Pickup::new_for_note(sample_rate, midi_note, swing_mm);
-        let noise = AttackNoise::new(velocity, detuned_fundamental, sample_rate, noise_seed);
-
-        // Post-pickup gain: technician voicing (gap adjustment) affects volume
-        // without changing the reed's swing.
-        let base_output_scale = tables::output_scale_with_config(midi_note, velocity, cfg);
-
-        let post_pickup_gain = base_output_scale;
-
-        Self {
-            reed,
-            pickup,
-            noise,
-            post_pickup_gain,
-            sample_rate,
-            midi_note,
-            air_drag_db_per_mm,
-        }
+        (reed, swing_mm, detuned_fundamental, air_drag_db_per_mm)
     }
 
     /// Override the ff swing at the pickup, mm.

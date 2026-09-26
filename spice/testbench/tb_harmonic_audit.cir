@@ -42,7 +42,7 @@
 * the harmonics at 0.05, 0.10, 0.20 and 0.45 mm (fixed test swings; plugin C4 ff is 1.19 mm, provisional).
 
 * Pickup instance (plate is an AC-only node; V_pol is internal)
-Xpickup  plate  reed_disp  0  wurli_pickup sec=2 sign=-1
+Xpickup  plate  reed_disp  0  wurli_pickup sec=3 sign=-1
 
 * Preamp input load: R-1 (22K) into a dedicated wurli_preamp instance,
 * whose own R-2 / C-1 / C-2 / R-3 network IS the pickup's load.

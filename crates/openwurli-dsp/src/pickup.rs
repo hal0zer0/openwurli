@@ -15,8 +15,9 @@
 //! 200A does not have.
 //!
 //! The law `C(u)` (u = penetration past the near finger face, mm) is a 2D field
-//! solve of the cross-section per keyboard section (finger thickness changes at
-//! reeds 20|21 and 42|43), compiled in as a C2 cubic spline
+//! solve of the cross-section per measured reed range (reed width and side
+//! clearance per range 1-14 | 15-20 | 21-42 | 43-64; finger thickness
+//! changes at reeds 20|21 and 42|43), compiled in as a C2 cubic spline
 //! ([`PickupLawTable`], `pickup_tables.rs`). Spec, evidence and numerics:
 //! docs/research/pickup-overlap-law.md.
 //!
@@ -259,14 +260,18 @@ impl PickupLawTable {
     }
 }
 
-/// Keyboard section of a note, by reed number (reed 1 = MIDI 33): the pickup's finger thickness
-/// changes at the section boundaries (thick 1-20, thin 21-42, thick 43-64), and the bass/treble
-/// solder flip at 20|21 puts the pickup ABOVE bass reeds and BELOW treble reeds.
+/// The law for a note's reed. One table per measured reed range (reed 1 = MIDI 33): reed width
+/// and side clearance come from one measured row per range (1-14 | 15-20 | 21-42 | 43-64, one
+/// 140B comb); finger thickness follows the finger sections (thick 1-20 | thin 21-42 | thick
+/// 43-64).
+/// The bass/treble solder flip at 20|21 puts the pickup ABOVE bass reeds and BELOW treble reeds.
 pub fn pickup_law_for(midi: u8) -> &'static PickupLawTable {
+    use crate::pickup_tables::{R01_14, R15_20, R21_42, R43_64};
     match midi.saturating_sub(32) {
-        0..=20 => &crate::pickup_tables::BASS,
-        21..=42 => &crate::pickup_tables::MIDDLE,
-        _ => &crate::pickup_tables::TREBLE,
+        0..=14 => &R01_14,
+        15..=20 => &R15_20,
+        21..=42 => &R21_42,
+        _ => &R43_64,
     }
 }
 
@@ -569,10 +574,15 @@ mod tests {
 
     // ── Overlap-law tables (field-solved) ───────────────────────────────────
 
-    use crate::pickup_tables::{BASS, MIDDLE, TREBLE};
+    use crate::pickup_tables::{R01_14, R15_20, R21_42, R43_64};
 
-    fn sections() -> [(&'static str, &'static PickupLawTable); 3] {
-        [("bass", &BASS), ("middle", &MIDDLE), ("treble", &TREBLE)]
+    fn sections() -> [(&'static str, &'static PickupLawTable); 4] {
+        [
+            ("reeds 1-14", &R01_14),
+            ("reeds 15-20", &R15_20),
+            ("reeds 21-42", &R21_42),
+            ("reeds 43-64", &R43_64),
+        ]
     }
 
     /// Harmonic magnitudes 1..=k of the static law driven by u = rest + A sin(theta).
@@ -598,11 +608,12 @@ mod tests {
     fn test_law_spline_matches_generator() {
         // The generator writes off-knot values from its own (scipy) natural spline; the Rust
         // evaluation must reproduce them, so the table means what the field solve says.
-        use crate::pickup_tables::{BASS_CHECK, MIDDLE_CHECK, TREBLE_CHECK};
+        use crate::pickup_tables::{R01_14_CHECK, R15_20_CHECK, R21_42_CHECK, R43_64_CHECK};
         for (name, law, check) in [
-            ("bass", &BASS, &BASS_CHECK[..]),
-            ("middle", &MIDDLE, &MIDDLE_CHECK[..]),
-            ("treble", &TREBLE, &TREBLE_CHECK[..]),
+            ("reeds 1-14", &R01_14, &R01_14_CHECK[..]),
+            ("reeds 15-20", &R15_20, &R15_20_CHECK[..]),
+            ("reeds 21-42", &R21_42, &R21_42_CHECK[..]),
+            ("reeds 43-64", &R43_64, &R43_64_CHECK[..]),
         ] {
             for &(u, v) in check {
                 let got = law.eval(u);
@@ -667,13 +678,16 @@ mod tests {
     fn test_section_boundaries_and_band_side() {
         // Reed 20 = MIDI 52 (E3) is the last bass reed; the solder flip and the pickup moving
         // from above to below the reed both happen at 20|21. Thin fingers end at reed 42 (D5).
+        // The measured side-clearance rows also change at 14|15.
         for (midi, law, sign) in [
-            (33u8, &BASS, 1.0),
-            (52, &BASS, 1.0),
-            (53, &MIDDLE, -1.0),
-            (74, &MIDDLE, -1.0),
-            (75, &TREBLE, -1.0),
-            (96, &TREBLE, -1.0),
+            (33u8, &R01_14, 1.0),
+            (46, &R01_14, 1.0),
+            (47, &R15_20, 1.0),
+            (52, &R15_20, 1.0),
+            (53, &R21_42, -1.0),
+            (74, &R21_42, -1.0),
+            (75, &R43_64, -1.0),
+            (96, &R43_64, -1.0),
         ] {
             assert!(
                 std::ptr::eq(pickup_law_for(midi), law),

@@ -188,22 +188,29 @@ def run_tables(h, step, out, jobs):
     print(f"wrote {len(res)} tables (h={h}, u step={step}) to {out}")
 
 
-# The configuration the plugin ships: one table per section at the reference geometry.
-# t_p mid-band where the sensitivity check showed it harmless (bass, treble); the middle section's
-# t_p is load-bearing and provisional until measured. t_r: .020" bass, .026" above. g_s .0025".
+# The configuration the plugin ships: one table per reed range. Reed width W and side clearance g_s
+# come from the same measured row: reed and slot widths of ONE 140B comb (Electric Piano Forum
+# topic 8418, 2014; method and serial unknown; the poster expects 200A reeds to differ). Clearance
+# per side = (slot - reed) / 2. The 1951 patent's 0.064 mm design gap is the named outlier. Finger
+# thickness t_p and reed thickness t_r follow the finger sections (thick 1-20 | thin 21-42 | thick
+# 43-64); t_p is a guessed band, load-bearing in the thin middle section.
+# u: the penetration range each table covers (wider in the bass, whose swings are larger).
 CHOSEN = {
-    "bass": {"W": 3.84, "t_r": 0.51, "t_p": 1.275},
-    "middle": {"W": 3.07, "t_r": 0.66, "t_p": 0.6},
-    "treble": {"W": 2.64, "t_r": 0.66, "t_p": 1.425},
+    "r01_14": {"W": 3.84, "t_r": 0.51, "t_p": 1.275, "g_s": 0.267, "u": (-4.5, 4.5)},
+    "r15_20": {"W": 3.23, "t_r": 0.51, "t_p": 1.275, "g_s": 0.229, "u": (-4.5, 4.5)},
+    "r21_42": {"W": 3.07, "t_r": 0.66, "t_p": 0.6, "g_s": 0.229, "u": (-3.0, 3.0)},
+    "r43_64": {"W": 2.51, "t_r": 0.66, "t_p": 1.425, "g_s": 0.19, "u": (-3.0, 3.0)},
 }
-CHOSEN_GS = 0.064
+SECTIONS = list(CHOSEN)
+NORM_SECTION = "r21_42"  # all tables share this section's full swing as their unit
+CHOSEN_GS = 0.064  # superseded reference gap (patent), kept for the band-case study (--tables)
 
 
 def run_chosen(h, step, out, jobs):
     from multiprocessing import Pool
     work = []
     for sec, s in CHOSEN.items():
-        work.append((sec, s["W"], s["t_r"], s["t_p"], CHOSEN_GS, h, step))
+        work.append((sec, s["W"], s["t_r"], s["t_p"], s["g_s"], h, step))
     with Pool(jobs) as pool:
         res = dict(pool.imap_unordered(_solve_chosen, work))
     with open(out, "w") as f:
@@ -251,7 +258,7 @@ def normalised_laws(path_in):
     from C'' — so the raw table would inject spurious harmonics. The fitted residual is reported and
     must stay within the solver's own error. The smoothed values then become a natural cubic spline
     (values + second derivatives on a uniform grid). All sections share one normalisation — the
-    middle section's full swing, C(max) minus its far-field value — so the physical coupling
+    NORM_SECTION's full swing, C(max) minus its far-field value — so the physical coupling
     differences between sections survive.
 
     Returns (T, {section: (u, y, spline, provenance)}).
@@ -259,7 +266,7 @@ def normalised_laws(path_in):
     from scipy.interpolate import CubicSpline
     T = json.load(open(path_in))
     smooth, prov = {}, {}
-    for sec in ("bass", "middle", "treble"):
+    for sec in SECTIONS:
         u = np.array(T[sec]["u"])
         C = np.array(T[sec]["C_pF_per_m"])
         sm, lam = gcv_smooth(u, C)
@@ -268,10 +275,10 @@ def normalised_laws(path_in):
         prov[sec] = f"GCV lambda {lam:.4e}, residual rms {rms:.2e} / max {mx:.2e} of range"
         print(f"{sec}: {prov[sec]}")
         smooth[sec] = sm(u)
-    ref = smooth["middle"]
+    ref = smooth[NORM_SECTION]
     dc_ref = ref.max() - ref[0]
     laws = {}
-    for sec in ("bass", "middle", "treble"):
+    for sec in SECTIONS:
         u = np.array(T[sec]["u"])
         y = (smooth[sec] - ref[0]) / dc_ref
         laws[sec] = (u, y, CubicSpline(u, y, bc_type="natural"), prov[sec])
@@ -288,7 +295,7 @@ def emit_rust(path_in, path_out):
         "//! cross-section (see docs/research/pickup-overlap-law.md). Do not edit by hand.",
         "//!",
         "//! `u` is the reed's penetration past the near finger face (mm). Values are the reed-to-pickup",
-        "//! capacitance normalised by the middle section's full swing; `m` holds the natural cubic",
+        "//! capacitance normalised by the reeds-21-42 section's full swing; `m` holds the natural cubic",
         "//! spline's second derivatives at the same knots.",
         "",
         "#![allow(clippy::unreadable_literal, clippy::excessive_precision)]",
@@ -296,7 +303,7 @@ def emit_rust(path_in, path_out):
         "use crate::pickup::PickupLawTable;",
         "",
     ]
-    for sec in ("bass", "middle", "treble"):
+    for sec in SECTIONS:
         t = T[sec]
         u, y, cs, prov_sec = laws[sec]
         du = float(np.diff(u).mean())
@@ -357,10 +364,10 @@ def emit_spice(path_in, path_out):
         "* cross-section (see docs/research/pickup-overlap-law.md). Do not edit by hand.",
         "* Same laws as crates/openwurli-dsp/src/pickup_tables.rs: the plugin's natural cubic spline,",
         f"* sampled every {SPICE_PWL_STEP} mm. u = penetration past the near finger face (mm); values",
-        "* are the reed-to-pickup capacitance normalised by the middle section's full swing.",
+        "* are the reed-to-pickup capacitance normalised by the reeds-21-42 section's full swing.",
         "",
     ]
-    for sec in ("bass", "middle", "treble"):
+    for sec in SECTIONS:
         t = T[sec]
         u, _, cs, prov = laws[sec]
         n = int(np.floor((u[-1] - u[0]) / SPICE_PWL_STEP + 1e-9))
@@ -384,18 +391,19 @@ def _solve_point(args):
     return float(solve_case(W, t_r, t_p, g_s, np.array([u]), h=h)[0])
 
 
-def run_refine(section, u_lo, u_hi, h, step, out, jobs, t_p=None):
+def run_refine(section, u_lo, u_hi, h, step, out, jobs, t_p=None, W=None, g_s=None):
     """Re-solve one shipping section on a sub-range of u at a finer grid, one point per job —
     for a targeted convergence check where a table is resolution-limited."""
     from multiprocessing import Pool
     s = dict(CHOSEN[section])
-    if t_p is not None:  # band-end case: same section, finger thickness overridden
-        s["t_p"] = t_p
+    for k, v in (("t_p", t_p), ("W", W), ("g_s", g_s)):  # band-end overrides
+        if v is not None:
+            s[k] = v
     us = np.round(np.arange(u_lo, u_hi + 1e-9, step), 5)
     with Pool(jobs) as pool:
-        C = pool.map(_solve_point, [(s["W"], s["t_r"], s["t_p"], CHOSEN_GS, u, h) for u in us])
+        C = pool.map(_solve_point, [(s["W"], s["t_r"], s["t_p"], s["g_s"], u, h) for u in us])
     res = {section: {"section": section, "W": s["W"], "t_r": s["t_r"], "t_p": s["t_p"],
-                     "g_s": CHOSEN_GS, "h": h, "u": us.tolist(),
+                     "g_s": s["g_s"], "h": h, "u": us.tolist(),
                      "C_pF_per_m": (np.array(C) * 1e12).tolist()}}
     with open(out, "w") as f:
         json.dump(res, f)
@@ -453,6 +461,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", nargs=2, metavar=("A.json", "B.json"),
                     help="harmonic-convergence gate between two table sets")
+    ap.add_argument("--g-s", type=float, default=None,
+                    help="--refine: override the section's side clearance (band-end cases)")
     ap.add_argument("--t-p", type=float, default=None,
                     help="--refine: override the section's finger thickness (band-end cases)")
     ap.add_argument("--a-max", type=float, default=None,
@@ -475,7 +485,7 @@ def main():
     a = ap.parse_args()
     if a.refine:
         run_refine(a.refine[0], float(a.refine[1]), float(a.refine[2]), a.h, a.u_step, a.out,
-                   a.jobs, a.t_p)
+                   a.jobs, a.t_p, g_s=a.g_s)
         return
     if a.emit_rust:
         emit_rust(*a.emit_rust)
