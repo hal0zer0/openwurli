@@ -1188,11 +1188,10 @@ fn cmd_calibrate(args: &[String]) {
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,40,44,48,52,56,60,64,68,72,76,80,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,127");
     let ds_at_c4 = parse_flag(args, "--ds-at-c4", 0.75);
-    // Upper clamp on the register-scaled DS (bass reeds get the highest DS; clamp keeps
-    // them from running the 1/(1-y) model too close to its pole). Default 0.82 matches
-    // the in-tree const. Exposed as a CLI flag so sweeps can probe bass headroom without
-    // rebuilds. Lower clamp stays at the default 0.02.
-    let ds_clamp_max = parse_flag(args, "--ds-clamp-max", f64::INFINITY); // no upper cap under the overlap law
+    // Upper clamp on the register-scaled DS. The in-tree default is no cap: the old
+    // 1/(1-y) law needed one to stay off its pole, the overlap law does not. Exposed as a
+    // CLI flag so sweeps can probe bass swing without rebuilds. Lower clamp stays at 0.02.
+    let ds_clamp_max = parse_flag(args, "--ds-clamp-max", f64::INFINITY);
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let zero_trim = has_flag(args, "--zero-trim");

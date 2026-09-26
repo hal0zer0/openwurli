@@ -26,9 +26,9 @@ pub const MIDI_HI: u8 = 96;
 /// is -36 dB at the pickup output — below the audibility threshold for an
 /// inharmonic partial. This is within the OBM calibration uncertainty (±5 dB).
 ///
-/// The real 200A's "bark" comes primarily from the pickup's 1/(1-y)
-/// nonlinearity generating H2 at 2×fundamental, NOT from physical mode 2
-/// oscillation at ~6.3×fundamental.
+/// The real 200A's "bark" comes primarily from the pickup's nonlinearity (the
+/// reed entering the finger band) generating H2 at 2×fundamental, NOT from
+/// physical mode 2 oscillation at ~6.3×fundamental.
 pub const BASE_MODE_AMPLITUDES: [f64; NUM_MODES] =
     [1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005];
 
@@ -212,8 +212,8 @@ pub(crate) fn reed_blank_dims(midi: u8) -> (f64, f64) {
 ///
 /// Higher compliance = more physical tip deflection for a given hammer force.
 /// Bass reeds (long, thin) have ~25× the compliance of treble reeds (short, thick).
-/// This determines how much the reed actually moves relative to the pickup gap,
-/// which controls the strength of the 1/(1-y) nonlinearity ("bark").
+/// This determines how far the reed swings into the pickup's finger band,
+/// which controls the strength of the pickup nonlinearity ("bark").
 pub fn reed_compliance(midi: u8) -> f64 {
     let l = reed_length_mm(midi);
     let (w, t) = reed_blank_dims(midi);
@@ -903,11 +903,10 @@ pub fn volume_pot_pole_hz(vol: f64, r11: f64) -> f64 {
 ///
 /// Applied POST-pickup to decouple volume from nonlinear displacement.
 /// Three layers of correction:
-///   1. Velocity-aware multi-harmonic proxy — models 1/(1-y) harmonics through
-///      HPF at the ACTUAL displacement for this velocity, not just peak.
-///      At ff, bass gets harmonic energy that passes the 2312 Hz HPF.
-///      At pp, the nonlinearity is nearly linear — bass loses that harmonic
-///      boost. The proxy accounts for this automatically.
+///   1. Velocity-aware multi-harmonic proxy — the note's own pickup law
+///      ([`pickup_rms_proxy_law`]) through the HPF at the ACTUAL swing for this
+///      velocity, not just peak, so harmonic energy that passes the HPF at ff
+///      is accounted for automatically.
 ///   2. Voicing slope — gentle treble roll for preamp BW and harmonic content
 ///   3. Empirical register trim — calibrated from Tier 3 renders at v=127
 ///
@@ -1096,7 +1095,7 @@ fn dwell_attenuation_ff(fundamental_hz: f64, mode_ratios: &[f64; NUM_MODES]) -> 
 /// Compute intermodulation risk for a given MIDI note.
 ///
 /// For each mode 2-7, measures how close its frequency ratio is to the nearest
-/// integer harmonic. When the pickup's 1/(1-y) nonlinearity generates intermod
+/// integer harmonic. When the pickup's nonlinearity generates intermod
 /// products between inharmonic modes, they land near (but not at) integer
 /// harmonics, producing audible beating in the 3-15 Hz range.
 pub fn intermod_risk(midi: u8) -> IntermodReport {

@@ -149,3 +149,17 @@ every register; C4 v64 +1.9 dB, v110 −1.4 dB; v127 −5 to −9 dB above C2 (G
 `output_scale` normalises every note to C4 at the same velocity, C4's curve sets the span for the
 whole keyboard. Restoring the span belongs to the excitation revision, which replaces the velocity
 curve with hammer physics. Re-voicing it here would fit the new law to the old one's error.
+
+Nothing else in the pickup or preamp expands level with swing. The tip arc changes the overlap
+length by about 0.2 % at a 1 mm swing. Reed tilt across the overlap averages the law over u,
+which smooths it. The electrostatic back-force is ~1e-5 N, and the preamp is linear at the
+~18 mV C4 level. The one geometric exception is a rest point out on the fringe tail
+(g0 ≳ edge width): mildly expansive at pp. That applies to the later angled bass fingers, not to
+the early flat units modelled here. The span the excitation revision should supply comes from the
+hammer contact. With a power-law felt pad (F ∝ δ^p; p ≈ 2–3.5 is typical of piano felt, not
+measured for these pads), contact time shortens with hammer velocity. Near Miessner's design point
+(contact ≈ ¾–1 fundamental cycle, US 2,932,231), that raises the fundamental's drive by about
+3–6 dB over a 2.5× hammer-velocity span, on top of the linear growth. How much span a MIDI
+velocity range "should" have is a controller convention. Physics fixes level against hammer
+velocity, so the excitation revision maps MIDI velocity to physical hammer velocity once and lets
+the span emerge.

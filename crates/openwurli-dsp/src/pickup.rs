@@ -1,69 +1,54 @@
 //! Electrostatic pickup model — time-varying RC circuit.
 //!
 //! The Wurlitzer 200A pickup is a capacitive sensor: reed vibration modulates
-//! the capacitance between the reed and a charged metal plate (+147V DC).
+//! the capacitance between the reed and a charged metal comb (+147V DC).
 //!
-//! The reed-plate capacitance varies nonlinearly with displacement:
-//!   C(y) = C_0 / (1 - y)
-//! where y = x/d_0 is the normalized displacement (fraction of rest gap,
-//! positive toward the plate).
+//! # Geometry and law (2026-09 overlap-law revision)
 //!
-//! # Where the nonlinearity lives (2026-09-14 restructure)
+//! The pickup is a **through-slot comb**: each reed sits laterally between two
+//! fingers, across a small side clearance, with no floor under it. At rest the
+//! reed is offset vertically just outside the finger band (about a sheet of
+//! paper); bass reeds sit below the band, treble reeds above it. As the reed
+//! swings into the band its capacitance rises with the reed-to-finger OVERLAP,
+//! fringe-rounded at the band edges. It does not follow a parallel-plate
+//! `1/(1-y)` — that law assumed a plate facing the reed across a gap, which the
+//! 200A does not have.
 //!
-//! **The nonlinearity is in the SOURCE, not in the network.** This is the
-//! correction that this module's previous two revisions both got wrong, in
-//! opposite directions.
+//! The law `C(u)` (u = penetration past the near finger face, mm) is a 2D field
+//! solve of the cross-section per keyboard section (finger thickness changes at
+//! reeds 20|21 and 42|43), compiled in as a C2 cubic spline
+//! ([`PickupLawTable`], `pickup_tables.rs`). Spec, evidence and numerics:
+//! docs/research/pickup-overlap-law.md.
 //!
-//! Only ONE reed moves. Its capacitance to the plate is `C_reed(t) =
-//! C_REED0/(1-y)` — a deep modulation, because the reed really does travel a
-//! large fraction of its rest gap. But that reed is only ~3 pF of the ~240 pF
-//! sitting on the plate node; the other 63 reeds, the stray and the cable do not
-//! move. So the node equation is
+//! # Where the nonlinearity lives
+//!
+//! **The nonlinearity is in the SOURCE, not in the network.** Only ONE reed
+//! moves. Its capacitance changes deeply over a swing, but that reed is only
+//! ~3 pF of the ~240 pF sitting on the plate node; the other 63 reeds, the stray
+//! and the cable do not move. So the node equation is
 //!
 //! ```text
 //!   C_node(t) * dv/dt + v/R_net = -V_pol * dC_reed/dt
-//!   C_node(t) = C_TOTAL + C_REED0 * y/(1-y)
+//!   C_node(t) = C_TOTAL + (C_reed(t) - C_reed(rest))
 //! ```
 //!
-//! Two consequences, and they are the whole design:
+//! 1. **The law is the SOURCE term** — the charge the moving reed injects. It is
+//!    frequency-independent: it is there at 5 kHz exactly as much as at 50 Hz.
+//! 2. **The network is very nearly LTI.** `C_node` moves by about
+//!    `C_REED0/C_TOTAL = 1/80` of the source depth.
 //!
-//! 1. **The strong `1/(1-y)` nonlinearity is the SOURCE term** — the charge the
-//!    moving reed injects. It is frequency-independent: it is there at 5 kHz
-//!    exactly as much as at 50 Hz.
-//! 2. **The network is very nearly LTI.** `C_node` swings only by
-//!    `C_REED0/C_TOTAL = 1/80` of the source depth — 240 pF to 274 pF even at
-//!    y = 0.92, a 14% corner shift at the extreme rather than the 12.5x the
-//!    previous model applied.
-//!
-//! ## What the previous model did instead
-//!
-//! It modulated the ENTIRE node capacitance as `C_TOTAL/(1-y)` — i.e. it
-//! implicitly assumed the moving reed **was** the whole node, an 80x
-//! over-modulation of the relaxation time constant. A term-knockout measurement
-//! showed the consequence: >99% of its harmonic generation came from that
-//! spurious time-constant swing, and almost none from the capacitance ratio
-//! (disabling the `c_n` output term cost only 0.5 dB of H2; disabling the alpha
-//! modulation cost 47 dB).
-//!
-//! Generating harmonics from a *time constant* makes them inherit the filter's
-//! own frequency dependence, and that is a measurable defect: the old model's
-//! high-frequency asymptote was `SENSITIVITY * y` — **linear**, no harmonics at
-//! all above the corner — where the physical asymptote is
-//! `SENSITIVITY * y/(1-y)`. Harmonic energy therefore fell off per harmonic
-//! ORDER (measured: -1.5 / -5.9 / -10.8 / -14.5 dB at H4 / H5 / H6 / H7 for a
-//! ff C4 when the corner moved 2312 -> 880 Hz), and the 2.5-6 kHz presence band
-//! went with it. That is a model artifact, not the instrument.
-//!
-//! `DISPLACEMENT_SCALE` was silently absorbing the 80x; it now means what its
-//! name says — the fraction of the rest gap the reed actually travels.
+//! An earlier model modulated the ENTIRE node capacitance, an 80x
+//! over-modulation of the relaxation time constant; its harmonics inherited the
+//! filter's frequency dependence and vanished above the corner. That defect is
+//! gone and stays gone: the source carries the harmonics.
 //!
 //! ## Structure
 //!
 //! ```text
-//!   y = soft_saturate(displacement * DISPLACEMENT_SCALE)   // gap fraction
-//!   s = y / (1 - y)                                        // reed charge, THE nonlinearity
-//!   m = 1 + C_REED_RATIO * s                               // node cap, ~LTI
-//!   w = (w*(m_avg - g0) - (s - s_prev)) / (m_avg + g0)     // network
+//!   u = band_sign * amplitude_mm * displacement - PICKUP_REST_OFFSET_MM
+//!   s = law(u) - law(rest)                                  // reed charge, THE nonlinearity
+//!   m = 1 + C_REED_RATIO * s                                // node cap, ~LTI
+//!   w = (w*(m_avg - g0) - (s - s_prev)) / (m_avg + g0)      // network
 //!   out = w * PICKUP_SENSITIVITY
 //! ```
 //!
@@ -71,9 +56,7 @@
 //! equation above, so it is a differentiator inside a one-pole lag — i.e. the
 //! `jw`-driven high-pass the circuit reference describes, not a lowpass. Its
 //! small-signal response reproduces a one-pole high-pass at `PICKUP_FC` to
-//! **0.011 dB** over 100 Hz - 10 kHz, so the linear behaviour verified by the
-//! drawn-topology revision is preserved exactly; only the harmonic structure
-//! changes.
+//! **0.011 dB** over 100 Hz - 10 kHz.
 //!
 //! # Drawn-topology refit (2026-09-13)
 //!
@@ -124,12 +107,11 @@
 //!
 //! This produces:
 //! - Small-signal HPF at f_c = PICKUP_FC (880 Hz with C-2 returned to ground)
-//! - Harmonic generation from the reed's own charge (H2 from the capacitance
-//!   ratio), **independent of frequency** — see the restructure section above.
-//!   The line that stood here previously ("stronger near/below RC corner") was
-//!   the 80x artifact, not the instrument.
-//! - Correct asymmetry: reed toward the plate gives the larger excursion, and it
-//!   is negative-going (more capacitance at ~constant charge = lower voltage).
+//! - Harmonic generation from the reed's own charge, **independent of
+//!   frequency** — the reed enters the finger band on one half of its swing
+//!   only, so the source is strongly one-sided (even harmonics dominate).
+//! - Correct polarity: reed into the band gives more capacitance at ~constant
+//!   charge, i.e. a negative-going plate voltage.
 
 use std::f64::consts::PI;
 
@@ -196,10 +178,8 @@ pub const PICKUP_FC: f64 = {
 /// RC time constant of the pickup's charge dynamics, `1 / (2*pi*PICKUP_FC)`.
 ///
 /// This is the time constant the NONLINEAR core runs on — moving it is the
-/// intended physics change, not a side effect. The 1/(1-y) charge-dynamics
-/// mechanism (the bark source, >98% of H2 at normal dynamics) is untouched;
-/// it now relaxes on the corrected network's dominant pole instead of the
-/// superseded 2312 Hz one.
+/// intended physics change, not a side effect: the source relaxes on the
+/// drawn network's dominant pole instead of the superseded 2312 Hz one.
 const TAU: f64 = 1.0 / (2.0 * PI * PICKUP_FC);
 
 /// Polarizing voltage on the pickup plate.
@@ -231,11 +211,10 @@ const C_REED_RATIO: f64 = C_REED0 / C_TOTAL;
 /// Derived rather than hard-coded so it cannot drift away from the capacitances
 /// it is made of. Evaluates to 1.8375, the long-standing project value.
 ///
-/// Physically this is the gain on `y/(1-y)` well above the corner: a reed that
-/// closes a fraction y of its gap swings the plate node by
-/// `V_pol * C_REED0/C_TOTAL * y/(1-y)`. Note the `1/(1-y)` — the PREVIOUS model's
-/// HF asymptote was `SENSITIVITY * y`, linear, which is why its harmonics
-/// vanished above the corner.
+/// Physically this is the gain on the normalised source `s` well above the
+/// corner: the plate node swings by `V_pol * C_REED0/C_TOTAL * s`, with every
+/// harmonic of `s` intact (the previous model's HF asymptote was linear in the
+/// displacement, which is why its harmonics vanished above the corner).
 pub const PICKUP_SENSITIVITY: f64 = V_POLARIZING * C_REED0 / C_TOTAL;
 
 /// One keyboard section's capacitance-vs-position law: the reed-to-pickup capacitance as a
