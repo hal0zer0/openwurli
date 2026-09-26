@@ -407,3 +407,10 @@ H3/H1 depends strongly on register (−6.4 dB at MIDI 50 to −28.9 at MIDI 62).
 source is therefore level-increasing, steep (H3 roughly ∝ H1⁴ at D3) and concentrated in the low
 register. That is a threshold-type, pickup-side behaviour, and it rules out an under-biased
 output-stage crossover (which would be level-inverse and register-independent).
+**Joint constraint (framing, 2026-09-26).** The two low-register findings together say more than
+"the swing is too small". The real bass reaches a steep odd-harmonic threshold at mf, and it shows
+no delayed fundamental at ff. In the current 2D geometry these pull the swing in opposite
+directions (the near-empty admissible windows at MIDI 50/54), so no single swing value satisfies
+both. The pair is a joint constraint on the geometry or law (rest gap, finger shape, Andersen-style
+ears or angled fingers, longitudinal overlap) together with the swing. It is not only an amplitude
+correction.
