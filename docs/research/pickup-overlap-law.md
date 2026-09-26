@@ -340,7 +340,7 @@ make the band so wide that the robustness check is vacuous. Dynamic edges (mm, f
 
 **Registered before the next pick is rendered:**
 7. *Harmonic lower bound, v≈80, against the recordings:* at MIDI 50 and 54, the model's H2/H1 and
-   H3/H1 (full chain, speaker passthrough; the recordings' early-sustain window, 50–250 ms, same
+   H3/H1 (full chain, speaker passthrough; the recordings' early-sustain window, 50–200 ms, same
    method) may not fall more than 6 dB below the recordings'. Recordings: MIDI 50 H2 −2.4, H3 −6.2
    dB; MIDI 54 H2 −9.0, H3 −22.1 dB. Lenient on purpose: the recording chain (transformer and tube
    preamp) is unbounded.
