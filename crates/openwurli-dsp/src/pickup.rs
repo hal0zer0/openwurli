@@ -238,128 +238,153 @@ const C_REED_RATIO: f64 = C_REED0 / C_TOTAL;
 /// vanished above the corner.
 pub const PICKUP_SENSITIVITY: f64 = V_POLARIZING * C_REED0 / C_TOTAL;
 
-/// Asymptotic displacement-fraction limit. The reed physically cannot touch
-/// the plate (y=1.0 is a singularity in c_n=1/(1-y)). With the smooth-saturation
-/// curve below, |y_out| approaches but never reaches this value.
-///
-/// The old static model needed a tight clamp (0.90) because y/(1-y) at 0.90 = 9.0
-/// produced huge intermediate signals. In the source-driven model the source
-/// term y/(1-y) is large near the limit (49 at y = 0.98) but the network stays
-/// well-conditioned: the node capacitance rises only by C_REED_RATIO times that
-/// (≈1.6× at y = 0.98), so y close to 1.0 is numerically safe.
-pub const PICKUP_MAX_Y: f64 = 0.98;
-
-/// Knee where the smooth saturation begins. Below this, `pickup_soft_saturate`
-/// is the identity function (no compression, no distortion). Above this, it
-/// smoothly bends toward `PICKUP_MAX_Y` so the upper-envelope tip never crosses
-/// a hard corner. Picked to leave the entire normal operating range untouched
-/// (typical y_peak at v=127 is ~0.85 with DS at NEW values 0.85/0.88).
-pub const PICKUP_KNEE_Y: f64 = 0.94;
-
-/// Smooth saturation on the reed-displacement fraction `y = x / d_0`.
-///
-/// Below `±PICKUP_KNEE_Y` the function is the identity — no flavour change vs.
-/// the old hard clamp on quiet-to-medium content. Above the knee it follows
-/// `knee + (limit-knee) * tanh((|y|-knee)/(limit-knee))`, which is C¹-continuous
-/// at the knee (slope = 1) and asymptotes to `±PICKUP_MAX_Y` from below. This
-/// removes the derivative discontinuity at the old `clamp(±0.98)` corner that
-/// was producing broadband HF "tear" hash whenever bass-heavy / chord-ff
-/// content grazed the limit (~6–7× more click-band energy at NEW DS values).
-///
-/// Bark character is preserved: the upper-velocity range still spends most of
-/// its time in the steep `1/(1-y)` zone (y in [0.85, 0.95]), where the
-/// saturation barely deviates from identity. The change is concentrated at the
-/// very top of the velocity range where the corner used to live.
-#[inline]
-fn pickup_soft_saturate(y: f64) -> f64 {
-    let abs_y = y.abs();
-    if abs_y < PICKUP_KNEE_Y {
-        return y;
-    }
-    let range = PICKUP_MAX_Y - PICKUP_KNEE_Y;
-    let saturated = PICKUP_KNEE_Y + range * ((abs_y - PICKUP_KNEE_Y) / range).tanh();
-    saturated.copysign(y)
+/// One keyboard section's capacitance-vs-position law: the reed-to-pickup capacitance as a
+/// function of `u`, the reed's penetration past the near finger face (mm), from a 2D field solve
+/// of the through-slot comb (docs/research/pickup-overlap-law.md). Stored as a natural cubic
+/// spline on a uniform grid so the law and its first two derivatives are continuous — the
+/// harmonics come from the curve's bends, so C1 interpolation would not do.
+pub struct PickupLawTable {
+    /// Penetration of the first knot (mm).
+    pub u0: f64,
+    /// Knot spacing (mm).
+    pub du: f64,
+    /// Reed thickness this table was solved for (mm).
+    pub t_r: f64,
+    /// Finger thickness this table was solved for (mm).
+    pub t_p: f64,
+    /// Capacitance at each knot, normalised (see `pickup_tables`).
+    pub y: &'static [f64],
+    /// Second derivative of the spline at each knot.
+    pub m: &'static [f64],
 }
 
-/// Convert reed model displacement units to physical y = x/d_0.
+impl PickupLawTable {
+    /// Penetration of the last knot (mm).
+    pub fn u_max(&self) -> f64 {
+        self.u0 + self.du * (self.y.len() - 1) as f64
+    }
+
+    /// Normalised capacitance at penetration `u` (mm). Outside the solved range the value is held
+    /// at the end knot; the amplitude guard keeps every note inside it.
+    #[inline]
+    pub fn eval(&self, u: f64) -> f64 {
+        let last = self.y.len() - 2;
+        let pos = ((u - self.u0) / self.du).clamp(0.0, (last + 1) as f64);
+        let i = (pos as usize).min(last);
+        let t = pos - i as f64;
+        let a = 1.0 - t;
+        let h2 = self.du * self.du / 6.0;
+        a * self.y[i]
+            + t * self.y[i + 1]
+            + ((a * a * a - a) * self.m[i] + (t * t * t - t) * self.m[i + 1]) * h2
+    }
+}
+
+/// Keyboard section of a note, by reed number (reed 1 = MIDI 33): the pickup's finger thickness
+/// changes at the section boundaries (thick 1-20, thin 21-42, thick 43-64), and the bass/treble
+/// solder flip at 20|21 puts the pickup ABOVE bass reeds and BELOW treble reeds.
+pub fn pickup_law_for(midi: u8) -> &'static PickupLawTable {
+    match midi.saturating_sub(32) {
+        0..=20 => &crate::pickup_tables::BASS,
+        21..=42 => &crate::pickup_tables::MIDDLE,
+        _ => &crate::pickup_tables::TREBLE,
+    }
+}
+
+/// Direction from the reed's positive (hammer-side, upward) displacement toward the finger band:
+/// +1 where the pickup sits above the reed (bass, reeds 1-20), -1 where it sits below (treble).
+pub fn pickup_band_sign(midi: u8) -> f64 {
+    if midi.saturating_sub(32) <= 20 {
+        1.0
+    } else {
+        -1.0
+    }
+}
+
+/// Vertical rest offset between the reed and the finger band (mm): "a piece of paper … but just
+/// barely" (technician, bass, first-hand); assumed equal in the treble. Middle of the 0.07-0.10 mm
+/// evidence band.
+pub const PICKUP_REST_OFFSET_MM: f64 = 0.085;
+
+/// Reed swing at the pickup, in mm, per unit of `tables::pickup_displacement_scale`.
 ///
-/// NOTE: This default is overridden per-note by tables::pickup_displacement_scale()
-/// in voice.rs. Only used if set_displacement_scale() is never called.
-const DISPLACEMENT_SCALE: f64 = 0.85;
+/// **PROVISIONAL — the single calibration anchor of the pickup law.** No document gives the
+/// reed's tip swing. This value puts middle C at ff (DS 0.85) at about 0.45 mm: inside the
+/// evidence prior (the swing stays within about a finger's thickness — the user's read of the
+/// technician's video — and bass ff swings are large enough that the solder faces down to clear
+/// the dampers). A scope reading of the preamp output on a real 200A replaces it. The per-note
+/// scaling it multiplies (`pickup_displacement_scale`) is shipped unchanged and is top-down debt
+/// for the excitation revision.
+pub const PICKUP_MM_PER_DS: f64 = 0.53;
 
 pub struct Pickup {
     /// Network state: normalized plate-node voltage perturbation `w = v / SENSITIVITY`.
     w: f64,
-    /// Previous source sample `s = y/(1-y)` (the recursion needs `ds/dt`).
+    /// Previous source sample (the recursion needs `ds/dt`).
     s_prev: f64,
     /// Previous normalized node capacitance `m = 1 + C_REED_RATIO * s`.
     m_prev: f64,
     /// Precomputed: `dt / (2 * TAU)` = `pi * PICKUP_FC / sample_rate`.
     beta: f64,
-    displacement_scale: f64,
+    /// This note's section law (field-solved capacitance vs penetration).
+    law: &'static PickupLawTable,
+    /// +1 if the finger band is above the reed (bass), -1 if below (treble).
+    band_sign: f64,
+    /// Law value at rest, so the source is zero with the reed at rest.
+    c_rest: f64,
+    /// Reed swing at the pickup per unit of model displacement (mm).
+    amplitude_mm: f64,
 }
 
 impl Pickup {
-    pub fn new(sample_rate: f64) -> Self {
-        Self::new_with_scale(sample_rate, DISPLACEMENT_SCALE)
-    }
-
-    /// Construct with explicit displacement scale (for bark-audit/calibrate tools).
-    pub fn new_with_scale(sample_rate: f64, displacement_scale: f64) -> Self {
+    /// Pickup for one note: its section's law, the side of the band it sits on, and the swing
+    /// (mm) that a unit of model displacement stands for.
+    pub fn new_for_note(sample_rate: f64, midi: u8, amplitude_mm: f64) -> Self {
         let dt = 1.0 / sample_rate;
-        let beta = dt / (2.0 * TAU);
+        let law = pickup_law_for(midi);
         Self {
             w: 0.0,
             s_prev: 0.0,
             m_prev: 1.0,
-            beta,
-            displacement_scale,
+            beta: dt / (2.0 * TAU),
+            law,
+            band_sign: pickup_band_sign(midi),
+            c_rest: law.eval(-PICKUP_REST_OFFSET_MM),
+            amplitude_mm,
         }
     }
 
-    /// Override the displacement scale (default: 0.85).
-    /// Higher = tighter gap = more nonlinearity = more bark.
-    pub fn set_displacement_scale(&mut self, scale: f64) {
-        self.displacement_scale = scale;
+    /// Change the swing scale (mm per unit of model displacement).
+    pub fn set_amplitude_mm(&mut self, amplitude_mm: f64) {
+        self.amplitude_mm = amplitude_mm;
     }
 
     /// Process a buffer of reed displacement samples in-place.
     ///
-    /// Input: reed displacement in normalized model units.
-    /// Output: pickup voltage in volts (millivolt-scale signals).
+    /// Input: reed displacement in normalized model units (positive = the hammer's direction,
+    /// upward). Output: pickup voltage in volts (millivolt-scale signals).
     ///
-    /// The nonlinearity lives in the SOURCE (the moving reed's y/(1-y) charge
-    /// injection) and is frequency-independent; the network that follows is
-    /// very nearly LTI — a differentiator inside a one-pole lag with its corner
-    /// at PICKUP_FC (880 Hz). See the module docs and
-    /// `test_nonlinearity_is_frequency_independent`.
+    /// The nonlinearity lives in the SOURCE — the moving reed's capacitance to the fingers, a
+    /// field-solved function of how far it has entered the finger band — and is
+    /// frequency-independent; the network that follows is very nearly LTI, a differentiator
+    /// inside a one-pole lag with its corner at PICKUP_FC.
     pub fn process(&mut self, buffer: &mut [f64]) {
-        let scale = self.displacement_scale;
         let beta = self.beta;
+        let scale = self.band_sign * self.amplitude_mm;
         for sample in buffer.iter_mut() {
-            // Smooth saturation: identity below ±PICKUP_KNEE_Y, asymptotic to
-            // ±PICKUP_MAX_Y above. Replaces the old hard clamp whose derivative
-            // discontinuity at the limit was producing audible HF distortion.
-            let y = pickup_soft_saturate(*sample * scale);
-
-            // ── Source: the moving reed's charge. THE nonlinearity. ──
-            // C_reed(t) = C_REED0/(1-y); the AC part it injects is proportional
-            // to s = 1/(1-y) - 1 = y/(1-y). Frequency-independent by
-            // construction — this is what the previous model lost above the
-            // corner.
-            let s = y / (1.0 - y);
+            // ── Source: the moving reed's capacitance to the fingers. THE nonlinearity. ──
+            // u = penetration past the near finger face; at rest the reed sits just outside the
+            // band (u = -PICKUP_REST_OFFSET_MM).
+            let u = scale * *sample - PICKUP_REST_OFFSET_MM;
+            let s = self.law.eval(u) - self.c_rest;
 
             // ── Network: one moving reed against a fixed node. ~LTI. ──
-            // C_node(t)/C_TOTAL = 1 + C_REED_RATIO * s. The previous model used
-            // 1/(1-y) here, i.e. a ratio of 1.0 instead of 1/80.
             let m = 1.0 + C_REED_RATIO * s;
             let m_avg = 0.5 * (m + self.m_prev);
 
             // Exact trapezoidal discretization of
             //   C_node(t)*dv/dt + v/R_net = -V_pol * dC_reed/dt
-            // normalized by C_TOTAL and PICKUP_SENSITIVITY. A differentiator
-            // inside a one-pole lag = the jw-driven high-pass the circuit
-            // reference specifies.
+            // normalized by C_TOTAL and PICKUP_SENSITIVITY.
             self.w = (self.w * (m_avg - beta) - (s - self.s_prev)) / (m_avg + beta);
 
             self.s_prev = s;
@@ -380,152 +405,46 @@ mod tests {
     use super::*;
     use std::f64::consts::PI;
 
-    // ── pickup_soft_saturate unit tests ─────────────────────────────────────
+    /// Middle C at ff, as the voice drives it (DS 0.85).
+    const A_C4: f64 = 0.85 * PICKUP_MM_PER_DS;
 
-    #[test]
-    fn test_soft_saturate_identity_below_knee() {
-        // Anything strictly inside ±PICKUP_KNEE_Y must pass through bit-exact.
-        // Guards against any future rewrite that introduces a corner inside
-        // the linear range. Bracket scaled by knee so the test follows
-        // PICKUP_KNEE_Y if it changes.
-        let edge = PICKUP_KNEE_Y - 0.001;
-        for y in [-edge, -edge * 0.5, -0.1, 0.0, 0.1, edge * 0.5, edge] {
-            let out = pickup_soft_saturate(y);
-            assert!(
-                (out - y).abs() < 1e-15,
-                "below knee should be identity: {y} → {out}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_soft_saturate_continuous_at_knee() {
-        // Just below = identity; just above = soft saturation. The tanh slope
-        // at zero is 1, matching identity's slope, so f is C¹ at the knee.
-        let just_below = pickup_soft_saturate(PICKUP_KNEE_Y - 1e-9);
-        let just_above = pickup_soft_saturate(PICKUP_KNEE_Y + 1e-9);
-        assert!(
-            (just_below - just_above).abs() < 1e-7,
-            "knee discontinuity: {just_below} vs {just_above}"
-        );
-    }
-
-    #[test]
-    fn test_soft_saturate_bounded_at_max() {
-        // Output must never exceed PICKUP_MAX_Y. The asymptote is exactly
-        // PICKUP_MAX_Y; in f64, very-large inputs land at tanh ≈ 1.0 and the
-        // output equals the limit (matches the old hard-clamp magnitude).
-        // What we forbid is *exceeding* the limit and re-entering the
-        // 1/(1−y) singularity zone.
-        for y in [0.95, 0.96, 0.98, 1.0, 2.0, 100.0, -100.0] {
-            let out = pickup_soft_saturate(y);
-            assert!(
-                out.abs() <= PICKUP_MAX_Y + 1e-15,
-                "input {y} → {out} exceeds ±{PICKUP_MAX_Y}"
-            );
-            assert!(
-                out.abs() >= PICKUP_KNEE_Y,
-                "input {y} → {out} above the knee should not undershoot it"
-            );
-        }
-    }
-
-    #[test]
-    fn test_soft_saturate_smooth_above_knee() {
-        // Inputs in the middle of the saturation band (not at tanh's f64
-        // saturation tail) must land strictly between knee and limit.
-        for y in [0.95, 0.96, 0.97, 0.98, 1.0, 1.5] {
-            let out = pickup_soft_saturate(y);
-            assert!(
-                out > PICKUP_KNEE_Y && out < PICKUP_MAX_Y,
-                "input {y} → {out} should land in (knee, limit)"
-            );
-        }
-    }
-
-    #[test]
-    fn test_soft_saturate_monotonic() {
-        // Across the full range the output must be monotonically non-decreasing.
-        // Catches any sign mistake in the asymmetric formulation.
-        let mut prev = pickup_soft_saturate(-1.5);
-        for i in 1..=600 {
-            let y = -1.5 + (i as f64) * 0.005;
-            let out = pickup_soft_saturate(y);
-            assert!(
-                out >= prev - 1e-12,
-                "non-monotonic at y={y}: prev={prev}, cur={out}"
-            );
-            prev = out;
-        }
-    }
-
-    #[test]
-    fn test_soft_saturate_odd_symmetric() {
-        // The bend on the negative side mirrors the positive side.
-        for y in [0.86, 0.9, 0.95, 0.98, 1.5, 5.0] {
-            let pos = pickup_soft_saturate(y);
-            let neg = pickup_soft_saturate(-y);
-            assert!(
-                (pos + neg).abs() < 1e-12,
-                "asymmetric saturation at ±{y}: +{pos}, -{} (sum {})",
-                neg.abs(),
-                pos + neg
-            );
-        }
+    fn render(midi: u8, amp: f64, freq: f64, secs: f64) -> Vec<f64> {
+        let sr = 44100.0;
+        let mut pickup = Pickup::new_for_note(sr, midi, A_C4);
+        let n = (sr * secs) as usize;
+        let mut buf: Vec<f64> = (0..n)
+            .map(|i| amp * (2.0 * PI * freq * i as f64 / sr).sin())
+            .collect();
+        pickup.process(&mut buf);
+        buf
     }
 
     #[test]
     fn test_dc_equilibrium() {
-        // Zero displacement should produce zero output (DC blocked by RC).
-        let sr = 44100.0;
-        let mut pickup = Pickup::new(sr);
-        let n = (sr * 0.05) as usize;
-        let mut buf = vec![0.0f64; n];
-        pickup.process(&mut buf);
-
-        let peak = buf.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        assert!(
-            peak < 1e-10,
-            "zero displacement should produce zero output, got peak={peak:.2e}"
-        );
+        // Zero displacement should produce zero output: the source is referenced to rest.
+        let peak = render(60, 0.0, 100.0, 0.05)
+            .iter()
+            .fold(0.0f64, |a, x| a.max(x.abs()));
+        assert!(peak < 1e-12, "zero displacement gave {peak:.2e}");
     }
 
     #[test]
     fn test_frequency_response_matches_rc() {
-        // Small-signal sweep against the CORRECTED pickup network.
-        //
-        // PRE-REVISION EXPECTATION REPLACED: this test swept against a 1-pole
-        // HPF at 2312 Hz (TAU = 287k x 240pF) with a 2 dB tolerance. Both the
-        // corner and the network behind it are void — the 287k came from
-        // reading R-2 as a 2 MEG base-bias resistor, but R-2 is a 1 MEG
-        // polarizing feed on the pickup side of C-1, and C-2 (220 pF) is
-        // bridged onto the plate capacitance by C-1. The corner is now
-        // PICKUP_FC (880 Hz at the nominal C_TOTAL).
-        //
-        // Tolerance tightened 2.0 dB -> 0.6 dB at the same time. The old
-        // 2 dB was loose enough to hide a corner error of nearly an octave;
-        // 0.6 dB covers the bilinear warping at 44.1 kHz (worst case ~0.35 dB
-        // at 10 kHz) with margin but would fail on any real corner drift.
-        let sr = 44100.0;
-        let fc = PICKUP_FC;
-        let amplitude = 0.01; // Very small — linear regime (y_peak = 0.0085)
-
+        // Small-signal sweep against the pickup network: a one-pole high-pass at PICKUP_FC,
+        // with the law's slope at rest as the gain. The 0.6 dB tolerance covers the bilinear
+        // warping at 44.1 kHz (~0.35 dB at 10 kHz) and fails on any real corner drift.
+        let law = pickup_law_for(60);
+        let e = 1e-4;
+        let slope = (law.eval(-PICKUP_REST_OFFSET_MM + e) - law.eval(-PICKUP_REST_OFFSET_MM - e))
+            / (2.0 * e);
+        let amplitude = 0.01; // 4.5 um at the pickup: linear regime
         for &freq in &[100.0, 500.0, 880.0, 2000.0, 5000.0, 10000.0] {
-            let mut pickup = Pickup::new(sr);
-            let n = (sr * 0.1) as usize;
-            let mut buf: Vec<f64> = (0..n)
-                .map(|i| amplitude * (2.0 * PI * freq * i as f64 / sr).sin())
-                .collect();
-            pickup.process(&mut buf);
-
-            let steady = &buf[n / 2..];
-            let measured = steady.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-
-            // Expected: amplitude * DS * SENSITIVITY * HPF_gain
-            let y_amp = amplitude * DISPLACEMENT_SCALE;
-            let hpf_gain = freq / (freq * freq + fc * fc).sqrt();
-            let expected = y_amp * PICKUP_SENSITIVITY * hpf_gain;
-
+            let buf = render(60, amplitude, freq, 0.1);
+            let measured = buf[buf.len() / 2..]
+                .iter()
+                .fold(0.0f64, |a, x| a.max(x.abs()));
+            let hpf_gain = freq / (freq * freq + PICKUP_FC * PICKUP_FC).sqrt();
+            let expected = amplitude * A_C4 * slope * PICKUP_SENSITIVITY * hpf_gain;
             let ratio_db = 20.0 * (measured / expected).log10();
             assert!(
                 ratio_db.abs() < 0.6,
@@ -559,164 +478,85 @@ mod tests {
     }
 
     #[test]
-    fn test_hpf_passes_high_freq() {
-        // At 10 kHz, the time-varying RC passes high-freq signals.
-        // For the RC model, at very high frequencies q can't follow c_n,
-        // so output ≈ y * SENSITIVITY (reduced from old y/(1-y) * S).
-        let sr = 44100.0;
-        let mut pickup = Pickup::new(sr);
-        let freq = 10000.0;
-
-        let n = (sr * 0.05) as usize;
-        let mut buf: Vec<f64> = (0..n)
-            .map(|i| (2.0 * PI * freq * i as f64 / sr).sin())
-            .collect();
-        pickup.process(&mut buf);
-
-        let peak = buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        // At 10 kHz with DS=0.85: y approaches MAX_Y.
-        // The RC model at high freq gives output ~ y * SENSITIVITY for small y,
-        // but for large y the nonlinear charge dynamics still produce amplification.
-        assert!(peak > 0.5, "pickup output too low at 10kHz: {peak}");
-        assert!(peak < 12.0, "pickup output too high at 10kHz: {peak}");
-    }
-
-    #[test]
     fn test_hpf_attenuates_bass() {
-        // At 100 Hz the RC charge tracks the capacitance changes, attenuating
-        // the output relative to the passband.
-        //
-        // PRE-REVISION EXPECTATION REPLACED: `peak < 0.65`, which encoded the
-        // 2312 Hz corner. The corrected network's corner is PICKUP_FC (880 Hz),
-        // so 100 Hz now sits far less deep into the rolloff and this full-scale
-        // drive measures 0.967 (was under 0.65). The bound is re-derived, not
-        // just loosened: 1.10 keeps ~13% headroom over the measured value while
-        // still failing outright if the corner regressed toward the passband.
-        //
-        // The second assertion is the one that carries the physics and is
-        // corner-independent: 100 Hz must remain clearly below the passband.
-        // At full-scale drive the 1/(1-y) compression flattens the curve
-        // (measured 0.967 at 100 Hz vs 1.546 at 10 kHz, a ratio of 0.63), so
-        // this is a weaker statement than the small-signal sweep — that is what
-        // `test_frequency_response_matches_rc` is for.
-        let sr = 44100.0;
-        let n = (sr * 0.1) as usize;
-        let measure = |freq: f64| {
-            let mut pickup = Pickup::new(sr);
-            let mut buf: Vec<f64> = (0..n)
-                .map(|i| (2.0 * PI * freq * i as f64 / sr).sin())
-                .collect();
-            pickup.process(&mut buf);
-            buf[n / 2..].iter().map(|x| x.abs()).fold(0.0f64, f64::max)
+        // At ff drive, 100 Hz must stay clearly below the passband: the network is a high-pass
+        // whatever the law.
+        let peak = |f: f64| {
+            let b = render(60, 1.0, f, 0.1);
+            b[b.len() / 2..].iter().fold(0.0f64, |a, x| a.max(x.abs()))
         };
-        let bass = measure(100.0);
-        let treble = measure(10000.0);
-        assert!(bass < 1.60, "pickup should attenuate 100 Hz: {bass}");
+        let (bass, treble) = (peak(100.0), peak(10000.0));
+        assert!(treble > 0.0, "no output at 10 kHz");
         assert!(
             bass < treble * 0.75,
-            "100 Hz ({bass:.3}) must stay clearly below the passband ({treble:.3})"
+            "100 Hz ({bass:.4}) vs passband ({treble:.4})"
         );
     }
 
     #[test]
     fn test_nonlinearity_produces_h2() {
-        // Drive the pickup with a large-amplitude sine and verify H2 > H3.
-        // The time-varying capacitance generates even harmonics.
+        // At ff drive the reed enters the finger band once per cycle: a second harmonic well
+        // above the linear floor, and H3 below it (the reed is not yet near the far face).
         let sr = 44100.0;
-        // Swept at two points rather than one: 880 Hz is the CORRECTED corner
-        // (where charge/capacitance coupling is strongest) and 2000 Hz is the
-        // legacy probe point, kept so no coverage is lost by the corner move.
-        // The old comment called 2000 Hz "near the corner" — that was true of
-        // the superseded 2312 Hz reading, not of this network.
         for freq in [880.0f64, 2000.0] {
-            let mut pickup = Pickup::new(sr);
-
-            let amplitude = 1.0;
-            let n = (sr * 0.2) as usize;
-            let mut buf: Vec<f64> = (0..n)
-                .map(|i| amplitude * (2.0 * PI * freq * i as f64 / sr).sin())
-                .collect();
-            pickup.process(&mut buf);
-
-            let start = n * 3 / 4;
-            let signal = &buf[start..];
+            let buf = render(60, 1.0, freq, 0.2);
+            let signal = &buf[buf.len() * 3 / 4..];
             let h1 = dft_magnitude(signal, freq, sr);
             let h2 = dft_magnitude(signal, 2.0 * freq, sr);
             let h3 = dft_magnitude(signal, 3.0 * freq, sr);
-
+            assert!(h2 > h3, "H2 ({h2:.2e}) should dominate H3 ({h3:.2e})");
             assert!(
-                h2 > h3,
-                "H2 ({h2:.2e}) should dominate H3 ({h3:.2e}) from capacitance modulation"
-            );
-            let h2_ratio = h2 / h1;
-            assert!(
-                h2_ratio > 0.05,
-                "H2/H1 too low ({h2_ratio:.4}) at {freq} Hz, expected >5% from nonlinearity"
+                h2 / h1 > 0.05,
+                "H2/H1 too low ({:.4}) at {freq} Hz",
+                h2 / h1
             );
         }
     }
 
     #[test]
-    fn test_asymmetry() {
-        // The pickup's even-order asymmetry, with its DIRECTION derived rather
-        // than observed.
-        //
-        // At high frequency the plate charge is frozen and the algebra is
-        // unambiguous: out -> -SENSITIVITY * y/(1-y). Reed TOWARD the plate
-        // (y > 0) raises C_reed, which at ~constant charge pulls the plate
-        // voltage DOWN. So the large excursion is NEGATIVE-going, and it is
-        // larger: |out| at y=+0.5 is 3x |out| at y=-0.5 (1.84 vs 0.61).
-        //
-        // ⚠ THE PREVIOUS MODEL HAD THIS BACKWARDS and this test encoded it.
-        // It asserted pos_peak > neg_peak, i.e. the largest output during
-        // NEGATIVE y (reed moving away) — measured: its max landed at y=-0.05
-        // while its min landed at y=+0.37. That contradicted this module's own
-        // docstring ("positive y amplified more than negative"). The old
-        // asymmetry was an emergent artifact of modulating the relaxation time
-        // constant; with the nonlinearity in the source where it belongs, the
-        // direction follows from the capacitance and is no longer a matter of
-        // observation.
-        let sr = 44100.0;
-        let freq = 500.0;
-        let amplitude = 0.5; // y_peak = 0.5 * 0.85 = 0.425, below the knee
-        let n = (sr * 0.2) as usize;
-        let mut pickup = Pickup::new(sr);
-        let mut buf: Vec<f64> = (0..n)
-            .map(|i| amplitude * (2.0 * PI * freq * i as f64 / sr).sin())
-            .collect();
-        pickup.process(&mut buf);
+    fn test_into_band_excursion_is_negative_going() {
+        // The half-cycle that carries the reed INTO the finger band raises its capacitance, and
+        // at ~constant charge that pulls the plate DOWN — so the larger excursion is negative,
+        // in both registers (bass enters on the upswing, treble on the downswing).
+        for midi in [40u8, 60, 84] {
+            let buf = render(midi, 1.0, 2000.0, 0.2);
+            let tail = &buf[buf.len() / 2..];
+            let pos = tail.iter().cloned().fold(0.0f64, f64::max);
+            let neg = tail.iter().cloned().fold(0.0f64, f64::min).abs();
+            assert!(
+                neg > pos * 1.05,
+                "MIDI {midi}: into-band excursion must be the larger, negative one: pos={pos:.5} neg={neg:.5}"
+            );
+        }
+    }
 
-        let pos_peak = buf[n / 2..].iter().cloned().fold(0.0f64, f64::max);
-        let neg_peak = buf[n / 2..].iter().cloned().fold(0.0f64, f64::min).abs();
-
+    #[test]
+    fn test_first_swing_polarity_by_register() {
+        // The hammer strikes from below, so the first swing is upward: INTO the band for a bass
+        // reed (pickup above) — output negative — and OUT of it for a treble reed (pickup
+        // below) — output positive. Checked at the first swing's peak, 2 kHz (above the corner,
+        // so the network's phase lead is small).
+        let sr: f64 = 44100.0;
+        let quarter = (sr / 2000.0 / 4.0).round() as usize;
         assert!(
-            neg_peak > pos_peak * 1.05,
-            "reed-toward-plate must give the larger (negative-going) excursion: \
-             pos={pos_peak:.6} neg={neg_peak:.6}"
+            render(40, 1.0, 2000.0, 0.01)[quarter] < 0.0,
+            "bass first swing must be negative"
+        );
+        assert!(
+            render(84, 1.0, 2000.0, 0.01)[quarter] > 0.0,
+            "treble first swing must be positive"
         );
     }
 
     #[test]
     fn test_nonlinearity_is_frequency_independent() {
-        // The regression guard for the 2026-09-14 restructure.
-        //
-        // The nonlinearity is in the SOURCE, so H2/H1 at a given y must be
-        // roughly the same whether the note sits below or far above the corner.
-        // The previous model generated harmonics from the relaxation time
-        // constant instead, so its H2/H1 collapsed with frequency — that is what
-        // produced the ~3.4 dB-per-harmonic-ORDER shortfall and the 2.5-6 kHz
-        // notch. Measured on the previous model, H2/H1 at y_peak 0.5 fell from
-        // 53.8% at 65 Hz to 12.9% at 4 kHz; the source-driven model holds it.
+        // The nonlinearity is in the SOURCE, so H2/H1 at a given swing must be the same below
+        // and far above the corner once the high-pass's own tilt (H2 an octave further up its
+        // slope than H1) is removed.
         let sr = 44100.0;
-        let y_peak = 0.5;
-        let n = (sr * 0.5) as usize;
-
         let h2_h1_at = |freq: f64| -> f64 {
-            let mut pickup = Pickup::new_with_scale(sr, 1.0);
-            let mut buf: Vec<f64> = (0..n)
-                .map(|i| y_peak * (2.0 * PI * freq * i as f64 / sr).sin())
-                .collect();
-            pickup.process(&mut buf);
+            let buf = render(60, 1.0, freq, 0.5);
+            let n = buf.len();
             let steady = &buf[n / 2..];
             let mag = |k: f64| -> f64 {
                 let (mut re, mut im) = (0.0f64, 0.0f64);
@@ -729,28 +569,164 @@ mod tests {
             };
             mag(2.0) / mag(1.0)
         };
-
-        // H2/H1 is not expected to be flat: the high-pass itself sits H2 an
-        // octave further up its own slope than H1, which genuinely lifts H2/H1
-        // below the corner (this is the documented "pickup HPF boosts H2 ~1.9x").
-        // So remove that predicted differential and assert the RESIDUAL — what
-        // is left is the nonlinearity's own frequency dependence, which must be
-        // ~zero because the source term has none.
         let hpf = |f: f64| f / (f * f + PICKUP_FC * PICKUP_FC).sqrt();
         let predicted_db = |f: f64| 20.0 * (hpf(2.0 * f) / hpf(f)).log10();
-
         let (f_lo, f_hi) = (65.41, 4000.0);
         let measured_db = 20.0 * (h2_h1_at(f_lo) / h2_h1_at(f_hi)).log10();
-        let predicted_spread = predicted_db(f_lo) - predicted_db(f_hi);
-        let residual = measured_db - predicted_spread;
-
+        let residual = measured_db - (predicted_db(f_lo) - predicted_db(f_hi));
         assert!(
             residual.abs() < 1.0,
-            "H2/H1 spread {measured_db:.2} dB across {f_lo}->{f_hi} Hz vs {predicted_spread:.2} dB \
-             predicted from the high-pass alone — residual {residual:.2} dB means the \
-             nonlinearity has drifted back into the network. \
-             (Previous model's residual on this measurement: 6.6 dB.)"
+            "H2/H1 spread {measured_db:.2} dB vs the high-pass's own tilt — residual {residual:.2} dB \
+             means the nonlinearity has drifted into the network"
         );
+    }
+
+    // ── Overlap-law tables (field-solved) ───────────────────────────────────
+
+    use crate::pickup_tables::{BASS, MIDDLE, TREBLE};
+
+    fn sections() -> [(&'static str, &'static PickupLawTable); 3] {
+        [("bass", &BASS), ("middle", &MIDDLE), ("treble", &TREBLE)]
+    }
+
+    /// Harmonic magnitudes 1..=k of the static law driven by u = rest + A sin(theta).
+    fn static_harmonics(law: &PickupLawTable, rest: f64, amp: f64, k: usize) -> Vec<f64> {
+        let n = 1024;
+        let c: Vec<f64> = (0..n)
+            .map(|i| law.eval(rest + amp * (2.0 * PI * i as f64 / n as f64).sin()))
+            .collect();
+        (1..=k)
+            .map(|h| {
+                let (mut re, mut im) = (0.0, 0.0);
+                for (i, v) in c.iter().enumerate() {
+                    let p = 2.0 * PI * (h * i) as f64 / n as f64;
+                    re += v * p.cos();
+                    im -= v * p.sin();
+                }
+                (re * re + im * im).sqrt()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_law_spline_matches_generator() {
+        // The generator writes off-knot values from its own (scipy) natural spline; the Rust
+        // evaluation must reproduce them, so the table means what the field solve says.
+        use crate::pickup_tables::{BASS_CHECK, MIDDLE_CHECK, TREBLE_CHECK};
+        for (name, law, check) in [
+            ("bass", &BASS, &BASS_CHECK[..]),
+            ("middle", &MIDDLE, &MIDDLE_CHECK[..]),
+            ("treble", &TREBLE, &TREBLE_CHECK[..]),
+        ] {
+            for &(u, v) in check {
+                let got = law.eval(u);
+                assert!(
+                    (got - v).abs() < 1e-10,
+                    "{name}: eval({u}) = {got}, generator {v}"
+                );
+            }
+            for (i, &y) in law.y.iter().enumerate() {
+                let u = law.u0 + law.du * i as f64;
+                assert!(
+                    (law.eval(u) - y).abs() < 1e-12,
+                    "{name}: knot {i} not interpolated"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_law_second_derivative_continuous() {
+        // Harmonics come from the law's curvature; a kink in C'' at a knot would be a spurious
+        // harmonic source. Check C'' from both sides of every interior knot.
+        for (name, law) in sections() {
+            let e = 1e-4 * law.du;
+            let d2 = |u: f64| (law.eval(u + e) - 2.0 * law.eval(u) + law.eval(u - e)) / (e * e);
+            let scale = law.m.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
+            for i in 2..law.y.len() - 2 {
+                let u = law.u0 + law.du * i as f64;
+                let (left, right) = (d2(u - 3.0 * e), d2(u + 3.0 * e));
+                assert!(
+                    (left - right).abs() < 1e-3 * scale,
+                    "{name}: C'' jumps at knot {i}: {left} vs {right}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_law_shape() {
+        // Outside the band the capacitance is a weak fringe floor; it rises as the reed enters
+        // the finger band (0 < u < t_r) and falls again once the reed passes the far face.
+        for (name, law) in sections() {
+            let (t_r, t_p) = (law.t_r, law.t_p);
+            let mut prev = law.eval(-2.0);
+            let mut u = -2.0;
+            while u < 0.9 * t_r.min(t_p) {
+                u += 0.01;
+                let c = law.eval(u);
+                assert!(c > prev, "{name}: law not rising at u = {u}");
+                prev = c;
+            }
+            let peak = law.eval(0.5 * (t_r + t_p));
+            assert!(peak > 3.0 * law.eval(-1.0), "{name}: in-band peak too weak");
+            assert!(
+                law.eval(t_r + t_p + 0.5) < 0.6 * peak,
+                "{name}: law must fall past the far face"
+            );
+        }
+    }
+
+    #[test]
+    fn test_section_boundaries_and_band_side() {
+        // Reed 20 = MIDI 52 (E3) is the last bass reed; the solder flip and the pickup moving
+        // from above to below the reed both happen at 20|21. Thin fingers end at reed 42 (D5).
+        for (midi, law, sign) in [
+            (33u8, &BASS, 1.0),
+            (52, &BASS, 1.0),
+            (53, &MIDDLE, -1.0),
+            (74, &MIDDLE, -1.0),
+            (75, &TREBLE, -1.0),
+            (96, &TREBLE, -1.0),
+        ] {
+            assert!(
+                std::ptr::eq(pickup_law_for(midi), law),
+                "section of MIDI {midi}"
+            );
+            assert_eq!(pickup_band_sign(midi), sign, "band side of MIDI {midi}");
+        }
+    }
+
+    #[test]
+    fn test_law_edge_regime_fundamental_dominates() {
+        // At the factory setting (rest just outside the band) the pickup passes the fundamental
+        // with a modest second harmonic and little third — the manual's "correct" voicing.
+        for (name, law) in sections() {
+            let h = static_harmonics(law, -PICKUP_REST_OFFSET_MM, 0.2, 3);
+            let (h2, h3) = (20.0 * (h[1] / h[0]).log10(), 20.0 * (h[2] / h[0]).log10());
+            assert!((-22.0..-6.0).contains(&h2), "{name}: H2/H1 {h2:.1} dB");
+            assert!(
+                h3 < h2 - 10.0,
+                "{name}: H3 {h3:.1} dB should sit well below H2"
+            );
+        }
+    }
+
+    #[test]
+    fn test_law_centred_rest_is_the_fault_state() {
+        // Service manual §18: "When a reed at rest is positioned inside the pickup, a very strong
+        // undesirable harmonic will be generated." With the reed centred in the band the law is
+        // even about rest, so the fundamental vanishes and the doubled frequency takes over.
+        for (name, law) in sections() {
+            let centre = 0.5 * (law.t_r + law.t_p);
+            let h = static_harmonics(law, centre, 0.4 * law.t_r.min(law.t_p), 2);
+            assert!(
+                h[1] > 10.0 * h[0],
+                "{name}: centred rest must give 2f, got H1 {} H2 {}",
+                h[0],
+                h[1]
+            );
+        }
     }
 
     fn dft_magnitude(signal: &[f64], freq: f64, sr: f64) -> f64 {

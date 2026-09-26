@@ -7,6 +7,7 @@ pub mod filters;
 pub mod hammer;
 pub mod mlp_correction;
 pub mod pickup;
+pub mod pickup_tables;
 pub mod reed;
 pub mod tables;
 pub mod variation;

@@ -607,7 +607,7 @@ fn cmd_render(args: &[String]) {
 ///   2. After pickup (time-varying RC — coupled NL + HPF)
 ///   3. After preamp (oversampled)
 fn cmd_bark_audit(args: &[String]) {
-    use openwurli_dsp::pickup::Pickup;
+    use openwurli_dsp::pickup::{PICKUP_MM_PER_DS, Pickup};
 
     let notes: Vec<u8> = parse_csv_list(args, "--notes", "36,48,60,72,84");
     let velocities: Vec<u8> = parse_csv_list(args, "--velocities", "40,80,100,127");
@@ -662,10 +662,11 @@ fn cmd_bark_audit(args: &[String]) {
             let reed_steady = &reed_buf[measure_offset..];
             let reed_peak = peak_abs(reed_steady);
             let displacement_scale = tables::pickup_displacement_scale(note);
-            let y_peak = reed_peak * displacement_scale;
+            let y_peak = reed_peak * displacement_scale * PICKUP_MM_PER_DS;
 
-            // ── Stage 2: After pickup (time-varying RC) ──
-            let mut pickup = Pickup::new_with_scale(BASE_SR, displacement_scale);
+            // ── Stage 2: After pickup (overlap law + RC network) ──
+            let mut pickup =
+                Pickup::new_for_note(BASE_SR, note, displacement_scale * PICKUP_MM_PER_DS);
             let mut pu_buf = reed_buf.clone();
             pickup.process(&mut pu_buf);
             let pu_steady = &pu_buf[measure_offset..];
@@ -705,9 +706,7 @@ fn cmd_bark_audit(args: &[String]) {
     // Summary
     println!("Legend:");
     println!("  Reed pk   = peak reed displacement (model units)");
-    println!(
-        "  y_peak    = physical displacement fraction (y = reed_pk * DS), DS = per-note from tables"
-    );
+    println!("  y_peak    = reed swing at the pickup, mm (reed_pk * DS * PICKUP_MM_PER_DS)");
     println!(
         "  PU H2/H1  = H2/H1 after time-varying RC pickup (coupled NL + HPF at {:.0} Hz)",
         openwurli_dsp::pickup::PICKUP_FC
@@ -1193,7 +1192,7 @@ fn cmd_calibrate(args: &[String]) {
     // them from running the 1/(1-y) model too close to its pole). Default 0.82 matches
     // the in-tree const. Exposed as a CLI flag so sweeps can probe bass headroom without
     // rebuilds. Lower clamp stays at the default 0.02.
-    let ds_clamp_max = parse_flag(args, "--ds-clamp-max", 0.82);
+    let ds_clamp_max = parse_flag(args, "--ds-clamp-max", f64::INFINITY); // no upper cap under the overlap law
     let volume = parse_flag(args, "--volume", 0.40);
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let zero_trim = has_flag(args, "--zero-trim");
@@ -1253,7 +1252,7 @@ fn run_calibrate(
     _mlp: bool,
     args: &[String],
 ) -> Vec<CalibrateRow> {
-    use openwurli_dsp::pickup::Pickup;
+    use openwurli_dsp::pickup::{PICKUP_MM_PER_DS, Pickup};
 
     let duration = 0.5;
     let measure_start = (0.100 * BASE_SR) as usize; // 100ms
@@ -1297,10 +1296,10 @@ fn run_calibrate(
             reed.render(&mut reed_buf);
 
             let reed_peak = peak_abs(&reed_buf[measure_start..measure_end]);
-            let y_peak = reed_peak * ds_actual;
+            let y_peak = reed_peak * ds_actual * PICKUP_MM_PER_DS;
 
-            // ── T2: After pickup (time-varying RC) ──
-            let mut pickup = Pickup::new_with_scale(BASE_SR, ds_actual);
+            // ── T2: After pickup (overlap law + RC network) ──
+            let mut pickup = Pickup::new_for_note(BASE_SR, note, ds_actual * PICKUP_MM_PER_DS);
             let mut t2_buf = reed_buf.clone();
             pickup.process(&mut t2_buf);
             let t2_window = &t2_buf[measure_start..measure_end];

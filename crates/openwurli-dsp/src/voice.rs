@@ -83,8 +83,10 @@ impl Voice {
             *decay /= ratio;
         }
 
-        // Apply displacement scale correction (from H2/H1 ratio matching)
-        let corrected_ds = tables::pickup_displacement_scale(midi_note) * corrections.ds_correction;
+        // Pickup drive. The MLP's ds_correction is NOT applied: its training target assumed the
+        // old 1/(1-y) law (H2/H1 proportional to the gap fraction), which the overlap law does not
+        // obey. It stays pinned out until the MLP is retrained against the new law.
+        let corrected_ds = tables::pickup_displacement_scale(midi_note);
 
         let reed = ModalReed::new(
             detuned_fundamental,
@@ -97,43 +99,18 @@ impl Voice {
             noise_seed,
         );
 
-        let mut pickup = Pickup::new(sample_rate);
-        pickup.set_displacement_scale(corrected_ds);
+        let pickup = Pickup::new_for_note(
+            sample_rate,
+            midi_note,
+            corrected_ds * crate::pickup::PICKUP_MM_PER_DS,
+        );
         let noise = AttackNoise::new(velocity, detuned_fundamental, sample_rate, noise_seed);
 
         // Post-pickup gain: technician voicing (gap adjustment) affects volume
-        // without changing the nonlinear displacement fraction y.
+        // without changing the reed's swing.
         let base_output_scale = tables::output_scale(midi_note, velocity);
 
-        // MLP ds_correction changes pickup drive, which changes output level as a
-        // side effect (the MLP targets H2/H1 spectral shape, not overall level).
-        // Compensate using the pickup RMS proxy ratio so MLP adjusts timbre only.
-        //
-        // The static proxy (Fourier of 1/(1-y)) overestimates the RC pickup's
-        // response at high ds because charge dynamics self-limit peak excursions.
-        // sqrt of the proxy ratio (= half the dB) matches the RC model's smoothing
-        // behavior: measured at C4 (ds 0.75→0.97, proxy predicts +20 dB, actual
-        // +7.9 dB ≈ half in dB) and C6 (ds 0.39→0.59, proxy +5.8 dB, actual +2.8 dB).
-        let base_ds = tables::pickup_displacement_scale(midi_note);
-        let mlp_level_compensation = if (corrections.ds_correction - 1.0).abs() > 1e-6 {
-            let f0 = tables::midi_to_freq(midi_note);
-            // The pickup's small-signal corner, referenced not copied. This call
-            // site hardcoded the superseded 2312 Hz; `pickup_rms_proxy` requires
-            // the real corner or it mis-normalises by up to 4.4 dB across
-            // register and drive, and the compensation stops tracking DS.
-            let hpf_fc = crate::pickup::PICKUP_FC;
-            let proxy_base = tables::pickup_rms_proxy(base_ds, f0, hpf_fc);
-            let proxy_corrected = tables::pickup_rms_proxy(corrected_ds, f0, hpf_fc);
-            if proxy_corrected > 1e-10 {
-                (proxy_base / proxy_corrected).sqrt()
-            } else {
-                1.0
-            }
-        } else {
-            1.0
-        };
-
-        let post_pickup_gain = base_output_scale * mlp_level_compensation;
+        let post_pickup_gain = base_output_scale;
 
         Self {
             reed,
@@ -145,9 +122,10 @@ impl Voice {
         }
     }
 
-    /// Override the pickup displacement scale.
+    /// Override the pickup drive, in units of `tables::pickup_displacement_scale`.
     pub fn set_displacement_scale(&mut self, scale: f64) {
-        self.pickup.set_displacement_scale(scale);
+        self.pickup
+            .set_amplitude_mm(scale * crate::pickup::PICKUP_MM_PER_DS);
     }
 
     /// Disable attack noise (for A/B testing of transient artifacts).

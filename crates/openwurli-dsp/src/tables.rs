@@ -285,7 +285,12 @@ pub fn reed_compliance(midi: u8) -> f64 {
 /// the bass ladder does not move with this constant).
 const DS_AT_C4: f64 = 0.85;
 const DS_EXPONENT: f64 = 0.75;
-const DS_CLAMP: (f64, f64) = (0.02, 0.90);
+/// Upper bound REMOVED with the overlap pickup law (2026-09): the 0.90 cap existed only to keep
+/// the old law's `1/(1-y)` away from its singularity at y = 1. The overlap law has no singularity,
+/// and the cap was holding every note below about G3 to middle C's swing — bass reeds could not
+/// swing further than C4, against the evidence that bass ff swings are large (the bass solder
+/// faces down to clear the dampers). The lower bound only keeps the proxy away from zero.
+const DS_CLAMP: (f64, f64) = (0.02, f64::INFINITY);
 
 /// Runtime-overridable calibration parameters.
 /// All fields default to the current hardcoded constants.
@@ -305,7 +310,12 @@ impl Default for CalibrationConfig {
             ds_at_c4: DS_AT_C4,
             ds_exponent: DS_EXPONENT,
             ds_clamp: DS_CLAMP,
-            target_db: -35.0,
+            // Re-anchored for the overlap pickup law (was -35.0 under 1/(1-y)): the new law's
+            // source term swings ~10.3 dB less at middle C, so +10.3 dB holds C4 v100 at the
+            // preamp input exactly where v0.8.0 put it (measured with
+            // tools/pickup_rev_metrics.py). That level, ~18 mV, also matches the physical
+            // estimate for the plate swing at TR-1 (147 V x dC/C_node through the network).
+            target_db: -24.7,
             voicing_slope: -0.04,
             zero_trim: false,
         }
@@ -457,7 +467,8 @@ pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES]
     std::array::from_fn(|i| base * ratios[i] * ratios[i])
 }
 
-/// Multi-harmonic RMS proxy for post-pickup signal level.
+/// Multi-harmonic RMS proxy for the retired 1/(1-y) pickup law — kept only as the closed-form
+/// reference that validates [`pickup_rms_proxy_numeric`].
 ///
 /// The pickup's 1/(1-y) nonlinearity distributes energy across harmonics.
 /// For `y = ds·sin(θ)`, the Fourier magnitudes of `y/(1-y)` are:
@@ -501,7 +512,8 @@ pub fn mode_decay_rates(midi: u8, ratios: &[f64; NUM_MODES]) -> [f64; NUM_MODES]
 /// change moved the proxy differently from the way it moved the real pickup, so
 /// lowering DS *raised* `output_scale` and the chain level did not track DS.
 /// Lowering `DS_CLAMP` could therefore RAISE the chord peak.
-pub fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
+#[cfg(test)]
+fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
     if ds < 1e-10 {
         return 0.0;
     }
@@ -515,6 +527,48 @@ pub fn pickup_rms_proxy(ds: f64, f0: f64, fc: f64) -> f64 {
         let hpf_n = nf / (nf * nf + fc * fc).sqrt();
         sum_sq += (cn * hpf_n) * (cn * hpf_n);
         r_n *= r;
+    }
+    sum_sq.sqrt()
+}
+
+/// RMS proxy for a note's actual pickup: its section's field-solved law, the side of the finger
+/// band it sits on, and its swing (`ds` in units of `pickup_displacement_scale`), through the
+/// pickup's high-pass. This is what `output_scale` normalises by.
+pub fn pickup_rms_proxy_law(midi: u8, ds: f64, f0: f64, fc: f64) -> f64 {
+    use crate::pickup::{
+        PICKUP_MM_PER_DS, PICKUP_REST_OFFSET_MM, pickup_band_sign, pickup_law_for,
+    };
+    let law = pickup_law_for(midi);
+    let a = pickup_band_sign(midi) * ds * PICKUP_MM_PER_DS;
+    let rest = law.eval(-PICKUP_REST_OFFSET_MM);
+    pickup_rms_proxy_numeric(|st| law.eval(a * st - PICKUP_REST_OFFSET_MM) - rest, f0, fc)
+}
+
+/// Multi-harmonic RMS proxy for ANY static pickup source law.
+///
+/// Same structure as the retired closed-form `pickup_rms_proxy` — harmonics of the source term, each through the
+/// pickup's one-pole high-pass, summed over H1..H8 — but with the Fourier magnitudes computed
+/// numerically (64-point DFT over one cycle) instead of in closed form, so it works for the
+/// field-solved overlap law, which has no closed form. `source(sin_theta)` returns the source
+/// term for a unit-amplitude displacement phase; the caller folds amplitude and rest point in.
+///
+/// Checked against the closed form on `y/(1-y)` (see `test_numeric_proxy_matches_closed_form`).
+pub fn pickup_rms_proxy_numeric(source: impl Fn(f64) -> f64, f0: f64, fc: f64) -> f64 {
+    const N: usize = 64;
+    let s: [f64; N] =
+        std::array::from_fn(|i| source((std::f64::consts::TAU * i as f64 / N as f64).sin()));
+    let mut sum_sq = 0.0;
+    for n in 1..=8usize {
+        let (mut re, mut im) = (0.0, 0.0);
+        for (i, v) in s.iter().enumerate() {
+            let p = std::f64::consts::TAU * (n * i) as f64 / N as f64;
+            re += v * p.cos();
+            im -= v * p.sin();
+        }
+        let cn = 2.0 * (re * re + im * im).sqrt() / N as f64;
+        let nf = n as f64 * f0;
+        let hpf_n = nf / (nf * nf + fc * fc).sqrt();
+        sum_sq += (cn * hpf_n) * (cn * hpf_n);
     }
     sum_sq.sqrt()
 }
@@ -875,18 +929,17 @@ pub fn output_scale_with_config(midi: u8, velocity_norm: f64, cfg: &CalibrationC
     let ds = pickup_displacement_scale_with_config(midi, cfg);
     let f0 = midi_to_freq(midi);
 
-    // Velocity-aware proxy: compute at the actual displacement that the pickup
-    // sees at this velocity. vel_scale reduces reed amplitude, which reduces
-    // the input to the 1/(1-y) nonlinearity, which changes the harmonic content
-    // that passes the HPF. At ff (vel_scale=1.0) this equals the old behavior.
+    // Velocity-aware proxy: compute at the actual swing the pickup sees at this
+    // velocity. vel_scale reduces the reed's swing, which changes how far it enters
+    // the finger band and so the harmonic content that passes the HPF.
     let scurve_v = velocity_scurve(velocity_norm);
     let vel_scale = scurve_v.powf(velocity_exponent(midi));
     let vel_scale_c4 = scurve_v.powf(velocity_exponent(60));
     let effective_ds = (ds * vel_scale).max(1e-6);
     let effective_ds_ref = (cfg.ds_at_c4 * vel_scale_c4).max(1e-6);
 
-    let rms = pickup_rms_proxy(effective_ds, f0, hpf_fc);
-    let rms_ref = pickup_rms_proxy(effective_ds_ref, midi_to_freq(60), hpf_fc);
+    let rms = pickup_rms_proxy_law(midi, effective_ds, f0, hpf_fc);
+    let rms_ref = pickup_rms_proxy_law(60, effective_ds_ref, midi_to_freq(60), hpf_fc);
 
     let flat_db = -20.0 * (rms / rms_ref).log10();
     let voicing_db = cfg.voicing_slope * (midi as f64 - 60.0).max(0.0);
@@ -1126,6 +1179,31 @@ pub fn note_params(midi: u8) -> NoteParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_numeric_proxy_matches_closed_form() {
+        // The numeric proxy must reproduce the closed-form y/(1-y) proxy before it is trusted
+        // on a law that has no closed form.
+        let fc = crate::pickup::PICKUP_FC;
+        for ds in [0.2, 0.4, 0.6, 0.8, 0.9] {
+            for f0 in [55.0, 131.0, 262.0, 523.0, 1046.0, 2093.0] {
+                let closed = pickup_rms_proxy(ds, f0, fc);
+                let numeric = pickup_rms_proxy_numeric(
+                    |sin_t| {
+                        let y = ds * sin_t;
+                        y / (1.0 - y)
+                    },
+                    f0,
+                    fc,
+                );
+                let err_db = 20.0 * (numeric / closed).log10();
+                assert!(
+                    err_db.abs() < 0.05,
+                    "ds {ds} f0 {f0}: numeric {numeric} vs closed {closed} ({err_db:.3} dB)"
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_midi_to_freq() {
@@ -1462,6 +1540,24 @@ mod tests {
             c_mid > c_treb * 2.0,
             "Mid compliance ({c_mid:.0}) should be >2x treble ({c_treb:.0})"
         );
+    }
+
+    #[test]
+    fn test_ff_swing_stays_inside_the_solved_law() {
+        // With no DS cap, every note's ff swing (with the +8% per-note amplitude offset and some
+        // margin for mode sums) must stay inside the range its section's field solve covers —
+        // the law is held flat outside it.
+        use crate::pickup::{PICKUP_MM_PER_DS, PICKUP_REST_OFFSET_MM, pickup_law_for};
+        for midi in 33u8..=96 {
+            let a = pickup_displacement_scale(midi) * PICKUP_MM_PER_DS * 1.08 * 1.1;
+            let law = pickup_law_for(midi);
+            assert!(
+                a - PICKUP_REST_OFFSET_MM < law.u_max() && -a - PICKUP_REST_OFFSET_MM > law.u0,
+                "MIDI {midi}: ff swing {a:.2} mm leaves the solved range [{}, {}]",
+                law.u0,
+                law.u_max()
+            );
+        }
     }
 
     #[test]
