@@ -1,4 +1,11 @@
-//! Melange-generated DK preamp adapter with shadow pump cancellation.
+//! Melange-generated DK preamp adapter.
+//!
+//! No shadow solve: the pre-0.7.0 adapter ran a second, zero-input solve each
+//! sample and subtracted its output to cancel the tremolo bias pump. C-6 removes
+//! that pump at source (the output and feedback nodes sit at 0 V DC behind it,
+//! so modulating R_ldr moves no bias), and a null test against the subtracting
+//! adapter confirmed it was removing nothing (see the retirement note in
+//! `dk_preamp_legacy.rs`, where the same apparatus was retired first).
 //!
 //! LDR resistance is declared as `.runtime R` in the netlist (plugin-
 //! driven, not a user knob). `set_runtime_R_r_ldr` marks matrices dirty;
@@ -30,7 +37,6 @@ fn init_state(sample_rate: f64) -> CircuitState {
 
 pub struct DkPreamp {
     main: CircuitState,
-    shadow: CircuitState,
     sample_rate: f64,
     noise_enabled: bool,
     thermal_gain: f64,
@@ -40,7 +46,6 @@ impl DkPreamp {
     pub fn new(sample_rate: f64) -> Self {
         Self {
             main: init_state(sample_rate),
-            shadow: init_state(sample_rate),
             sample_rate,
             noise_enabled: false,
             thermal_gain: 1.0,
@@ -48,9 +53,7 @@ impl DkPreamp {
     }
 
     /// Enable/disable authentic Johnson-Nyquist thermal noise on the preamp
-    /// resistors. Only the `main` state draws noise — the `shadow` state
-    /// stays noiseless so pump subtraction cancels R_ldr DC drift without
-    /// also cancelling the noise we just added.
+    /// resistors.
     pub fn set_noise_enabled(&mut self, on: bool) {
         self.noise_enabled = on;
         self.main.set_noise_enabled(on);
@@ -75,9 +78,7 @@ impl DkPreamp {
 
 impl PreampModel for DkPreamp {
     fn process_sample(&mut self, input: f64) -> f64 {
-        let main_out = gen_preamp::process_sample(input, &mut self.main)[0];
-        let pump = gen_preamp::process_sample(0.0, &mut self.shadow)[0];
-        let result = main_out - pump;
+        let result = gen_preamp::process_sample(input, &mut self.main)[0];
         if !result.is_finite() {
             self.reset();
             return 0.0;
@@ -87,12 +88,10 @@ impl PreampModel for DkPreamp {
 
     fn set_ldr_resistance(&mut self, r_ldr_path: f64) {
         self.main.set_runtime_R_r_ldr(r_ldr_path);
-        self.shadow.set_runtime_R_r_ldr(r_ldr_path);
     }
 
     fn reset(&mut self) {
         self.main = init_state(self.sample_rate);
-        self.shadow = init_state(self.sample_rate);
         self.main.set_noise_enabled(self.noise_enabled);
         self.main.set_thermal_gain(self.thermal_gain);
     }
