@@ -110,6 +110,5 @@ labelled provisional. It does not put a glide in the model.
 What would make it gradable: fortissimo recordings of at least 12 distinct notes above 200 Hz from
 one unit, at a known dynamic, unprocessed and free of sympathetic beating (e.g. a bench DI with the
 other reeds damped). Such data would also be blind. The design above runs on it unchanged. Keyboard Waves' within-file decay was also declined as a source under an integrity check (2026-09-27):
-its samples went through a tube amp and are extra hot, so it is not trusted as a reference. The
-same caution applies to its harmonic ratios; OBM's chain (transformer and tube preamp) colours its
-harmonics too. The wander conclusion in section 1 stands on OBM alone.
+the samples are hot-voiced and processed for playback, and are not trusted as a reference. OBM's
+chain (transformer and tube preamp) colours its harmonics. The wander conclusion in section 1 stands on OBM alone.
