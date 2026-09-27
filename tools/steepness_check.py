@@ -37,7 +37,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import swell_check as SW  # noqa: E402
-from pickup_field2d import gcv_smooth  # noqa: E402
+from pickup_field2d import law_smooth  # noqa: E402
 
 SR = 44100
 T_A, T_B, WIN_MS = 0.7, 1.3, 600
@@ -124,7 +124,7 @@ def main():
         preds, limited = [], False
         for name, (path, key, g0) in cases[row].items():
             t = json.load(open(path))[key]
-            cs, _ = gcv_smooth(np.array(t["u"]), np.array(t["C_pF_per_m"]))
+            cs = law_smooth(np.array(t["u"]), np.array(t["C_pF_per_m"]), row)
             sols = SW.identify(cs, f0, g0, S, T) if n in SWELLING else \
                 identify_decay(cs, f0, g0, rec["dH1"], rec["dR2"])
             if not sols:

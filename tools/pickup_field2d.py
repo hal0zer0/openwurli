@@ -252,6 +252,19 @@ def gcv_smooth(u, C):
     return sm, float(seen["lam"])
 
 
+# Smoothing strength per section, chosen by h-convergence (docs/research/pickup-overlap-law.md §9):
+# the smallest decade at which C'' agrees between the h 0.0025 table and an h 0.00125 re-solve of
+# the section's reach window within 10 % (tools/pickup_field2d.py --check-window). Not chosen by
+# the data (GCV); the two now agree to <= 0.34 dB on harmonics above -30 dB re H1.
+SMOOTH_LAM = {"r01_14": 1e-4, "r15_20": 1e-4, "r21_42": 1e-4, "r43_64": 1e-4}
+
+
+def law_smooth(u, C, section):
+    """The smoothing spline every tool uses for a section's law: lambda from SMOOTH_LAM."""
+    from scipy.interpolate import make_smoothing_spline
+    return make_smoothing_spline(u, C, lam=SMOOTH_LAM[section])
+
+
 def normalised_laws(path_in):
     """Per-section law as the plugin evaluates it, from a --chosen JSON.
 
@@ -272,10 +285,12 @@ def normalised_laws(path_in):
     for sec in SECTIONS:
         u = np.array(T[sec]["u"])
         C = np.array(T[sec]["C_pF_per_m"])
-        sm, lam = gcv_smooth(u, C)
+        lam = SMOOTH_LAM[sec]
+        sm = law_smooth(u, C, sec)
         res = sm(u) - C
         rms, mx = np.sqrt(np.mean(res ** 2)) / np.ptp(C), np.abs(res).max() / np.ptp(C)
-        prov[sec] = f"GCV lambda {lam:.4e}, residual rms {rms:.2e} / max {mx:.2e} of range"
+        prov[sec] = (f"lambda {lam:.0e} (h-convergence), residual rms {rms:.2e} / max {mx:.2e} "
+                     f"of range")
         print(f"{sec}: {prov[sec]}")
         smooth[sec] = sm(u)
     ref = smooth[NORM_SECTION]

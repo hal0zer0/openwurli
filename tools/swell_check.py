@@ -31,7 +31,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from pickup_field2d import gcv_smooth  # noqa: E402
+from pickup_field2d import law_smooth  # noqa: E402
 
 SR = 44100
 FC = 880.5
@@ -135,7 +135,7 @@ def main():
         preds = []
         for name, (path, key, g0) in cases[row].items():
             t = json.load(open(path))[key]
-            cs, _ = gcv_smooth(np.array(t["u"]), np.array(t["C_pF_per_m"]))
+            cs = law_smooth(np.array(t["u"]), np.array(t["C_pF_per_m"]), row)
             sols = identify(cs, f0, g0, S, T)
             if not sols:
                 print(f"   {name:16s}: no (A0, r) reproduces the swell")

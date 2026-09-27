@@ -31,7 +31,7 @@ from scipy.signal import hilbert
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import pickup_rev_metrics as M  # noqa: E402
-from pickup_field2d import gcv_smooth  # noqa: E402
+from pickup_field2d import law_smooth  # noqa: E402
 from steepness_check import write_wav  # noqa: E402
 
 SR = 44100
@@ -64,7 +64,7 @@ def atlas(a):
         for name, (path, key, g0) in cs_map.items():
             tab = json.load(open(path))[key]
             u = np.array(tab["u"])
-            cs, _ = gcv_smooth(u, np.array(tab["C_pF_per_m"]))
+            cs = law_smooth(u, np.array(tab["C_pF_per_m"]), row)
             rows = []
             for A in AMPS:
                 if -g0 + A > u.max() or -g0 - A < u.min():
