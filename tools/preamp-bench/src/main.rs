@@ -1673,9 +1673,16 @@ fn cmd_render_poly(args: &[String]) {
 
     for (i, (&note, &vel)) in notes.iter().zip(velocities.iter()).enumerate() {
         let velocity = vel as f64 / 127.0;
+        // Voice index decorrelates repeated notes; --single-seeds uses the single-note `render`
+        // seed instead, so a chord can be compared with the sum of its single-note renders.
+        let voice_offset = if has_flag(args, "--single-seeds") {
+            0
+        } else {
+            i as u32
+        };
         let noise_seed = (note as u32)
             .wrapping_mul(2654435761)
-            .wrapping_add(i as u32);
+            .wrapping_add(voice_offset);
         let mut voice = Voice::note_on(note, velocity, BASE_SR, noise_seed, true);
 
         let mut voice_buf = vec![0.0f64; n_samples];
