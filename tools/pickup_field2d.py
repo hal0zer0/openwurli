@@ -62,7 +62,10 @@ def solve_case(W, t_r, t_p, g_s, us, h=0.005):
     xs = axis(max(0.0, xe - 0.6), xe + g_s + 0.6, h, 0.0, P / 2)
     xs = np.unique(np.concatenate([xs, [xe, xe + g_s]]))
     u_lo, u_hi = min(us), max(us)
-    ys = axis(u_lo - t_r - 0.6, max(t_p, u_hi) + 0.6, h, FAR_BELOW, t_p + RF_ABOVE)
+    # The uniform fine region always holds the finger (0..t_p) as well as the reed: a per-point
+    # solve with u past t_r + 0.6 used to leave the finger's bottom face in the graded cells, whose
+    # positions move with u (jitter that halving h does not remove).
+    ys = axis(min(u_lo - t_r - 0.6, -0.6), max(t_p, u_hi) + 0.6, h, FAR_BELOW, t_p + RF_ABOVE)
     nx, ny = len(xs), len(ys)
     X, Y = np.meshgrid(xs, ys, indexing="ij")
     idx = np.arange(nx * ny).reshape(nx, ny)
@@ -410,6 +413,25 @@ def run_refine(section, u_lo, u_hi, h, step, out, jobs, t_p=None, W=None, g_s=No
     print(f"wrote refined {section} u [{u_lo}, {u_hi}] (h={h}) to {out}")
 
 
+def merge_refine(base_path, part_path, out_path):
+    """Replace a table's points with a re-solve of the same u knots (same h, same geometry).
+
+    Used after the fine-region fix: for u <= t_r the fixed mesh is identical to the old one, so
+    re-solving only u > t_r and merging keeps ONE solve path per table (not a splice)."""
+    base, part = json.load(open(base_path)), json.load(open(part_path))
+    for key, t in part.items():
+        b = base[key]
+        for f in ("W", "t_r", "t_p", "g_s", "h"):
+            assert abs(b[f] - t[f]) < 1e-12, (key, f, b[f], t[f])
+        pos = {round(u, 5): i for i, u in enumerate(b["u"])}
+        for u, c in zip(t["u"], t["C_pF_per_m"]):
+            b["C_pF_per_m"][pos[round(u, 5)]] = c  # KeyError = knot mismatch: refuse
+        b["resolved_above_u"] = min(t["u"])
+    with open(out_path, "w") as f:
+        json.dump(base, f)
+    print(f"merged {part_path} into {base_path} -> {out_path}")
+
+
 def static_harmonics(u, C, g0, A, kmax=8, n=1024):
     """Harmonics (dB re H1) of the static law C(-g0 + A sin), through the same GCV smoothing
     spline the plugin's tables are built from."""
@@ -545,6 +567,7 @@ def main():
                     help="generate the plugin's pickup_tables.rs from a --chosen solve")
     ap.add_argument("--check-window", nargs=2, metavar=("SHIPPING.json", "HALF_H_WINDOW.json"),
                     help="h/2 gate on a --refine window, like for like (same lambda, by h-convergence)")
+    ap.add_argument("--merge-refine", nargs=3, metavar=("BASE.json", "PART.json", "OUT.json"))
     ap.add_argument("--refine", nargs=3, metavar=("SECTION", "U_LO", "U_HI"),
                     help="re-solve one shipping section on a u sub-range (finer --h)")
     a = ap.parse_args()
@@ -565,6 +588,8 @@ def main():
         check_convergence(*a.check, a_max=a.a_max)
     if a.check_window:
         check_window(*a.check_window)
+    if a.merge_refine:
+        merge_refine(*a.merge_refine)
         return
     if a.tables:
         run_tables(a.h, a.u_step, a.out, a.jobs)
