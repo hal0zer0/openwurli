@@ -5,9 +5,10 @@
 //! default for a 1.6-7× CPU win over the generated solver.
 //!
 //! `--features melange-preamp`: melange-generated 12-node M=5 solver with
-//! Sherman-Morrison pot correction. Its adapter still carries the pre-0.7.0
-//! shadow-pump subtraction, which the C-6 correction made physically
-//! baseless on the default path; not normally needed at runtime.
+//! Sherman-Morrison pot correction. Its adapter no longer runs the pre-0.7.0
+//! shadow-pump subtraction: C-6 removes the pump at source, a null test
+//! against the subtracting adapter differed by one 24-bit LSB, and
+//! `test_melange_pump_guard_c6` below guards the premise.
 
 #[cfg(not(feature = "melange-preamp"))]
 pub use crate::dk_preamp_legacy::DkPreamp;
@@ -42,7 +43,6 @@ mod melange_gate_tests {
     /// Measure gain by ramping R_ldr from 100K to target (no abrupt jump).
     fn mel_gain(freq: f64, r_ldr: f64, amp: f64) -> f64 {
         let mut main = settled_state().clone();
-        let mut shadow = settled_state().clone();
 
         // Ramp from nominal (100K) to target over 0.2s
         let ramp = (SR * 0.2) as usize;
@@ -51,19 +51,15 @@ mod melange_gate_tests {
             let t = i as f64 / ramp as f64;
             let r = r_start + t * (r_ldr - r_start);
             main.set_runtime_R_r_ldr(r);
-            shadow.set_runtime_R_r_ldr(r);
             gen_preamp::process_sample(0.0, &mut main);
-            gen_preamp::process_sample(0.0, &mut shadow);
         }
         main.set_runtime_R_r_ldr(r_ldr);
-        shadow.set_runtime_R_r_ldr(r_ldr);
 
         // Settle at target
         let settle = (SR * 0.3) as usize;
         for i in 0..settle {
             let x = amp * (2.0 * PI * freq * i as f64 / SR).sin();
             gen_preamp::process_sample(x, &mut main);
-            gen_preamp::process_sample(0.0, &mut shadow);
         }
 
         // Measure
@@ -72,11 +68,66 @@ mod melange_gate_tests {
         for i in 0..measure {
             let t = (settle + i) as f64 / SR;
             let x = amp * (2.0 * PI * freq * t).sin();
-            let m = gen_preamp::process_sample(x, &mut main)[0];
-            let s = gen_preamp::process_sample(0.0, &mut shadow)[0];
-            peak = peak.max((m - s).abs());
+            peak = peak.max(gen_preamp::process_sample(x, &mut main)[0].abs());
         }
         20.0 * (peak / amp).log10()
+    }
+
+    /// C-6 pump guard for the melange solver — the premise that retired its
+    /// adapter's shadow subtraction. Mirror of the hand solver's
+    /// `test_acceptance_pump_guard_c6`: cycling the LDR 19K<->1M at the
+    /// tremolo rate with ZERO input must not move TR-1's bias, and must put
+    /// (next to) nothing on the output node, which is what the shadow solve
+    /// used to subtract. A failure means C-6 has gone missing from the deck.
+    #[test]
+    fn test_melange_pump_guard_c6() {
+        let mut s = settled_state().clone();
+        s.set_runtime_R_r_ldr(19_000.0);
+        // Settle first: Ce1 x R_ldr has a multi-second time constant.
+        for _ in 0..(SR as usize) {
+            gen_preamp::process_sample(0.0, &mut s);
+        }
+        let (mut e_lo, mut e_hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        let (mut c_lo, mut c_hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        let mut out_peak = 0.0f64;
+        for i in 0..(SR * 2.0) as usize {
+            let t = i as f64 / SR;
+            // 19K <-> 1M cycled at the tremolo rate (log-swept, as the LDR moves)
+            let phase = 0.5 - 0.5 * (2.0 * PI * 5.63 * t).cos();
+            s.set_runtime_R_r_ldr(19_000.0f64 * (1_000_000.0f64 / 19_000.0).powf(phase));
+            let out = gen_preamp::process_sample(0.0, &mut s)[0];
+            let (e, c) = (
+                s.v_prev[gen_preamp::NODE_EMIT1],
+                s.v_prev[gen_preamp::NODE_COLL1],
+            );
+            e_lo = e_lo.min(e);
+            e_hi = e_hi.max(e);
+            c_lo = c_lo.min(c);
+            c_hi = c_hi.max(c);
+            out_peak = out_peak.max(out.abs());
+        }
+        let emit_pp_mv = (e_hi - e_lo) * 1000.0;
+        let coll_pp_mv = (c_hi - c_lo) * 1000.0;
+        eprintln!(
+            "melange pump guard: emit1 {emit_pp_mv:.6} mV pp, coll1 {coll_pp_mv:.6} mV pp, \
+             output peak {:.3e} V",
+            out_peak
+        );
+        assert!(
+            emit_pp_mv < 1.0,
+            "emit1 DC excursion = {emit_pp_mv:.4} mV pp under LDR cycling, want < 1 mV \
+             (C-6 missing from the deck?)"
+        );
+        assert!(
+            coll_pp_mv < 1.0,
+            "coll1 DC excursion = {coll_pp_mv:.4} mV pp under LDR cycling, want < 1 mV"
+        );
+        // The shadow solve subtracted exactly this signal; it was measured at
+        // ~6 nV. 1 uV is far below any signal at this node.
+        assert!(
+            out_peak < 1e-6,
+            "output pump = {out_peak:.3e} V peak under LDR cycling with zero input, want < 1 uV"
+        );
     }
 
     fn leg_gain(freq: f64, r_ldr: f64, amp: f64) -> f64 {
@@ -118,7 +169,7 @@ mod melange_gate_tests {
     /// 4411bb4, 03c290e). Sweeps R_ldr over its full tremolo range during a
     /// 1 kHz carrier and asserts no sample-to-sample jump exceeds what the
     /// carrier itself can naturally produce by a wide margin. Runs through the
-    /// DkPreamp adapter so shadow-pump cancellation is active (plugin path).
+    /// DkPreamp adapter (plugin path).
     #[test]
     fn test_ldr_sweep_no_clicks() {
         let mut preamp = crate::dk_preamp::DkPreamp::new(SR);
@@ -324,7 +375,7 @@ mod melange_gate_tests {
         );
     }
 
-    /// Phase 5 RAW noise measurement — bypasses the shadow subtraction
+    /// Phase 5 RAW noise measurement — bypasses the DkPreamp adapter
     /// entirely. Just calls `gen_preamp::process_sample(0.0, &mut state)`
     /// with `noise_enabled=true` on a single CircuitState. Compare against
     /// Mr Schemey's analytical target of ~34 µV at the output node.
