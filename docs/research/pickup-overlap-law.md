@@ -776,3 +776,14 @@ swell check 3/8 NOT SUPPORTED (RMS model-high at all four), steepness 38 pass / 
 62 table-limited / 78 no solution, criterion 1 5/13, criterion 7 model H2/H1 −31.1 against +9.3 at
 true D2. Option C unchanged within 0.1 dB (flat C2 ff swell +6.4 dB at 1.9 s, mf +2.6 dB; 20° with
 L_f 6–8 mm removes both the swell and the H2/H3 dominance; L_f 3 mm keeps +2.8..+3.4 dB).
+
+**Chain characterisation (build B, regenerated tables; `tools/chain_characterise.py`).** Stage
+ladder (C2/C4/C6 × v40/80/127): the preamp adds 7 dB of gain and moves H2..H5 by ≤ 0.1 dB; the full
+chain moves bass H2/H3 by ≤ 1 dB. The exception is the quiet treble (C6 v40 H3 +11 dB at the full
+tap, the behavioural amp's low-level floor). Volume sweep (C2, C4 v127, volume 0.2–1.0): H3 does not
+move and the peak stays ≤ −35 dBFS, so a single ff note never reaches the power amp's nonlinear
+region. Bass chord (C2+G2+C3 v127): with matched per-voice seeds, the shared-stage interaction is
+−90 dB (preamp) / −86 dB (full chain). Each voice has its own pickup network; no shared plate node is
+modelled. At the levels the model produces, every audible nonlinearity is at the pickup. Whether
+the real preamp/amp contribute at these dynamics rests on the level anchor's provenance, which is
+flagged suspect; open.
