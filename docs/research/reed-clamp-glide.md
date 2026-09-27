@@ -47,14 +47,19 @@ The treble rise is secure against estimator bias. The bass fall is less so: real
 ## 3. Mechanisms
 
 - **(i) Partial slip at the clamp** (softening: slip lengthens the reed at large swing, so pitch
-  rises as the swing decays). Derived form, one constant `c` per instrument:
-  `df/f = -c * K_note * A(t)`, `K_note = omega^2 Q / (t_c L)` with `Q` the mode's inertia moment
-  about the root, `t_c` the root thickness, fixed screw force per reed (width cancels). Per-note
-  values: `tools/data/clamp_k.json` (above MIDI 72 uncertain by up to 2x: the blank geometry does
-  not reach pitch). Grades: the moment-to-slip step is recollection-grade (Goodman & Klumpp, J.
-  Appl. Mech. 23(3):421-429, 1956, DOI 10.1115/1.4011348: citation verified, paper not held);
-  fixed screw force is a modelling choice. It predicts the treble sign; it cannot make the bass
-  fall.
+  rises as the swing decays). Derived from first principles (strip between flat jaws, fixed screw
+  force, Coulomb friction, Rayleigh with a root compliance; general for taper and solder):
+  under uniform clamp pressure the slip zone grows linearly with the root moment, the slipped
+  length counts at exactly 1/2, and `df/f = -(l_c / (2 mu N)) * K'_note * A`, with
+  `K'_note = omega^4 Q^3 / (M1 E I_root t_c)` (`tools/data/clamp_k.json`). Under edge-concentrated
+  pressure the slip zone grows as the moment squared, so the exponent lies between 1 and 2 and is
+  set by the clamp, not by physics in general. Uniform friction over-predicts the size by 10-100x
+  for plausible clamp loads, so a real clamp carries the moment mainly by bearing and slip is a
+  corner residual: the SIGN and the loss-to-glide ratio (below) are fixed by physics; the exponent
+  and the per-note scaling `K'_note` are hypotheses. The same slip dissipates energy: extra loss
+  factor 0.85-1.36 x |df/f| (exponent 1-2), i.e. an extra early decay of about 23-37 x f x |df/f|
+  dB/s, falling with swing (at C4 ff with a 0.1 % glide: 6-10 dB/s, on top of air drag's ~2 dB/s).
+  This loss-to-glide ratio is the robust test of the mechanism.
 - **(ii) Edge wrap on a rounded jaw** (hardening). Wurlitzer's own patent, Miessner US 2,919,616
   p.13: with insecure clamp edges "the effective, vibratory length of the reed changes from L at
   low vibration amplitude to L' at high vibration amplitude. Since L' is shorter than L the reed
@@ -77,7 +82,7 @@ averaged.
 
 Test design (agreed 2026-09-27; not run):
 
-- **Prediction:** `glide = -c * K_note * A_start * (r - 1)` over the Sensor's fitted span, with
+- **Prediction (uniform-model hypothesis):** `glide = -c * K'_note * A_start * (r - 1)` over the Sensor's fitted span, with
   `A_start = ff_table(note) x 0.98` and `r = A_end / A_start`. The graded set is the Keyboard Waves
   TOP zone per note (the key map's placement; taken as ff). There the velocity curve's s-shape is
   0.976-0.981 for every note, so its ear-voiced register exponent (which moves a mid-layer note
@@ -95,6 +100,10 @@ Test design (agreed 2026-09-27; not run):
   pass: the lower treble (8 of 11 notes are MIDI 57-71), with three notes of support above.
 - **Report-only:** Keyboard Waves mid layer; OBM (labelled mf, so the exponent's shape enters its
   note scaling).
+- **Mechanism tests to register with any future graded run:** (1) loss-to-glide ratio: the extra
+  early decay at ff over pp must match 23-37 x f x |df/f| dB/s, or clamp slip is not the mechanism
+  whatever the glide fit; (2) the slip exponent from the glide's dependence on swing across layers
+  (1 = uniform pressure, 2 = edge-concentrated). Both need ff and pp decays from one unit.
 
 ## 5. Verdict: form unvalidated; awaiting admissible data
 

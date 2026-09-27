@@ -1,101 +1,125 @@
 {
- "_about": "Clamp-slip glide per-note scaling K_note = omega^2 Q / (t_c L), per metre of swing, from the same finite-element reed blanks as the swing prior (thickness variants geometric-meaned; t_c = root thickness; solder solved to pitch; fixed screw force per reed, so width cancels). K_finger refers to swing at the pickup finger region (K_tip / phi_p). Supplied by the physics review, 2026-09-27. Above MIDI 72 the blank geometry does not reach pitch (known debt): K there is uncertain by up to 2x. Glide model: df/f = -c * K_finger * A_finger.",
+ "_about": "Clamp-slip glide per-note scaling, UNIFORM-FRICTION MODEL (a hypothesis, not a derived certainty): df/f = -(l_c/(2 mu N)) * K' * A, K' = omega^4 Q^3 / (M1 E I_root t_c), from a Rayleigh treatment of a root compliance (general for taper and solder), with the slip zone shed linearly under uniform clamp pressure (kappa = 1/2 exactly). Same finite-element reed blanks as the swing prior. K_finger refers to swing at the pickup finger region. Supplied by the physics review, 2026-09-27; supersedes the first (-2 dL/L) export. Uniform friction over-predicts the shift by 10-100x for plausible clamp loads, so the real clamp carries the moment mainly by bearing with slip a corner residual: the per-note scaling and the exponent (slip ~ M^n, n in [1, 2]) are not derivable without clamp geometry. Above MIDI 72 the blank geometry does not reach pitch.",
  "knots": {
   "33": {
-   "K_tip": 164173.5,
-   "K_finger": 181691.4
+   "K_tip": 564257.7,
+   "K_finger": 624466.1,
+   "M_root_per_m_tip": 7.1252
   },
   "36": {
-   "K_tip": 193999.6,
-   "K_finger": 215798.0
+   "K_tip": 679429.4,
+   "K_finger": 755772.3,
+   "M_root_per_m_tip": 7.9915
   },
   "39": {
-   "K_tip": 231332.8,
-   "K_finger": 258790.5
+   "K_tip": 825974.5,
+   "K_finger": 924012.3,
+   "M_root_per_m_tip": 9.0189
   },
   "42": {
-   "K_tip": 278549.2,
-   "K_finger": 313605.8
+   "K_tip": 1013812.0,
+   "K_finger": 1141404.6,
+   "M_root_per_m_tip": 10.245
   },
   "45": {
-   "K_tip": 338933.3,
-   "K_finger": 384371.3
+   "K_tip": 1256290.9,
+   "K_finger": 1424711.5,
+   "M_root_per_m_tip": 11.7179
   },
   "48": {
-   "K_tip": 350808.1,
-   "K_finger": 401188.5
+   "K_tip": 1321748.8,
+   "K_finger": 1511568.5,
+   "M_root_per_m_tip": 11.3543
   },
   "51": {
-   "K_tip": 443788.3,
-   "K_finger": 512668.6
+   "K_tip": 1717680.0,
+   "K_finger": 1984280.7,
+   "M_root_per_m_tip": 13.3844
   },
   "52": {
-   "K_tip": 482326.7,
-   "K_finger": 559312.5
+   "K_tip": 1885275.1,
+   "K_finger": 2186190.3,
+   "M_root_per_m_tip": 14.1919
   },
   "53": {
-   "K_tip": 731174.3,
-   "K_finger": 869270.5
+   "K_tip": 1901581.4,
+   "K_finger": 2260731.2,
+   "M_root_per_m_tip": 31.7127
   },
   "54": {
-   "K_tip": 761057.6,
-   "K_finger": 906256.5
+   "K_tip": 1999063.5,
+   "K_finger": 2380456.2,
+   "M_root_per_m_tip": 32.6294
   },
   "57": {
-   "K_tip": 862140.8,
-   "K_finger": 1031611.6
+   "K_tip": 2340939.2,
+   "K_finger": 2801097.0,
+   "M_root_per_m_tip": 35.6738
   },
   "60": {
-   "K_tip": 983857.2,
-   "K_finger": 1182940.4
+   "K_tip": 2776185.4,
+   "K_finger": 3337945.7,
+   "M_root_per_m_tip": 39.2388
   },
   "63": {
-   "K_tip": 1131866.5,
-   "K_finger": 1367337.8
+   "K_tip": 3337295.4,
+   "K_finger": 4031580.0,
+   "M_root_per_m_tip": 43.449
   },
   "66": {
-   "K_tip": 1313681.7,
-   "K_finger": 1594186.3
+   "K_tip": 4069167.1,
+   "K_finger": 4938037.9,
+   "M_root_per_m_tip": 48.4636
   },
   "69": {
-   "K_tip": 1560929.6,
-   "K_finger": 1903097.5
+   "K_tip": 5166452.1,
+   "K_finger": 6298978.6,
+   "M_root_per_m_tip": 55.2504
   },
   "72": {
-   "K_tip": 2090887.2,
-   "K_finger": 2572674.6
+   "K_tip": 8157383.8,
+   "K_finger": 10037028.7,
+   "M_root_per_m_tip": 70.8815
   },
   "75": {
-   "K_tip": 2592911.2,
-   "K_finger": 3224385.8
+   "K_tip": 11943750.5,
+   "K_finger": 14852517.5,
+   "M_root_per_m_tip": 84.0223
   },
   "78": {
-   "K_tip": 3497687.3,
-   "K_finger": 4400886.4
+   "K_tip": 18860898.7,
+   "K_finger": 23731301.5,
+   "M_root_per_m_tip": 108.1101
   },
   "81": {
-   "K_tip": 4707131.2,
-   "K_finger": 6000590.2
+   "K_tip": 29437029.8,
+   "K_finger": 37525946.9,
+   "M_root_per_m_tip": 138.4529
   },
   "84": {
-   "K_tip": 5578409.7,
-   "K_finger": 7216211.2
+   "K_tip": 40041206.8,
+   "K_finger": 51797163.8,
+   "M_root_per_m_tip": 155.7371
   },
   "87": {
-   "K_tip": 7466434.4,
-   "K_finger": 9819419.8
+   "K_tip": 60810191.0,
+   "K_finger": 79974022.8,
+   "M_root_per_m_tip": 197.2799
   },
   "90": {
-   "K_tip": 9961446.0,
-   "K_finger": 13348938.1
+   "K_tip": 90881824.4,
+   "K_finger": 121787123.0,
+   "M_root_per_m_tip": 248.3053
   },
   "93": {
-   "K_tip": 13242355.3,
-   "K_finger": 18131435.5
+   "K_tip": 133397073.1,
+   "K_finger": 182647298.8,
+   "M_root_per_m_tip": 310.2821
   },
   "96": {
-   "K_tip": 17532144.9,
-   "K_finger": 24610162.3
+   "K_tip": 191844957.2,
+   "K_finger": 269295945.0,
+   "M_root_per_m_tip": 384.5753
   }
  }
 }
