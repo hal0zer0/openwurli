@@ -197,8 +197,6 @@ pub struct WurliEngine {
     // MIDI state
     sustain_held: bool,
     mlp_enabled: bool,
-    /// Reed frequency jitter on new notes (always on in the plugin; analysis may turn it off).
-    pitch_jitter: bool,
 
     // Smoothed audio-rate params (target set by host, ramped per sample)
     volume: LinearSmoother,
@@ -252,7 +250,6 @@ impl WurliEngine {
             oversample,
             sustain_held: false,
             mlp_enabled: false,
-            pitch_jitter: true,
             volume: LinearSmoother::new(0.8, ramp),
             tremolo_depth: LinearSmoother::new(0.5, ramp),
             speaker_character: LinearSmoother::new(0.0, ramp),
@@ -359,17 +356,13 @@ impl WurliEngine {
         let noise_seed = (note as u32)
             .wrapping_mul(2654435761)
             .wrapping_add(self.age_counter as u32);
-        let mut voice = Voice::note_on(
+        slot.voice = Some(Voice::note_on(
             note,
             velocity as f64,
             self.sample_rate,
             noise_seed,
             self.mlp_enabled,
-        );
-        if !self.pitch_jitter {
-            voice.disable_pitch_jitter();
-        }
-        slot.voice = Some(voice);
+        ));
         slot.state = VoiceState::Held;
         slot.midi_note = note;
         slot.age = self.age_counter;
@@ -445,13 +438,6 @@ impl WurliEngine {
 
     pub fn set_mlp_enabled(&mut self, on: bool) {
         self.mlp_enabled = on;
-    }
-
-    /// Reed frequency jitter for notes started from now on. Analysis only: the plugin never
-    /// turns it off. Its random realization depends on the sample rate, so rate-convergence
-    /// analysis (`alias_audit`) disables it to compare renders at different rates.
-    pub fn set_pitch_jitter_enabled(&mut self, on: bool) {
-        self.pitch_jitter = on;
     }
 
     pub fn set_noise_enabled(&mut self, on: bool) {
@@ -1134,7 +1120,7 @@ mod tests {
         let ratio = (p_10 / p_075) as f64;
         let r11 = tables::R11_REED_BAR_VOLUME_DEFAULT;
         let expected = tables::volume_pot_gain(1.0, r11) / tables::volume_pot_gain(0.75, r11);
-        // ±6 % slack: per-voice OU jitter, MLP determinism, and the amp's
+        // ±6 % slack: MLP determinism and the amp's
         // residual level dependence (crossover notch, shelf) at these drives.
         assert!(
             (ratio / expected - 1.0).abs() < 0.06,

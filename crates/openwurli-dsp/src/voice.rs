@@ -87,7 +87,7 @@ impl Voice {
     /// The reed exactly as [`Voice::note_on_with_config`] builds it, plus the ff swing (mm) that
     /// one unit of its displacement stands for at the pickup's finger region. `keep_mode = Some(k)`
     /// zeroes every other mode's amplitude, for measuring one mode on its own (the modes are
-    /// independent, so the per-mode renders superpose to the full reed apart from jitter streams).
+    /// independent, so the per-mode renders superpose to the full reed).
     /// Returns (reed, swing_mm, detuned fundamental Hz, air-drag coefficient dB/s/mm).
     #[allow(clippy::too_many_arguments)]
     pub fn build_reed(
@@ -172,7 +172,6 @@ impl Voice {
             onset_time,
             velocity,
             sample_rate,
-            noise_seed,
         );
         // Amplitude-dependent loss (air drag on mode 1), referred to the same finger-region
         // swing as the pickup drive.
@@ -192,12 +191,6 @@ impl Voice {
     /// Disable attack noise (for A/B testing of transient artifacts).
     pub fn disable_attack_noise(&mut self) {
         self.noise.disable();
-    }
-
-    /// Disable the reed's per-mode frequency jitter (analysis only; see
-    /// [`ModalReed::disable_jitter`]).
-    pub fn disable_pitch_jitter(&mut self) {
-        self.reed.disable_jitter();
     }
 
     /// Start the damper (called on note_off).

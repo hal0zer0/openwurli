@@ -35,11 +35,10 @@
 //! spectra do not, and its rectangular-window DFT had a leakage floor near
 //! −80 dBc that both manufactured and hid steps.
 //!
-//! The stimulus runs with the reed's frequency jitter OFF
-//! ([`WurliEngine::set_pitch_jitter_enabled`]): the jitter is a random process
-//! stepped every 16 samples, so each sample rate draws a different pitch
-//! trajectory, which alone moved upper harmonics by several dB between rates.
-//! With it off the engine converges to ≤ 0.07 dB above −80 dBc.
+//! The reed holds its pitch exactly, so the engine renders the same note at
+//! both rates and converges to ≤ 0.07 dB above −80 dBc. (Until 2026-09-27 the
+//! reed carried a random pitch jitter whose realization differed per rate and
+//! alone moved upper harmonics by several dB; it has been removed.)
 
 use crate::WurliEngine;
 
@@ -240,8 +239,7 @@ pub fn render_stimulus(note: u8, velocity: u8, volume: f64) -> Vec<f64> {
     render_stimulus_at(note, velocity, volume, STIMULUS_SAMPLE_RATE)
 }
 
-/// [`render_stimulus`] at an arbitrary host sample rate. Reed frequency jitter
-/// is off (see the module docs); everything else is the plugin's chain.
+/// [`render_stimulus`] at an arbitrary host sample rate: the plugin's chain.
 pub fn render_stimulus_at(note: u8, velocity: u8, volume: f64, sr: f64) -> Vec<f64> {
     let mut eng = WurliEngine::new(sr);
     eng.ensure_buffer_capacity(1024);
@@ -250,7 +248,6 @@ pub fn render_stimulus_at(note: u8, velocity: u8, volume: f64, sr: f64) -> Vec<f
     eng.set_speaker_character(0.0);
     eng.set_mlp_enabled(true);
     eng.set_noise_enabled(false);
-    eng.set_pitch_jitter_enabled(false);
 
     // Settle the linear smoothers (default vol=0.5 → STIMULUS_VOLUME is a
     // no-op here, but the speaker_character and tremolo_depth still ramp).
@@ -275,8 +272,8 @@ pub fn render_stimulus_at(note: u8, velocity: u8, volume: f64, sr: f64) -> Vec<f
 }
 
 /// Compare two renders of the same stimulus at different host rates. The
-/// fundamental is measured on `base` and used for both (without jitter the
-/// pitch is rate-independent, so a pitch difference also shows as a failure).
+/// fundamental is measured on `base` and used for both (the reed's pitch is
+/// rate-independent, so a pitch difference also shows as a failure).
 pub fn compare(
     base: &[f64],
     base_sr: f64,

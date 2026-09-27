@@ -17,12 +17,14 @@ estimate) is removed from each partial. Reported per file:
 
 The estimator UNDER-READS slow wander (the glide removal takes part of it) and biases tau short:
 a synthetic OU process with sigma 0.04 %, tau 0.32 s reads ~0.020 %, tau ~0.06 s; with tau 0.02 s
-it reads ~0.036 %. Read recordings only against model renders through the same estimator.
+it reads ~0.036 %. Read recordings only against known answers through the same estimator.
 
 Every number from a recording is an UPPER BOUND on reed wander: the recording chain, the medium
 and the instrument's other vibrations (sympathetic reeds, reed-bar modes) add to it. The
-estimator is calibrated on model renders with known jitter (sigma 0.04 %, tau 0.32 s) and with
-jitter off (its own floor) before any recording is read.
+estimator was calibrated before any recording was read: on synthetic tones with a known OU
+wander (sigma 0.04 %, tau 0.32 s: the reed jitter the model carried until 2026-09-27) and known
+glides, and on constant-pitch model renders (its floor: <= 0.0003 % glide across the keyboard at
+mf and ff). Stopgap: a Sensor Array per-partial trajectory mode is being built to replace it.
 
 No Sensor Array mode measures a partial's frequency over time (decay mode fits one frequency per
 partial over a multi-second window), hence this estimator.

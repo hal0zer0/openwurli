@@ -436,7 +436,6 @@ fn cmd_render(args: &[String]) {
     let no_rail_sag = has_flag(args, "--no-rail-sag");
     let no_preamp = has_flag(args, "--no-preamp");
     let no_attack_noise = has_flag(args, "--no-attack-noise");
-    let no_jitter = has_flag(args, "--no-jitter");
     let no_mlp = has_flag(args, "--no-mlp");
     let normalize = has_flag(args, "--normalize");
     let swing_override: Option<f64> = if has_flag(args, "--swing-mm") {
@@ -480,9 +479,6 @@ fn cmd_render(args: &[String]) {
         }
         if no_attack_noise {
             voice.disable_attack_noise();
-        }
-        if no_jitter {
-            voice.disable_pitch_jitter();
         }
         let num_samples = (duration * sample_rate) as usize;
         let mut output = vec![0.0f64; num_samples];
@@ -776,7 +772,6 @@ fn cmd_h2_audit(args: &[String]) {
                 0.0,
                 velocity,
                 BASE_SR,
-                (note as u32).wrapping_mul(2654435761),
             );
             reed.set_air_drag(
                 tables::air_drag_db_per_mm_with_config(note, &CalibrationConfig::default()),
@@ -1238,7 +1233,7 @@ fn process_oversampled(input: &[f64], preamp: &mut dyn PreampModel) -> Vec<f64> 
 /// Rate-convergence audit (the regression gate's measurement, for one note).
 ///
 /// Renders the stimulus (default C6 v=120, vol=0.5) through `WurliEngine` at 44.1 kHz and at
-/// 176.4 kHz with reed jitter off, and reports what the gate compares: the harmonic ladder,
+/// 176.4 kHz, and reports what the gate compares: the harmonic ladder,
 /// the 5–18 kHz band and the off-grid energy the base rate adds. See
 /// `openwurli_dsp::alias_audit` for the method and tolerances.
 fn cmd_alias_audit(args: &[String]) {
@@ -1319,7 +1314,7 @@ fn cmd_alias_audit(args: &[String]) {
         return;
     }
 
-    println!("Rate-convergence audit (reed jitter off)");
+    println!("Rate-convergence audit");
     println!(
         "  Stimulus:  note={note} vel={velocity} vol={volume:.2}; {:.2}s, analysing the last {:.2}s",
         alias_audit::STIMULUS_RENDER_SECONDS,
@@ -1481,7 +1476,6 @@ fn run_calibrate(
                 0.0,
                 velocity,
                 BASE_SR,
-                (note as u32).wrapping_mul(2654435761),
             );
             reed.set_air_drag(
                 tables::air_drag_db_per_mm_with_config(note, cfg),
@@ -2560,9 +2554,6 @@ fn cmd_bench_reed(args: &[String]) {
         for m in 0..NUM_MODES {
             amps[m] = params.mode_amplitudes[m] * dwell[m] * amp_off[m];
         }
-        let seed = (note as u32)
-            .wrapping_mul(2654435761)
-            .wrapping_add(i as u32);
         let mut reed = ModalReed::new(
             detuned,
             &params.mode_ratios,
@@ -2571,7 +2562,6 @@ fn cmd_bench_reed(args: &[String]) {
             onset,
             vel,
             sr,
-            seed,
         );
         reed.set_air_drag(
             tables::air_drag_db_per_mm_with_config(note, &CalibrationConfig::default()),

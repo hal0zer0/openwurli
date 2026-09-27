@@ -4,43 +4,18 @@
 //! instead of computing sin(phase) per sample. This eliminates 7 transcendental
 //! calls per sample per voice — the dominant CPU cost in v0.1.x.
 //!
-//! Per-mode frequency jitter (Ornstein-Uhlenbeck process) breaks the perfect
-//! phase coherence of digital oscillators. Real reeds have nonlinear frequency-
-//! amplitude coupling (backbone curve), pickup loading, and micro-turbulence
-//! that cause each mode's frequency to wander slightly. Without this, the
-//! static spectral interference pattern sounds "metallic" and "resonant."
-//!
-//! The jitter is NOT derived: sigma and tau are unsourced, ear-voiced since
-//! v0.2.0, and the rationale above is an untested claim. It is scheduled for an
-//! evidence check (measured partial-frequency wander in recordings, and the
-//! reed's deterministic amplitude-dependent frequency shift) that will replace,
-//! re-parameterise or remove it.
-//!
-//! The process steps on a fixed TIME grid (`JITTER_STEP_S`), so a given seed
-//! draws the same pitch trajectory at every host sample rate.
+//! Each mode holds its frequency exactly: there is no random frequency
+//! wander. An Ornstein-Uhlenbeck pitch jitter (sigma 0.04 %, ear-voiced, never
+//! derived) was removed 2026-09-27 on evidence: the common-mode partial-frequency
+//! wander of two real 200As (13 + 72 recordings, read through the same estimator
+//! as the model, `tools/partial_wander.py`) is 12-18x below what the jitter
+//! produced, at the estimator's noise, and the reed's deterministic
+//! amplitude-dependent frequency shift is <= ~0.003 %. What the recordings DO show
+//! is a deterministic pitch glide over the decay; that awaits a derived mechanism.
 
 use std::f64::consts::{PI, TAU};
 
 use crate::tables::NUM_MODES;
-
-/// RMS frequency jitter as fraction of mode frequency (~0.04% = 4 cents peak).
-const JITTER_SIGMA: f64 = 0.0004;
-
-/// OU correlation time in seconds. UNSOURCED; ear-voiced since v0.2.0. (It was
-/// written as 20 ms, but its coefficient was computed per sample and applied
-/// every 16 samples, so the process everyone has heard since has a 320 ms
-/// correlation time. Kept at the voiced value, stated honestly.)
-const JITTER_TAU: f64 = 0.320;
-
-/// sqrt(3): scaling for uniform[-1,1] to achieve unit variance.
-/// Uniform(-√3, √3) has variance 1.0, matching the Gaussian's variance.
-const SQRT_3: f64 = 1.732_050_808_0;
-
-/// Jitter step, as a fixed time: 16 samples at 44.1 kHz (0.363 ms), the step the
-/// process has always had at that rate, now held in seconds at every rate.
-const JITTER_STEP_REF_SAMPLES: f64 = 16.0;
-const JITTER_STEP_REF_RATE: f64 = 44_100.0;
-const JITTER_STEP_S: f64 = JITTER_STEP_REF_SAMPLES / JITTER_STEP_REF_RATE;
 
 /// Quadrature renormalization interval. Every 1024 samples, correct the
 /// radius of each (s,c) pair to prevent drift from accumulated FP error.
@@ -59,16 +34,12 @@ struct Mode {
     cos_inc: f64,
     /// sin(base_phase_inc) — precomputed at note-on.
     sin_inc: f64,
-    /// Base phase increment (for jitter delta scaling).
-    phase_inc: f64,
     /// Initial amplitude for this mode.
     amplitude: f64,
     /// Per-sample multiplicative natural decay factor.
     decay_mult: f64,
     /// Current envelope level (starts at 1.0, decays each sample).
     envelope: f64,
-    /// OU jitter drift state (fractional frequency deviation).
-    jitter_drift: f64,
     /// Damper rate in nepers/sample (set on note_off).
     damper_rate: f64,
     /// Precomputed exp(-damper_rate) for post-ramp phase.
@@ -87,25 +58,9 @@ pub struct ModalReed {
     damper_ramp_samples: f64,
     damper_release_count: f64,
     damper_ramp_done: bool,
-    // Jitter PRNG and coefficients
-    jitter_state: u32,
-    jitter_revert: f64,
-    jitter_diffusion: f64,
-    /// Jitter step length in samples at this rate, and the sample position of the next step.
-    jitter_step_samples: f64,
-    jitter_next: f64,
     /// Amplitude-dependent loss on mode 1 (air drag), per sample, per unit of mode-1 envelope:
     /// `envelope *= 1 - drag_k * envelope`. Zero = off. See [`ModalReed::set_air_drag`].
     drag_k: f64,
-}
-
-/// LCG PRNG → scaled uniform noise with unit variance.
-/// Free function to avoid borrow conflicts when iterating `&mut modes`.
-#[inline]
-fn lcg_uniform_scaled(state: &mut u32) -> f64 {
-    *state = state.wrapping_mul(1664525).wrapping_add(1013904223);
-    let u = (*state >> 1) as f64 / (u32::MAX as f64 / 2.0);
-    (u * 2.0 - 1.0) * SQRT_3
 }
 
 impl ModalReed {
@@ -118,8 +73,6 @@ impl ModalReed {
     /// - `onset_time_s`: onset ramp duration in seconds (reed mechanical inertia)
     /// - `velocity`: 0.0 (pp) to 1.0 (ff), controls onset ramp shape
     /// - `sample_rate`: audio sample rate in Hz
-    /// - `jitter_seed`: RNG seed for per-mode frequency jitter (decorrelates voices)
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         fundamental_hz: f64,
         mode_ratios: &[f64; NUM_MODES],
@@ -128,25 +81,7 @@ impl ModalReed {
         onset_time_s: f64,
         velocity: f64,
         sample_rate: f64,
-        jitter_seed: u32,
     ) -> Self {
-        // Ornstein-Uhlenbeck jitter coefficients, for one step of the fixed time grid.
-        let jitter_revert = (-JITTER_STEP_S / JITTER_TAU).exp();
-        let jitter_diffusion = JITTER_SIGMA * (1.0 - jitter_revert * jitter_revert).sqrt();
-
-        // Initialize jitter_drift from the OU stationary distribution N(0, JITTER_SIGMA).
-        // Uses Box-Muller for the initial draw (one-time cost at note-on).
-        let mut jitter_state = jitter_seed.max(1);
-        let mut initial_drifts = [0.0f64; NUM_MODES];
-        for d in &mut initial_drifts {
-            jitter_state = jitter_state.wrapping_mul(1664525).wrapping_add(1013904223);
-            let u1 = (jitter_state >> 1) as f64 / (u32::MAX as f64 / 2.0);
-            jitter_state = jitter_state.wrapping_mul(1664525).wrapping_add(1013904223);
-            let u2 = (jitter_state >> 1) as f64 / (u32::MAX as f64 / 2.0);
-            let r = (-2.0 * u1.max(1e-30).ln()).sqrt();
-            *d = JITTER_SIGMA * r * (TAU * u2).cos();
-        }
-
         // Build Mode structs with precomputed quadrature rotation coefficients
         let modes = std::array::from_fn(|i| {
             let freq = fundamental_hz * mode_ratios[i];
@@ -159,11 +94,9 @@ impl ModalReed {
                 c: 1.0,                   // cos(0) = 1
                 cos_inc: phase_inc.cos(), // precomputed rotation
                 sin_inc: phase_inc.sin(), // precomputed rotation
-                phase_inc,
                 amplitude: amplitudes[i],
                 decay_mult: (-decay_per_sample).exp(),
                 envelope: 1.0,
-                jitter_drift: initial_drifts[i],
                 damper_rate: 0.0,
                 damper_mult: 1.0,
             }
@@ -189,23 +122,7 @@ impl ModalReed {
             damper_ramp_samples: 0.0,
             damper_release_count: 0.0,
             damper_ramp_done: false,
-            jitter_state,
-            jitter_revert,
-            jitter_diffusion,
-            // Exactly 16.0 at 44.1 kHz (computed as a ratio, so the schedule cannot drift there).
-            jitter_step_samples: JITTER_STEP_REF_SAMPLES * sample_rate / JITTER_STEP_REF_RATE,
-            jitter_next: 0.0,
             drag_k: 0.0,
-        }
-    }
-
-    /// Turn the per-mode frequency jitter off (analysis only). The realization is the same at
-    /// every rate up to sub-sample step timing, but rate-convergence analysis compares renders
-    /// to fractions of a dB, so it runs deterministic.
-    pub fn disable_jitter(&mut self) {
-        self.jitter_diffusion = 0.0;
-        for mode in &mut self.modes {
-            mode.jitter_drift = 0.0;
         }
     }
 
@@ -255,9 +172,6 @@ impl ModalReed {
 
     /// Render samples into the output buffer (additive, does NOT clear buffer).
     pub fn render(&mut self, output: &mut [f64]) {
-        let revert = self.jitter_revert;
-        let diffusion = self.jitter_diffusion;
-
         for sample in output.iter_mut() {
             let mut sum = 0.0f64;
 
@@ -301,27 +215,12 @@ impl ModalReed {
                 1.0
             };
 
-            // Jitter steps on the fixed time grid (one step per JITTER_STEP_S).
-            while self.sample as f64 >= self.jitter_next {
-                for mode in &mut self.modes {
-                    let noise = lcg_uniform_scaled(&mut self.jitter_state);
-                    mode.jitter_drift = revert * mode.jitter_drift + diffusion * noise;
-                }
-                self.jitter_next += self.jitter_step_samples;
-            }
-
             // Quadrature oscillator: 0 transcendentals per mode per sample
             for mode in &mut self.modes {
                 sum += mode.amplitude * mode.s * onset * mode.envelope;
 
-                // Jitter-corrected rotation via first-order Taylor approximation.
-                // delta_phase = jitter_drift * phase_inc ~ 0.0004 * 0.063 = 2.5e-5 rad.
-                // Taylor error ~ delta²/2 = 3e-10/sample. Over 1024 samples: ~3e-7 cumulative.
-                let delta_phase = mode.jitter_drift * mode.phase_inc;
-                let ci = mode.cos_inc - delta_phase * mode.sin_inc;
-                let si = mode.sin_inc + delta_phase * mode.cos_inc;
-                let s_new = mode.s * ci + mode.c * si;
-                let c_new = mode.c * ci - mode.s * si;
+                let s_new = mode.s * mode.cos_inc + mode.c * mode.sin_inc;
+                let c_new = mode.c * mode.cos_inc - mode.s * mode.sin_inc;
                 mode.s = s_new;
                 mode.c = c_new;
 
@@ -389,7 +288,7 @@ mod tests {
         let decays = [4.0, 30.0, 60.0, 90.0, 120.0, 150.0, 180.0];
         let fall_db = |amp: f64, beta: f64| {
             let amps = [amp, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-            let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 1);
+            let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr);
             reed.set_air_drag(beta, 1.2, sr);
             let mut buf = vec![0.0f64; sr as usize];
             reed.render(&mut buf);
@@ -418,11 +317,10 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, 44100.0, 42);
+        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, 44100.0);
         let mut buf = vec![0.0f64; 44100];
         reed.render(&mut buf);
 
-        // With 0.04% jitter, frequency should still be within ~3 Hz of 440
         let mut crossings = 0u32;
         for i in 1..buf.len() {
             if buf[i - 1] < 0.0 && buf[i] >= 0.0 {
@@ -444,7 +342,7 @@ mod tests {
         decays[0] = 60.0;
 
         let sr = 44100.0;
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
+        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr);
 
         let half_sec = (sr * 0.5) as usize;
         let mut buf = vec![0.0f64; half_sec];
@@ -468,7 +366,7 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, ramp, 1.0, sr, 42);
+        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, ramp, 1.0, sr);
         let n = (sr * 0.050) as usize;
         let mut buf = vec![0.0f64; n];
         reed.render(&mut buf);
@@ -508,8 +406,8 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed_ff = ModalReed::new(440.0, &ratios, &amps, &decays, 0.001, 1.0, sr, 42);
-        let mut reed_pp = ModalReed::new(440.0, &ratios, &amps, &decays, 0.005, 0.0, sr, 42);
+        let mut reed_ff = ModalReed::new(440.0, &ratios, &amps, &decays, 0.001, 1.0, sr);
+        let mut reed_pp = ModalReed::new(440.0, &ratios, &amps, &decays, 0.005, 0.0, sr);
 
         let n = (sr * 0.010) as usize;
         let mut buf_ff = vec![0.0f64; n];
@@ -534,7 +432,7 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
 
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
+        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr);
         let mut buf = vec![0.0f64; 100];
         reed.render(&mut buf);
 
@@ -546,135 +444,26 @@ mod tests {
     }
 
     #[test]
-    fn test_jitter_breaks_phase_coherence() {
+    fn test_mode_holds_exact_frequency() {
+        // No frequency wander: a single undamped mode stays on the analytic sine to within
+        // floating-point error over a second (the quadrature step is renormalised, not jittered).
         let sr = 44100.0;
-        let mut amps = [0.0f64; NUM_MODES];
-        amps[0] = 1.0;
-        amps[1] = 0.3;
-        let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
-        let decays = [0.0f64; NUM_MODES];
-
-        let mut reed_a = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 100);
-        let mut reed_b = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 200);
-
-        let n = (sr * 0.5) as usize;
-        let mut buf_a = vec![0.0f64; n];
-        let mut buf_b = vec![0.0f64; n];
-        reed_a.render(&mut buf_a);
-        reed_b.render(&mut buf_b);
-
-        let late_start = (sr * 0.2) as usize;
-        let mut diff_sq = 0.0;
-        let mut sig_sq = 0.0;
-        for i in late_start..n {
-            diff_sq += (buf_a[i] - buf_b[i]).powi(2);
-            sig_sq += buf_a[i].powi(2);
-        }
-        let rms_diff = (diff_sq / (n - late_start) as f64).sqrt();
-        let rms_sig = (sig_sq / (n - late_start) as f64).sqrt();
-
-        let relative_diff = rms_diff / rms_sig.max(1e-10);
-        assert!(
-            relative_diff > 0.001,
-            "Jitter should cause measurable difference: relative_diff={relative_diff:.6}"
-        );
-        assert!(
-            relative_diff < 0.5,
-            "Jitter should be subtle, not overwhelming: relative_diff={relative_diff:.4}"
-        );
-    }
-
-    #[test]
-    fn test_jitter_realization_is_rate_independent() {
-        // The process steps on a fixed time grid, so one seed draws the same pitch trajectory at
-        // every host rate: the drift after a whole number of steps must match exactly, and the
-        // number of steps taken by a given time must match to within one (sub-sample timing).
+        let f = 440.0;
         let mut amps = [0.0f64; NUM_MODES];
         amps[0] = 1.0;
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let decays = [0.0f64; NUM_MODES];
-        let drift_at = |sr: f64, t: f64| {
-            let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
-            let mut buf = vec![0.0f64; (sr * t) as usize];
-            reed.render(&mut buf);
-            (
-                reed.modes[0].jitter_drift,
-                reed.jitter_next / reed.jitter_step_samples,
-            )
-        };
-        // t = 441 steps exactly (0.16 s), a whole number of samples at every rate tested.
-        let t = 441.0 * JITTER_STEP_S;
-        let (d_ref, n_ref) = drift_at(44_100.0, t);
-        for sr in [88_200.0, 176_400.0, 22_050.0] {
-            let (d, n) = drift_at(sr, t);
-            assert_eq!(
-                n, n_ref,
-                "{sr} Hz took {n} steps by t, 44.1 kHz took {n_ref}"
-            );
-            assert_eq!(d, d_ref, "{sr} Hz drift {d:e} != 44.1 kHz drift {d_ref:e}");
-        }
-        // At rates whose step is not a whole number of samples (48, 96 kHz) the steps land on the
-        // first sample at or after each grid time, but step k still draws the k-th value of the
-        // seeded sequence: after the same number of steps the drift is the same, bit for bit.
-        for sr in [48_000.0, 96_000.0] {
-            let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
-            // Steps taken so far (jitter_next accumulates a non-integer step, so round).
-            let steps = |r: &ModalReed| (r.jitter_next / r.jitter_step_samples).round();
-            let mut one = [0.0f64; 1];
-            while steps(&reed) < n_ref.round() {
-                reed.render(&mut one);
-            }
-            assert_eq!(steps(&reed), n_ref.round(), "{sr} Hz step count");
-            let d = reed.modes[0].jitter_drift;
-            assert_eq!(d, d_ref, "{sr} Hz drift {d:e} != 44.1 kHz drift {d_ref:e}");
-            // And the last step landed within one sample of its grid time.
-            let lag = (reed.sample - 1) as f64 - (n_ref.round() - 1.0) * reed.jitter_step_samples;
-            assert!((0.0..1.0).contains(&lag), "{sr} Hz step lag {lag} samples");
-        }
-    }
-
-    #[test]
-    fn test_jitter_deterministic_with_same_seed() {
-        let sr = 44100.0;
-        let mut amps = [0.0f64; NUM_MODES];
-        amps[0] = 1.0;
-        let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
-        let decays = [0.0f64; NUM_MODES];
-
-        let mut reed_a = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
-        let mut reed_b = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
-
-        let n = (sr * 0.2) as usize;
-        let mut buf_a = vec![0.0f64; n];
-        let mut buf_b = vec![0.0f64; n];
-        reed_a.render(&mut buf_a);
-        reed_b.render(&mut buf_b);
-
-        assert_eq!(buf_a, buf_b, "Same seed should produce identical output");
-    }
-
-    #[test]
-    fn test_jitter_preserves_frequency() {
-        let sr = 44100.0;
-        let mut amps = [0.0f64; NUM_MODES];
-        amps[0] = 1.0;
-        let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
-        let decays = [0.0f64; NUM_MODES];
-
-        let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 77);
-        let n = sr as usize;
-        let mut buf = vec![0.0f64; n];
+        let mut reed = ModalReed::new(f, &ratios, &amps, &decays, 0.0, 1.0, sr);
+        let mut buf = vec![0.0f64; sr as usize];
         reed.render(&mut buf);
-
-        let mut crossings = 0u32;
-        for i in 1..buf.len() {
-            if buf[i - 1] < 0.0 && buf[i] >= 0.0 {
-                crossings += 1;
-            }
-        }
+        let worst = buf
+            .iter()
+            .enumerate()
+            .map(|(i, &y)| (y - (TAU * f * i as f64 / sr).sin()).abs())
+            .fold(0.0f64, f64::max);
         assert!(
-            (crossings as f64 - 440.0).abs() < 3.0,
-            "Average frequency should be ~440 Hz, got {crossings} crossings"
+            worst < 1e-6,
+            "mode drifted off the analytic sine by {worst:e}"
         );
     }
 }
