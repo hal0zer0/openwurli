@@ -150,3 +150,22 @@ assumed output decay equals reed decay. With H1 compression of this size that ho
 swing, and the model's swing is not matched: the attribution is **unresolved between reed decay
 and law compression at mismatched swing**. The decay-law rebuild must compare reed decay through the
 law at matched swing, not raw output decay.
+
+**Power check result (computed after registration; no OBM decay data used): PARKED.** The with-slip
+and without-slip envelopes of D are disjoint by more than 1 dB/s on 2 of 7 notes, not the 5
+required:
+
+| True MIDI | Glide | D without slip (dB/s) | D with slip (dB/s) | Separated |
+|---|---|---|---|---|
+| 58 | +0.102 % | -1.2 .. +0.1 | +0.9 .. +3.6 | no (0.9) |
+| 62 | +0.034 % | -1.2 .. +0.2 | -0.3 .. +1.8 | no |
+| 66 | +0.201 % | -1.2 .. +0.6 | +3.8 .. +8.2 | yes (3.2) |
+| 70 | +0.189 % | -1.0 .. +1.2 | +3.9 .. +9.0 | yes (2.8) |
+| 74 | +0.108 % | -0.9 .. +8.9 | +2.6 .. +20.8 | no |
+| 82 | +0.121 % | -0.1 .. +63.5 | +6.1 .. +67.1 | no |
+| 86 | +0.049 % | +0.1 .. +80.0 | +3.3 .. +79.9 | no |
+
+Small glides give too little slip loss to separate; in the upper treble the plausible range of
+linear decay and air drag alone spans the whole slip range. No OBM outcome could discriminate, so
+the test is not run. It needs the absolute swing (a known dynamic) to narrow the no-slip envelope:
+bench data again.
