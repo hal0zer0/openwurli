@@ -79,7 +79,9 @@ fn print_usage() {
         "  reed-tap        Reed displacement (per mode) + raw pickup source, before any electronics"
     );
     eprintln!("  intermod-audit  Detect inharmonic intermodulation beating risk");
-    eprintln!("  alias-audit     Detect power-amp click-band aliasing (H6-H11 plateau + HF hash)");
+    eprintln!(
+        "  alias-audit     Rate-convergence audit: 44.1 vs 176.4 kHz (ladder, HF band, aliasing)"
+    );
     eprintln!("  pump-sweep      Steady-state shadow-preamp pump vs R_ldr (CSV)");
     eprintln!("  pump-trace      Time-series shadow pump at fixed R_ldr (CSV)");
     eprintln!(
@@ -1196,6 +1198,20 @@ fn write_wav_24bit(path: &str, samples: &[f64], sample_rate: f64, scale: f64) {
     writer.finalize().unwrap();
 }
 
+fn write_wav_f32(path: &str, samples: &[f64], sample_rate: f64) {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: sample_rate as u32,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut writer = hound::WavWriter::create(path, spec).expect("Failed to create WAV file");
+    for &sample in samples {
+        writer.write_sample(sample as f32).unwrap();
+    }
+    writer.finalize().unwrap();
+}
+
 // ─── Oversampled preamp processing ──────────────────────────────────────────
 
 fn process_oversampled(input: &[f64], preamp: &mut dyn PreampModel) -> Vec<f64> {
@@ -1215,13 +1231,12 @@ fn process_oversampled(input: &[f64], preamp: &mut dyn PreampModel) -> Vec<f64> 
 
 // ─── Alias audit subcommand ────────────────────────────────────────────────
 
-/// Detect re-introduction of the v0.5.0-era power-amp click-band tear.
+/// Rate-convergence audit (the regression gate's measurement, for one note).
 ///
-/// Renders the canonical stimulus (C6 v=120, vol=0.5 — exactly what commit
-/// `00168ca` measured against) through `WurliEngine`, then reports two
-/// numbers any CPU/structural change must not regress:
-///   * `max_step_up_db` over H6..H11 — alias plateau fingerprint
-///   * `hf_band_dbc` (5 kHz–18 kHz RMS vs H1) — broadband alias hash
+/// Renders the stimulus (default C6 v=120, vol=0.5) through `WurliEngine` at 44.1 kHz and at
+/// 176.4 kHz with reed jitter off, and reports what the gate compares: the harmonic ladder,
+/// the 5–18 kHz band and the off-grid energy the base rate adds. See
+/// `openwurli_dsp::alias_audit` for the method and tolerances.
 fn cmd_alias_audit(args: &[String]) {
     use openwurli_dsp::alias_audit;
     let want_json = has_flag(args, "--json");
@@ -1229,79 +1244,135 @@ fn cmd_alias_audit(args: &[String]) {
     let velocity = parse_flag(args, "--velocity", alias_audit::STIMULUS_VELOCITY as f64) as u8;
     let volume = parse_flag(args, "--volume", alias_audit::STIMULUS_VOLUME);
 
+    // --wav PATH: also write the base-rate stimulus as 32-bit float (its upper harmonics can
+    // sit below the 24-bit LSB) so it can be inspected with other analysers.
+    if has_flag(args, "--wav") {
+        let path = parse_flag_str(args, "--wav", "");
+        let signal = alias_audit::render_stimulus(note, velocity, volume);
+        write_wav_f32(path, &signal, alias_audit::STIMULUS_SAMPLE_RATE);
+        eprintln!("stimulus written to {path} (32-bit float)");
+    }
+
     let r = alias_audit::run_with_note_at_volume(note, velocity, volume);
+    let failures = r.failures();
 
     if want_json {
         // Tiny hand-rolled JSON to avoid a serde_json dep just for this.
+        let arr = |v: &[f64]| {
+            v.iter()
+                .map(|x| format!("{x:.3}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         let mut s = String::new();
         s.push_str("{\n");
+        s.push_str(&format!("  \"note\": {note},\n"));
         s.push_str(&format!("  \"f0_hz\": {:.4},\n", r.f0_hz));
-        s.push_str(&format!("  \"h1_dbfs\": {:.3},\n", r.h1_dbfs));
-        s.push_str("  \"harmonic_dbc\": [");
-        for (i, &v) in r.harmonic_dbc.iter().enumerate() {
-            if i > 0 {
-                s.push_str(", ");
-            }
-            s.push_str(&format!("{v:.3}"));
-        }
-        s.push_str("],\n");
-        s.push_str(&format!("  \"max_step_up_db\": {:.3},\n", r.max_step_up_db));
+        s.push_str(&format!("  \"h1_dbfs\": {:.3},\n", r.base.h1_dbfs));
         s.push_str(&format!(
-            "  \"max_step_up_from_harmonic\": {},\n",
-            r.max_step_up_from_harmonic
+            "  \"harmonic_dbc_base\": [{}],\n",
+            arr(&r.base.harmonic_dbc)
         ));
-        s.push_str(&format!("  \"hf_band_dbc\": {:.3}\n", r.hf_band_dbc));
+        s.push_str(&format!(
+            "  \"harmonic_dbc_reference\": [{}],\n",
+            arr(&r.reference.harmonic_dbc)
+        ));
+        s.push_str(&format!(
+            "  \"ladder_worst_rel_db\": {:.3},\n",
+            r.ladder_worst_rel_db
+        ));
+        s.push_str(&format!(
+            "  \"ladder_worst_rel_harmonic\": {},\n",
+            r.ladder_worst_rel_harmonic
+        ));
+        s.push_str(&format!(
+            "  \"ladder_worst_lin_dbc\": {:.3},\n",
+            r.ladder_worst_lin_dbc
+        ));
+        s.push_str(&format!(
+            "  \"hf_band_dbc_base\": {:.3},\n",
+            r.base.hf_band_dbc
+        ));
+        s.push_str(&format!(
+            "  \"hf_band_delta_db\": {:.3},\n",
+            r.hf_band_delta_db
+        ));
+        s.push_str(&format!(
+            "  \"inharmonic_dbc_base\": {:.3},\n",
+            r.base.inharmonic_dbc
+        ));
+        s.push_str(&format!(
+            "  \"inharmonic_dbc_reference\": {:.3},\n",
+            r.reference.inharmonic_dbc
+        ));
+        s.push_str(&format!(
+            "  \"alias_excess_dbc\": {:.3},\n",
+            r.alias_excess_dbc
+        ));
+        s.push_str(&format!("  \"pass\": {}\n", failures.is_empty()));
         s.push('}');
         println!("{s}");
         return;
     }
 
-    println!("Click-band alias audit");
+    println!("Rate-convergence audit (reed jitter off)");
     println!(
-        "  Stimulus:   note={} vel={} vol={:.2}",
-        note,
-        velocity,
-        alias_audit::STIMULUS_VOLUME
-    );
-    println!(
-        "  Render:     {:.2}s @ {:.0} Hz, analyzing last {:.2}s",
+        "  Stimulus:  note={note} vel={velocity} vol={volume:.2}; {:.2}s, analysing the last {:.2}s",
         alias_audit::STIMULUS_RENDER_SECONDS,
-        alias_audit::STIMULUS_SAMPLE_RATE,
         alias_audit::STIMULUS_ANALYZE_SECONDS
     );
-    println!();
     println!(
-        "  Detected f0:  {:.3} Hz  (nominal {:.3} Hz)",
+        "  f0:        {:.3} Hz (measured at {:.1} kHz, used for both)   H1 {:.2} dBFS",
         r.f0_hz,
-        440.0 * 2f64.powf((note as f64 - 69.0) / 12.0)
+        alias_audit::STIMULUS_SAMPLE_RATE / 1000.0,
+        r.base.h1_dbfs
     );
-    println!("  H1:           {:.2} dBFS", r.h1_dbfs);
     println!();
-    println!("  Harmonic envelope (dBc relative to H1):");
-    for (i, &dbc) in r.harmonic_dbc.iter().enumerate() {
-        let marker = if i + 1 >= alias_audit::PLATEAU_FIRST_HARMONIC
-            && i < alias_audit::PLATEAU_LAST_HARMONIC
-        {
-            " *"
-        } else {
-            "  "
-        };
-        println!("    H{:<2} {} {:>8.2} dBc", i + 1, marker, dbc);
+    println!(
+        "  Harmonic   {:>8.1} kHz  {:>8.1} kHz   diff",
+        alias_audit::STIMULUS_SAMPLE_RATE / 1000.0,
+        alias_audit::REFERENCE_SAMPLE_RATE / 1000.0
+    );
+    for k in 1..alias_audit::NUM_HARMONICS {
+        let (a, b) = (r.base.harmonic_dbc[k], r.reference.harmonic_dbc[k]);
+        println!(
+            "    H{:<2}     {a:>9.2}  {b:>9.2}  {:+7.2} dB",
+            k + 1,
+            a - b
+        );
     }
-    println!("                  (* = harmonics in plateau-detection band)");
     println!();
     println!(
-        "  max_step_up_db:  {:+.2} dB  (worst rise: H{} → H{})",
-        r.max_step_up_db,
-        r.max_step_up_from_harmonic,
-        r.max_step_up_from_harmonic + 1
+        "  ladder:        worst {:.3} dB at H{} (above {} dBc; tol {}), quiet {:.1} dBc (tol {})",
+        r.ladder_worst_rel_db,
+        r.ladder_worst_rel_harmonic,
+        alias_audit::LADDER_REL_ABOVE_DBC,
+        alias_audit::LADDER_REL_TOL_DB,
+        r.ladder_worst_lin_dbc,
+        alias_audit::LADDER_LIN_TOL_DBC
     );
-    println!("                   target: ≤ 0 dB (monotonic descent); gate: ≤ +1.0");
     println!(
-        "  hf_band_dbc:     {:.2} dBc  (5–18 kHz RMS rel. to H1)",
-        r.hf_band_dbc
+        "  hf_band:       {:.2} vs {:.2} dBc, diff {:+.3} dB (tol {})",
+        r.base.hf_band_dbc,
+        r.reference.hf_band_dbc,
+        r.hf_band_delta_db,
+        alias_audit::HF_BAND_TOL_DB
     );
-    println!("                   target: track baseline; gate: ≤ baseline + 2.0 dB");
+    println!(
+        "  off-grid:      {:.1} vs {:.1} dBc, base-rate excess {:.1} dBc (tol {})",
+        r.base.inharmonic_dbc,
+        r.reference.inharmonic_dbc,
+        r.alias_excess_dbc,
+        alias_audit::ALIAS_EXCESS_TOL_DBC
+    );
+    println!();
+    if failures.is_empty() {
+        println!("  PASS: converged");
+    } else {
+        for f in &failures {
+            println!("  FAIL: {f}");
+        }
+    }
 }
 
 // ─── Calibrate subcommand ──────────────────────────────────────────────────

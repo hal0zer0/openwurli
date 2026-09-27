@@ -197,6 +197,8 @@ pub struct WurliEngine {
     // MIDI state
     sustain_held: bool,
     mlp_enabled: bool,
+    /// Reed frequency jitter on new notes (always on in the plugin; analysis may turn it off).
+    pitch_jitter: bool,
 
     // Smoothed audio-rate params (target set by host, ramped per sample)
     volume: LinearSmoother,
@@ -250,6 +252,7 @@ impl WurliEngine {
             oversample,
             sustain_held: false,
             mlp_enabled: false,
+            pitch_jitter: true,
             volume: LinearSmoother::new(0.8, ramp),
             tremolo_depth: LinearSmoother::new(0.5, ramp),
             speaker_character: LinearSmoother::new(0.0, ramp),
@@ -356,13 +359,17 @@ impl WurliEngine {
         let noise_seed = (note as u32)
             .wrapping_mul(2654435761)
             .wrapping_add(self.age_counter as u32);
-        slot.voice = Some(Voice::note_on(
+        let mut voice = Voice::note_on(
             note,
             velocity as f64,
             self.sample_rate,
             noise_seed,
             self.mlp_enabled,
-        ));
+        );
+        if !self.pitch_jitter {
+            voice.disable_pitch_jitter();
+        }
+        slot.voice = Some(voice);
         slot.state = VoiceState::Held;
         slot.midi_note = note;
         slot.age = self.age_counter;
@@ -438,6 +445,13 @@ impl WurliEngine {
 
     pub fn set_mlp_enabled(&mut self, on: bool) {
         self.mlp_enabled = on;
+    }
+
+    /// Reed frequency jitter for notes started from now on. Analysis only: the plugin never
+    /// turns it off. Its random realization depends on the sample rate, so rate-convergence
+    /// analysis (`alias_audit`) disables it to compare renders at different rates.
+    pub fn set_pitch_jitter_enabled(&mut self, on: bool) {
+        self.pitch_jitter = on;
     }
 
     pub fn set_noise_enabled(&mut self, on: bool) {

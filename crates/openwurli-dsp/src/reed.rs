@@ -185,6 +185,16 @@ impl ModalReed {
         }
     }
 
+    /// Turn the per-mode frequency jitter off (analysis only). The jitter is a random process
+    /// stepped every `JITTER_SUBSAMPLE` samples, so its realization differs with the sample rate;
+    /// rate-convergence analysis needs it off to compare renders at different rates.
+    pub fn disable_jitter(&mut self) {
+        self.jitter_diffusion = 0.0;
+        for mode in &mut self.modes {
+            mode.jitter_drift = 0.0;
+        }
+    }
+
     /// Enable amplitude-dependent loss on mode 1: quadratic air drag on the moving reed, which
     /// decays the mode as `dA/dt = -beta |A| A`. `beta_db_per_mm` is the extra decay in dB/s per
     /// mm of swing at the pickup's finger region; `swing_mm` is the swing that one unit of model

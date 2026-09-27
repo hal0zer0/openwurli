@@ -194,6 +194,12 @@ impl Voice {
         self.noise.disable();
     }
 
+    /// Disable the reed's per-mode frequency jitter (analysis only; see
+    /// [`ModalReed::disable_jitter`]).
+    pub fn disable_pitch_jitter(&mut self) {
+        self.reed.disable_jitter();
+    }
+
     /// Start the damper (called on note_off).
     /// Activates progressive damping — higher modes die first.
     pub fn note_off(&mut self) {
