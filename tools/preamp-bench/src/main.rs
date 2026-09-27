@@ -436,6 +436,7 @@ fn cmd_render(args: &[String]) {
     let no_rail_sag = has_flag(args, "--no-rail-sag");
     let no_preamp = has_flag(args, "--no-preamp");
     let no_attack_noise = has_flag(args, "--no-attack-noise");
+    let no_jitter = has_flag(args, "--no-jitter");
     let no_mlp = has_flag(args, "--no-mlp");
     let normalize = has_flag(args, "--normalize");
     let swing_override: Option<f64> = if has_flag(args, "--swing-mm") {
@@ -479,6 +480,9 @@ fn cmd_render(args: &[String]) {
         }
         if no_attack_noise {
             voice.disable_attack_noise();
+        }
+        if no_jitter {
+            voice.disable_pitch_jitter();
         }
         let num_samples = (duration * sample_rate) as usize;
         let mut output = vec![0.0f64; num_samples];
