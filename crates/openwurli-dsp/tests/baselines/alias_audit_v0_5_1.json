@@ -7,8 +7,12 @@
   "analyze_seconds": 0.5,
   "entries": [
     {
+      "note": 72,
       "f0_hz": 522.4511,
       "h1_dbfs": -57.713,
+      "max_step_up_db": 2.418,
+      "max_step_up_from_harmonic": 6,
+      "hf_band_dbc": -52.041,
       "harmonic_dbc": [
         0.0,
         -23.699,
@@ -22,15 +26,15 @@
         -81.264,
         -90.328,
         -81.585
-      ],
-      "hf_band_dbc": -52.041,
-      "max_step_up_db": 2.418,
-      "max_step_up_from_harmonic": 6,
-      "note": 72
+      ]
     },
     {
+      "note": 84,
       "f0_hz": 1045.2023,
       "h1_dbfs": -71.566,
+      "max_step_up_db": 5.549,
+      "max_step_up_from_harmonic": 6,
+      "hf_band_dbc": -44.212,
       "harmonic_dbc": [
         0.0,
         -42.119,
@@ -44,15 +48,15 @@
         -79.047,
         -74.981,
         -79.946
-      ],
-      "hf_band_dbc": -44.212,
-      "max_step_up_db": 5.549,
-      "max_step_up_from_harmonic": 6,
-      "note": 84
+      ]
     },
     {
+      "note": 91,
       "f0_hz": 1570.2817,
       "h1_dbfs": -89.763,
+      "max_step_up_db": 8.322,
+      "max_step_up_from_harmonic": 6,
+      "hf_band_dbc": -40.662,
       "harmonic_dbc": [
         0.0,
         -66.91,
@@ -66,11 +70,7 @@
         -81.105,
         -93.236,
         -82.241
-      ],
-      "hf_band_dbc": -40.662,
-      "max_step_up_db": 8.322,
-      "max_step_up_from_harmonic": 6,
-      "note": 91
+      ]
     }
   ]
 }
