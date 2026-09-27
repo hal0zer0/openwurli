@@ -264,24 +264,25 @@ pub enum SwingPick {
 /// Replaced by the technician's bench numbers (a weighed hammer assembly and key speed narrow the
 /// band most), or by the excitation revision's contact integration.
 const PROVISIONAL_FF_SWING_MM: [(u8, f64, f64, f64); 24] = [
+    // VARIANT A (criterion 6 report-only; edges = the solved tables' reach, not physics)
     // Bass reeds 1-20 (MIDI 33-52)
-    (33, 2.09, 1.11, 3.01),
-    (36, 1.93, 1.06, 2.68),
-    (39, 1.99, 1.09, 2.81),
-    (42, 2.05, 1.10, 2.99),
-    (45, 1.95, 1.06, 2.85),
-    (48, 1.93, 1.10, 2.73),
-    (51, 1.75, 1.01, 2.49),
-    (52, 1.78, 1.01, 2.63),
+    (33, 2.46, 1.22, 3.84),
+    (36, 2.44, 1.22, 3.81),
+    (39, 2.40, 1.21, 3.78),
+    (42, 2.33, 1.18, 3.72),
+    (45, 2.23, 1.14, 3.63),
+    (48, 2.25, 1.20, 3.62),
+    (51, 2.05, 1.10, 3.43),
+    (52, 1.98, 1.06, 3.36),
     // Reeds 21-64 (MIDI 53-96)
-    (53, 1.10, 0.58, 1.84),
-    (54, 1.09, 0.58, 1.79),
-    (57, 1.09, 0.59, 1.81),
-    (60, 1.08, 0.59, 1.81),
-    (63, 1.04, 0.58, 1.75),
-    (66, 0.98, 0.55, 1.69),
-    (69, 0.90, 0.51, 1.56),
-    (72, 0.76, 0.44, 1.33),
+    (53, 1.16, 0.59, 2.11),
+    (54, 1.16, 0.59, 2.10),
+    (57, 1.14, 0.60, 2.05),
+    (60, 1.11, 0.60, 1.98),
+    (63, 1.06, 0.58, 1.87),
+    (66, 0.99, 0.56, 1.74),
+    (69, 0.90, 0.51, 1.57),
+    (72, 0.77, 0.44, 1.34),
     (75, 0.67, 0.39, 1.17),
     (78, 0.57, 0.33, 0.98),
     (81, 0.48, 0.28, 0.83),
@@ -408,7 +409,7 @@ impl Default for CalibrationConfig {
             // also matches the physical estimate for the plate swing at TR-1, 147 V x dC/C_node).
             // No evidence moves that level; the provisional swing changes timbre, not the
             // anchor. Re-measured with tools/pickup_rev_metrics.py whenever the swing changes.
-            target_db: -29.40,
+            target_db: -29.55,
             voicing_slope: -0.04,
             zero_trim: false,
         }
@@ -1665,11 +1666,11 @@ mod tests {
             }
         }
         // No interpolation across reeds 20|21: each side keeps its own values.
-        assert_eq!(provisional_ff_swing_mm(52, SwingPick::Central), 1.78);
-        assert_eq!(provisional_ff_swing_mm(53, SwingPick::Central), 1.10);
+        assert_eq!(provisional_ff_swing_mm(52, SwingPick::Central), 1.98);
+        assert_eq!(provisional_ff_swing_mm(53, SwingPick::Central), 1.16);
         // Between knots: log-linear, so D4 sits between its neighbours.
         let d4 = provisional_ff_swing_mm(62, SwingPick::Central);
-        assert!(d4 > 1.03 && d4 < 1.08, "MIDI 62: {d4}");
+        assert!(d4 > 1.06 && d4 < 1.11, "MIDI 62: {d4}");
     }
 
     #[test]
