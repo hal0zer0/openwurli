@@ -795,3 +795,7 @@ evidence-free options, not as tuning. Criterion 6 is REPORT-ONLY from here: its 
 re-registered from evidence when a bench ff DI of a bass note exists. The criterion-6-conditioned
 edges (B) are kept in `tools/swing_prior.py` for the record. The flat-vs-angled bass-finger choice
 (Option C) stays open; this branch models early flat fingers.
+Option C (angled bass fingers) is closed, not pursued: the operator has no interest in a cleaner,
+less swelling bass unless it fixes a problem, and it does not. It is a later production variant,
+not a correction. The computation stays on record (`tools/angled_fingers.py`) should a problem
+later point at the bass geometry.
