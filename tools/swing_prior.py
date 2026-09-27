@@ -39,10 +39,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Dynamic admitted edges, mm at the finger region: the largest ff swing passing criteria 2 and 6
 # of docs/research/pickup-overlap-law.md (crit 6 as re-registered in §9: rise <= 6 dB, no timing),
-# bisected per knot by tools/swing_edges.py on the four-range (140B side gap) tables. Crit 6 binds at
+# bisected per knot by tools/swing_edges.py on the four-range (140B side gap) tables (fixed solver,
+# lambda by h-convergence). Crit 6 binds at
 # every knot up to 72. MIDI 75-96: at least this (the search stops inside the table's u range).
-EDGES = {33: 3.23, 36: 2.87, 39: 3.01, 42: 3.26, 45: 3.11, 48: 2.96, 51: 2.71, 52: 2.93,
-         53: 2.21, 54: 2.13, 57: 2.20, 60: 2.27, 63: 2.29, 66: 2.42, 69: 2.48, 72: 2.32,
+EDGES = {33: 3.26, 36: 2.88, 39: 3.04, 42: 3.28, 45: 3.14, 48: 2.97, 51: 2.72, 52: 2.94,
+         53: 2.22, 54: 2.14, 57: 2.21, 60: 2.28, 63: 2.30, 66: 2.44, 69: 2.49, 72: 2.33,
          75: 2.89, 78: 2.89, 81: 2.89, 84: 2.89, 87: 2.89, 90: 2.89, 93: 2.89, 96: 2.89}
 
 XS = np.array([0.40, 0.45, 0.50, 0.55, 0.60])

@@ -40,6 +40,10 @@ struct BaselineEntry {
 /// Hand-parsed baseline — small enough that a JSON dep isn't worth pulling in.
 /// Must stay in lockstep with `tests/baselines/alias_audit_v0_5_1.json`.
 ///
+/// REFRESHED 2026-09-26 (c) for the regenerated pickup tables (fixed solver fine region, lambda by
+/// h-convergence): step_up 72 8.525 -> 2.418 (improved: its H6 notch moved), 84/91 within 0.003;
+/// hf_band 72 -0.07 dB, 84/91 unchanged. No worsening.
+///
 /// REFRESHED 2026-09-26 (b) for the four-range (140B side gap) pickup tables and the swing prior
 /// reconditioned on criterion 6. step_up 72: 9.513 -> 8.525; 84: 5.096 -> 5.552; 91: 7.509 -> 8.321.
 /// hf_band: 72 +2.81 dB (over the 2.0 tolerance), 84 -0.39, 91 -0.02. Sign split at 72 (plateau fell,
@@ -93,17 +97,17 @@ struct BaselineEntry {
 const BASELINE: &[BaselineEntry] = &[
     BaselineEntry {
         note: 72,
-        max_step_up_db: 8.525,
-        hf_band_dbc: -51.971,
+        max_step_up_db: 2.418,
+        hf_band_dbc: -52.041,
     },
     BaselineEntry {
         note: 84,
-        max_step_up_db: 5.552,
+        max_step_up_db: 5.549,
         hf_band_dbc: -44.212,
     },
     BaselineEntry {
         note: 91,
-        max_step_up_db: 8.321,
+        max_step_up_db: 8.322,
         hf_band_dbc: -40.662,
     },
 ];

@@ -265,20 +265,20 @@ pub enum SwingPick {
 /// band most), or by the excitation revision's contact integration.
 const PROVISIONAL_FF_SWING_MM: [(u8, f64, f64, f64); 24] = [
     // Bass reeds 1-20 (MIDI 33-52)
-    (33, 2.08, 1.11, 2.98),
-    (36, 1.92, 1.06, 2.67),
-    (39, 1.98, 1.08, 2.79),
-    (42, 2.05, 1.10, 2.98),
-    (45, 1.94, 1.06, 2.83),
-    (48, 1.92, 1.10, 2.72),
-    (51, 1.75, 1.01, 2.48),
-    (52, 1.77, 1.01, 2.62),
+    (33, 2.09, 1.11, 3.01),
+    (36, 1.93, 1.06, 2.68),
+    (39, 1.99, 1.09, 2.81),
+    (42, 2.05, 1.10, 2.99),
+    (45, 1.95, 1.06, 2.85),
+    (48, 1.93, 1.10, 2.73),
+    (51, 1.75, 1.01, 2.49),
+    (52, 1.78, 1.01, 2.63),
     // Reeds 21-64 (MIDI 53-96)
-    (53, 1.10, 0.57, 1.83),
+    (53, 1.10, 0.58, 1.84),
     (54, 1.09, 0.58, 1.79),
     (57, 1.09, 0.59, 1.81),
-    (60, 1.08, 0.59, 1.80),
-    (63, 1.03, 0.58, 1.75),
+    (60, 1.08, 0.59, 1.81),
+    (63, 1.04, 0.58, 1.75),
     (66, 0.98, 0.55, 1.69),
     (69, 0.90, 0.51, 1.56),
     (72, 0.76, 0.44, 1.33),
@@ -408,7 +408,7 @@ impl Default for CalibrationConfig {
             // also matches the physical estimate for the plate swing at TR-1, 147 V x dC/C_node).
             // No evidence moves that level; the provisional swing changes timbre, not the
             // anchor. Re-measured with tools/pickup_rev_metrics.py whenever the swing changes.
-            target_db: -29.41,
+            target_db: -29.40,
             voicing_slope: -0.04,
             zero_trim: false,
         }
@@ -1665,7 +1665,7 @@ mod tests {
             }
         }
         // No interpolation across reeds 20|21: each side keeps its own values.
-        assert_eq!(provisional_ff_swing_mm(52, SwingPick::Central), 1.77);
+        assert_eq!(provisional_ff_swing_mm(52, SwingPick::Central), 1.78);
         assert_eq!(provisional_ff_swing_mm(53, SwingPick::Central), 1.10);
         // Between knots: log-linear, so D4 sits between its neighbours.
         let d4 = provisional_ff_swing_mm(62, SwingPick::Central);
