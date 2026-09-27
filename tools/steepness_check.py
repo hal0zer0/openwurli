@@ -13,7 +13,11 @@ predict the change of H3/H1 over the post-attack interval and compare with the r
               peak time). Non-swelling notes (62, 78) solve dH1 and d(H2/H1) over 0.7 -> 1.3 s (two
               observables, two unknowns); every solution is kept.
     Predict:  d(H3/H1) over 0.7 -> 1.3 s, at every band-end case (A0, r re-identified at each).
-    Pass:     recording inside [min, max] of the predictions widened by +-2 dB. A note whose
+    Pass:     per case, every solution is synthesised and judged (recording within its prediction
+              +-2 dB): all pass or all fail -> the case is determinate; mixed -> INDETERMINATE
+              (review ruling 2026-09-27: non-unique identification never widens the band). The
+              note passes if the recording is inside [min, max] of the determinate cases'
+              predictions widened by +-2 dB, and is not graded if any case is INDETERMINATE. A note whose
               predicted H3/H1 falls below -35 dB re H1 at either window (middle/treble) is
               table-limited: reported, not graded. A note without its finger-thickness and side-gap
               band ends is "partial band" and not graded.
@@ -121,7 +125,7 @@ def main():
               f"dR3 {rec['dR3']:+.2f} (H3/H1 {rec['R3a']:+.1f} -> {rec['R3b']:+.1f})", flush=True)
         if n in SWELLING:
             S, T, _, _ = SW.recording(n)
-        preds, limited = [], False
+        preds, limited, solved, indeterminate = [], False, [], []
         for name, (path, key, g0) in cases[row].items():
             t = json.load(open(path))[key]
             cs = law_smooth(np.array(t["u"]), np.array(t["C_pF_per_m"]), row)
@@ -131,14 +135,22 @@ def main():
                 print(f"   {name:10s}: no (A0, r) solution", flush=True)
                 continue
             got = []
-            for A0, r in sols[:: max(1, len(sols) // 6)]:
+            for A0, r in sols:  # every solution: a stride subsample can drop the extremes
                 p = os.path.join(tmp, f"{n}_{name}_{A0}_{r}.wav")
                 write_wav(p, SW.synth(cs, f0, g0, A0, r, dur=2.2))
                 m = observables(a.sensor, p, 0.0, f0)
                 got.append((A0, r, m["dH1"], m["dR2"], m["dR3"], m["R3a"], m["R3b"]))
                 os.remove(p)
             g = np.array(got)
-            preds += list(g[:, 4])
+            # Within a case, per solution (review ruling 2026-09-27): all pass -> pass, all fail ->
+            # fail, mixed -> INDETERMINATE. Non-unique identification must never widen the band.
+            ok = np.abs(g[:, 4] - rec["dR3"]) <= TOL
+            case_v = "pass" if ok.all() else ("fail" if not ok.any() else "INDETERMINATE")
+            if case_v == "INDETERMINATE":
+                indeterminate.append(name)
+            else:
+                solved.append(name)
+                preds += list(g[:, 4])
             lim = n >= 53 and min(g[:, 5].min(), g[:, 6].min()) < TABLE_LIMIT_DB
             limited |= lim
             print(f"   {name:10s}: {len(sols)} sols, A0 {g[:,0].min():.3f}-{g[:,0].max():.3f} mm, "
@@ -146,16 +158,25 @@ def main():
                   f"{g[:,2].max():+.2f} dR2 {g[:,3].min():+.2f}..{g[:,3].max():+.2f} | pred dR3 "
                   f"{g[:,4].min():+.2f}..{g[:,4].max():+.2f} (H3/H1 at 0.7 s {g[:,5].min():+.1f}.."
                   f"{g[:,5].max():+.1f}, at 1.3 s {g[:,6].min():+.1f}..{g[:,6].max():+.1f})"
-                  f"{' TABLE-LIMITED' if lim else ''}", flush=True)
-        partial = not all(any(c.startswith(b) for c in cases[row]) for b in BAND_KEYS)
+                  f"{' TABLE-LIMITED' if lim else ''} | case {case_v} "
+                  f"({int(ok.sum())}/{len(ok)} solutions within +-{TOL:.0f} dB)", flush=True)
+            print("      per-solution pred dR3: " + " ".join(f"{v:+.2f}" for v in g[:, 4]),
+                  flush=True)
+        # Across cases: the union band of the DETERMINATE cases decides, and only if every case is
+        # determinate. Partial = a band end missing from the cases, or one with no solution or an
+        # INDETERMINATE result (an ambiguous corner leaves the band incomplete).
+        partial = not all(any(c.startswith(b) for c in solved) for b in BAND_KEYS)
         if not preds:
-            print("   VERDICT: NO SOLUTION")
+            print("   VERDICT: NO DETERMINATE CASE"
+                  + (f" (INDETERMINATE: {', '.join(indeterminate)})" if indeterminate else ""))
             continue
         lo, hi = min(preds) - TOL, max(preds) + TOL
         inside = lo <= rec["dR3"] <= hi
         tag = "PASS" if inside else ("FAIL model-high" if rec["dR3"] < lo else "FAIL model-low")
         if limited:
             tag = f"TABLE-LIMITED (not graded; would read {tag})"
+        elif indeterminate:
+            tag = f"INDETERMINATE ({', '.join(indeterminate)}; not graded; would read {tag})"
         elif partial:
             tag = f"PARTIAL BAND (not graded; would read {tag})"
         print(f"   VERDICT: recording {rec['dR3']:+.2f} in [{lo:+.2f}, {hi:+.2f}] -> {tag}", flush=True)

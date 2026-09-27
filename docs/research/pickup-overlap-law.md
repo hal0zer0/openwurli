@@ -793,9 +793,34 @@ the operator chose A (criterion 6 report-only): "my ears prefer and think [it] s
 B had read as "a little light on the bass". Recorded as a product decision between two
 evidence-free options, not as tuning. Criterion 6 is REPORT-ONLY from here: its magnitude is
 re-registered from evidence when a bench ff DI of a bass note exists. The criterion-6-conditioned
-edges (B) are kept in `tools/swing_prior.py` for the record. The flat-vs-angled bass-finger choice
-(Option C) stays open; this branch models early flat fingers.
+edges (B) are kept in `tools/swing_prior.py` for the record. This branch models early flat fingers.
 Option C (angled bass fingers) is closed, not pursued: the operator has no interest in a cleaner,
 less swelling bass unless it fixes a problem, and it does not. It is a later production variant,
 not a correction. The computation stays on record (`tools/angled_fingers.py`) should a problem
 later point at the bass geometry.
+
+**Review of the tooling (2026-09-27): verdict-logic fixes and the steepness re-run.** A review of
+this revision's tools found defects in two gates' verdict logic; the fixes change no registered
+threshold. (1) The steepness check synthesised a stride subsample of each case's solutions (which
+can drop the extremes) and decided "partial band" from the case names rather than from the cases
+that produced predictions. Its registration said both "every solution is kept; disagreement is
+INDETERMINATE" and "pass = inside [min, max] ± 2 dB" without saying which spread each governs.
+Ruled on review, as an interpretation of the registration, not a change: [min, max] spans the
+input-band ends (g0, t_p, g_s), which is genuine input uncertainty; non-unique identification at one
+setting must never widen the band. Within each case every solution is judged (recording within its
+prediction ± 2 dB): all pass or all fail makes the case determinate, mixed makes it INDETERMINATE.
+The note is graded on the determinate cases' [min, max] ± 2 dB only if every case is determinate
+and every band end solved. Re-run under this rule (all solutions, the regenerated tables):
+38 PASS (7/7 cases determinate, every one of 321 solutions within ± 2 dB); 50 FAIL model-high
+(7/7 determinate, 0 of 2360 solutions within ± 2 dB; −8.09 against [−7.88, −1.10]). The earlier
+verdicts stand. Noted, not graded: at 50 the solutions that reproduce the swell verify Δ(H2/H1)
+anywhere from −12 to +13 dB against the recording's −4.8, so the swell alone constrains the
+identification weakly there. (2) The known-answer gate could print PASS with no graded cell (a
+Sensor refusal was skipped silently). It now reads INCOMPLETE if any registered cell is refused and
+NO DATA if nothing is graded. The recorded PASS had every cell graded and stands. Also fixed:
+`--check` / `--check-window` in `tools/pickup_field2d.py` fell through into the default field
+sweep; `--check-window`'s "shipping smoothing error" column now measures the shipping smoother
+(`law_smooth`), not GCV; criterion 7 in `tools/decay_check.py` now refuses an unconfirmed
+fundamental; `preamp-bench render-poly --no-mlp`, used by the chord interaction so the chord and
+its single-note references run alike (no effect on the recorded C2+G2+C3 result: the MLP is
+identity below MIDI 53).

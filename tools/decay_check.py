@@ -62,6 +62,8 @@ def sensor_ratios(an, path, onset_s, f0):
                                    "--window-ms", "600", "--fft", "16384", "--fundamental",
                                    f"{f0:.4f}", "--json"], check=True, capture_output=True,
                                   text=True).stdout)
+    if not (d.get("supplied_fundamental") or {}).get("confirmed"):
+        return None  # the Sensor did not confirm the pinned fundamental: ratios would be re a wrong peak
     h = d["harmonics_dbc"]
     return [h[1], h[2]]
 
@@ -107,6 +109,11 @@ def main():
         onset = int(np.argmax(np.abs(x) > 0.1 * np.abs(x).max())) / sr
         r = sensor_ratios(a.sensor, ref[n]["source_file"], onset, f0)
         m = sensor_ratios(a.sensor, model_wav(n, tmp), 0.0, f0)
+        if r is None or m is None:
+            print(f"                            {n}   fundamental not confirmed by the Sensor"
+                  f" ({'recording' if r is None else 'model'}): not reported")
+            res[f"c7_{n}"] = {"rec": r, "model": m, "unconfirmed": True}
+            continue
         print(f"                            {n}   {r[0]:+6.1f} {r[1]:+6.1f} | {m[0]:+6.1f} {m[1]:+6.1f}")
         res[f"c7_{n}"] = {"rec": r, "model": m}
     if a.out:

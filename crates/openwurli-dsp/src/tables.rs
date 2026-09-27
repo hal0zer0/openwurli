@@ -242,8 +242,8 @@ pub enum SwingPick {
 /// uniform 0.40-0.60 L; the two disputed bass blank thicknesses as a 50/50 mixture; tip thickness
 /// uniform 0.51-0.66 mm above the bass.
 ///
-/// **The falsifiers condition the prior:** samples whose swing exceeds the note's dynamic admitted
-/// edge (the largest ff swing passing ff-falloff criterion 2, bisected per note by
+/// **No physical falsifier binds the prior at present:** samples whose swing exceeds the note's
+/// dynamic admitted edge (the largest ff swing passing ff-falloff criterion 2, bisected per note by
 /// `tools/swing_edges.py --no-crit6` on the four-range 140B-gap tables) are discarded. `pick` =
 /// median of the survivors, `low` / `high` = their p10 / p90 (the band an ear-test conclusion must
 /// survive). Nothing here was fitted to a recording. Criterion 2 never binds inside the solved

@@ -448,8 +448,10 @@ def merge_refine(base_path, part_path, out_path):
 
 
 def static_harmonics(u, C, g0, A, kmax=8, n=1024):
-    """Harmonics (dB re H1) of the static law C(-g0 + A sin), through the same GCV smoothing
-    spline the plugin's tables are built from."""
+    """Harmonics (dB re H1) of the static law C(-g0 + A sin), through a GCV smoothing spline.
+
+    Used only by check_convergence (the original h/2 gate, superseded by --check-window). The
+    plugin's tables use law_smooth (lambda from SMOOTH_LAM), not GCV."""
     cs, _ = gcv_smooth(u, C)
     th = np.arange(n) * 2 * np.pi / n
     X = np.abs(np.fft.rfft(cs(-g0 + A * np.sin(th))))[1:kmax + 1]
@@ -464,8 +466,9 @@ def check_window(path_ship, path_half, rel_above_db=-30.0, rel_tol_db=0.5, abs_t
     the smallest of 1e-7..1e-3 (decades) at which C'' agrees between the grids within c2_tol of its
     peak: the smoothing is chosen by h-convergence, not by the data, so the gate measures the grid.
     Swings 0.02 mm up to the window's edge, g0 0.07-0.10 mm; thresholds as in check_convergence.
-    Also reported (not the gate): the SHIPPING table's own smoothing error, i.e. the full-range GCV
-    spline the plugin compiles against the converged window spline of the h/2 data.
+    Also reported (not the gate): the SHIPPING table's own smoothing error, i.e. the full-range
+    spline the plugin compiles (law_smooth for a section in SMOOTH_LAM, else GCV) against the
+    converged window spline of the h/2 data.
     """
     from scipy.interpolate import make_smoothing_spline
     a, b = json.load(open(path_ship)), json.load(open(path_half))
@@ -511,7 +514,8 @@ def check_window(path_ship, path_half, rel_above_db=-30.0, rel_tol_db=0.5, abs_t
         wl, wr = compare(spa, spb, ub[0], ub[-1])
         passed = wl <= abs_tol_db and wr <= rel_tol_db
         ok &= passed
-        sl, sr = compare(gcv_smooth(ua, Ca)[0], spb, ub[0], ub[-1])
+        ship = law_smooth(ua, Ca, key) if key in SMOOTH_LAM else gcv_smooth(ua, Ca)[0]
+        sl, sr = compare(ship, spb, ub[0], ub[-1])
         print(f"{key} window u [{ub[0]}, {ub[-1]}], lam {lam:.0e}: GRID linear {wl:6.1f} dB | "
               f"above {rel_above_db:.0f} dB: {wr:.2f} dB | {'PASS' if passed else 'FAIL'} || "
               f"shipping smoothing vs converged: linear {sl:6.1f} dB, rel {sr:.2f} dB (reported)")
@@ -522,6 +526,9 @@ def check_window(path_ship, path_half, rel_above_db=-30.0, rel_tol_db=0.5, abs_t
 def check_convergence(path_a, path_b, rel_above_db=-30.0, rel_tol_db=0.5, abs_tol_db=-45.0,
                       a_max=None):
     """Harmonic-convergence gate between an h and an h/2 table set (static law, H2..H8).
+
+    Superseded by --check-window: each table here is GCV-smoothed over its own u range, so the gate
+    partly compares smoothers rather than grids (docs/research/pickup-overlap-law.md §9).
 
     Over swings 0.02 mm .. min(t_p, 1 mm) (extend once the real swing is known), g0 0.07-0.10 mm, and only swings that stay
     inside both tables' u range — so a --refine window can be gated against its partner): every
@@ -601,8 +608,10 @@ def main():
         return
     if a.check:
         check_convergence(*a.check, a_max=a.a_max)
+        return
     if a.check_window:
         check_window(*a.check_window)
+        return
     if a.merge_refine:
         merge_refine(*a.merge_refine)
         return

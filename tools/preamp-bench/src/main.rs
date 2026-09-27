@@ -1641,6 +1641,7 @@ fn cmd_render_poly(args: &[String]) {
     let speaker_char = parse_flag(args, "--speaker", 1.0);
     let r_ldr = parse_flag(args, "--ldr", 1_000_000.0);
     let no_poweramp = has_flag(args, "--no-poweramp");
+    let no_mlp = has_flag(args, "--no-mlp");
     let normalize = has_flag(args, "--normalize");
     let default_out = temp_default("preamp_render_poly.wav");
     let output_path = parse_flag_str(args, "--output", &default_out);
@@ -1683,7 +1684,7 @@ fn cmd_render_poly(args: &[String]) {
         let noise_seed = (note as u32)
             .wrapping_mul(2654435761)
             .wrapping_add(voice_offset);
-        let mut voice = Voice::note_on(note, velocity, BASE_SR, noise_seed, true);
+        let mut voice = Voice::note_on(note, velocity, BASE_SR, noise_seed, !no_mlp);
 
         let mut voice_buf = vec![0.0f64; n_samples];
         let chunk_size = 1024;

@@ -10,12 +10,15 @@ known:  a pickup-tap render of the engine (preamp, power amp and attack noise of
         passthrough) against the atlas at the swing the reed tap reports for the same window (Hann-weighted mean mode-1
         amplitude over the analysed window),
         after removing the RC network's per-harmonic tilt (one-pole high-pass at PICKUP_FC).
-        0.5 s windows start after mode 2 has died (reed tap: mode2/mode1 below -60 dB). Reported as
-        measured differences; the pass threshold is registered separately.
+        0.5 s windows starting 0.3, 0.8, 1.3 and 1.8 s after onset (fixed; the trace-driven
+        reference holds while mode 2 is still sounding). Reported as measured differences; the pass
+        threshold is registered separately. Every registered cell must be measured (a Sensor
+        refusal makes the gate INCOMPLETE, not PASS).
 
 Usage:
     python tools/pickup_atlas.py atlas --sensor ANALYZE --cases cases.json --out atlas.json
-    python tools/pickup_atlas.py known --sensor ANALYZE --atlas atlas.json --notes 36,60,84
+    python tools/pickup_atlas.py known --sensor ANALYZE --atlas atlas.json --tables CHOSEN.json \
+        --notes 36,60,84
 """
 
 import argparse
@@ -101,7 +104,7 @@ def known(a):
     from pickup_field2d import normalised_laws
     _, laws = normalised_laws(a.tables)  # the exact normalised natural-cubic laws the engine compiles
     tmp = tempfile.mkdtemp(prefix="known_")
-    resid, fails = [], 0
+    resid, fails, refused = [], 0, 0
     for n in (int(v) for v in a.notes.split(",")):
         sec = section_of(n)
         sign = 1.0 if n <= 52 else -1.0
@@ -142,6 +145,7 @@ def known(a):
             g = sensor_dbc(a.sensor, syn, f0, int(t0 * 1000), int(KNOWN_WIN * 1000))
             if h is None or g is None:
                 print(f"  MIDI {n} t {t0}: Sensor refused")
+                refused += 1
                 continue
             d = [None if (h[i] is None or g[i] is None or max(h[i], g[i]) <= -40) else h[i] - g[i]
                  for i in range(5)]
@@ -164,7 +168,13 @@ def known(a):
             print(f"H{k + 2}: {len(v)} cells, mean {np.mean(v):+.3f} dB, max |{max(map(abs, v)):.2f}|"
                   f"{'  SHARED SIGN' if shared else ''}")
             fails += shared
-    print(f"KNOWN-ANSWER GATE: {'PASS' if fails == 0 else 'FAIL'} ({fails} cell/sign failures)")
+    # A gate that can pass on no data is not a gate: every registered cell must be measured, and at
+    # least one harmonic must be graded (review ruling 2026-09-27).
+    graded = sum(v is not None for r in resid for v in r[2:])
+    verdict = ("FAIL" if fails else "NO DATA" if graded == 0
+               else "INCOMPLETE" if refused else "PASS")
+    print(f"KNOWN-ANSWER GATE: {verdict} ({fails} cell/sign failures, {len(resid)} cells measured, "
+          f"{refused} refused, {graded} harmonics graded)")
 
 
 def SW_write(path, y):
