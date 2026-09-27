@@ -2,7 +2,7 @@
 
 An *obsessively* physically-modeled Wurlitzer 200A electric piano plugin for CLAP and VST3 hosts. NOT IN ANY WAY OFFICIAL OR AFFILIATED WITH ANYONE.
 
-[![OpenWurli Demo](https://img.youtube.com/vi/0I4rI0ZnVr8/maxresdefault.jpg)](https://www.youtube.com/watch?v=0I4rI0ZnVr8)
+[![OpenWurli Demo](https://img.youtube.com/vi/2ELaBTO087I/maxresdefault.jpg)](https://youtu.be/2ELaBTO087I)
 
 ## What Is This?
 
@@ -98,6 +98,7 @@ This project is licensed under the [GNU General Public License v3.0](LICENSE).
 
 ## Acknowledgments
 
+- **Doc Wurly** ([docwurly.com](https://docwurly.com)): a 200A technician who shared his expertise freely and at length, over calls, messages, photos and narrated videos, on how these instruments are really built. The pickup and reed modelling in v0.9.0 rests on what he taught us, and the release is dedicated to him. His published Wurlitzer history is well worth reading.
 - **OldBassMan** (Freesound) — Wurlitzer 200A recordings used for calibration
 - **BustedGear** — Wurlitzer service documentation archive
 - **Robbert van der Helm** — [nih-plug](https://github.com/robbert-vdh/nih-plug) plugin framework

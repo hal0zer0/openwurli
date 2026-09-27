@@ -5,6 +5,128 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] "DocWurlyMakesItLive" - 2026-09-27
+
+**Dedicated to Doc Wurly** ([docwurly.com](https://docwurly.com)), with our
+deepest thanks.
+
+This release exists because a working 200A technician gave his time and
+expertise freely and at length. Over long phone calls, emails, texts, voice
+messages and narrated videos he answered question after question about how
+these instruments are really built and how they really behave. He also
+photographed his own service manual for us, and has published years of
+careful Wurlitzer history on his site. The sound improvements below are a
+direct result. He pointed us away from the electronics and toward the
+physical parts: the reeds, the pickup, and where a reed sits in its pickup.
+That is where this release's work went, and it is the biggest step toward
+the real instrument this model has taken.
+
+What we learned from him, and where it went:
+
+- **Where each reed sits in its pickup.** The bass pickups are above their
+  reeds and the rest below, with each reed resting just outside the pickup's
+  fingers rather than centred between them. His videos show it in the bass
+  and the treble, along with the reed's shape and taper and the finger
+  thickness in each range. That geometry is this release's new pickup model,
+  and it decides which harmonics a note makes at every register and dynamic.
+- **The reed as a struck, mounted beam.** The strike line and why it
+  matters, reed shapes and widths by era, how the reed bar's mounting
+  changed over the years, and how washers move pitch. It informed the
+  per-reed hammer and beam models behind the new swing and loss figures, and
+  our understanding of how real instruments vary from unit to unit.
+- **Which drawing is which.** His service-manual photos confirmed the
+  schematic this model is built on and filled in the board layouts and
+  wiring around it.
+
+Every remaining error is ours, not his. Thank you, Doc.
+
+### Changed — the sound
+- **The pickup is modelled as it is built.** A 200A reed swings through a
+  slot between two pickup fingers; it does not face a plate. The parallel-
+  plate 1/(1-y) law is replaced by the overlap of reed and finger band,
+  field-solved in 2D for each pickup section, with the reed resting just
+  outside the band on the side the instrument puts it (below the bass
+  pickups, above the rest). The nonlinearity that shapes every note's
+  harmonics now comes from the geometry, not from a fitted curve. The SPICE
+  pickup deck runs the same law, generated from the plugin's tables, so the
+  two cannot drift apart.
+- **Reed swing from hammer physics.** How far each reed swings at the pickup
+  now comes from a bottom-up hammer-impact model of every reed (per-note
+  beam models solved to pitch, the action's dimensions from the service
+  manual). Where its inputs are uncertain, the ranges are stated in the
+  source and the pick rule was fixed before rendering. It replaces a
+  scaling fitted to recordings. Of two final swing tables, the one chosen
+  by ear sounded "more real".
+- **Amplitude-dependent reed loss.** Air drag on the moving reed makes
+  loud notes shed energy faster than soft ones, per note from the same
+  reed models (provisional; its drag coefficient is a stated band).
+- **Reed pitch no longer wanders at random.** A slow random drift on every
+  mode, ear-voiced in 0.2.0, is gone. Measured on two real 200As, their
+  partials hold pitch 12-18x more steadily than the drift allowed. Levels
+  and harmonic energy are unchanged; spectral lines are sharper and the slow
+  beating between modes is gone.
+- **Louder output.** The plugin was about 20 dB quieter than typical
+  instruments, more than many DAW faders can make up. It now applies a fixed
+  +14 dB after the whole chain: a level change only, with no change to how
+  any stage behaves. Playing at the defaults peaks around -6 to -10 dBFS. As
+  on the real amplifier, there is no over-protection: everything at maximum
+  with fortissimo chords can pass 0 dBFS. The DSP library's own output is
+  unchanged for hosts that embed it.
+
+### Removed
+- **Reed Bar Trim parameter.** R-11 is a factory service trimmer inside the
+  chassis. In series with the volume pot it acted only as a second volume
+  control (level-matched, the two settings null to -51 dB). It is held at
+  its factory default (17.2K); the DSP library keeps the setting for hosts
+  that want it. Sessions that moved it will play at a different level.
+
+### Changed — MLP corrections (default off)
+- **Retrained at the reference recordings' true pitch.** The reference
+  set's filenames run one octave above scientific pitch, so every earlier
+  training target measured each note's 2nd harmonic as its fundamental, at
+  a note an octave too high. The note map is corrected and the network
+  retrained. Measured correctly, the recordings' bass and middle register
+  carry far more 2nd harmonic than the model (see Known issues). The
+  correction that targeted that balance could only sit on its limit, so it
+  is retired; the network now adjusts only 2nd/3rd-partial tuning and decay.
+  The default sound is unaffected.
+
+### Changed — performance
+- **Opt-in melange preamp about 2x faster.** It no longer runs a second,
+  shadow solve every sample. The drawn topology removed the bias pump that
+  solve cancelled; renders with and without it differ by one 24-bit LSB.
+
+### Changed — testing and tools
+- **Aliasing gate by rate convergence.** Each test note is rendered at 44.1
+  and 176.4 kHz, and harmonic levels, high-band energy and off-grid energy
+  must agree. It holds with no stored baseline for every feature
+  configuration, and fixtures prove it catches both a numerically unstable
+  clipper and a hard clipper aliasing at the host rate.
+- New analysis tools: the 2D pickup field solver and its Rust/SPICE
+  emitters, the hammer swing prior, partial-wander and decay/swell checks,
+  a chain characterisation script, and render options for swing and drag
+  corners.
+
+### Fixed
+- Documentation: the pickup geometry (through-slot, no floor), the
+  side-clearance table against its source, US 2,919,616 attributed to
+  Miessner, schematic notes on the preamp's C-2 return and TR-1 emitter
+  mark, the README parameter table, and the level-anchor comment.
+
+### Known issues
+- **2nd harmonic in the bass and middle register.** At the reference
+  recordings' true pitch their 2nd harmonic sits 20-37 dB higher relative to
+  the fundamental than the model's, from D2 to about F#4; the treble agrees.
+  Whether that is the recording chain or missing physics is not yet known,
+  and the model is not tuned toward it.
+- The reeds' measured pitch glide over a note's decay is not yet modelled.
+- Absolute levels rest on an inferred calibration (the reed-bar signal level
+  and R-11's setting); a bench reading would settle both, and would reopen
+  the +14 dB output alignment and whether to expose R-11.
+- Loud playing is 5-9 dB quieter relative to soft than in 0.8.0, because
+  the new pickup law is linear in swing; the velocity curve predates it.
+- The behavioral amp's crossover shape and Miller pole (carried from 0.8.0).
+
 ## [0.8.0] "WeAreStardust" - 2026-09-23
 
 The gain-staging release: an end-to-end external circuit review of
@@ -1258,7 +1380,8 @@ derivation, real-instrument DC measurements) before any code moved.
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/hal0zer0/openwurli/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/hal0zer0/openwurli/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/hal0zer0/openwurli/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/hal0zer0/openwurli/compare/v0.6.1...v0.6.2

@@ -314,7 +314,7 @@ select a value. No source compares bass swing with treble swing, so the bass sit
 covering grading) and the bass finger thickness (a photo). Band ends travel with the pick. Bass:
 low = the all-inputs-low corner, high = the swell bound; treble: the grid's p10/p90.
 Bound confirmed on the band-end tables: the +1 dB swell edge sits g0 + t_p + 0.261/0.262/0.265 mm
-(t_p 1.08/1.275/1.44), inside voltron's ±0.05 of +0.28.
+(t_p 1.08/1.275/1.44), inside the physics reviewer's ±0.05 of +0.28.
 
 **Rule B results (as registered; level anchor unchanged, C4 v100 −55.64 dBFS at the preamp input).**
 Criterion 6 (bass swell): C2 central +0.03 dB (pass), low pass, high +1.58 dB peaking at 0.7 s
@@ -462,7 +462,7 @@ fundamental is strong from the start. Caveats: one unit, v≈80, voicing unknown
 + tube recording chain that, if compressive at that level, could lift the fundamental slightly as
 H2 decays. That is carried as a caveat, not a refutation (a linear chain cannot make a swell).
 
-**Criterion 6 re-registered (arbiter, 2026-09-26).** A falsifier that rejects the reference
+**Criterion 6 re-registered (evaluation referee, 2026-09-26).** A falsifier that rejects the reference
 instrument is wrong by construction: the old criterion (peak within 0.5 s, rise ≤ 3 dB) rejects
 the real unit, and its "the recordings show no rise" support was the octave error. Andersen's defect
 is a WEAK early fundamental ("a very strong harmonic … with a very weak fundamental", peaking up to
