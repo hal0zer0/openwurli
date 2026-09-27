@@ -27,7 +27,7 @@ const N_OUTPUTS: usize = 11;
 /// Mirrors `MAX_RELIABLE_HARMONIC` in `ml/compute_residuals.py`: only H2 and H3
 /// clear the SNR / anomaly filters on the reference set, so `freq_H4..H6` and
 /// `decay_H4..H6` have **zero** training samples — verified against
-/// `ml/ml_data/training_data.npz` (13/13 and 12/13 samples for H2/H3; 0/13 for
+/// `ml/ml_data/training_data.npz` (13/13 and 11/13 samples for H2/H3; 0/13 for
 /// H4, H5 and H6).
 ///
 /// An untrained head is not neutral. Its weights are whatever initialisation
@@ -45,9 +45,18 @@ const N_FREQ: usize = 5;
 const N_DECAY: usize = 5;
 const DS_IDX: usize = 10;
 
-/// Training data MIDI range. Outside this, corrections fade to identity.
-const TRAIN_MIDI_LO: f64 = 65.0;
-const TRAIN_MIDI_HI: f64 = 97.0;
+/// Whether the ds_correction head was trained. Mirrors `TRAIN_DS` in
+/// `ml/compute_residuals.py`: off since the true-pitch fix (2026-09-27), because
+/// the reference's H2/H1 gap to the model in the bass and mid register (20-37 dB)
+/// asks for 1.3x-77x, which a 0.7-1.05 clamp can only rail on. An untrained head
+/// emits identity, as for the harmonic heads above.
+const DS_TRAINED: bool = false;
+
+/// Training data MIDI range: the reference notes at their true pitch, D2-D6
+/// (MIDI 38-86; the recordings' filenames run an octave high, see
+/// `ml/extract_notes.py`). Outside this, corrections fade to identity.
+const TRAIN_MIDI_LO: f64 = 38.0;
+const TRAIN_MIDI_HI: f64 = 86.0;
 /// Fade zone: corrections reach zero this many semitones outside training range.
 const FADE_SEMITONES: f64 = 12.0;
 
@@ -76,7 +85,7 @@ impl MlpCorrections {
 
     /// Run the MLP forward pass and produce corrections.
     ///
-    /// Outside the training range (MIDI 65-97), corrections fade linearly
+    /// Outside the training range (MIDI 38-86), corrections fade linearly
     /// to identity over 12 semitones to prevent wild extrapolation.
     pub fn infer(midi_note: u8, velocity: f64) -> Self {
         if !ENABLE_MLP {
@@ -162,8 +171,12 @@ impl MlpCorrections {
         // Cost, measured at C5 v80: H2/H1 lift +1.11 dB (clamp 1.2) -> +0.42 dB
         // (clamp 1.05), against a raw H2 deficit of ~6 dB at that register —
         // the physics gap dominates either way.
-        let raw_ds = raw[DS_IDX].clamp(0.7, 1.05);
-        let ds_correction = 1.0 + (raw_ds - 1.0) * fade;
+        let ds_correction = if DS_TRAINED {
+            let raw_ds = raw[DS_IDX].clamp(0.7, 1.05);
+            1.0 + (raw_ds - 1.0) * fade
+        } else {
+            1.0
+        };
 
         Self {
             freq_offsets_cents,

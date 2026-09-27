@@ -19,24 +19,32 @@ from goertzel_utils import load_audio, extract_harmonics_fft, midi_to_freq
 
 
 # OBM file mapping: filename -> (MIDI note, actual frequency Hz)
-# From compare_ltas.py -- these are isolated single notes, gold-tier quality
+# From compare_ltas.py -- these are isolated single notes, gold-tier quality.
+#
+# TRUE PITCH (2026-09-27): the pack's filenames run one octave above
+# scientific pitch. Each recording carries a full harmonic series on half the
+# frequency its name implies (and "d7" cannot be a 200A note: the top key is
+# C7). The earlier map took the name's octave and refined f0 onto the true
+# 2nd harmonic, so every past OBM target read H2 as "H1" at the wrong note.
+# Entries are now name - 12 semitones at half the refined frequency; the
+# comments give the file name and the true note.
 OBM_DIR = os.path.join(os.path.dirname(__file__), "input",
                         "5726__oldbassman__wurlitzer-200a")
 
 OBM_FILES = {
-    "87994__oldbassman__d3.wav":  (50, 147.7),
-    "87998__oldbassman__f3.wav":  (54, 186.2),   # labeled F3, actually F#3
-    "87988__oldbassman__a3.wav":  (58, 233.8),   # labeled A3, actually Bb3
-    "87995__oldbassman__d4.wav":  (62, 293.8),
-    "87999__oldbassman__f4.wav":  (66, 370.8),   # labeled F4, actually F#4
-    "87989__oldbassman__a4.wav":  (70, 466.2),   # labeled A4, actually Bb4
-    "87992__oldbassman__d5.wav":  (74, 587.7),
-    "87993__oldbassman__f5.wav":  (78, 738.5),   # labeled F5, actually F#5
-    "87990__oldbassman__a5.wav":  (82, 932.3),   # labeled A5, actually Bb5
-    "87996__oldbassman__d6.wav":  (86, 1175.4),
-    "88000__oldbassman__f6.wav":  (90, 1481.5),  # labeled F6, actually F#6
-    "87991__oldbassman__a6.wav":  (94, 1863.1),  # labeled A6, actually Bb6
-    "87997__oldbassman__d7.wav":  (98, 2363.1),
+    "87994__oldbassman__d3.wav":  (38, 73.85),  # file "d3", true D2
+    "87998__oldbassman__f3.wav":  (42, 93.10),  # file "f3", true F#2
+    "87988__oldbassman__a3.wav":  (46, 116.90),  # file "a3", true Bb2
+    "87995__oldbassman__d4.wav":  (50, 146.90),  # file "d4", true D3
+    "87999__oldbassman__f4.wav":  (54, 185.40),  # file "f4", true F#3
+    "87989__oldbassman__a4.wav":  (58, 233.10),  # file "a4", true Bb3
+    "87992__oldbassman__d5.wav":  (62, 293.85),  # file "d5", true D4
+    "87993__oldbassman__f5.wav":  (66, 369.25),  # file "f5", true F#4
+    "87990__oldbassman__a5.wav":  (70, 466.15),  # file "a5", true Bb4
+    "87996__oldbassman__d6.wav":  (74, 587.70),  # file "d6", true D5
+    "88000__oldbassman__f6.wav":  (78, 740.75),  # file "f6", true F#5
+    "87991__oldbassman__a6.wav":  (82, 931.55),  # file "a6", true Bb5
+    "87997__oldbassman__d7.wav":  (86, 1181.55),  # file "d7", true D6
 }
 
 

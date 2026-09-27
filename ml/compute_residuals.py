@@ -55,6 +55,15 @@ SNR_THRESHOLD_DB = 10.0
 # H2 (idx 0) and H3 (idx 1) are potentially reliable; H4-H6 (idx 2-4) always masked
 MAX_RELIABLE_HARMONIC = 2  # Only H2 and H3 targets
 
+# Whether the ds_correction head is trained. OFF since the true-pitch fix
+# (2026-09-27): measured at the right octave, the reference's H2/H1 in the bass
+# and mid register sits 20-37 dB above the model's (H2 louder than H1 on D2-D4),
+# giving ds targets of 1.3x-77x against a runtime clamp of 0.7-1.05. A head that
+# can only rail on its clamp is not a correction, and whether the gap is the
+# recording chain or missing physics is unresolved. Masked, the head is untrained
+# and the runtime emits identity for it (mlp_correction.rs DS_TRAINED).
+TRAIN_DS = False
+
 
 def measure_interharmonic_snr(audio, sr, f0, onset_s, n_harmonics=8,
                                window_start=0.05, window_end=0.20):
@@ -234,7 +243,7 @@ def compute_note_residual(real_feat, model_feat, snr_db=None):
     # Therefore ds_correction = 2^(delta/6).
     # (v1 had 2^(-delta/6) — SIGN BUG that inverted the correction direction.)
     h2_idx = 1  # H2 in the harmonic array
-    if (real_dB[h2_idx] is not None and model_dB[h2_idx] is not None):
+    if (TRAIN_DS and real_dB[h2_idx] is not None and model_dB[h2_idx] is not None):
         # Check H2 SNR
         h2_snr_ok = True
         if snr_db is not None and h2_idx < len(snr_db):

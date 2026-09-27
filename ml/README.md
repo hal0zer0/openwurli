@@ -15,7 +15,7 @@ The physical model produces good spectral shape overall, but individual notes ha
 
 v2 removed amplitude offsets (harmonic-vs-mode domain mismatch) and fixed a sign bug in the displacement scale correction that had v1 pushing corrections in the wrong direction.
 
-**Training data:** 13 OBM isolated notes (MIDI 50-98, all velocity ~80, all gold tier) from [Freesound pack 5726](https://freesound.org/people/OldBassMan/packs/5726/) (CC-BY 4.0).
+**Training data:** 13 OBM isolated notes (D2-D6, MIDI 38-86 at their true pitch, all velocity ~80, all gold tier; the pack's filenames run one octave high, see below) from [Freesound pack 5726](https://freesound.org/people/OldBassMan/packs/5726/) (CC-BY 4.0).
 
 Note which stage-5 entry point you use: `pipeline.py` calls `assemble_dataset`
 without an SNR cache, so only the H4+ mask and the anomaly detector apply and
@@ -72,25 +72,47 @@ The final artifact is `crates/openwurli-dsp/src/mlp_weights.rs`, containing the 
 
 At note-on, `MlpCorrections::infer(midi, velocity)` runs the MLP forward pass and returns an `MlpCorrections` struct. The voice module applies these corrections to mode frequencies, decay rates, and displacement scale before synthesis begins.
 
-Outside the training range (MIDI 65-97), corrections fade linearly to identity over 12 semitones, ensuring graceful degradation at keyboard extremes.
+Outside the training range (MIDI 38-86), corrections fade linearly to identity over 12 semitones, ensuring graceful degradation at keyboard extremes.
 
 ## Training Details
 
-Shipped model (v0.8.0 retrain on the gain-staging chain, 2026-09-23): hidden
-16, 507 parameters, seed 7, chosen by sweeping {7, 42, 123, 999} at
+Shipped model (v0.9.0 retrain at the reference's true pitch, 2026-09-27):
+hidden 16, 507 parameters, seed 123, chosen by sweeping {7, 42, 123, 999} at
 `--epochs 3000 --lr 3e-3 --patience 150` (Huber delta 5.0, weight decay 1e-4)
-and taking the lowest validation loss (7: 0.0195 · 42: 0.0573 · 123: 0.0458 ·
-999: 0.0453). With only 13 observations `load_data` trains on all of them and
+and taking the lowest validation loss (7: 0.0473 · 42: 0.1132 · 123: 0.0217 ·
+999: 0.1124). With only 13 observations `load_data` trains on all of them and
 reports validation on the same set — the "validation" loss is a fit quality
 number, not a generalisation estimate.
 
-- Best loss: 0.0195 · freq_H2 1.14 cents MAE · decay_H2 0.47 ratio MAE ·
-  ds_corr 0.05 MAE (v0.7.0 model: 0.045 · 1.67 · 0.69 · 0.09)
+- Best loss: 0.0217 · freq_H2 0.93 cents MAE · decay_H2 0.10 ratio MAE ·
+  ds head not trained (see below). Not comparable with earlier releases' figures,
+  which were fitted to octave-shifted targets.
 - H4-H8 targets are always masked (below the OBM noise floor); H2/H3 are kept
-  subject to anomaly detection
-- Reproduce: `python pipeline.py --from-stage 4 --through-stage 5 --obm-only`,
-  then `train_mlp.py --hidden 16 --epochs 3000 --seed <s>`, then
+  subject to anomaly detection (H3: 11/13 notes survive)
+- Reproduce: `python pipeline.py --obm-only --through-stage 5` (all of stages
+  1-5: the harmonic extraction depends on the note map), then
+  `train_mlp.py --hidden 16 --epochs 3000 --seed <s>`, then
   `generate_rust_weights.py`, then `cargo fmt -p openwurli-dsp`
+
+### 2026-09-27 — true pitch, and the ds head retired
+
+The OBM pack's filenames run one octave above scientific pitch: every recording
+carries a full harmonic series on half the frequency its name implies (each true
+fundamental sits 47-91 dB above the floor), and "d7" cannot be a 200A note, whose
+top key is C7. The old note map took the name's octave and refined f0 onto the
+true 2nd harmonic, so every target before 0.9.0 read H2 as "H1", at a note an
+octave too high. `extract_notes.py` now maps each file to name − 12 semitones
+at half the refined frequency.
+
+At the true pitch the reference's H2/H1 in the bass and mid register sits
+20-37 dB above the model's: H2 is louder than H1 from D2 to about F#4 (+4 to
++9 dB, against the model's −10 to −28 dB), while the treble agrees within a
+few dB. The ds head's targets became 1.3x-77x against its 0.7-1.05 runtime
+clamp, so it could only rail. Whether the gap is the recording chain or
+missing physics is unresolved, and the model is not tuned toward it. The head
+is masked in training (`TRAIN_DS` in `compute_residuals.py`) and emits
+identity at runtime (`DS_TRAINED` in `mlp_correction.rs`). With corrections on,
+the network now adjusts only H2/H3 mode tuning and decay.
 
 ### Known limitations of the target set
 
@@ -133,9 +155,9 @@ SNR/anomaly filters. Verified against `ml_data/training_data.npz`:
 
 | head | training samples |
 |---|---|
-| `freq_H2` / `freq_H3` | 13 / 13 and 12 / 13 |
+| `freq_H2` / `freq_H3` | 13 / 13 and 12 / 13 (11 / 13 since the true-pitch fix) |
 | `freq_H4` / `H5` / `H6` | **0 / 13** |
-| `decay_H2` / `decay_H3` | 13 / 13 and 12 / 13 |
+| `decay_H2` / `decay_H3` | 13 / 13 and 12 / 13 (11 / 13 since the true-pitch fix) |
 | `decay_H4` / `H5` / `H6` | **0 / 13** |
 | `ds` | 13 / 13 |
 
