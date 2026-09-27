@@ -18,7 +18,8 @@ Circuit analysis, physics models, and DSP derivations for the 200A signal chain.
 | [Preamp Circuit](research/preamp-circuit.md) | Two-stage BJT preamp: component values, DC bias, feedback topology |
 | [DK Preamp Derivation](research/dk-preamp-derivation.md) | Discretization-K method: 8-node MNA, trapezoidal discretization, Sherman-Morrison |
 | [Output Stage](research/output-stage.md) | Power amplifier, tremolo/LDR feedback, speaker cabinet model |
-| [Pickup System](research/pickup-system.md) | Electrostatic pickup: 1/(1-y) nonlinearity, RC high-pass, capacitive coupling |
+| [Pickup Overlap Law](research/pickup-overlap-law.md) | The shipping pickup law: through-slot comb geometry, field-solved C(u) tables, numerics and resolution limits |
+| [Pickup System](research/pickup-system.md) | Electrostatic pickup: RC network, capacitive coupling (its 1/(1-y) geometry sections are superseded by the overlap law) |
 | [Reed and Hammer Physics](research/reed-and-hammer-physics.md) | Modal synthesis: Euler-Bernoulli beam theory, tip mass, dwell filter |
 
 ## Reference (`reference/`)

@@ -11,9 +11,9 @@
 > US 2,919,616 p.10 (in-plane → doubled frequency; offset → fundamental).
 > Capacitance vs displacement is therefore an **overlap law** (reed+lead thickness band
 > against the finger band, fringe-rounded), not `1/(1−y)`, and the load-bearing
-> unknown is the **rest offset** of the reed+lead against the band, not d₀. The shipping
-> model still uses `1/(1−y)`; a revision is planned. Sections below are kept as the
-> historical record until then.
+> unknown is the **rest offset** of the reed+lead against the band, not d₀. The model
+> now runs that law — see [pickup-overlap-law.md](pickup-overlap-law.md). Geometry and
+> `1/(1−y)` sections below are the historical record; the RC network sections still hold.
 
 ## Document Purpose and Audience
 
@@ -37,24 +37,33 @@ The U-channel geometry means each reed is surrounded by the pickup electrode on 
 
 ### 1.3 Reed-to-Plate Gap Dimensions
 
-Measured physical pickup slot widths from EP-Forum thread (140B/200 series, similar geometry):
+Measured reed and slot widths from one post on the Electric Piano Forum (topic 8418, "Wurlitzer 200
+Reed Dimensions", post #1, 2014-11-14), taken on **one 140B** (no serial, method not stated; the
+poster adds "I think the 200A reeds are thicker"). Side clearance is computed here from the posted
+widths:
 
 | Reed Range | Reed Width | Slot Width | Side Clearance (each) |
 |-----------|-----------|-----------|----------------------|
-| Reeds 1-14 (bass) | 0.151" (3.84 mm) | 0.172" (4.37 mm) | 0.0115" (0.29 mm) |
-| Reeds 15-20 | 0.127" (3.23 mm) | 0.145" (3.68 mm) | 0.009" (0.23 mm) |
-| Reeds 21-42 (mid) | 0.121" (3.07 mm) | 0.139" (3.53 mm) | 0.0075" (0.19 mm) |
-| Reeds 43-50 | 0.110" (2.79 mm) | 0.114" (2.90 mm) | ~0.002" (0.05 mm) |
-| Reeds 51-64 (treble) | 0.097" (2.46 mm) | 0.114" (2.90 mm) | 0.0085" (0.22 mm) |
+| Reeds 1-14 (bass) | 0.151" (3.84 mm) | 0.172" (4.37 mm) | 0.0105" (0.267 mm) |
+| Reeds 15-20 | 0.127" (3.23 mm) | 0.145" (3.68 mm) | 0.009" (0.229 mm) |
+| Reeds 21-42 (mid) | 0.121" (3.07 mm) | 0.139" (3.53 mm) | 0.009" (0.229 mm) |
+| Reeds 43-64 (treble) | 0.099" (2.51 mm) | 0.114" (2.90 mm) | 0.0075" (0.19 mm) |
 
-**Patent design specification (US 2,919,616, Miessner, 1960):** The pickup slot is specified as **"0.005 inch greater than the width of the associated reed, thereby providing a normal clearance gap of about 0.0025 inch on either side of the reed."** The patent also references spacing tools of ".002, .0025, .003 inch etc." for adjusting pickup sensitivity. The 0.0025"/side (0.064mm) design specification is tighter than the community-measured values above (0.002"-0.012"), likely reflecting manufacturing tolerances and differences between patent ideals and production reality.
+**Corrected 2026-09-26.** An earlier version of this table had transcription errors: 0.29 mm for
+reeds 1-14 (the post's own ".0115" does not follow from its widths), 0.19 mm for 21-42 (the 43-64
+value shifted up a row), and a split of 43-64 into 43-50 (0.05 mm) and 51-64 (0.22 mm). That split
+combined 200/200A reed widths from a different post (2016, micrometer: 43-50 .110", 51-64 .097") with
+the 140B's single treble slot; no slot was measured for those ranges separately. The 200A treble
+slot widths are therefore unknown. reed-and-hammer-physics.md already had the correct clearances.
+
+**Patent design specification (US 2,919,616, Miessner, 1960):** The pickup slot is specified as **"0.005 inch greater than the width of the associated reed, thereby providing a normal clearance gap of about 0.0025 inch on either side of the reed."** The patent also references spacing tools of ".002, .0025, .003 inch etc." for adjusting pickup sensitivity. The 0.0025"/side (0.064mm) design specification is tighter than the 140B measurement above (0.0075"-0.0105"); whether that reflects production reality, a model difference, or both is not established.
 
 **Critical note:** These are **slot widths** (lateral clearance), not the vertical gap between the reed face and the bottom of the slot. The vertical gap (d₀) is **not documented in any patent, service manual, or academic source** — confirmed by a 99-agent adversarial deep-research pass (2026-07). Service manual procedures describe voicing only qualitatively (reed flat-face coplanar with the pickup face; the over-loud remedy bends the pickup ends up 1/32″–1/16″), with no absolute gap dimension. **Correction:** an earlier version of this doc cited "Pfeifle's 1.5 mm (EP300)" as the only published d₀ — that is a **misattribution**. The Pfeifle DAFx-17 (2017) paper models the **EP200** (not EP300, not 200A), contains no "1.5 mm" and no rest-gap value at all, and reports its instrument's polarizing voltage as 170 V manual / 130 V measured. There is **no published d₀ for any Wurlitzer** that survives verification. The full provenance and the reason d₀ is *structurally* underdetermined (not merely unfound) live in **[Reed–Pickup Displacement](reed-pickup-displacement.md)**; `DISPLACEMENT_SCALE` absorbs the unknown as an OBM-calibrated constant.
 
 ### 1.4 Slot Width Ratios
 
 - Bass (reed 1) to treble (reed 64) slot width ratio: 0.172 / 0.114 = **1.51:1**
-- Bass to treble side clearance ratio: 0.0115 / 0.0085 = **1.35:1**
+- Bass to treble side clearance ratio (140B): 0.0105 / 0.0075 = **1.4:1**
 
 These ratios constrain any register-dependent gap scaling model. The current OpenWurli model uses `2^((60-key)/60)` which gives a ratio of ~1.74:1 across the keyboard — moderately steeper than the measured 1.51:1 slot width ratio.
 

@@ -140,7 +140,7 @@ Source: Wikipedia (Wurlitzer electronic piano), Abbey Road Institute blog, multi
 
 **The "bark breakpoint":**
 The transition from clean to distorted is not gradual -- it has a knee around velocity 0.6 (MIDI ~76). Below this point, the sound warms up gently. Above it, harmonic distortion increases rapidly. This is because:
-1. The reed's displacement approaches the pickup gap at higher velocities, increasing the 1/(1-y) nonlinearity (primary H2 source)
+1. The reed swings deeper into the pickup's finger band at higher velocities, increasing the pickup nonlinearity (primary H2 source)
 2. At extreme dynamics, the preamp also enters saturation, adding further H2 from its asymmetric headroom
 
 The abruptness of this knee is what musicians call "bark." A model with a smooth, linear velocity-to-distortion curve will sound "flat" or "lifeless" even if the steady-state spectrum matches perfectly.
@@ -207,7 +207,7 @@ Based on Improv source (G3, MIDI 55) and extrapolated from physics:
 | f (vel 80-100) | +1 to +4 dB | +2 to +5 dB stronger | Pronounced bark |
 | ff (vel 100-127) | +4 to +8 dB | +5 to +8 dB stronger | Aggressive growl/bark |
 
-**Velocity-H2 coupling:** ~0.92 dB increase in H2/H1 per 1 dB increase in signal level. This is the pickup's 1/(1-y) nonlinearity at work — larger displacement means more H2, and the preamp adds to it at higher levels.
+**Velocity-H2 coupling:** ~0.92 dB increase in H2/H1 per 1 dB increase in signal level. This is the pickup nonlinearity at work — larger displacement means more H2, and the preamp adds to it at higher levels.
 
 **Non-negotiable:** H2 must exceed H3 at ALL velocities. If ff produces H3>H2, the saturation model is wrong (likely using symmetric function like tanh instead of asymmetric exponential).
 
@@ -221,7 +221,9 @@ Level:     0 dB      -11 dB  -28 dB  -35 dB  -42 dB  -48 dB
            (ref)     (strong) (weak)  (very weak) ...decreasing...
 ```
 
-The spectrum is NOT a smooth rolloff. The H2 "bump" above the otherwise decreasing harmonic series is the signature of the pickup's 1/(1-y) nonlinearity (with additional contribution from the preamp at high dynamics). The spectral envelope should approximate:
+> **Note (2026-09):** this expected spectrum and the "H2 must exceed H3" rule above were written for the parallel-plate `1/(1-y)` pickup, which forces H3/H1 = (H2/H1)². The overlap law ([pickup-overlap-law.md](../research/pickup-overlap-law.md)) predicts a one-sided source with strong H4/H6 once the reed is fully inside the finger band, and H3 above H2 if it reaches the band's far side. Treat both as trend expectations to re-derive after the swing scale is calibrated, not as gates.
+
+The spectrum is NOT a smooth rolloff. The H2 "bump" above the otherwise decreasing harmonic series is the signature of the pickup nonlinearity (with additional contribution from the preamp at high dynamics). The spectral envelope should approximate:
 - H2/H1 ~ -11 dB (H2 from pickup nonlinearity + preamp asymmetry)
 - H_n/H1 ~ -7*n dB for n>=3 (approximately exponential rolloff)
 
@@ -334,7 +336,7 @@ Based on musician feedback (KVR Audio forums, Gearspace, VI-Control, AudioThing 
 
 | Priority | What the Ear Cares About | What FFT Shows | Correlation |
 |----------|--------------------------|----------------|-------------|
-| 1 | Velocity-to-bark transition smoothness | H2/H1 vs velocity curve | MODERATE -- H2/H1 correlates with perceived bark, but the SHARPNESS of the transition (the knee) is not captured by steady-state spectrum |
+| 1 | Velocity-to-bark transition smoothness | H2/H1 vs velocity curve | MODERATE -- ASSUMED (unsourced) that H2/H1 correlates with perceived bark, but the SHARPNESS of the transition (the knee) is not captured by steady-state spectrum |
 | 2 | Attack "feel" -- percussive but not clicky | Overshoot dB, spectral flatness | LOW -- overshoot dB can be correct but still sound wrong if temporal shape is unnatural |
 | 3 | Warmth vs harshness of distortion | H2/H3 ratio, THD | MODERATE -- H2>H3 is necessary for warmth, but the shape of the nonlinearity matters more than the ratio |
 | 4 | Register variation (bass/mid/treble character) | Spectral envelope by register | MODERATE -- overall spectral shape correlates, but timbral "character" is multi-dimensional |
@@ -376,7 +378,7 @@ From the design evaluation document (musician evaluator):
 | Metric | What It Measures | Why It Correlates | Caveat |
 |--------|-----------------|-------------------|--------|
 | H2>H3 compliance | Even harmonic dominance | Directly audible as warm vs harsh distortion | Must be checked at ALL velocities, not just mf |
-| H2/H1 vs velocity slope | Bark-velocity coupling strength | ~0.92 dB/dB is the target; too flat = lifeless, too steep = harsh | Steady-state only; says nothing about the attack |
+| H2/H1 vs velocity slope | Bark-velocity coupling strength (assumes bark = H2; unsourced) | ~0.92 dB/dB was the target; too flat = lifeless, too steep = harsh | Steady-state only; says nothing about the attack |
 | Spectral centroid drift (atk->sus) | Timbral darkening | Directly audible as "percussive bell -> warm sustain" | Only valid for atk-to-300ms, not late sustain |
 | Decay rate by register | Sustain envelope shape | Wrong decay is immediately audible (too long = organ, too short = pluck) | Must check MULTIPLE registers, not just C4 |
 | Dynamic range (pp to ff dBFS) | Velocity response range | Should be 20-30 dB; < 10 dB means velocity compression | Must be measured POST-preamp including all gain stages |
@@ -422,8 +424,8 @@ This happened in Round 40 of this project. Root cause analysis:
 
 | Source | Type | Quality | Location | Use For |
 |--------|------|---------|----------|---------|
-| OldBassMan 200A (Freesound 5726) | 13 isolated notes | 48kHz/24bit, Lundahl+tube chain | [Freesound #5726](https://freesound.org/people/oldbassman/packs/91/) | Harmonic ratios, decay rates, spectral evolution. PRIMARY calibration source. |
-| Unplugged 200A (Pianobook) | 3 dynamic layers x 2 RR | 48kHz/24bit stereo | Pianobook free download | Multi-velocity comparison, attack character |
+| OldBassMan 200A (Freesound 5726) | 13 isolated notes | 48kHz/24bit, Lundahl+tube chain | [Freesound #5726](https://freesound.org/people/oldbassman/packs/5726/) | Harmonic ratios, decay rates, spectral evolution. PRIMARY calibration source. |
+| Unplugged 200A (Pianobook) | 3 dynamic layers x 2 RR, ACOUSTIC (unplugged: room mics, no pickup/preamp/DI; noise-reduced) | 48kHz/24bit stereo | Pianobook free download | NOT an electric reference; candidate for the reed's own acoustic decay per note |
 | VReeds (Acoustic Samples) | Multi-velocity DI + speaker | Commercial | acousticsamples.net | DI recording reference (no recording chain coloration) |
 | PM-200 (Puremagnetik) | Hi-res multi-velocity | Commercial | puremagnetik.com | Detailed velocity layering reference |
 | Keyboard Waves 200A | Multi-velocity samples | Commercial | keyboardwaves.com | Through original preamp/components |
@@ -679,7 +681,7 @@ These differentiate a good model from a mediocre one:
 
 ### 11.3 Pitfall: Symmetric Nonlinearity Producing Correct THD
 
-**What happens:** `tanh(x)` produces reasonable THD levels but generates only odd harmonics (H3, H5, H7). The ear perceives this as "harsh" or "buzzy" rather than "warm" or "barky."
+**What happens:** `tanh(x)` produces reasonable THD levels but generates only odd harmonics (H3, H5, H7). The ear perceives this as "harsh" or "buzzy" rather than "warm" or "barky." (Unsourced claim from the tanh/1/(1-y) era. Which harmonics carry "bark" has not been established; do not use this to rule out odd harmonics.)
 
 **How to detect:** Always check H2/H3 ratio, never just THD. If H3 > H2 at any velocity, the nonlinearity is symmetric and must be replaced with an asymmetric function.
 

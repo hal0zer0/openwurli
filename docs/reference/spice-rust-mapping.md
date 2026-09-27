@@ -10,7 +10,7 @@ Each row maps a circuit block from schematic → SPICE netlist → Rust implemen
 
 | Circuit Block | Schematic Ref | SPICE File(s) | Rust File(s) | Key Equations | Notes |
 |---|---|---|---|---|---|
-| **Electrostatic pickup** | Pickup plate, reed | `spice/subcircuits/pickup.cir`, `spice/testbench/tb_pickup.cir` | `pickup.rs` | `C(y) = C₀/(1-y)`, `v = dC/dt · V_pol` | 1/(1-y) is primary bark source |
+| **Electrostatic pickup** | Pickup comb, reed | `spice/subcircuits/pickup.cir` + generated `pickup_law.inc`, `spice/testbench/tb_pickup.cir` | `pickup.rs` + generated `pickup_tables.rs` | `C(u) = C₀·(1 + law(u) − law(rest))`, `i = V_pol · dC/dt`; both laws generated from one field solve by `tools/pickup_field2d.py` | Overlap law is primary bark source; SPICE vs plugin harmonics agree ≤0.1 dB |
 | **Preamp Stage 1 (TR-1)** | TR-1 (2N5089), Rc1=150K, Re1=33K | `spice/subcircuits/preamp.cir`, `spice/testbench/preamp_emitter_fb.cir` | `dk_preamp/` (melange adapter, default), `dk_preamp_legacy.rs` (hand-written 8-node) | Ebers-Moll: `Ic = Is(e^(Vbe/Vt) - 1)` | Headroom: 2.05V sat / 10.9V cutoff (5.3:1) |
 | **Preamp Stage 2 (TR-2)** | TR-2 (2N5089), Rc2=1.8K, Re2a=270Ω, Re2b=820Ω | Same as above | Same as above | Direct-coupled from TR-1 collector | Headroom: 5.3V sat / 6.2V cutoff (1.17:1) |
 | **Miller caps (C-3, C-4)** | C-3=100pF (TR-1), C-4=100pF (TR-2) | `spice/testbench/tb_variable_gbw.cir` | `dk_preamp.rs` (inner loop) | Trapezoidal companion: `i = g_c·v + J_prev` | Forms inner BW-controlling feedback loop |
@@ -208,7 +208,7 @@ fix touches the preamp.
 |---|---|
 | `crates/openwurli-dsp/src/dk_preamp/` | Preamp (legacy 8-node default since v0.5.2; melange 12-node via --features melange-preamp) |
 | `crates/openwurli-dsp/src/preamp.rs` | PreampModel trait |
-| `crates/openwurli-dsp/src/pickup.rs` | Electrostatic pickup: 1/(1-y) + HPF |
+| `crates/openwurli-dsp/src/pickup.rs` | Electrostatic pickup: field-solved overlap law + HPF |
 | `crates/openwurli-dsp/src/gen_power_amp.rs` | Melange-generated 7-BJT Class AB solver (default) |
 | `crates/openwurli-dsp/src/power_amp.rs` | Adapter + `--features legacy-power-amp` behavioral NR fallback |
 | `crates/openwurli-dsp/src/gen_tremolo.rs` | Melange-generated Twin-T oscillator (default) |

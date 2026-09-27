@@ -382,7 +382,7 @@ A_n / A_1 = omega_1 / omega_n = f_1 / f_n = 1 / (f_n/f_1)
 
 This scaling is consistent with the observation from multiple sources that "only the first few modes of vibration have significantly large values, and the higher order vibration modes can be ignored" for struck cantilever beams.
 
-> **Deployed code uses OBM-calibrated values:** `[1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. The theoretical 1/omega predictions above are 20-37 dB too hot compared to real Wurlitzer 200A recordings (OldBassMan data). Real Wurlitzer reeds have solder tip mass and non-uniform geometry that suppress upper modes far below ideal Euler-Bernoulli theory. The "bark" character comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental frequency, NOT from physical mode 2 at 6.3x the fundamental. The theoretical values are retained here for reference.
+> **Deployed code uses OBM-calibrated values:** `[1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. The theoretical 1/omega predictions above are 20-37 dB too hot compared to real Wurlitzer 200A recordings (OldBassMan data). Real Wurlitzer reeds have solder tip mass and non-uniform geometry that suppress upper modes far below ideal Euler-Bernoulli theory. The "bark" character comes from the pickup's nonlinearity generating H2 at 2x the fundamental frequency, NOT from physical mode 2 at 6.3x the fundamental. The theoretical values are retained here for reference.
 
 Source: [MEMS 431 Lab](https://classes.engineering.wustl.edu/mems431_lab/lab6.html), modal analysis theory
 
@@ -409,7 +409,7 @@ For mu > 0, the 1/omega_n scaling becomes approximately 1/omega_n^(1+delta) wher
 | 6 | 0.0007 | 0.012 | 0.058x (-25 dB) |
 | 7 | 0.0005 | 0.0084 | 0.060x (-24 dB) |
 
-The deployed code uses OBM-calibrated amplitudes that are 24-37 dB below the theoretical 1/omega prediction. This dramatic reduction was validated against OldBassMan Wurlitzer 200A recordings. Real Wurlitzer reeds (with solder tip mass and non-uniform geometry) suppress upper modes far below ideal cantilever beam theory. The spectral centroid ratio improved from 4.89x (1/omega values) to 1.42x (OBM target: 1.14x). Bark comes from the pickup's 1/(1-y) nonlinearity, not from physical mode energy.
+The deployed code uses OBM-calibrated amplitudes that are 24-37 dB below the theoretical 1/omega prediction. This dramatic reduction was validated against OldBassMan Wurlitzer 200A recordings. Real Wurlitzer reeds (with solder tip mass and non-uniform geometry) suppress upper modes far below ideal cantilever beam theory. The spectral centroid ratio improved from 4.89x (1/omega values) to 1.42x (OBM target: 1.14x). Bark comes from the pickup's nonlinearity, not from physical mode energy.
 
 ---
 
@@ -924,7 +924,7 @@ The dominant nonlinearity in the Wurlitzer is the preamp, not the reed vibration
 
 **STATUS: Dramatically recalibrated to OBM values (20-37 dB reduction from theory).**
 
-The old 1/omega-like scaling (bass modes: 0.35, 0.10, 0.030...) was 24-37 dB too hot compared to real Wurlitzer 200A recordings. Deployed OBM-calibrated values: `[1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. Bark comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental, NOT from physical mode 2 at 6.3x the fundamental. See Section 3.2 and Section 3.4 for details.
+The old 1/omega-like scaling (bass modes: 0.35, 0.10, 0.030...) was 24-37 dB too hot compared to real Wurlitzer 200A recordings. Deployed OBM-calibrated values: `[1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]`. Bark comes from the pickup's nonlinearity generating H2 at 2x the fundamental, NOT from physical mode 2 at 6.3x the fundamental. See Section 3.2 and Section 3.4 for details.
 
 ### 7.5 Attack Transient
 

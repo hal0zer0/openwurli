@@ -3,7 +3,8 @@
 * Wires all four subcircuits: Pickup -> Preamp -> Power Amp -> Speaker
 *
 * Signal chain:
-*   Reed displacement (sine) -> Pickup (B-source variable cap, plate
+*   Reed swing at the pickup (sine, mm) -> Pickup (overlap-law variable
+*   cap, plate
 *   node) -> R-1 (22K) -> Preamp (owns R-2 1MEG, C-1 0.022uF, C-2;
 *   2-stage CE with feedback) ->
 *   Volume pot (3K wiper Z) -> Power Amp (Class AB, ±22.5V) ->
@@ -47,10 +48,11 @@ Vneg   vn_node    0    DC -22.5
 * ============================================================
 * PICKUP
 * ============================================================
-Xpickup  plate  reed_disp  0  wurli_pickup
-
-* Reed displacement source
-Vdisp  reed_disp  0  DC 0 SIN(0 0.10 440 0 0)
+Xpickup  plate  reed_disp  0  wurli_pickup sec=3 sign=-1
+* Reed swing at the pickup, mm as volts (2026-09-25 overlap law). Drive levels are
+* fixed test swings: 0.20 mm (mid) and 0.45 mm (loud). The plugin's provisional ff swing
+* at C4 is 1.19 mm (tables::pickup_swing_mm, 2026-09-26); these stay as test levels.
+Vdisp  reed_disp  0  DC 0 SIN(0 0.20 440 0 0)
 
 * ============================================================
 * R-1: Series input resistor (external to both pickup and preamp)
@@ -127,12 +129,12 @@ print v(plate) v(preamp_in) v(preamp_out) v(vol_wiper) v(spkr_out)
 reset
 
 * ----------------------------------------------------------
-* 2. TRANSIENT: Normal playing level (y=0.10, 440 Hz, no tremolo)
+* 2. TRANSIENT: Normal playing level (0.20 mm, 440 Hz, no tremolo)
 * ----------------------------------------------------------
 echo ""
-echo "=== TRANSIENT: y=0.10, 440 Hz, Rldr=1M (no tremolo) ==="
+echo "=== TRANSIENT: 0.20 mm, 440 Hz, Rldr=1M (no tremolo) ==="
 
-alter @vdisp[sin] = [ 0 0.10 440 0 0 ]
+alter @vdisp[sin] = [ 0 0.20 440 0 0 ]
 tran 1u 200m 100m 1u
 
 echo "Signal levels at each stage:"
@@ -152,9 +154,9 @@ reset
 * 3. TRANSIENT: Same but with tremolo bright (Rldr=19K)
 * ----------------------------------------------------------
 echo ""
-echo "=== TRANSIENT: y=0.10, 440 Hz, Rldr=19K (tremolo bright) ==="
+echo "=== TRANSIENT: 0.20 mm, 440 Hz, Rldr=19K (tremolo bright) ==="
 
-alter @vdisp[sin] = [ 0 0.10 440 0 0 ]
+alter @vdisp[sin] = [ 0 0.20 440 0 0 ]
 alter rldr = 19000
 tran 1u 200m 100m 1u
 
@@ -169,12 +171,12 @@ fourier 440 v(spkr_out)
 reset
 
 * ----------------------------------------------------------
-* 4. TRANSIENT: Fortissimo level (y=0.30, 440 Hz, no tremolo)
+* 4. TRANSIENT: Fortissimo level (0.45 mm, 440 Hz, no tremolo)
 * ----------------------------------------------------------
 echo ""
-echo "=== TRANSIENT: y=0.30, 440 Hz, Rldr=1M (fortissimo) ==="
+echo "=== TRANSIENT: 0.45 mm, 440 Hz, Rldr=1M (fortissimo) ==="
 
-alter @vdisp[sin] = [ 0 0.30 440 0 0 ]
+alter @vdisp[sin] = [ 0 0.45 440 0 0 ]
 tran 1u 200m 100m 1u
 
 meas tran pickup_pp PP v(plate) from=100m to=200m
@@ -191,11 +193,11 @@ reset
 * 5. FREQUENCY SWEEP: Signal level at speaker across frequencies
 * ----------------------------------------------------------
 echo ""
-echo "=== FREQUENCY SWEEP: y=0.10, Rldr=1M ==="
+echo "=== FREQUENCY SWEEP: 0.20 mm, Rldr=1M ==="
 echo "freq  spkr_pp"
 
 foreach freq_val 110 220 440 880 1760 3520
-  alter @vdisp[sin] = [ 0 0.10 $freq_val 0 0 ]
+  alter @vdisp[sin] = [ 0 0.20 $freq_val 0 0 ]
   tran 1u 200m 100m 1u
   meas tran spkr_pp PP v(spkr_out) from=100m to=200m
   reset

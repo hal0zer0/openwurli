@@ -89,7 +89,7 @@ Keypress
 - The preamp sees the combined signal from all reeds simultaneously
 - Polyphonic interaction happens at the electrical level, not the acoustic level
 
-**The pickup's 1/(1-y) nonlinearity is the primary source of even harmonics (H2) at normal dynamics.** SPICE simulation confirms H2/H1 ~ -21 dB (THD ~ 8.7%) from the pickup at mf (y=0.10), while the preamp at millivolt input levels produces THD < 0.01%. The preamp's asymmetric clipping headroom (2.05V vs 10.9V, ratio 5.3:1) contributes additional H2 at extreme ff dynamics where it enters saturation. Both the pickup and preamp contribute to the characteristic "bark," but the pickup dominates at normal playing levels.
+**The pickup's nonlinearity — the reed swinging into the finger band — is the primary source of even harmonics (H2) at normal dynamics.** The model's pickup tap reads H2/H1 ≈ −10 dB at C4 v64 (overlap law, 2026-09), while the preamp at millivolt input levels produces THD < 0.01%. The preamp's asymmetric clipping headroom (2.05V vs 10.9V, ratio 5.3:1) contributes additional H2 at extreme ff dynamics where it enters saturation. Both the pickup and preamp contribute to the characteristic "bark," but the pickup dominates at normal playing levels.
 
 **Direct coupling between stages is the defining preamp feature.** TR-1 collector connects directly to TR-2 base with no coupling capacitor. This means TR-1's DC operating point sets TR-2's bias. Signal-dependent bias modulation creates compression, transient sag, and velocity-dependent timbral change -- all absent from AC-coupled models.
 
@@ -107,7 +107,7 @@ MIDI note-on (key, velocity, channel, note_id)
        [B] Gaussian Dwell Filter (hammer contact time spectral shaping, sigma=8.0)
        [C] Attack Noise Burst (felt-on-steel impact, 2-5 ms)
        [D] Per-Note Variation (deterministic +-3 cents freq, +-8% amp)
-       [E] Electrostatic Pickup (1/(1-y) capacitive nonlinearity)
+       [E] Electrostatic Pickup (field-solved overlap law, capacitive)
      -> Sum all voices (mono)
 
   Mono shared processing:
@@ -135,7 +135,7 @@ MIDI note-on (key, velocity, channel, note_id)
 | Modal Oscillator | Yes (sinusoidal sum) | No (bandlimited by construction) | Base |
 | Dwell Filter | Yes (amplitude scaling at note-on) | No (runs once) | N/A |
 | Noise Burst | Yes (filtered noise, envelope) | No (broadband, no harmonics generated) | Base |
-| Pickup | NO (1/(1-y) nonlinearity, primary H2 source) | No (runs at base rate; harmonics stay within audio band) | Base |
+| Pickup | NO (overlap-law nonlinearity, primary H2 source) | No (runs at base rate; harmonics stay within audio band) | Base |
 | Voice Sum | Yes (addition) | No | Base |
 | Preamp Stage 1 | NO (exponential + asymmetric soft-clip) | YES | 2x |
 | Miller LPF 1 | Yes (1st order) | No (already at 2x) | 2x |
@@ -233,7 +233,7 @@ Base amplitudes (OBM-calibrated, single table for all registers, before dwell fi
 [1.0, 0.005, 0.0035, 0.0018, 0.0011, 0.0007, 0.0005]
 ```
 
-These are OBM-calibrated values derived from OldBassMan 200A recordings. The previous 1/omega_n Euler-Bernoulli values were 20-37 dB too hot vs OBM data. Real Wurlitzer reeds (solder tip mass, non-uniform geometry) suppress upper modes far below ideal beam theory. The characteristic "bark" (H2) comes from the pickup's 1/(1-y) nonlinearity generating H2 at 2x the fundamental, NOT from physical mode 2 at 6.3x the fundamental.
+These are OBM-calibrated values derived from OldBassMan 200A recordings. The previous 1/omega_n Euler-Bernoulli values were 20-37 dB too hot vs OBM data. Real Wurlitzer reeds (solder tip mass, non-uniform geometry) suppress upper modes far below ideal beam theory. The characteristic "bark" (H2) comes from the pickup's nonlinearity generating H2 at 2x the fundamental, NOT from physical mode 2 at 6.3x the fundamental.
 
 ### Velocity Scaling
 
@@ -246,7 +246,7 @@ Example values at mid-range (exp ~ 1.7):
 
 Timbral brightening at ff comes from two sources that do NOT require per-mode velocity exponents:
 1. Shorter dwell time at ff -> dwell filter passes more upper partials
-2. Pickup 1/(1-y) nonlinearity -> louder signal generates more harmonics
+2. Pickup nonlinearity -> a larger swing enters the finger band further and generates more harmonics
 
 Per-mode velocity exponents double-count with the dwell filter's velocity-dependent brightening. Do not use per-mode exponents.
 
@@ -430,54 +430,44 @@ This is a nuanced point with significant implications:
 - **Per-reed RC corner:** f_c = 1/(2*PI*287k*10pF) >> 20 kHz -> constant-charge at all audio frequencies
 - **System RC corner:** f_c ≈ 880 Hz (revised 2026-09 — one-pole fit to the corrected network; the old 287K/2312 Hz figure was built on the misread bias divider; see pickup-system.md §3.7)
 
-The per-reed constant-charge approximation is a defensible engineering tradeoff given the ≈880 Hz system corner. The pickup model places the full 1/(1−y) nonlinearity in the SOURCE (the moving reed's charge injection — 2026-09 restructure), which is the primary source of even-harmonic "bark" at normal dynamics.
+The per-reed constant-charge approximation is a defensible engineering tradeoff given the ≈880 Hz system corner. The pickup model places its nonlinearity in the SOURCE (the moving reed's charge injection — 2026-09 restructure), and that source is the primary origin of even-harmonic "bark" at normal dynamics.
 
-### 1/(1-y) Nonlinear Pickup Model
+### Overlap Pickup Law (2026-09 revision)
 
-The reed-plate capacitance varies as C(y) = C_0 / (1-y), where y = x/d_0 is the normalized displacement fraction. This produces a signal voltage proportional to y/(1-y), which is the primary source of even-harmonic "bark":
+The 200A pickup is a through-slot comb: each reed swings between two fingers across a small side clearance, resting just outside the finger band (about a sheet of paper; bass reeds below it, treble reeds above). Capacitance follows the reed-to-finger **overlap**, fringe-rounded at the band edges. It is a field-solved table per keyboard section, not the parallel-plate `C₀/(1−y)` used before. Full spec: [pickup-overlap-law.md](pickup-overlap-law.md).
 
 ```rust
-// Convert reed model displacement to physical fraction y = x/d_0
-let y = (sample * displacement_scale).clamp(-MAX_Y, MAX_Y);
-
-// Nonlinear capacitance: C(y) = C_0/(1-y) → signal ∝ y/(1-y)
-// Positive y (toward plate) amplified more than negative → generates H2
-let nonlinear = y / (1.0 - y);
-
-// Scale to voltage: V = V_hv * C_0/(C_0+C_p) * y/(1-y)
-let v = nonlinear * SENSITIVITY;   // SENSITIVITY = 1.8375 V
-
-// Pickup network: source-injected 1/(1-y) + ~LTI one-pole at PICKUP_FC ≈ 880 Hz
-let output = hpf.process(v);       // (illustrative; see pickup.rs for the exact discretization)
+// u = penetration past the near finger face (mm); rest sits just outside the band
+let u = band_sign * amplitude_mm * sample - PICKUP_REST_OFFSET_MM;
+// Source: the section's field-solved law, zero at rest. THE nonlinearity.
+let s = law.eval(u) - c_rest;
+// Network: one moving reed on a ~240 pF node, ~LTI one-pole high-pass at PICKUP_FC ≈ 880 Hz
+// (exact trapezoidal discretization — see pickup.rs)
 ```
 
-The 1/(1-y) nonlinearity generates H2 that scales with displacement amplitude:
-- y=0.02 (pp): THD 1.7%, H2 = -35 dB
-- y=0.10 (mf): THD 8.7%, H2 = -21 dB
-- y=0.20 (f): THD 17.6%, H2 = -15 dB
+The reed enters the band on one half of its swing only, so the source is strongly one-sided and even harmonics dominate. At the pickup tap for C4 (after the HPF), H2/H1 is −27 dB at v20, −10 dB at v64, −7 dB at v100 and −6.5 dB at v127. The law is linear in swing up to about 0.45 mm, so bark grows with how deep the reed enters the band, not with a singularity.
 
-The HPF also amplifies H2 relative to H1 (since H2 is at 2f, where the HPF has higher gain), adding ~1.9x boost to the H2/H1 ratio.
+### Swing Scale
 
-### Displacement Scale
-
-The `displacement_scale` parameter converts reed model output (normalized, fundamental amplitude = 1.0) to the physical displacement fraction y = x/d_0. It is the single biggest tuning knob for bark intensity and is set per-note from `tables::pickup_displacement_scale()`:
+Per-note ff swing at the pickup (mm) = `tables::pickup_swing_mm(midi)`, a **PROVISIONAL** table from a bottom-up hammer-impact model (reed mass and frequency per note; hammer mass, ff hammer speed from the service manual's action dimensions, restitution and contact factor at the geometric centre of their bands). The velocity curve scales it down from ff.
 
 ```
-displacement_scale(midi) = DS_AT_C4 * (compliance(midi) / compliance(60))^DS_EXPONENT
-// compliance = L^3 / (w * t^3)  (beam compliance from reed dimensions)
-// DS_AT_C4 = 0.75, DS_EXPONENT = 0.75, clamp [0.02, 0.82]
+A1 0.99 mm | C3 0.95 | E3 0.88 || F3 1.25 | C4 1.19 | C5 0.82 | C6 0.45 | C7 0.22
+(bass: Rule B stopgap inside the fundamental-swell bound, see pickup-overlap-law.md §8;
+ band ends carried alongside)
 ```
 
-Bass reeds have wider gaps and larger displacements; treble reeds have tighter gaps. The compliance-ratio curve captures this register dependence — longer, thinner bass reeds are more compliant and deflect further relative to their gap.
+It replaced the recording-fitted `DS_AT_C4 × compliance^0.75` scaling, whose C4 anchor (0.45 mm) sat below every plausible hammer-physics combination. The velocity curve is still recording-fitted and goes with the excitation revision (hammer–felt contact integration).
 
 ### Parameters
 
-| Parameter | Default | Range | Purpose |
-|-----------|---------|-------|---------|
-| `displacement_scale` | Per-note (DS_AT_C4=0.75) | 0.02-0.82 | Converts model units to physical y = x/d_0 |
-| `MAX_Y` | 0.98 | — | Safety clamp (y=1.0 is a singularity; RC model self-limits via charge dynamics) |
-| `SENSITIVITY` | 1.8375 V | — | V_hv * C_0 / (C_0 + C_p) = 147 * 3/240 |
-| HPF corner | 2312 Hz | — | 1-pole HPF from pickup RC (R_total=287K, C=240pF) |
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `pickup_swing_mm` | per note (C4 1.19 mm) | Provisional ff swing at the pickup, bottom-up; replaced by bench measurements |
+| `PICKUP_REST_OFFSET_MM` | 0.085 | Rest offset outside the finger band (0.07–0.10 mm evidence band) |
+| Section laws | bass 1–20, middle 21–42, treble 43–64 | Field-solved C(u), generated by `tools/pickup_field2d.py` |
+| `PICKUP_SENSITIVITY` | 1.8375 V | V_pol · C_REED0 / C_TOTAL = 147 · 3/240 |
+| `PICKUP_FC` | ≈880 Hz | One-pole fit to the drawn input network (C_TOTAL + C-2) |
 
 ---
 
@@ -503,7 +493,7 @@ At mf with a single voice, the summed output is approximately 0.05-0.15 (arbitra
 
 ## 10. Stage 8: Oversampling and Preamp (Mono, 2x Rate)
 
-This is the most complex processing stage. The preamp adds harmonic coloring at high dynamics and provides the tremolo-modulated gain that defines the instrument's character. (The pickup's 1/(1-y) nonlinearity is the primary bark source at normal dynamics; the preamp contributes at extreme ff.)
+This is the most complex processing stage. The preamp adds harmonic coloring at high dynamics and provides the tremolo-modulated gain that defines the instrument's character. (The pickup's nonlinearity is the primary bark source at normal dynamics; the preamp contributes at extreme ff.)
 
 ### DECISION: Trait-Based A/B Architecture
 
@@ -908,7 +898,7 @@ SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo, 12.1 dB (4.0x) a
 
 Only the preamp requires oversampling. It is the only significantly nonlinear stage that generates harmonics above the input signal's bandwidth.
 
-The pickup's 1/(1-y) nonlinearity generates harmonics but does so at the base sample rate; its output bandwidth stays within the audio band. The output limiter operates on an already band-limited signal at low levels. The power amp crossover distortion generates only low-order odd harmonics at small signal levels.
+The pickup's nonlinearity generates harmonics but does so at the base sample rate; its output bandwidth stays within the audio band. The output limiter operates on an already band-limited signal at low levels. The power amp crossover distortion generates only low-order odd harmonics at small signal levels.
 
 ### Why 2x Is Sufficient
 
@@ -951,7 +941,7 @@ The oscillator is alias-free by construction: each mode is a pure sinusoid at a 
 
 ### Pickup Nonlinearity
 
-The 1/(1-y) pickup model generates significant even harmonics (H2/H1 ~ -21 dB at mf) but these are low-order harmonics within the audio band. Since the pickup operates at the base sample rate and its harmonic content is bounded by the reed's modal frequencies, aliasing is not a concern.
+The pickup law generates significant even harmonics (H2/H1 ≈ −10 dB at C4 mf) but these are low-order harmonics within the audio band. Since the pickup operates at the base sample rate and its harmonic content is bounded by the reed's modal frequencies, aliasing is not a concern (checked 2026-09: pickup harmonics identical at 44.1 and 176.4 kHz to 0.1 dB).
 
 ### Preamp
 
@@ -1197,7 +1187,7 @@ This is the most complex and sonically important stage. Component values and top
 5. Implement emitter feedback path: R-10 (56K) -> fb_junction -> Ce1 (4.7µF) -> TR-1 emitter
 6. Validate DkPreamp gain against SPICE targets (2.0x no-trem, 4.0x trem-bright)
 
-**Test:** Verify H2 > H3 on all notes at mf. Check that pp is clean, mf has moderate bark, ff has aggressive bark. Check dynamic range: pp should be at least 15 dB quieter than ff. Cross-validate gain and THD against SPICE measurements.
+**Test:** (1/(1-y)-era expectation, unsourced — see calibration-and-evaluation.md §3 note) Verify H2 > H3 on all notes at mf. Check that pp is clean, mf has moderate bark, ff has aggressive bark. Check dynamic range: pp should be at least 15 dB quieter than ff. Cross-validate gain and THD against SPICE measurements.
 
 ### Phase 5: Post-Processing (1-2 days)
 

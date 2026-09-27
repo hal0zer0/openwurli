@@ -28,7 +28,7 @@ def load_csv(path):
 
 
 def ds_values(rows):
-    return sorted(set(r["ds_at_c4"] for r in rows))
+    return sorted(set(r["swing_scale"] for r in rows))
 
 
 def notes_in(rows):
@@ -59,7 +59,7 @@ def print_section(title):
 
 
 def analyze_single(rows):
-    """Analyze a single calibrate run (one DS value)."""
+    """Analyze a single calibrate run (one swing scale)."""
     notes = notes_in(rows)
     vels = velocities_in(rows)
 
@@ -134,20 +134,20 @@ def analyze_single(rows):
 
 
 def analyze_sensitivity(rows):
-    """Analyze a sensitivity sweep (multiple DS values)."""
+    """Analyze a sensitivity sweep (multiple swing scales)."""
     ds_vals = ds_values(rows)
     notes = notes_in(rows)
     vels = velocities_in(rows)
     max_vel = max(vels)
 
-    # 1. Register spread at each DS
-    print_section("Register Spread vs DS_AT_C4 (v={}, t3_rms_db)".format(max_vel))
-    print(f"  {'DS':>6}  {'Spread':>8}  {'Min Note':>8}  {'Max Note':>8}")
+    # 1. Register spread at each swing scale
+    print_section("Register Spread vs swing scale (v={}, t3_rms_db)".format(max_vel))
+    print(f"  {'Swing':>6}  {'Spread':>8}  {'Min Note':>8}  {'Max Note':>8}")
     print(f"  {'-' * 36}")
     best_ds = None
     best_spread = 999.0
     for ds in ds_vals:
-        ds_rows = [r for r in rows if abs(r["ds_at_c4"] - ds) < 1e-4 and int(r["velocity"]) == max_vel]
+        ds_rows = [r for r in rows if abs(r["swing_scale"] - ds) < 1e-4 and int(r["velocity"]) == max_vel]
         if not ds_rows:
             continue
         vals = [(r["t3_rms_db"], int(r["midi"])) for r in ds_rows]
@@ -162,13 +162,13 @@ def analyze_sensitivity(rows):
             f"  {midi_name(mn[1]):>8}  {midi_name(mx[1]):>8}"
         )
     if best_ds is not None:
-        print(f"\n  >>> Optimal DS_AT_C4 = {best_ds:.2f} (spread = {best_spread:.1f} dB)")
+        print(f"\n  >>> Lowest-spread swing scale = {best_ds:.2f} (spread = {best_spread:.1f} dB) — DIAGNOSTIC ONLY: swing is physics-set; register balance belongs to the output mapping")
 
-    # 2. New trim anchors at the optimal DS
+    # 2. New trim anchors at the lowest-spread swing scale
     if best_ds is not None:
-        print_section(f"Suggested Trim Anchors (DS={best_ds:.2f}, v={max_vel})")
+        print_section(f"Suggested Trim Anchors (swing scale={best_ds:.2f}, v={max_vel})")
         ds_rows = sorted(
-            [r for r in rows if abs(r["ds_at_c4"] - best_ds) < 1e-4 and int(r["velocity"]) == max_vel],
+            [r for r in rows if abs(r["swing_scale"] - best_ds) < 1e-4 and int(r["velocity"]) == max_vel],
             key=lambda r: int(r["midi"]),
         )
         if ds_rows:
@@ -199,8 +199,8 @@ def analyze_sensitivity(rows):
 
     # 3. Sensitivity coefficients: dt3_rms / d_ds per note
     if len(ds_vals) >= 3:
-        print_section(f"Sensitivity: d(t3_rms)/d(DS) per note (v={max_vel})")
-        print(f"  {'Note':>6}  {'MIDI':>4}  {'Slope (dB/0.1 DS)':>18}")
+        print_section(f"Sensitivity: d(t3_rms)/d(swing scale) per note (v={max_vel})")
+        print(f"  {'Note':>6}  {'MIDI':>4}  {'Slope (dB/0.1 scale)':>18}")
         print(f"  {'-' * 32}")
         for n in notes:
             points = []
@@ -208,7 +208,7 @@ def analyze_sensitivity(rows):
                 match = [
                     r
                     for r in rows
-                    if abs(r["ds_at_c4"] - ds) < 1e-4
+                    if abs(r["swing_scale"] - ds) < 1e-4
                     and int(r["midi"]) == n
                     and int(r["velocity"]) == max_vel
                 ]
@@ -224,13 +224,13 @@ def analyze_sensitivity(rows):
                 denom = n_pts * sxx - sx * sx
                 if abs(denom) > 1e-12:
                     slope = (n_pts * sxy - sx * sy) / denom
-                    # Report as dB per 0.1 DS change
+                    # Report as dB per 0.1 swing-scale change
                     print(f"  {midi_name(n):>6}  {n:>4}  {slope * 0.1:>18.2f}")
 
-    # 4. Dynamic range per note at each DS
+    # 4. Dynamic range per note at each swing scale
     if len(vels) >= 2:
         min_vel = min(vels)
-        print_section(f"Dynamic Range vs DS (ff={max_vel}, pp={min_vel})")
+        print_section(f"Dynamic Range vs swing scale (ff={max_vel}, pp={min_vel})")
         header = f"  {'Note':>6}"
         for ds in ds_vals:
             header += f"  {ds:.2f}"
@@ -242,14 +242,14 @@ def analyze_sensitivity(rows):
                 ff = [
                     r
                     for r in rows
-                    if abs(r["ds_at_c4"] - ds) < 1e-4
+                    if abs(r["swing_scale"] - ds) < 1e-4
                     and int(r["midi"]) == n
                     and int(r["velocity"]) == max_vel
                 ]
                 pp = [
                     r
                     for r in rows
-                    if abs(r["ds_at_c4"] - ds) < 1e-4
+                    if abs(r["swing_scale"] - ds) < 1e-4
                     and int(r["midi"]) == n
                     and int(r["velocity"]) == min_vel
                 ]
@@ -277,16 +277,16 @@ def main():
 
     ds_vals = ds_values(rows)
     if len(ds_vals) > 1:
-        print(f"Sensitivity sweep: {len(ds_vals)} DS values")
+        print(f"Sensitivity sweep: {len(ds_vals)} swing scales")
         analyze_sensitivity(rows)
     else:
-        print(f"Single calibration: DS={ds_vals[0]:.2f}")
+        print(f"Single calibration: swing scale={ds_vals[0]:.2f}")
 
-    # Always show single-DS analysis for current/default DS
+    # Always show single-scale analysis for the current/default swing scale
     for ds in ds_vals:
-        ds_rows = [r for r in rows if abs(r["ds_at_c4"] - ds) < 1e-4]
+        ds_rows = [r for r in rows if abs(r["swing_scale"] - ds) < 1e-4]
         if len(ds_vals) > 1:
-            print_section(f"Detail for DS={ds:.2f}")
+            print_section(f"Detail for swing scale={ds:.2f}")
         analyze_single(ds_rows)
 
 

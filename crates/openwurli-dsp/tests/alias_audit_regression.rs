@@ -40,6 +40,25 @@ struct BaselineEntry {
 /// Hand-parsed baseline — small enough that a JSON dep isn't worth pulling in.
 /// Must stay in lockstep with `tests/baselines/alias_audit_v0_5_1.json`.
 ///
+/// REFRESHED 2026-09-26 (c) for the regenerated pickup tables (fixed solver fine region, lambda by
+/// h-convergence): step_up 72 8.525 -> 2.418 (improved: its H6 notch moved), 84/91 within 0.003;
+/// hf_band 72 -0.07 dB, 84/91 unchanged. No worsening.
+///
+/// REFRESHED 2026-09-26 (b) for the four-range (140B side gap) pickup tables and the swing prior
+/// reconditioned on criterion 6. step_up 72: 9.513 -> 8.525; 84: 5.096 -> 5.552; 91: 7.509 -> 8.321.
+/// hf_band: 72 +2.81 dB (over the 2.0 tolerance), 84 -0.39, 91 -0.02. Sign split at 72 (plateau fell,
+/// broadband rose). Not aliasing: note 72 at 44.1 and 176.4 kHz (Sensor, matched bin width) gives the
+/// same harmonic ladder (<= 0.3 dB) and the same inharmonic partials (-74.6 / -76.2 dBc, loudest
+/// 572 Hz in both): the extra HF is the source's own content.
+///
+/// REFRESHED 2026-09-26 for the pickup overlap-law revision (field-solved law, provisional
+/// bottom-up reed swing, mode-1 air drag). step_up 72: 2.980 -> 9.513; 84: 8.003 -> 5.096;
+/// 91: 9.631 -> 7.509. hf_band: 72 improved 6.0 dB, 84 +0.74, 91 -0.06. The note-72 rise is a
+/// notch at H6 (-75 dBc beside H7 -62 dBc): a conduction-angle cancellation of the one-sided law
+/// at the swing in the analysis window (it moved with the air-drag change). Not aliasing: note 72
+/// at 44.1 and 176.4 kHz gives the same H6/H7. Sign split as before: the broadband metric did not
+/// move with the plateau metric.
+///
 /// REFRESHED 2026-09-23 (b) for the Reed Bar Trim default (12.5K -> 17.2K,
 /// drive -1.3 dB at the canonical stimulus) and for speaker character 0
 /// becoming a true passthrough (the 20 Hz / 20 kHz bypass biquads no longer
@@ -78,18 +97,18 @@ struct BaselineEntry {
 const BASELINE: &[BaselineEntry] = &[
     BaselineEntry {
         note: 72,
-        max_step_up_db: 2.980,
-        hf_band_dbc: -48.751,
+        max_step_up_db: 2.418,
+        hf_band_dbc: -52.041,
     },
     BaselineEntry {
         note: 84,
-        max_step_up_db: 8.003,
-        hf_band_dbc: -44.558,
+        max_step_up_db: 5.549,
+        hf_band_dbc: -44.212,
     },
     BaselineEntry {
         note: 91,
-        max_step_up_db: 9.631,
-        hf_band_dbc: -40.699,
+        max_step_up_db: 8.322,
+        hf_band_dbc: -40.662,
     },
 ];
 
