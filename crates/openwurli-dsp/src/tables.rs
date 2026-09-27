@@ -410,10 +410,13 @@ impl Default for CalibrationConfig {
             swing_pick: SwingPick::Central,
             swing_scale: 1.0,
             air_drag_scale: 1.0,
-            // Level anchor: C4 v100 at the preamp input held where v0.8.0 put it (~18 mV, which
-            // also matches the physical estimate for the plate swing at TR-1, 147 V x dC/C_node).
-            // No evidence moves that level; the provisional swing changes timbre, not the
-            // anchor. Re-measured with tools/pickup_rev_metrics.py whenever the swing changes.
+            // Level anchor: C4 v100 at the preamp input held where v0.8.0 put it (~9.5 mV peak
+            // at onset, ~19 mV p-p; fundamental ~5.7 mV peak at 100-400 ms). That sits inside
+            // the physical estimate for the plate swing at TR-1 (147 V x dC/C_node), at the low
+            // end of its band; the band is too wide to move the anchor, and only a bench reading
+            // at TR-1's base settles the absolute level. The provisional swing changes timbre,
+            // not the anchor. Re-measured with tools/pickup_rev_metrics.py whenever the swing
+            // changes.
             target_db: -29.55,
             voicing_slope: -0.04,
             zero_trim: false,
