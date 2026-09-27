@@ -1,0 +1,101 @@
+{
+ "_about": "Clamp-slip glide per-note scaling K_note = omega^2 Q / (t_c L), per metre of swing, from the same finite-element reed blanks as the swing prior (thickness variants geometric-meaned; t_c = root thickness; solder solved to pitch; fixed screw force per reed, so width cancels). K_finger refers to swing at the pickup finger region (K_tip / phi_p). Supplied by the physics review, 2026-09-27. Above MIDI 72 the blank geometry does not reach pitch (known debt): K there is uncertain by up to 2x. Glide model: df/f = -c * K_finger * A_finger.",
+ "knots": {
+  "33": {
+   "K_tip": 164173.5,
+   "K_finger": 181691.4
+  },
+  "36": {
+   "K_tip": 193999.6,
+   "K_finger": 215798.0
+  },
+  "39": {
+   "K_tip": 231332.8,
+   "K_finger": 258790.5
+  },
+  "42": {
+   "K_tip": 278549.2,
+   "K_finger": 313605.8
+  },
+  "45": {
+   "K_tip": 338933.3,
+   "K_finger": 384371.3
+  },
+  "48": {
+   "K_tip": 350808.1,
+   "K_finger": 401188.5
+  },
+  "51": {
+   "K_tip": 443788.3,
+   "K_finger": 512668.6
+  },
+  "52": {
+   "K_tip": 482326.7,
+   "K_finger": 559312.5
+  },
+  "53": {
+   "K_tip": 731174.3,
+   "K_finger": 869270.5
+  },
+  "54": {
+   "K_tip": 761057.6,
+   "K_finger": 906256.5
+  },
+  "57": {
+   "K_tip": 862140.8,
+   "K_finger": 1031611.6
+  },
+  "60": {
+   "K_tip": 983857.2,
+   "K_finger": 1182940.4
+  },
+  "63": {
+   "K_tip": 1131866.5,
+   "K_finger": 1367337.8
+  },
+  "66": {
+   "K_tip": 1313681.7,
+   "K_finger": 1594186.3
+  },
+  "69": {
+   "K_tip": 1560929.6,
+   "K_finger": 1903097.5
+  },
+  "72": {
+   "K_tip": 2090887.2,
+   "K_finger": 2572674.6
+  },
+  "75": {
+   "K_tip": 2592911.2,
+   "K_finger": 3224385.8
+  },
+  "78": {
+   "K_tip": 3497687.3,
+   "K_finger": 4400886.4
+  },
+  "81": {
+   "K_tip": 4707131.2,
+   "K_finger": 6000590.2
+  },
+  "84": {
+   "K_tip": 5578409.7,
+   "K_finger": 7216211.2
+  },
+  "87": {
+   "K_tip": 7466434.4,
+   "K_finger": 9819419.8
+  },
+  "90": {
+   "K_tip": 9961446.0,
+   "K_finger": 13348938.1
+  },
+  "93": {
+   "K_tip": 13242355.3,
+   "K_finger": 18131435.5
+  },
+  "96": {
+   "K_tip": 17532144.9,
+   "K_finger": 24610162.3
+  }
+ }
+}
