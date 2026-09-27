@@ -787,3 +787,11 @@ region. Bass chord (C2+G2+C3 v127): with matched per-voice seeds, the shared-sta
 modelled. At the levels the model produces, every audible nonlinearity is at the pickup. Whether
 the real preamp/amp contribute at these dynamics rests on the level anchor's provenance, which is
 flagged suspect; open.
+
+**Operator decision (2026-09-27): variant A ships on this branch.** After listening to both builds,
+the operator chose A (criterion 6 report-only): "my ears prefer and think [it] sounds more real";
+B had read as "a little light on the bass". Recorded as a product decision between two
+evidence-free options, not as tuning. Criterion 6 is REPORT-ONLY from here: its magnitude is
+re-registered from evidence when a bench ff DI of a bass note exists. The criterion-6-conditioned
+edges (B) are kept in `tools/swing_prior.py` for the record. The flat-vs-angled bass-finger choice
+(Option C) stays open; this branch models early flat fingers.

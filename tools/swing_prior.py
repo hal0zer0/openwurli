@@ -37,14 +37,16 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Dynamic admitted edges, mm at the finger region: the largest ff swing passing criteria 2 and 6
-# of docs/research/pickup-overlap-law.md (crit 6 as re-registered in §9: rise <= 6 dB, no timing),
-# bisected per knot by tools/swing_edges.py on the four-range (140B side gap) tables (fixed solver,
-# lambda by h-convergence). Crit 6 binds at
-# every knot up to 72. MIDI 75-96: at least this (the search stops inside the table's u range).
-EDGES = {33: 3.26, 36: 2.88, 39: 3.04, 42: 3.28, 45: 3.14, 48: 2.97, 51: 2.72, 52: 2.94,
-         53: 2.22, 54: 2.14, 57: 2.21, 60: 2.28, 63: 2.30, 66: 2.44, 69: 2.49, 72: 2.33,
-         75: 2.89, 78: 2.89, 81: 2.89, 84: 2.89, 87: 2.89, 90: 2.89, 93: 2.89, 96: 2.89}
+# Dynamic admitted edges, mm at the finger region: the largest ff swing passing criterion 2 of
+# docs/research/pickup-overlap-law.md, bisected per knot by `tools/swing_edges.py --no-crit6` on the
+# four-range tables (fixed solver, lambda by h-convergence). Criterion 6 is report-only by operator
+# choice (2026-09-27); criterion 2 never binds inside the solved tables, so every edge is the
+# search cap = the tables' reach (a numerical limit). The criterion-6-conditioned edges (variant B,
+# not shipped) were 33 3.26, 36 2.88, 39 3.04, 42 3.28, 45 3.14, 48 2.97, 51 2.72, 52 2.94 | 53 2.22,
+# 54 2.14, 57 2.21, 60 2.28, 63 2.30, 66 2.44, 69 2.49, 72 2.33.
+EDGES = {**{m: 4.29 for m in (33, 36, 39, 42, 45, 48, 51, 52)},
+         **{m: 2.90 for m in (53, 54, 57, 60, 63, 66, 69, 72)},
+         **{m: 2.89 for m in (75, 78, 81, 84, 87, 90, 93, 96)}}
 
 XS = np.array([0.40, 0.45, 0.50, 0.55, 0.60])
 

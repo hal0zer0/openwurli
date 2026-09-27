@@ -243,14 +243,19 @@ pub enum SwingPick {
 /// uniform 0.51-0.66 mm above the bass.
 ///
 /// **The falsifiers condition the prior:** samples whose swing exceeds the note's dynamic admitted
-/// edge (the largest ff swing passing ff-falloff criterion 2 and Andersen's bass-swell criterion 6,
-/// bisected per note by `tools/swing_edges.py` on the four-range 140B-gap tables) are discarded.
-/// `pick` = median of the survivors, `low` / `high` = their p10 / p90 (the band an ear-test
-/// conclusion must survive). Nothing here was adjusted by ear or fitted to a recording. Criterion 6
-/// (fundamental rise <= 6 dB, no timing clause; the 6 dB is a judgement with no source number)
-/// binds at every knot up to MIDI 72; survival is 47-77 % in the bass, 88-100 % in the middle,
-/// 100 % in the treble. Open issue: the bass ff pick lands near the swing the recordings' mf swell
-/// implies, i.e. almost no velocity span, which no instrument plays like.
+/// edge (the largest ff swing passing ff-falloff criterion 2, bisected per note by
+/// `tools/swing_edges.py --no-crit6` on the four-range 140B-gap tables) are discarded. `pick` =
+/// median of the survivors, `low` / `high` = their p10 / p90 (the band an ear-test conclusion must
+/// survive). Nothing here was fitted to a recording. Criterion 2 never binds inside the solved
+/// tables, so the edges are the tables' reach (bass 4.29 mm, above 2.89 mm): a numerical limit, not
+/// physics, and it trims the prior's upper tail. Survival 70-95 % in the bass, 97-100 % above.
+///
+/// **Andersen's bass-swell criterion (6) is report-only, by operator choice (2026-09-27).** Its
+/// 6 dB cap had no ff evidence; with it conditioning (variant B) the bass ff swell came out smaller
+/// than the reference unit's own mf swell. The operator compared the two builds by ear and chose
+/// this one ("sounds more real"; B read "a little light on the bass"). At the pick, C2 v127's
+/// fundamental rises +4.2 dB (peak 1.5 s), the same kind of swell the reference unit shows at mf
+/// (+1.9..+3.4 dB). A bench ff DI of a bass note would settle it with evidence.
 ///
 /// **Biased low, knowingly.** Only upper falsifiers condition the pick; no admissible lower bound
 /// exists yet (the harmonic floor against the recordings is report-only: its link to the ff swing
@@ -264,7 +269,7 @@ pub enum SwingPick {
 /// Replaced by the technician's bench numbers (a weighed hammer assembly and key speed narrow the
 /// band most), or by the excitation revision's contact integration.
 const PROVISIONAL_FF_SWING_MM: [(u8, f64, f64, f64); 24] = [
-    // VARIANT A (criterion 6 report-only; edges = the solved tables' reach, not physics)
+    // Criterion 6 report-only (operator choice); edges = the solved tables' reach
     // Bass reeds 1-20 (MIDI 33-52)
     (33, 2.46, 1.22, 3.84),
     (36, 2.44, 1.22, 3.81),
