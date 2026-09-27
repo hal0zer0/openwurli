@@ -760,3 +760,19 @@ regenerated in this revision with λ chosen by h-convergence per section (GCV wa
 data chose the smoothing); the level is re-anchored and the alias baseline and known-answer gate
 re-run before the listening build. Near-rest windows (u −0.4..0.6, all four sections): λ 1e-4;
 grid 0.07–0.33 dB (PASS); shipping smoothing error 0.13–0.54 dB.
+
+**Field-solver fix and table regeneration (2026-09-26 night).** The bass h/2 gate failed past the
+far face with jitter of the same size at h and h/2: a per-point solve's uniform fine region followed
+the reed, so for u > t_r + 0.6 mm the finger's bottom face sat in graded cells whose positions moved
+with u. Fixed (the fine region always holds the finger); for u ≤ t_r the mesh is unchanged, so every
+per-point table was re-solved above t_r and merged (one solve path per table). On the fixed data the
+like-for-like h/2 gate passes on every section's FULL reach (bass −3.1..2.9, middle −1.9..1.7,
+treble −1.6..1.4) at λ 1e-4: grid 0.32 / 0.33 / 0.28 / 0.14 dB above −30 dB, linear ≤ −58 dB.
+Shipping tables regenerated with λ = 1e-4 per section (h-convergence; `SMOOTH_LAM`), fit residual
+~1e-4 of range. Re-run on the regenerated tables: level anchor re-held (`target_db` −29.40 B,
+−29.55 A); known-answer gate PASS (0.00 dB); alias baseline refreshed (note 72 plateau 8.5 → 2.4 dB,
+improved; no worsening); edges moved ≤ 0.03 mm, B picks ≤ 0.01 mm. Registered verdicts unchanged:
+swell check 3/8 NOT SUPPORTED (RMS model-high at all four), steepness 38 pass / 50 fail (0.25 dB) /
+62 table-limited / 78 no solution, criterion 1 5/13, criterion 7 model H2/H1 −31.1 against +9.3 at
+true D2. Option C unchanged within 0.1 dB (flat C2 ff swell +6.4 dB at 1.9 s, mf +2.6 dB; 20° with
+L_f 6–8 mm removes both the swell and the H2/H3 dominance; L_f 3 mm keeps +2.8..+3.4 dB).
