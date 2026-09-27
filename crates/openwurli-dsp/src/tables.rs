@@ -858,9 +858,10 @@ pub fn register_trim_db(midi: u8) -> f64 {
 /// sweeps trim, volume, tremolo and speaker character to prove it, provided no
 /// downstream stage has gain > 1. A hotter mapping (e.g. +7 dB so the worst ff
 /// chord just reaches full scale) would let deliberate amp clipping exceed full
-/// scale by that margin and could only be guaranteed at default settings. If
-/// hotter default levels are wanted, the circuit-honest lever is the drawn gain
-/// staging (Reed Bar Trim, pot position), not this constant.
+/// scale by that margin and could only be guaranteed at default settings.
+/// The engine keeps this reference; the OpenWurli plugin applies its own output
+/// alignment after the chain (`OUTPUT_ALIGNMENT_DB` in the plugin crate) and,
+/// like the real amp, accepts overs when everything is driven flat out.
 pub const POST_SPEAKER_GAIN_DB: f64 = 0.0;
 
 /// Volts at the power-amp output that map to digital full scale (0 dBFS).
@@ -889,7 +890,7 @@ pub const POST_SPEAKER_GAIN: f64 = crate::power_amp::HEADROOM_V / FULL_SCALE_VOL
 // `POST_SPEAKER_GAIN_DB`).
 //
 // Two values are ASSUMPTIONS pending a bench measurement (bench list items
-// 11–12): the R-11 setting (exposed as the "Reed Bar Trim" parameter, default
+// 11–12): the R-11 setting (engine setting `set_reed_bar_trim`, default
 // transferred from the non-A factory calibration, see the constant) and the pot taper (the standard
 // "15 % at center" two-slope audio taper — an industry curve, not a fit).
 
@@ -897,7 +898,10 @@ pub const POST_SPEAKER_GAIN: f64 = crate::power_amp::HEADROOM_V / FULL_SCALE_VOL
 /// (confirmed on both prints, pixel-traced 2026-09-23): a 0–25K series
 /// resistance between the preamp output and the pot top. It is a per-unit
 /// factory adjustment with NO documented procedure on the A-series board, so
-/// it ships as an explicit user parameter ("Reed Bar Trim").
+/// the engine takes it as a setting (`WurliEngine::set_reed_bar_trim`). The
+/// OpenWurli plugin holds it at this default: it is a service trimmer, not a
+/// player control, and in series with the pot it only adds a second level
+/// control. Library hosts may expose it.
 ///
 /// DEFAULT PROVENANCE (2026-09-23, independent review): TRANSFERRED from the
 /// manufacturer's factory calibration of the non-A Model 200 board, whose

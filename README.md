@@ -77,10 +77,14 @@ cargo test --workspace
 
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
-| Volume | 0-100% | 50% | Attenuator between preamp and power amp (audio taper) |
+| Volume | 0-100% | 80% | The volume pot between preamp and power amp (audio taper). Like the real amp, full volume with big fortissimo chords can drive it into clipping |
 | Tremolo Depth | 0-100% | 50% | Modulation depth (0 = off). Rate fixed at ~5.6 Hz by Twin-T oscillator. |
 | Speaker Character | 0-100% | 0% | 0% = flat bypass, 100% = authentic cabinet response |
-| MLP Corrections | off/on | on | Per-note corrections trained on real Wurlitzer recordings |
+| MLP Corrections | off/on | off | Per-note corrections trained on real Wurlitzer recordings |
+| Authentic Noise | off/on | off | Thermal hiss from every preamp resistor |
+| Noise Level | 0-30× | 1× | Noise multiplier; 1× is the physical level |
+
+The plugin's output level is fixed to sit where typical instruments do: playing at the defaults peaks around −6 to −10 dBFS. There is no over-protection, as on the real amplifier, so slamming full volume can go past 0 dBFS; use your DAW's gain to taste.
 
 ## Documentation
 

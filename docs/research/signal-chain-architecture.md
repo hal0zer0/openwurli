@@ -867,7 +867,7 @@ Reed Bar Trim at its 17.2K default): at the default pot position (0.80),
 single ff notes 37–70 mV peak at the amp input (11–22 % of the 319 mV clip
 knee) and a worst-phase ff chord 117 mV (37 %); at vol 1.0, 51–98 mV single
 (16–31 %) and 164 mV chord (51 %). The output mapping is `FULL_SCALE_VOLTS` =
-the amp's 22 V rail = 0 dBFS; there is no user gain after the speaker model.
+the amp's 22 V rail = 1.0 at the engine output; the OpenWurli plugin adds a fixed +14 dB output alignment after the engine (0.9.0, see output-stage.md). *The figures below are 2026-09-23 engine-output measurements and predate the 0.9.0 pickup overlap law (ff 5–9 dB lower).*
 
 | Point in Chain | Level | Notes |
 |---------------|-------|-------|
@@ -879,10 +879,10 @@ the amp's 22 V rail = 0 dBFS; there is no user gain after the speaker model.
 | After the volume network, vol 1.0 | 10.6–11.5 mV RMS single ff, 24 mV RMS ff chord | 16–31 % / 51 % of the knee (R-11 17.2K) |
 | After power amp | ~0.5 V RMS single ff at the default (69×) | Clean; crossover residual proportionally larger at low drive |
 | After speaker | physics-level output | speaker character defaults to 0 (true passthrough) |
-| Output (22 V rail = 0 dBFS) | ≈ −18.8 dBFS peak single ff, −11.6 ff chord, at the defaults | the pot has ~3 dB in hand; Reed Bar Trim ~9 dB more |
+| Output (22 V rail = 0 dBFS) | ≈ −18.8 dBFS peak single ff, −11.6 ff chord, at the defaults | the pot has ~3 dB in hand; R-11 (engine setting, not a plugin parameter since 0.9.0) ~9 dB more |
 
 Polyphonic headroom (measured 2026-09-23, six-note ff chord, speaker off):
-- −11.6 dBFS peak at the default pot position (0.80); −8.6 at full volume; −1.3 at full volume with Reed Bar Trim at 0 Ω (the amp at its rail = full scale by construction)
+- −11.6 dBFS peak at the default pot position (0.80); −8.6 at full volume; −1.3 at full volume with R-11 at 0 Ω (the amp at its rail = full scale by construction)
 
 ### Input Drive (Historical)
 

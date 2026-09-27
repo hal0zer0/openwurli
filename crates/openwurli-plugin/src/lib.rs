@@ -15,6 +15,25 @@ use std::sync::Arc;
 mod params;
 use params::OpenWurliParams;
 
+/// Output alignment, dB: the level map from the engine's circuit reference
+/// (±1.0 = the power amp's ±22 V rail, `tables::FULL_SCALE_VOLTS`) to the
+/// plugin's output. A pure gain after the whole chain, so no stage's operating
+/// point or clipping changes. The engine keeps the rail at 1.0 for library
+/// hosts, which own their own level staging.
+///
+/// At the rail reference the plugin was ~20 dB quieter than typical
+/// instruments (jazz MIDI at the defaults peaked −20..−24 dBFS, active RMS
+/// −40..−43), more than many DAW faders can make up. +14 dB puts those
+/// peaks at −6..−10 dBFS. Like the real amp, there is no over-protection:
+/// the engine's worst case (six-note ff chord, worst tremolo phase, full
+/// volume and depth) lands ≈ +0.9 dBFS. Downstream gain is the user's.
+///
+/// Anchor-dependent: these figures hold at the current reed-bar level anchor
+/// (`tables` target_db). If a bench reading raises it, full-volume chords
+/// reach the amp rail on their own; re-size this, and revisit whether R-11
+/// should be exposed again (it would then reach real clipping behaviour).
+const OUTPUT_ALIGNMENT_DB: f32 = 14.0;
+
 struct OpenWurli {
     params: Arc<OpenWurliParams>,
     engine: WurliEngine,
@@ -35,8 +54,6 @@ impl OpenWurli {
     /// click-free.
     fn sync_params(&mut self) {
         self.engine.set_volume(self.params.volume.value() as f64);
-        self.engine
-            .set_reed_bar_trim(self.params.reed_bar_trim.value() as f64);
         self.engine
             .set_tremolo_depth(self.params.tremolo_depth.value() as f64);
         self.engine
@@ -156,6 +173,11 @@ impl Plugin for OpenWurli {
             next_event = context.next_event();
         }
 
+        let alignment = util::db_to_gain(OUTPUT_ALIGNMENT_DB);
+        for sample in channels[0][..num_samples].iter_mut() {
+            *sample *= alignment;
+        }
+
         // Fan out channel 0 to channels 1..N.
         if channels.len() > 1 {
             let (first, rest) = channels.split_at_mut(1);
@@ -234,6 +256,22 @@ mod tests {
         assert!(
             (params.noise_gain.default_plain_value() - 1.0).abs() < 0.01,
             "noise_gain must default to 1.0×"
+        );
+    }
+
+    #[test]
+    fn test_reed_bar_trim_is_not_a_plugin_param() {
+        // R-11 is a factory service trimmer held at its default by the engine;
+        // exposing it again is a deliberate decision (see OUTPUT_ALIGNMENT_DB).
+        let params = OpenWurliParams::default();
+        let ids: Vec<String> = params
+            .param_map()
+            .into_iter()
+            .map(|(id, _, _)| id)
+            .collect();
+        assert!(
+            !ids.iter().any(|id| id == "reed_bar_trim"),
+            "reed_bar_trim is exposed again: {ids:?}"
         );
     }
 }

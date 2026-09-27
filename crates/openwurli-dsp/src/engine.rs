@@ -422,7 +422,8 @@ impl WurliEngine {
 
     /// R-11 "Reed Bar Trim", ohms (0..=25 000): the per-unit factory trimmer
     /// between the preamp output and the volume pot. Undocumented setting;
-    /// the default is a declared placeholder (mid-travel).
+    /// the default (tables::R11_REED_BAR_VOLUME_DEFAULT, 17.2K) is transferred
+    /// from the non-A factory calibration, an inference pending a bench reading.
     pub fn set_reed_bar_trim(&mut self, r11_ohms: f64) {
         self.reed_bar_trim
             .set_target(r11_ohms.clamp(0.0, tables::R11_REED_BAR_VOLUME_MAX));
