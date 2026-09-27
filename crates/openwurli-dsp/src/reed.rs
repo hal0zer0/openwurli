@@ -613,14 +613,24 @@ mod tests {
             );
             assert_eq!(d, d_ref, "{sr} Hz drift {d:e} != 44.1 kHz drift {d_ref:e}");
         }
-        // At a rate whose step is not a whole number of samples, the step count by time t stays
-        // within one of the reference (its steps land on the first sample at or after each grid
-        // time).
-        let (_, n48) = drift_at(48_000.0, t);
-        assert!(
-            (n48 - n_ref).abs() <= 1.0,
-            "48 kHz took {n48} steps, 44.1 kHz {n_ref}"
-        );
+        // At rates whose step is not a whole number of samples (48, 96 kHz) the steps land on the
+        // first sample at or after each grid time, but step k still draws the k-th value of the
+        // seeded sequence: after the same number of steps the drift is the same, bit for bit.
+        for sr in [48_000.0, 96_000.0] {
+            let mut reed = ModalReed::new(440.0, &ratios, &amps, &decays, 0.0, 1.0, sr, 42);
+            // Steps taken so far (jitter_next accumulates a non-integer step, so round).
+            let steps = |r: &ModalReed| (r.jitter_next / r.jitter_step_samples).round();
+            let mut one = [0.0f64; 1];
+            while steps(&reed) < n_ref.round() {
+                reed.render(&mut one);
+            }
+            assert_eq!(steps(&reed), n_ref.round(), "{sr} Hz step count");
+            let d = reed.modes[0].jitter_drift;
+            assert_eq!(d, d_ref, "{sr} Hz drift {d:e} != 44.1 kHz drift {d_ref:e}");
+            // And the last step landed within one sample of its grid time.
+            let lag = (reed.sample - 1) as f64 - (n_ref.round() - 1.0) * reed.jitter_step_samples;
+            assert!((0.0..1.0).contains(&lag), "{sr} Hz step lag {lag} samples");
+        }
     }
 
     #[test]
