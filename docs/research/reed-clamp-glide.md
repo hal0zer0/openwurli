@@ -121,3 +121,32 @@ one unit, at a known dynamic, unprocessed and free of sympathetic beating (e.g. 
 other reeds damped). Such data would also be blind. The design above runs on it unchanged. Keyboard Waves' within-file decay was also declined as a source under an integrity check (2026-09-27):
 the samples are hot-voiced and processed for playback, and are not trusted as a reference. OBM's
 chain (transformer and tube preamp) colours its harmonics. The wander conclusion in section 1 stands on OBM alone.
+
+## 6. OBM loss-to-glide test: power check first (registered 2026-09-27, before computing)
+
+The loss-to-glide ratio (section 3) has no free constant and is a within-file ratio, so OBM (one
+unit, mf, decays admissible) could test the slip form: measure each qualifying note's glide and its
+early-minus-late decay difference, and compare the latter with the slip prediction from the former.
+Obstacle: the pickup law's H1 is proportional to swing only below ~0.2 mm (d ln H1 / d ln A = 0.96
+at 0.2 mm, 0.86 at 0.4, 0.67 at 0.6 for reeds 21-42), and OBM's absolute swing is unknown. In
+that range the output decays slower than the reed while the swing is large: an early-late
+difference of the same kind as the slip excess, opposite sign. Swing from the velocity curve
+(ear-voiced) or from harmonic-ratio inversion (OBM's chain colours H2) is not admissible.
+
+Power check, model only, no OBM decay data: for each of the 7 qualifying OBM notes (true MIDI 58,
+62, 66, 70, 74, 82, 86), simulate the reed's mode-1 swing over 0.3-1.8 s after onset,
+`dA/dt = -A (alpha + beta A + s A) / 8.686`, and the output H1 through the note's section law (static
+describing function, rest offset 0.085 mm, the section's sign). Early/late decay rates are
+least-squares slopes of 20 log10 H1 over 0.3-1.05 s and 1.05-1.8 s; D = early rate minus late rate.
+Bands: swing at 0.3 s in 0.2-0.6 mm; alpha = the model's linear rate x 1-3 (the model's mid-register
+decay is too slow by up to ~2.5x); beta = the model's air-drag coefficient x 0.447-2.236. With slip:
+`s = 27.3 f k c K`, k in 0.85-1.36, with `c K` set so the simulated glide over 0.3-1.8 s equals
+the note's measured Sensor glide. Without slip: s = 0. Measurement tolerance 1 dB/s. **Run the OBM
+test only if the with-slip and without-slip envelopes of D are disjoint by more than the tolerance on
+at least 5 of 7 notes; otherwise park it and record this result as the reason.**
+
+Also re-graded: criterion 1's attribution of the mid-register decay misses to the reed's decay rates
+assumed output decay equals reed decay. With H1 compression of this size that holds only at matched
+swing, and the model's swing is not matched: the attribution is **unresolved between reed decay
+and law compression at mismatched swing**. The decay-law rebuild must compare reed decay through the
+law at matched swing, not raw output decay.
