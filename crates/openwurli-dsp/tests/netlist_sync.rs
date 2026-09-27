@@ -23,12 +23,29 @@ const NETLISTS: [&str; 3] = [
     "wurli-tremolo.cir",
 ];
 
-/// melange-circuits' copy of each netlist, relative to that repo's root.
-const CIRCUITS_PATHS: [(&str, &str); 3] = [
-    ("wurli-preamp.cir", "unstable/preamp/wurli-preamp.cir"),
-    ("wurli-power-amp.cir", "unstable/amp/wurli-power-amp.cir"),
-    ("wurli-tremolo.cir", "unstable/modules/wurli-tremolo.cir"),
-];
+/// melange-circuits' maturity tiers. Each netlist is found by FILENAME under
+/// these, not by a fixed path: a deck's tier is designed to change over its
+/// life (the trio moved unstable/ -> testing/ on 2026-09-27), and a promotion
+/// should not break this check. Exactly one match per netlist is required.
+const CIRCUITS_TIERS: [&str; 3] = ["stable", "testing", "unstable"];
+
+/// Every file named `name` under `dir`, recursively (hidden dirs skipped).
+fn find_named(dir: &Path, name: &str, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            find_named(&path, name, out);
+        } else if entry.file_name() == name {
+            out.push(path);
+        }
+    }
+}
 
 /// Functional lines melange-circuits' copy may have that ours does not.
 /// Empty since the 2026-08-03 `.linearize Q9` adoption converged all three
@@ -124,12 +141,27 @@ fn netlist_synced_with_melange_circuits() {
     let ours_dir = spice_melange_dir();
     let mut failures = Vec::new();
 
-    for (name, theirs_rel) in CIRCUITS_PATHS {
-        let theirs_path = circuits_root.join(theirs_rel);
-        if !theirs_path.is_file() {
-            failures.push(format!("{name}: {theirs_rel} missing in melange-circuits"));
-            continue;
+    for name in NETLISTS {
+        let mut found = Vec::new();
+        for tier in CIRCUITS_TIERS {
+            find_named(&circuits_root.join(tier), name, &mut found);
         }
+        let theirs_path = match found.as_slice() {
+            [one] => one.clone(),
+            [] => {
+                failures.push(format!(
+                    "{name}: not found under melange-circuits {CIRCUITS_TIERS:?}"
+                ));
+                continue;
+            }
+            many => {
+                failures.push(format!(
+                    "{name}: {} copies in melange-circuits, expected one: {many:?}",
+                    many.len()
+                ));
+                continue;
+            }
+        };
         let ours = normalized_lines(&fs::read_to_string(ours_dir.join(name)).unwrap());
         let theirs = normalized_lines(&fs::read_to_string(&theirs_path).unwrap());
 
