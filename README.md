@@ -4,6 +4,10 @@ An *obsessively* physically-modeled Wurlitzer 200A electric piano plugin for CLA
 
 [![OpenWurli Demo](https://img.youtube.com/vi/2ELaBTO087I/maxresdefault.jpg)](https://youtu.be/2ELaBTO087I)
 
+### Also in Retromulator
+
+[DiscoDSP](https://www.discodsp.com/retromulator/) ported OpenWurli's engine to C++ as the Wurlitzer 200A core of **[Retromulator](https://www.discodsp.com/retromulator/)**, their open-source (GPL-3.0) emulation plugin. It has carried OpenWurli since March 2026 and now runs the 0.9 core. If you need AU or AAX (Logic, Pro Tools), or a standalone app, that's the way to play it. It's an independent port, so report Retromulator issues to DiscoDSP, not here.
+
 ## What Is This?
 
 OpenWurli models the complete analog signal chain of a Wurlitzer 200A electric piano from first principles — no samples, no impulse responses, no curve-fitted approximations. Every stage is derived from the actual circuit schematic and validated against SPICE simulations. Which, by the way, was REALLY REALLY HARD. 
