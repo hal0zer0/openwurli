@@ -591,6 +591,23 @@ divider swings the shunt ~8 kΩ bright ↔ ~48 kΩ dark. POST_SPEAKER_GAIN was d
 22.0 → 17.5 dB at the time to keep the vol = 1.0 engine peak ≤ 1.0 given the higher
 (accurate) preamp gain; it now sits at +4.5 dB after the v0.7.0 level rebalance.
 
+#### LDR (LG-1) measured data
+
+The LG-1 (Wurlitzer part #142312) is a VTL5C3-class LED/CdS optocoupler (GaAs IR LED, 880 nm, Vf ≈ 1.65 V at 20 mA; CdS cell peaking at 520 nm). CdS resistance follows a power law, R = R_ref · (I_led / I_ref)^(−γ), with R_ref ≈ 4 kΩ at 5 mA.
+
+| I_led | R |
+|---|---|
+| 0.5 mA | 25 kΩ |
+| 5 mA | 4 kΩ |
+| 20 mA | 1 kΩ |
+| 40 mA | 600 Ω |
+
+R_dark ≈ 10 MΩ after 10 s, ≈ 400 MΩ absolute. γ ≈ 0.85 on average, 0.80–0.91 across the operating range. Time constants are strongly asymmetric: τ_on ≈ 2.5 ms (carrier generation), τ_off ≈ 30 ms (recombination and detrapping), the 12:1 ratio behind the choppy tremolo character.
+
+Sources: independent measurements of Excelitas and Xvive VTL5C3 parts published at modularsynthesis.com (more reliable than the datasheet); the PerkinElmer VTL5C3 datasheet; DAFx 2013, "Digital Model of Buchla Lowpass-Gate"; the VCV Rack community VTL5C3 modelling thread. (Formerly carried in a SPICE model file, `spice/models/ldr_behavioral.lib`, which no deck included.)
+
+**What the code uses** (`tremolo.rs`): γ = 0.9, τ_on = 2.5 ms, τ_off = 35 ms, cited there to a datasheet range (rise ~2.5 ms, fall ~35 ms, exponent ~0.7–0.9). γ = 0.9 sits at the top of that range and above the measured 0.85 average; τ_off = 35 ms is 5 ms longer than the measured 30 ms. Neither specific choice is sourced beyond the range. The 200A's LED drive is weak (≈0.37–2.28 mA, `LED_I_FULL_MA`), so the cell stays in the kΩ regime (~9 kΩ bright ↔ ~1 MΩ dark), the low end of the table above.
+
 ### 7.2 Power Amplifier Model
 
 **Status: two models. SHIPPING = the behavioral closed-loop NR model** (feature

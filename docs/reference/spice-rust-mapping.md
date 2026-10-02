@@ -13,8 +13,8 @@ Each row maps a circuit block from schematic → SPICE netlist → Rust implemen
 | **Electrostatic pickup** | Pickup comb, reed | `spice/subcircuits/pickup.cir` + generated `pickup_law.inc`, `spice/testbench/tb_pickup.cir` | `pickup.rs` + generated `pickup_tables.rs` | `C(u) = C₀·(1 + law(u) − law(rest))`, `i = V_pol · dC/dt`; both laws generated from one field solve by `tools/pickup_field2d.py` | Overlap law is primary bark source; SPICE vs plugin harmonics agree ≤0.1 dB |
 | **Preamp Stage 1 (TR-1)** | TR-1 (2N5089), Rc1=150K, Re1=33K | `spice/subcircuits/preamp.cir`, `spice/testbench/preamp_emitter_fb.cir` | `dk_preamp/` (melange adapter, default), `dk_preamp_legacy.rs` (hand-written 8-node) | Ebers-Moll: `Ic = Is(e^(Vbe/Vt) - 1)` | Headroom: 2.05V sat / 10.9V cutoff (5.3:1) |
 | **Preamp Stage 2 (TR-2)** | TR-2 (2N5089), Rc2=1.8K, Re2a=270Ω, Re2b=820Ω | Same as above | Same as above | Direct-coupled from TR-1 collector | Headroom: 5.3V sat / 6.2V cutoff (1.17:1) |
-| **Miller caps (C-3, C-4)** | C-3=100pF (TR-1), C-4=100pF (TR-2) | `spice/testbench/tb_variable_gbw.cir` | `dk_preamp.rs` (inner loop) | Trapezoidal companion: `i = g_c·v + J_prev` | Forms inner BW-controlling feedback loop |
-| **Input network (Cin, R-1)** | Cin=0.022µF, R-1=22K | `spice/testbench/tb_dk_ac_extract.cir` | `dk_preamp.rs` (bilinear companion, §8.1) | `g_cin = 2C/T`, history source `cin_rhs_prev` | See Cin-R1 bug in §4 below |
+| **Miller caps (C-3, C-4)** | C-3=100pF (TR-1), C-4=100pF (TR-2) | `spice/testbench/tb_preamp_ac.cir` (bandwidth) | `dk_preamp.rs` (inner loop) | Trapezoidal companion: `i = g_c·v + J_prev` | Forms inner BW-controlling feedback loop |
+| **Input network (Cin, R-1)** | Cin=0.022µF, R-1=22K | `spice/testbench/tb_preamp_ac.cir` | `dk_preamp.rs` (bilinear companion, §8.1) | `g_cin = 2C/T`, history source `cin_rhs_prev` | See Cin-R1 bug in §4 below |
 | **Feedback network** | R-10=56K, Ce1=4.7µF, Re1=33K | `spice/testbench/preamp_emitter_fb.cir` | `dk_preamp.rs` (outer loop) | Series-series negative feedback | Ce1 is DC-blocking short at audio freq |
 | **LDR / Tremolo** | LG-1 (CdS LDR), cable-routed | `spice/subcircuits/tremolo_osc.cir`, `spice/testbench/tb_tremolo_osc.cir` | `tremolo.rs` | Rldr shunts fb_junction to GND | Modulates closed-loop gain, not volume |
 | **Power amplifier** | 7 BJTs (2N5087 diff pair, MPSA06 VAS + drivers, MPSA56 PNP driver, TIP35C/TIP36C outputs), Class AB | `spice/subcircuits/power_amp.cir`, `spice/melange/wurli-power-amp.cir`, `spice/testbench/tb_power_amp.cir` | `gen_power_amp.rs` (melange-generated, default); `power_amp.rs` (adapter + `--features legacy-power-amp` behavioral NR) | Full Gummel-Poon on every transistor; N=20, M=16, Nodal + Backward Euler auto | Crossover suppressed >30 dB by feedback; rail clips ±22 V |
@@ -28,11 +28,9 @@ Each row maps a circuit block from schematic → SPICE netlist → Rust implemen
 - `spice/subcircuits/power_amp.cir` — Class AB output stage
 
 ### Key SPICE Testbenches
-- `tb_dk_validation.cir` — DK method validation (gain, BW, harmonics)
-- `tb_dk_ac_extract.cir` — AC transfer function extraction
-- `tb_variable_gbw.cir` — GBW scaling with Rldr
+(The pre-0.7.0 DK validation decks, `tb_dk_validation`, `tb_dk_ac_extract`, `tb_variable_gbw` and `tb_real_thd`, carried the superseded preamp inline and were retired 2026-10-02; see the tombstone in `spice/testbench/REVISION-NOTES.md`.)
+- `tb_preamp_dc.cir` / `tb_preamp_ac.cir` — preamp DC operating point, gain and bandwidth on the drawn topology
 - `tb_harmonic_audit.cir` — Per-stage harmonic attribution
-- `tb_real_thd.cir` — THD measurement
 - `tb_full_chain.cir` — Full signal chain
 - `tb_pickup.cir` — Pickup model isolation
 - `tb_power_amp.cir` — Power amp isolation
@@ -230,9 +228,7 @@ fix touches the preamp.
 ### SPICE (key testbenches only)
 | File | Purpose |
 |---|---|
-| `spice/testbench/tb_dk_validation.cir` | DK method validation targets |
-| `spice/testbench/tb_dk_ac_extract.cir` | AC transfer function for DK comparison |
-| `spice/testbench/tb_variable_gbw.cir` | GBW scaling proof |
+| `spice/testbench/tb_preamp_dc.cir`, `tb_preamp_ac.cir` | Preamp DC and AC targets (drawn topology) |
 | `spice/testbench/tb_full_chain.cir` | End-to-end simulation |
 | `spice/testbench/preamp_emitter_fb.cir` | Feedback topology reference |
 | `spice/testbench/tb_harmonic_audit.cir` | Per-stage harmonic attribution |
