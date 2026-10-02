@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+A housekeeping release: no new features, and the codebase is about 8,300 lines
+smaller.
+
+### Removed
+- **"Authentic Noise" and "Noise Level" parameters.** They drove a noise model
+  only the opt-in melange preamp has; in the shipping build they did nothing.
+  The engine keeps its noise API for library hosts and the full-circuit build.
+  Sessions that set them will load without them.
+- The `legacy-tremolo` build feature (a behavioural sine LFO; it no longer
+  compiled). The tremolo is the Twin-T oscillator circuit, as before.
+- Retired tooling: the shadow-pump bench subcommands, the `centroid-track` and
+  `overshoot` bench subcommands, the old recording-comparison scripts, and the
+  `reed-renderer` crate (identical to
+  `preamp-bench render --no-preamp --no-poweramp --speaker 0 --no-mlp`).
+- Dead code and leftovers of retired mechanisms (the pitch jitter's seed, the
+  MLP's displacement-scale field, the old post-speaker gain).
+- Thirteen SPICE testbenches that carried the pre-0.7.0 preamp inline or
+  probed the retired bias pump (recorded under a tombstone), an unused LDR
+  model file, and superseded documentation. Sourced measurements from removed
+  files were moved into the remaining docs first.
+
+### Changed
+- The never-exceeds-full-scale test now also runs with MLP corrections on.
+
 ### Fixed
 - **Builds on Rust 1.99 with warnings denied.** Rust 1.99 reports a
   future-incompatibility lint inside the plugin framework's VST3 export
