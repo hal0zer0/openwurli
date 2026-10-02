@@ -59,10 +59,6 @@ impl OpenWurli {
         self.engine
             .set_speaker_character(self.params.speaker_character.value() as f64);
         self.engine.set_mlp_enabled(self.params.mlp_enabled.value());
-        self.engine
-            .set_noise_enabled(self.params.noise_enable.value());
-        self.engine
-            .set_noise_gain(self.params.noise_gain.value() as f64);
     }
 
     fn handle_event(&mut self, event: &NoteEvent<()>) {
@@ -247,40 +243,23 @@ mod tests {
     }
 
     #[test]
-    fn test_noise_enable_default_is_off() {
-        // Phase 5 bit-identical default: existing users hear no change
-        // until they explicitly opt in to the authentic-noise character.
-        let params = OpenWurliParams::default();
-        assert!(
-            !params.noise_enable.default_plain_value(),
-            "noise_enable must default OFF"
-        );
-    }
-
-    #[test]
-    fn test_noise_gain_default_is_physics_honest() {
-        // 1.0× = ngspice-validated thermal level. Users who want louder
-        // hiss can crank toward 30×.
-        let params = OpenWurliParams::default();
-        assert!(
-            (params.noise_gain.default_plain_value() - 1.0).abs() < 0.01,
-            "noise_gain must default to 1.0×"
-        );
-    }
-
-    #[test]
-    fn test_reed_bar_trim_is_not_a_plugin_param() {
-        // R-11 is a factory service trimmer held at its default by the engine;
-        // exposing it again is a deliberate decision (see OUTPUT_ALIGNMENT_DB).
+    fn test_retired_params_stay_retired() {
+        // R-11 is a factory service trimmer held at its default by the engine
+        // (see OUTPUT_ALIGNMENT_DB). The noise params drove a model only the
+        // opt-in melange preamp has, so in the shipping build they did nothing;
+        // the engine keeps its noise API for library hosts. Exposing any of
+        // these again is a deliberate decision.
         let params = OpenWurliParams::default();
         let ids: Vec<String> = params
             .param_map()
             .into_iter()
             .map(|(id, _, _)| id)
             .collect();
-        assert!(
-            !ids.iter().any(|id| id == "reed_bar_trim"),
-            "reed_bar_trim is exposed again: {ids:?}"
-        );
+        for retired in ["reed_bar_trim", "noise_enable", "noise_gain"] {
+            assert!(
+                !ids.iter().any(|id| id == retired),
+                "{retired} is exposed again: {ids:?}"
+            );
+        }
     }
 }
