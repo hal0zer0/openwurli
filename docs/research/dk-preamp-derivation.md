@@ -317,7 +317,7 @@ Under the pre-revision topology the output was DC-coupled through R-10 into the
 LDR leg, so modulating R_ldr pumped the operating point — a multi-volt swing at
 the tremolo rate with zero audio input, whose harmonics spanned 28–200+ Hz and
 overlapped bass fundamentals. No HPF can separate that without cutting bass,
-which is why shadow subtraction exists.
+which is why shadow subtraction existed.
 
 **C-6 eliminates the pump at source.** `node_c6`, `out` and `fb` sit at 0 V DC,
 so no DC flows into R-10 or the LDR, and modulating R_ldr no longer moves TR-1's
@@ -327,21 +327,17 @@ bias. Two guards pin this:
   0 V DC behind C-6.
 - `test_acceptance_pump_guard_c6` — the dynamic half: cycling the LDR
   19K↔1M at 5.63 Hz with zero input must move emit1/coll1 by less than 1 mV pp.
-  It probes those nodes **directly**, so the shadow subtraction cannot mask it.
+  It probes those nodes **directly**.
 
 The SPICE mirror is `tb_pump_emit`, which is now a C-6 regression guard: any
 nonzero pump there means C-6 went missing again.
 
-### Shadow-pump status: kept, retirement pending
+### Shadow-pump status: retired
 
-`DkPreamp` still maintains two solver states — `main` (audio) and `shadow` (zero
-input, same R_ldr) — and subtracts. With C-6 present the pump it cancels is ~0 by
-construction, so the machinery is now close to redundant and costs roughly 50% of
-the solver's CPU.
-
-It is kept deliberately. Removing it is an audible behaviour change and a
-separate decision from the topology fix; it is flagged in the code as the top
-follow-up for that file and belongs to the Phase-3 voicing pass.
+`DkPreamp` used to maintain a second, zero-input `shadow` solver state and
+subtract it from `main`. With C-6 present the pump it cancelled is ~0 by
+construction, so the shadow state was retired 2026-09-14; the solver now runs a
+single state.
 
 ## 12. DC Initialization
 
@@ -352,7 +348,7 @@ converged currents are then injected to recover the node voltages.
 The `reset()` contract is load-bearing and easy to get wrong: **rebuild from
 `default()` plus `set_sample_rate`, never from a stored operating point.** For
 the oscillator this is the difference between starting and not starting; for the
-preamp it keeps main and shadow bit-identical at t=0.
+preamp it makes the t=0 state reproducible.
 
 ## 13. Validation
 
@@ -453,8 +449,7 @@ remove clipping behaviour from the DSP. Do not act on it without a measurement.
 13. return v[out]
 ```
 
-Step 12's ordering matters: `g_ldr_prev` is advanced only after **both** the main
-and shadow steps have consumed it.
+Ordering matters: `g_ldr_prev` is advanced only after the step has consumed it.
 
 ## 15. Computational Cost
 
@@ -462,7 +457,7 @@ Measured, not estimated — `preamp_perf_probe`, release build, 4 s of audio:
 
 | Solver | % of realtime |
 |---|---|
-| legacy 9-node (shipping) | 5.2% |
+| legacy 9-node (shipping) | 5.2% (measured before the 2026-09-14 shadow retirement; current figure not re-measured here) |
 | melange-generated (`--features melange-preamp`) | 71.0% |
 
 The legacy figure was 4.4% pre-revision; the rise is the added base-current and

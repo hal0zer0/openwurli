@@ -382,7 +382,7 @@ With +/-22V rails (nominal), accounting for transistor saturation voltage drops 
 
 **For modeling purposes:** The power amplifier is modeled as a closed-loop negative feedback amplifier. The R-31/R-30 feedback network (loop gain ≈ 275) linearizes the output at normal signal levels. Distortion becomes significant only near the ±22V supply rails. The power amp is NOT a major tonal contributor — the Wurlitzer's characteristic bark comes primarily from the pickup's nonlinearity, with the preamp's asymmetric soft-clipping adding further coloring at high dynamics.
 
-**Gain staging (current, measured 2026-09-23 with the engine's `power_amp_drive_headroom_probe`, Reed Bar Trim at its 17.2K default):** the power amp is driven through the drawn volume network (§3). At the default pot position (0.80) single ff notes put 37–70 mV peak into the amp, 11–22 % of its 319 mV clip knee, and a worst-phase ff chord 117 mV (37 %); at full volume 51–98 mV (16–31 %) and 164 mV (51 %). (The earlier "1–3 % of headroom at 3 mV RMS" figures described the pre-2026-04 vol² chain and were ≈20 dB stale; the 2026-04 → 2026-09 pinned drive of 0.25 sat at 20–41 % / 61 %.) The Avenson "2–7 mV at the volume pot" field figure is a single unverified rig and does not say which side of the pot it was taken on. The engine has no post-speaker gain: its output mapping is `FULL_SCALE_VOLTS` = the amp's 22 V rail = 1.0 (§7.2; history of the retired `POST_SPEAKER_GAIN_DB`: 14.5 → 22.0 → 17.5 → 16.8 → 15.5 → 4.5 → 0), and library hosts own their level staging. **Plugin output alignment (0.9.0):** at the rail reference the standalone plugin was ~20 dB quieter than typical instruments (jazz MIDI at the defaults peaked −20..−24 dBFS, active RMS −40..−43), more than many DAW faders can make up. The plugin shell therefore applies a fixed +14 dB after the engine (`OUTPUT_ALIGNMENT_DB`). It is a pure level map, so no stage's operating point changes. There is no over-protection, as on the real amp: the engine's worst case (six-note ff chord, worst tremolo phase, full volume and depth, factory trim) lands ≈ +0.9 dBFS. These figures depend on the reed-bar level anchor; a bench reading that raises it would put full-volume chords on the amp rail, and would reopen both this alignment and whether to expose R-11.
+**Gain staging (current, measured 2026-09-23 with the engine's `power_amp_drive_headroom_probe`, R-11 at its 17.2K engine default):** the power amp is driven through the drawn volume network (§3). At the default pot position (0.80) single ff notes put 37–70 mV peak into the amp, 11–22 % of its 319 mV clip knee, and a worst-phase ff chord 117 mV (37 %); at full volume 51–98 mV (16–31 %) and 164 mV (51 %). (The earlier "1–3 % of headroom at 3 mV RMS" figures described the pre-2026-04 vol² chain and were ≈20 dB stale; the 2026-04 → 2026-09 pinned drive of 0.25 sat at 20–41 % / 61 %.) The Avenson "2–7 mV at the volume pot" field figure is a single unverified rig and does not say which side of the pot it was taken on. The engine has no post-speaker gain: its output mapping is `FULL_SCALE_VOLTS` = the amp's 22 V rail = 1.0 (§7.2; history of the retired `POST_SPEAKER_GAIN_DB`: 14.5 → 22.0 → 17.5 → 16.8 → 15.5 → 4.5 → 0), and library hosts own their level staging. **Plugin output alignment (0.9.0):** at the rail reference the standalone plugin was ~20 dB quieter than typical instruments (jazz MIDI at the defaults peaked −20..−24 dBFS, active RMS −40..−43), more than many DAW faders can make up. The plugin shell therefore applies a fixed +14 dB after the engine (`OUTPUT_ALIGNMENT_DB`). It is a pure level map, so no stage's operating point changes. There is no over-protection, as on the real amp: the engine's worst case (six-note ff chord, worst tremolo phase, full volume and depth, factory trim) lands ≈ +0.9 dBFS. These figures depend on the reed-bar level anchor; a bench reading that raises it would put full-volume chords on the amp rail, and would reopen both this alignment and whether to expose R-11.
 
 **Two structural facts about worst-case level** (from the retired post-speaker-gain sizing history, still true of the chain):
 - *Worst-case peaks depend on tremolo phase.* A chord's ~40 ms attack transient ends well inside the ~178 ms tremolo period, so the onset phase is frozen into the peak and no window averages it out. Measured 2026-08-19 on a warmed engine (the plugin always warms up) with chord onset swept across the tremolo cycle every 2 ms: peak 0.997–1.148 of full scale, plateau at onsets 160–168 ms, versus a single cold-engine onset that happened to look safe. Any worst-case level check must warm the engine and sweep onset phase; `test_output_never_exceeds_full_scale_across_settings` does.
@@ -475,14 +475,14 @@ LPF: 2nd-order lowpass at 5500 Hz, Q = 0.707 (Butterworth, cone breakup + voice 
 
 > **Note (2026-07):** The HPF is now **subsonic-only (30 Hz)**, down from 95 Hz.
 > The 95 Hz corner was the small 4×8" speaker's own bass roll-off — cabinet
-> coloration, which per the openwurli/Vurli scope split belongs downstream in
-> Vurli, not in the raw-physics circuit model. It was stripping the A1/C2
+> coloration, which per the project's scope split belongs downstream in the
+> host, not in the raw-physics circuit model. It was stripping the A1/C2
 > fundamental (55/65 Hz), leaving the low end thin and never "growling." The
 > circuit's genuine bass roll-off (power-amp output coupling caps) is modeled
 > upstream; this filter now only removes DC/subsonic rumble, preserving the full
 > musical bass the circuit produces. (An earlier design specified three cascaded
 > HPFs at 150/100/70 Hz for cone resonance / dipole cancellation / radiation
-> impedance — all cabinet effects, also Vurli's domain.)
+> impedance — all cabinet effects, also the downstream host's domain.)
 
 **Nonlinear features:**
 - **Normalized Hammerstein polynomial waveshaper:** `y = (x + a2*x^2 + a3*x^3) / (1 + a2 + a3)` where a2 = 0.2 (BL force factor asymmetry, generates even harmonics) and a3 = 0.6 (Kms suspension hardening, generates odd harmonics). Coefficients scale with the Speaker Character parameter. The normalization by `(1 + a2 + a3)` ensures `y(1) = 1`, preserving peak positive level. The even-order term (a2) introduces asymmetry, so `y(-1) != -1`.
@@ -642,7 +642,7 @@ solver handles every device exactly.
 
 `--output-clamp 30` tells melange's post-DC-block limiter to pass through up to
 ±30 V so the natural ±22 V rail swing isn't hard-clipped at the default ±10 V
-"Signal Level Contract" ceiling. See melange `docs/aidocs/SIGNAL_LEVELS.md`.
+"Signal Level Contract" ceiling (melange's signal-level documentation).
 
 **Derived behavior (what the generated solver reproduces without tuning):**
 
@@ -682,7 +682,7 @@ full plugin chain at `volume=0.50, speaker=0.0`):
 Variable speaker emulation with bypass-to-authentic range. The plugin exposes a "Speaker Character" knob that blends from bypass (flat, linear passthrough) to authentic (full Hammerstein nonlinearity + HPF + LPF).
 
 At "authentic" position (character = 1.0):
-- HPF: 30 Hz, Q=0.75 (subsonic protection only; the 95 Hz cabinet roll-off moved to Vurli, 2026-07)
+- HPF: 30 Hz, Q=0.75 (subsonic protection only; the 95 Hz cabinet roll-off moved to the downstream host, 2026-07)
 - LPF: 5500 Hz, Q=0.707 (Butterworth, lowered from 7500 Hz)
 - Hammerstein polynomial: (x + 0.2x² + 0.6x³) / 1.8, normalized
 - tanh Xmax soft stop

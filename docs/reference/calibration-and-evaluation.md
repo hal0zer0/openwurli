@@ -32,6 +32,11 @@ CRITICAL CONTEXT: A previous iteration of this project achieved good FFT-derived
 
 ### 1.1 Source 1: OldBassMan Wurlitzer 200A (PRIMARY)
 
+> **⚠ Octave caveat.** These recordings sound one octave below their filename labels
+> (true MIDI = label − 12). The MIDI numbers, H2/H1 figures, decay fits and register
+> trends in this section were measured at the **labelled** pitch and are void for
+> calibration. See the [Appendix D](#appendix-d-obm-ab-comparison-feb-2026-void) notice.
+
 - **Origin:** Freesound pack 5726, CC-BY 4.0
 - **Format:** 48 kHz / 24-bit mono WAV
 - **Recording chain:** Wurlitzer 200A -> Lundahl transformer -> tube preamp -> ADC
@@ -52,7 +57,7 @@ CRITICAL CONTEXT: A previous iteration of this project achieved good FFT-derived
 
 #### Pitch Label Corrections
 
-Note labels "A" and "F" in filenames are exactly 1 semitone sharp (mislabeled). D notes are correctly tuned. See `calibration-data.md` for full correction table.
+Note labels "A" and "F" in filenames are exactly 1 semitone sharp (mislabeled). D notes are correctly tuned.
 
 #### Harmonic Content Summary (sustain 150-800ms, recording-chain-corrected)
 
@@ -890,6 +895,8 @@ Corrected calibration data (this document)
 ```
 
 This uncertainty is large. However, the H2/H1 SLOPE across registers (-0.48 dB/semitone) is more reliable because the recording chain correction is approximately constant across the range. The slope uncertainty is approximately +/- 0.1 dB/semitone.
+
+> **⚠** The slope and H2/H1 values here were measured at the octave-mislabelled pitch and are void for calibration (see Appendix D).
 
 ## Appendix C: Comparison of Objective Audio Quality Metrics
 

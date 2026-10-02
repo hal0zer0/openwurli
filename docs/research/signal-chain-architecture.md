@@ -17,8 +17,8 @@ Complete specification for a physically-accurate Wurlitzer 200A electric piano p
 9. [Stage 7: Voice Summation (Per-Voice to Mono)](#9-stage-7-voice-summation-per-voice-to-mono)
 10. [Stage 8: Oversampling and Preamp (Mono, 2x Rate)](#10-stage-8-oversampling-and-preamp-mono-2x-rate)
 11. [Tremolo — Integrated in Preamp Emitter Feedback Loop](#11-tremolo--integrated-in-preamp-emitter-feedback-loop)
-12. [Stage 10: Volume Control (Mono, Base Rate)](#12-stage-10-volume-control-mono-base-rate)
-13. [Stage 11: Power Amplifier (Mono, Base Rate)](#13-stage-11-power-amplifier-mono-base-rate)
+12. [Stage 10: Volume Control (Mono, 2x Rate)](#12-stage-10-volume-control-mono-2x-rate)
+13. [Stage 11: Power Amplifier (Mono, 2x Rate)](#13-stage-11-power-amplifier-mono-2x-rate)
 14. [Stage 12: Speaker Cabinet (Mono, Base Rate)](#14-stage-12-speaker-cabinet-mono-base-rate)
 15. [Stage 13: Output Limiter and Stereo (Mono to Stereo)](#15-stage-13-output-limiter-and-stereo-mono-to-stereo)
 16. [Gain Staging Analysis](#16-gain-staging-analysis)
@@ -111,16 +111,13 @@ MIDI note-on (key, velocity, channel, note_id)
 
   Mono shared processing:
      -> 2x Upsample (6-coefficient (3+3) allpass polyphase IIR, ~28 dB rejection at 30 kHz)
-        [F] DkPreamp (melange-generated 12-node MNA solver) WITH INTEGRATED TREMOLO
+        [F] Preamp WITH INTEGRATED TREMOLO
+            Default: hand-written 9-node MNA solver (DK method, dk_preamp_legacy.rs)
+            Opt-in:  melange-generated 12-node solver (--features melange-preamp)
             Tremolo: LDR (LG-1) + R-10 (56K) modulate feedback ratio
-            DkPreamp: 8-node coupled MNA solver (DK method)
-              -> Stage 1: Miller pole ~23 Hz open-loop
-              -> Direct coupling
-              -> Stage 2: Miller pole ~81 kHz
-        [H] DC Block (handled internally by DK preamp)
+        [I] Volume network as drawn: R-11 trimmer → 10K pot at the user's position → amp input, loaded (see §12)
+        [K] Power Amplifier (Class AB, crossover distortion at low signal levels)
      -> 2x Downsample (matching allpass polyphase IIR)
-     [I] Volume network as drawn: R-11 trimmer → 10K pot at the user's position → amp input, loaded (see §12)
-     [K] Power Amplifier (Class AB, crossover distortion at low signal levels)
      [L] Speaker Cabinet (variable: bypass to authentic HPF 30 Hz subsonic + LPF 5.5 kHz)
      [M] Output (no separate limiter — handled by power amp tanh and speaker tanh Xmax)
      -> Mono to Stereo duplication
@@ -147,7 +144,7 @@ MIDI note-on (key, velocity, channel, note_id)
 | Speaker | NO (biquad filters + Hammerstein polynomial waveshaper a2=0.2/a3=0.6 + tanh Xmax limiting + thermal voice coil compression) | Marginal (low-order distortion at speaker stage) | Base |
 | Output Limiter | Not a separate stage (handled by power amp tanh + speaker tanh Xmax) | N/A | N/A |
 
-**Conclusion:** Only the preamp requires oversampling. 2x is sufficient because the preamp's input signal is already bandlimited by the pickup's natural bandwidth and the preamp's own Miller-effect rolloff. The preamp generates harmonics, but the highest-energy harmonics that could alias are well below Nyquist at 2x.
+**Conclusion:** The preamp is the stage that needs oversampling; the volume network and power amp share the 2x bus (`engine.rs`). 2x is sufficient because the preamp's input signal is already bandlimited by the pickup's natural bandwidth and the preamp's own Miller-effect rolloff. The preamp generates harmonics, but the highest-energy harmonics that could alias are well below Nyquist at 2x.
 
 ---
 
@@ -275,17 +272,12 @@ Calibration target: `base_decay = 0.005 * freq^1.22` with MIN_DECAY_RATE = 3.0 d
 // running envelope[m] *= decay_mult[m] each sample.
 // Mathematically identical to exp(-alpha*n) to ~15 decimal places.
 for each sample:
-    // Jitter: OU process updated every 16 samples (amortized cost /16, tau=20ms)
-    if sample_counter % 16 == 0:
-        for each mode m:
-            jitter_drift[m] += ou_update(jitter_drift[m], lcg_uniform_scaled())
-
     signal = 0.0
     for each mode m:
         // Quadrature output: amplitude * sin_state * onset * envelope
         signal += mode[m].amplitude * mode[m].s * onset * mode[m].envelope
 
-        // Jitter-corrected rotation (Taylor first-order correction for dω)
+        // Quadrature rotation
         let ci = mode[m].cos_inc   // precomputed cos(2π * freq * dt)
         let si = mode[m].sin_inc   // precomputed sin(2π * freq * dt)
         let s_new = mode[m].s * ci + mode[m].c * si
@@ -498,14 +490,14 @@ This is the most complex processing stage. The preamp adds harmonic coloring at 
 
 The preamp implements a `PreampModel` trait with `process_sample()`, `set_ldr_resistance()`, `reset()`. Two implementations exist behind this interface:
 1. **DkPreampLegacy** (`dk_preamp_legacy.rs`) — hand-written 9-node MNA solver on the 2026-09 drawn topology. **Default since v0.5.2.** Measured (v0.5.2 A/B) to be tonally indistinguishable from the melange solver (±0.18 dB gain offset, identical THD/H2/H3, identical tremolo range 6.10 dB) while being 1.6-7× faster depending on workload. The former `EbersMollPreamp` was deleted in v0.3.0.
-2. **DkPreamp** (melange-generated 12-node MNA solver using the DK method, `--features melange-preamp`) — full-precision implementation with shadow-pump cancellation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `dk-preamp-derivation.md`. Retained for full-precision DC-pump characterization studies; opt-in if a future analysis surfaces a tonal difference the v0.5.2 A/B missed.
+2. **DkPreamp** (melange-generated 12-node MNA solver using the DK method, `--features melange-preamp`) — full-precision implementation. Models the full two-stage circuit with direct coupling, Miller caps, and emitter feedback as a single coupled nonlinear system. See `dk-preamp-derivation.md`. Opt-in if a future analysis surfaces a tonal difference the v0.5.2 A/B missed.
 
 ### Oversampling Wrapper
 
 The preamp runs at 2x the base sample rate inside a polyphase IIR oversampler:
 
 1. **Upsample:** 6-coefficient (3+3) allpass polyphase half-band upsampler (~28 dB rejection at 30 kHz)
-2. **Process:** Run DkPreamp (coupled 8-node MNA solver) at 2x rate
+2. **Process:** Run the preamp (default: 9-node MNA solver), volume network and power amp at 2x rate
 3. **Downsample:** Matching allpass polyphase half-band downsampler
 
 The oversampler uses allpass IIR filters (custom Rust implementation in `oversampler.rs`). The ~28 dB rejection is sufficient because the preamp's Miller-effect rolloff naturally limits harmonic energy above ~15 kHz.
@@ -594,7 +586,7 @@ Because the tremolo modulates the preamp's emitter feedback (via the LDR shunt a
 
 ---
 
-## 12. Stage 10: Volume Control (Mono, Base Rate)
+## 12. Stage 10: Volume Control (Mono, 2x Rate)
 
 ### DECISION: Model as Real Attenuator Between Preamp and Power Amp
 
@@ -614,7 +606,7 @@ output = speaker(power_amp(drive)) * POST_SPEAKER_GAIN       // PSG = 0 dB: rail
 
 ---
 
-## 13. Stage 11: Power Amplifier (Mono, Base Rate)
+## 13. Stage 11: Power Amplifier (Mono, 2x Rate)
 
 **Priority: MEDIUM. The power amp is transparent at moderate levels but matters for ff polyphonic saturation and aged-instrument character.**
 
@@ -698,7 +690,7 @@ The speaker HPF/LPF are physical limitations, not design choices. Expose a "Spea
 
 Two variable-cutoff biquad filters (Direct Form II Transposed) with smoothed coefficient updates:
 
-1. **Open-baffle bass rolloff:** was a single HPF at 95 Hz, Q=0.75 — lowered to 30 Hz subsonic in 2026-07 (cabinet bass roll-off is Vurli's domain)
+1. **Open-baffle bass rolloff:** was a single HPF at 95 Hz, Q=0.75 — lowered to 30 Hz subsonic in 2026-07 (cabinet bass roll-off belongs to the downstream host)
    - Physics-motivated: combination of speaker resonance + open baffle cancellation (~12 dB/oct)
    - Attenuates C2 fundamental (65 Hz) by ~5.4 dB
    - Leaves H2 (130 Hz) nearly untouched
@@ -759,7 +751,7 @@ This section traces signal levels through the entire chain. Note: the DkPreamp u
 
 The power amp is driven through the drawn volume network. Measured with the
 engine's drive-headroom probe (`power_amp_drive_headroom_probe`, 2026-09-23,
-Reed Bar Trim at its 17.2K default): at the default pot position (0.80),
+R-11 (engine setting) at its 17.2K default): at the default pot position (0.80),
 single ff notes 37–70 mV peak at the amp input (11–22 % of the 319 mV clip
 knee) and a worst-phase ff chord 117 mV (37 %); at vol 1.0, 51–98 mV single
 (16–31 %) and 164 mV chord (51 %). The output mapping is `FULL_SCALE_VOLTS` =
@@ -786,13 +778,13 @@ Polyphonic headroom (measured 2026-09-23, six-note ff chord, speaker off):
 
 ### What Needs Oversampling
 
-Only the preamp requires oversampling. It is the only significantly nonlinear stage that generates harmonics above the input signal's bandwidth.
+The preamp is the main stage that generates harmonics above the input signal's bandwidth; the power amp also runs in the 2x bus (`engine.rs`; the aliasing gate is `alias_audit.rs`).
 
-The pickup's nonlinearity generates harmonics but does so at the base sample rate; its output bandwidth stays within the audio band. The output limiter operates on an already band-limited signal at low levels. The power amp crossover distortion generates only low-order odd harmonics at small signal levels.
+The pickup's nonlinearity generates harmonics but does so at the base sample rate; its output bandwidth stays within the audio band. The power amp crossover distortion generates only low-order odd harmonics at small signal levels.
 
 ### Why 2x Is Sufficient
 
-The preamp's input is naturally bandlimited by the pickup's RC HPF (~2312 Hz) and the modal oscillator's finite mode count. This means:
+The preamp's input is naturally bandlimited by the pickup's RC HPF (~880 Hz, `PICKUP_FC`) and the modal oscillator's finite mode count. This means:
 - The highest-energy input component is around 2-4 kHz (fundamental of mid/treble register, or H2 of bass)
 - The preamp generates harmonics at 2x, 3x, 4x, ... of this input
 - At 48 kHz base rate, 2x oversampling gives 96 kHz processing rate with 48 kHz Nyquist
@@ -803,7 +795,7 @@ For 44.1 kHz base rate, 2x gives 88.2 kHz with 44.1 kHz Nyquist. Still adequate 
 
 ### Conditional Bypass at High Sample Rates
 
-At host sample rates >= 88.2 kHz, the 2x oversampling is bypassed entirely. The preamp runs at the native host rate. Rationale: the preamp's bandwidth (~15.5 kHz) is well below the native Nyquist frequency (44.1+ kHz at 88.2 kHz host rate), so the oversampler provides no meaningful anti-aliasing benefit. Bypassing saves approximately 50% of the DK preamp solver cost (which dominates CPU usage).
+At host sample rates >= 88.2 kHz, the 2x oversampling is bypassed entirely. The preamp runs at the native host rate. Rationale: the preamp's bandwidth (HF −3 dB ≈ 16.8 kHz in the SPICE reference) is well below the native Nyquist frequency (44.1+ kHz at 88.2 kHz host rate), so the oversampler provides no meaningful anti-aliasing benefit. Bypassing saves approximately 50% of the DK preamp solver cost (which dominates CPU usage).
 
 The plugin checks `sample_rate < 88200.0` at initialization and sets `oversample` accordingly. The preamp-bench CLI supports `--sample-rate` to test rendering at non-default rates; oversampling is auto-bypassed when the specified rate is >= 88.2 kHz.
 
@@ -839,7 +831,7 @@ Addressed by 2x oversampling (Section 17). The ~28 dB rejection at 30 kHz is suf
 
 ### Output Limiter
 
-The tanh limiter at the output operates on a signal that has already been through the speaker cabinet LPF (5.5 kHz cutoff). Any harmonics generated by the tanh are above 11 kHz and inaudible. No oversampling needed.
+There is no separate output limiter (see §15).
 
 ### Denormal Protection
 
@@ -866,9 +858,9 @@ The plugin must support at minimum: 44100, 48000, 88200, 96000 Hz. Higher rates 
 
 ### At Higher Sample Rates
 
-At 96 kHz base rate (above the 88.2 kHz threshold), 2x oversampling is bypassed — the preamp's bandwidth (~15.5 kHz) is well below the native 48 kHz Nyquist. The preamp runs at the native 96 kHz rate, saving approximately 50% of DK solver cost. Filter coefficients are recomputed for the native rate in `activate()`.
+At 96 kHz base rate (above the 88.2 kHz threshold), 2x oversampling is bypassed — the preamp's bandwidth (HF −3 dB ≈ 16.8 kHz in the SPICE reference) is well below the native 48 kHz Nyquist. The preamp runs at the native 96 kHz rate, saving approximately 50% of DK solver cost. Filter coefficients are recomputed for the native rate in `activate()`.
 
-At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The pickup RC HPF limits the preamp input to ~2312+ Hz, so even H12 of a 4 kHz input (48 kHz) is below the 44.1 kHz Nyquist of the oversampled domain. Adequate.
+At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The pickup RC HPF (~880 Hz) attenuates the preamp input below that corner, so even H12 of a 4 kHz input (48 kHz) is below the 44.1 kHz Nyquist of the oversampled domain. Adequate.
 
 ---
 
@@ -878,10 +870,12 @@ At 44.1 kHz, the 2x oversampler runs at 88.2 kHz. The pickup RC HPF limits the p
 
 | ID | Name | Module | Min | Max | Default | Purpose |
 |----|------|--------|-----|-----|---------|---------|
-| "volume" | Volume | output | 0% | 100% | 50% | Audio taper attenuator between preamp and power amp |
+| "volume" | Volume | output | 0% | 100% | 80% | The drawn volume pot (audio taper) between preamp and power amp |
 | "trem_depth" | Tremolo Depth | tremolo | 0% | 100% | 50% | Modulation amount |
 | "speaker" | Speaker Character | speaker | 0% | 100% | 0% | 0%=bypass (full range), 100%=authentic (HPF+LPF+waveshaper) |
-| "mlp" | MLP Corrections | dsp | off / on | — | on | Per-note ML corrections for freq/decay/displacement |
+| "mlp" | MLP Corrections | dsp | off / on | — | off | Per-note ML corrections (H2/H3 mode tuning and decay) |
+
+The plugin also applies a fixed +14 dB output alignment (`OUTPUT_ALIGNMENT_DB`) after the engine. R-11 (reed-bar volume trim) is an engine setting, not a plugin parameter.
 
 All other parameters (decay rates, pickup gap, preamp component values, mode amplitudes, velocity curve, attack overshoot) are hardcoded internally based on physical circuit analysis and OBM calibration data. They are not exposed to the user.
 
@@ -890,8 +884,8 @@ All other parameters (decay rates, pickup gap, preamp component values, mode amp
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | DC block | N/A | Handled internally by DK preamp |
-| Speaker HPF (authentic) | 30 Hz, Q=0.75 | Subsonic only (2026-07; the 95 Hz cabinet roll-off moved to Vurli) |
-| Speaker LPF (authentic) | 5500 Hz, Q=0.707 | Cone breakup (OBM-calibrated, was 7500 Hz) |
+| Speaker HPF (authentic) | 30 Hz, Q=0.75 | Subsonic only (2026-07; the 95 Hz cabinet roll-off moved to the downstream host) |
+| Speaker LPF (authentic) | 5500 Hz, Q=0.707 | Cone breakup (was 7500 Hz; calibrated at the octave-mislabelled OBM pitch — unverified) |
 | Noise decay | 1/0.003 = 333 Hz | 3ms attack noise time constant |
 | Dwell sigma^2 | 64.0 | Gaussian dwell filter width (sigma=8.0) |
 | kNumModes | 7 | Modal oscillator mode count |

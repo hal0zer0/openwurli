@@ -34,7 +34,6 @@ The signal chain:
 - Tremolo that modulates timbre (not just amplitude), matching the real 200A topology
 - Per-note MLP corrections trained on real Wurlitzer recordings (experimental)
 - Per-note variation in tuning and amplitude (no two notes sound identical)
-- Per-mode frequency jitter to break digital coherence
 - CLAP and VST3 plugin formats
 
 ## Install

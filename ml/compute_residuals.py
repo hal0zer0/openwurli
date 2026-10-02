@@ -61,7 +61,7 @@ MAX_RELIABLE_HARMONIC = 2  # Only H2 and H3 targets
 # giving ds targets of 1.3x-77x against a runtime clamp of 0.7-1.05. A head that
 # can only rail on its clamp is not a correction, and whether the gap is the
 # recording chain or missing physics is unresolved. Masked, the head is untrained
-# and the runtime emits identity for it (mlp_correction.rs DS_TRAINED).
+# and the runtime ignores that output (mlp_correction.rs reads outputs 0-9 only).
 TRAIN_DS = False
 
 

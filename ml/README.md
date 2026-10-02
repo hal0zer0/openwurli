@@ -6,12 +6,12 @@ A small neural network that runs once at note-on to correct per-note spectral ch
 
 The physical model produces good spectral shape overall, but individual notes have small systematic errors in harmonic levels, tuning, and decay rates that vary across the keyboard. This pipeline extracts those residuals from real recordings and trains an MLP to correct them.
 
-**Architecture (v2):** 2 inputs (MIDI note, velocity) -> 16 hidden (ReLU) -> 16 hidden (ReLU) -> 11 outputs. Total: 507 parameters. Runtime: <10 us per note-on. (The hidden width was 8 / 195 parameters before the v0.5.0 retrain; `--hidden` still defaults to 8, so pass `--hidden 16` to reproduce the shipped model.)
+**Architecture (v2):** 2 inputs (MIDI note, velocity) -> 16 hidden (ReLU) -> 16 hidden (ReLU) -> 11 outputs. Total: 507 parameters. (The hidden width was 8 / 195 parameters before the v0.5.0 retrain; `--hidden` still defaults to 8, so pass `--hidden 16` to reproduce the shipped model.)
 
 **Outputs (11 values):**
 - H2-H6 frequency offsets (cents) -- 5 values
 - H2-H6 decay ratio multipliers -- 5 values
-- Displacement scale correction -- 1 value
+- Displacement scale correction -- 1 value (retired 2026-09-27: masked in training, ignored at runtime; see below)
 
 v2 removed amplitude offsets (harmonic-vs-mode domain mismatch) and fixed a sign bug in the displacement scale correction that had v1 pushing corrections in the wrong direction.
 
@@ -70,7 +70,7 @@ The final artifact is `crates/openwurli-dsp/src/mlp_weights.rs`, containing the 
 
 ## Integration
 
-At note-on, `MlpCorrections::infer(midi, velocity)` runs the MLP forward pass and returns an `MlpCorrections` struct. The voice module applies these corrections to mode frequencies, decay rates, and displacement scale before synthesis begins.
+At note-on, `MlpCorrections::infer(midi, velocity)` runs the MLP forward pass and returns an `MlpCorrections` struct. The voice module applies these corrections to mode frequencies and decay rates before synthesis begins (H2/H3 heads only; the rest are identity).
 
 Outside the training range (MIDI 38-86), corrections fade linearly to identity over 12 semitones, ensuring graceful degradation at keyboard extremes.
 
@@ -111,24 +111,23 @@ few dB. The ds head's targets became 1.3x-77x against its 0.7-1.05 runtime
 clamp, so it could only rail. Whether the gap is the recording chain or
 missing physics is unresolved, and the model is not tuned toward it. The head
 is masked in training (`TRAIN_DS` in `compute_residuals.py`) and emits
-identity at runtime (`DS_TRAINED` in `mlp_correction.rs`). With corrections on,
+is ignored at runtime (`mlp_correction.rs` unpacks only outputs 0-9). With corrections on,
 the network now adjusts only H2/H3 mode tuning and decay.
 
 ### Known limitations of the target set
 
-- **Three of the five decay outputs are never trained.** `MAX_RELIABLE_HARMONIC`
-  keeps only H2 and H3, so decay_H4-H6 have an all-false mask, a zero
-  normalisation mean and unit std. Weight decay drives them to ~0, and the
-  runtime lower clamp turns that into a 0.3 decay multiplier — i.e. modes 4-6
-  decay 3.3x faster whenever corrections are enabled. That is a pipeline
-  defect, not a fit problem: retraining cannot fix it, and it reproduces on
-  every seed and on the pre-revision weights.
+- **Three of the five decay outputs (and three frequency outputs) are never
+  trained.** `MAX_RELIABLE_HARMONIC` keeps only H2 and H3. Their runtime rail
+  to the 0.3 clamp was fixed 2026-09-14: untrained heads now emit identity
+  (`N_TRAINED_HARMONICS`, see below).
 - **Single velocity.** Every OBM observation is velocity ~80, so anything the
   network does away from that velocity is extrapolation, and it is not
   constrained to move in the physically correct direction.
-- **Room-coupled reference.** The OBM recordings are speaker-in-a-room
-  captures, not DI. Absolute residuals against them mix instrument error with
-  room and speaker colour and must not be read as circuit-fidelity figures.
+- **Coloured reference.** The OBM recordings pass through a transformer and a
+  tube preamp that add their own H2 (see
+  `docs/reference/calibration-and-evaluation.md`). Absolute residuals against
+  them mix instrument error with that colour and must not be read as
+  circuit-fidelity figures.
 
 ## Files
 
@@ -157,7 +156,7 @@ SNR/anomaly filters. Verified against `ml_data/training_data.npz`:
 | `freq_H4` / `H5` / `H6` | **0 / 13** |
 | `decay_H2` / `decay_H3` | 13 / 13 and 12 / 13 (11 / 13 since the true-pitch fix) |
 | `decay_H4` / `H5` / `H6` | **0 / 13** |
-| `ds` | 13 / 13 |
+| `ds` | 13 / 13 (masked since 2026-09-27) |
 
 Six of the eleven outputs were never trained. An untrained head is not neutral — it emits
 whatever the shared hidden layers and the initialisation leave, and then meets a clamp.
@@ -196,6 +195,6 @@ The decay heads could not have caused it either way: `decay_offsets` apply to th
 harmonic bins at all. The rail was a real correctness defect and is worth fixing; it was
 simply inaudible.
 
-`ds_correction` extrapolating below 1.0 at out-of-distribution velocity is the live issue,
-and it is unchanged here (out of scope). A velocity fade on the ds head is the standing
-proposal. **MLP default stays OFF.**
+`ds_correction` extrapolating below 1.0 at out-of-distribution velocity was the remaining
+issue; it is closed by the 2026-09-27 retirement of the ds head (above). The `1/(1−y)` pickup
+law named here has since been replaced by the field-solved overlap law. **MLP default stays OFF.**

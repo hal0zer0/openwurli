@@ -16,11 +16,12 @@ Circuit analysis, physics models, and DSP derivations for the 200A signal chain.
 |----------|-------------|
 | [Signal Chain Architecture](research/signal-chain-architecture.md) | Complete DSP specification: signal flow, stage interconnections, gain staging |
 | [Preamp Circuit](research/preamp-circuit.md) | Two-stage BJT preamp: component values, DC bias, feedback topology |
-| [DK Preamp Derivation](research/dk-preamp-derivation.md) | Discretization-K method: 8-node MNA, trapezoidal discretization, Sherman-Morrison |
+| [DK Preamp Derivation](research/dk-preamp-derivation.md) | Discretization-K method: 9-node MNA on the drawn topology, trapezoidal discretization, Sherman-Morrison |
 | [Output Stage](research/output-stage.md) | Power amplifier, tremolo/LDR feedback, speaker cabinet model |
 | [Pickup Overlap Law](research/pickup-overlap-law.md) | The shipping pickup law: through-slot comb geometry, field-solved C(u) tables, numerics and resolution limits |
 | [Pickup System](research/pickup-system.md) | Electrostatic pickup: RC network, capacitive coupling (its 1/(1-y) geometry sections are superseded by the overlap law) |
 | [Reed and Hammer Physics](research/reed-and-hammer-physics.md) | Modal synthesis: Euler-Bernoulli beam theory, tip mass, dwell filter |
+| [Reed Pitch: Glide and Clamp](research/reed-clamp-glide.md) | Why the random pitch jitter was removed; the measured (unmodelled) pitch glide |
 
 ## Reference (`reference/`)
 
@@ -33,3 +34,4 @@ AI assistants alike.
 | [Calibration and Evaluation](reference/calibration-and-evaluation.md) | OBM recording analysis, spectral targets, evaluation methodology |
 | [SPICE-Rust Mapping](reference/spice-rust-mapping.md) | SPICE-to-Rust translation guide: node map, discretization, bug archaeology |
 | [Parameter Tuning Guide](reference/parameter-tuning-guide.md) | Parameter interaction chains, calibration workflow, sensitivity analysis |
+| [clap-validator Known Failures](reference/clap-validator-known-failures.md) | Triage of the CLAP validator failures (traced to the framework wrapper) |

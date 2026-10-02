@@ -32,7 +32,7 @@ The authoritative schematic is `#203720-S-3` — specifically the titled archive
 
 ```bash
 cargo build --workspace          # Build everything
-cargo test --workspace           # Run all tests (~144)
+cargo test --workspace           # Run all tests
 cargo fmt --check                # Check formatting
 cargo clippy --workspace -- -D warnings  # Lint
 
@@ -57,8 +57,10 @@ crates/
   openwurli-dsp/src/          # DSP library (pure math, no framework deps)
     reed.rs                   #   Modal oscillator (7 modes)
     hammer.rs                 #   Dwell filter + attack noise + onset ramp
-    pickup.rs                 #   Electrostatic pickup (time-varying RC)
+    pickup.rs                 #   Capacitive pickup (field-solved overlap law + RC network)
+    pickup_tables.rs          #   Generated overlap-law capacitance tables
     voice.rs                  #   Voice assembly (reed + hammer + pickup)
+    engine.rs                 #   Engine: voices, shared chain, parameter smoothing
     tables.rs                 #   Per-note parameters (freq, decay, mode ratios)
     variation.rs              #   Per-note detuning and amplitude variation
     filters.rs                #   Biquad wrapper (backed by melange-primitives)
@@ -66,13 +68,15 @@ crates/
     dk_preamp/                #   Feature-toggled preamp (hand 9-node default; --features melange-preamp for 12-node)
     dk_preamp_legacy.rs       #   Hand-written 9-node MNA preamp solver (default since v0.5.2; drawn topology since v0.7.0)
     gen_preamp.rs             #   Melange-generated 12-node preamp solver (opt-in via --features melange-preamp)
-    mlp_correction.rs         #   Per-note MLP inference (2->8->8->11)
-    mlp_weights.rs            #   Trained MLP weights (195 params)
+    mlp_correction.rs         #   Per-note MLP inference (2->16->16->11)
+    mlp_weights.rs            #   Trained MLP weights (507 params)
     preamp.rs                 #   PreampModel trait
     tremolo.rs                #   CdS LDR + melange Twin-T oscillator
+    gen_tremolo.rs            #   Melange-generated Twin-T oscillator solver
     power_amp.rs              #   Power amp; behavioral NR is the shipping default (feature legacy-power-amp, in default set)
     gen_power_amp.rs          #   Melange-generated 7-BJT Class AB solver (opt-in: build with --no-default-features)
     speaker.rs                #   HPF/LPF cabinet simulation
+    alias_audit.rs            #   Rate-convergence alias gate
   openwurli-plugin/src/       # nih-plug CLAP+VST3 plugin
     lib.rs                    #   Plugin entry, process callback, voice mgmt
     params.rs                 #   Parameter definitions
@@ -98,7 +102,7 @@ xtask/                        # nih-plug bundler
 | Tier | Scope | What it tests |
 |------|-------|---------------|
 | 1 | Circuit | Sine -> preamp -> stop. Gain, sweep, harmonics, tremolo-sweep |
-| 2 | Voice + MLP | Reed -> pickup -> preamp -> stop. OBM comparison |
+| 2 | Voice + preamp | Reed -> pickup -> preamp -> stop. Voice + preamp renders |
 | 3 | Full plugin | Complete chain with power amp, speaker, volume |
 
 ## Version Codenames

@@ -11,13 +11,13 @@ Each row maps a circuit block from schematic → SPICE netlist → Rust implemen
 | Circuit Block | Schematic Ref | SPICE File(s) | Rust File(s) | Key Equations | Notes |
 |---|---|---|---|---|---|
 | **Electrostatic pickup** | Pickup comb, reed | `spice/subcircuits/pickup.cir` + generated `pickup_law.inc`, `spice/testbench/tb_pickup.cir` | `pickup.rs` + generated `pickup_tables.rs` | `C(u) = C₀·(1 + law(u) − law(rest))`, `i = V_pol · dC/dt`; both laws generated from one field solve by `tools/pickup_field2d.py` | Overlap law is primary bark source; SPICE vs plugin harmonics agree ≤0.1 dB |
-| **Preamp Stage 1 (TR-1)** | TR-1 (2N5089), Rc1=150K, Re1=33K | `spice/subcircuits/preamp.cir`, `spice/testbench/preamp_emitter_fb.cir` | `dk_preamp/` (melange adapter, default), `dk_preamp_legacy.rs` (hand-written 8-node) | Ebers-Moll: `Ic = Is(e^(Vbe/Vt) - 1)` | Headroom: 2.05V sat / 10.9V cutoff (5.3:1) |
-| **Preamp Stage 2 (TR-2)** | TR-2 (2N5089), Rc2=1.8K, Re2a=270Ω, Re2b=820Ω | Same as above | Same as above | Direct-coupled from TR-1 collector | Headroom: 5.3V sat / 6.2V cutoff (1.17:1) |
-| **Miller caps (C-3, C-4)** | C-3=100pF (TR-1), C-4=100pF (TR-2) | `spice/testbench/tb_preamp_ac.cir` (bandwidth) | `dk_preamp.rs` (inner loop) | Trapezoidal companion: `i = g_c·v + J_prev` | Forms inner BW-controlling feedback loop |
-| **Input network (Cin, R-1)** | Cin=0.022µF, R-1=22K | `spice/testbench/tb_preamp_ac.cir` | `dk_preamp.rs` (bilinear companion, §8.1) | `g_cin = 2C/T`, history source `cin_rhs_prev` | See Cin-R1 bug in §4 below |
-| **Feedback network** | R-10=56K, Ce1=4.7µF, Re1=33K | `spice/testbench/preamp_emitter_fb.cir` | `dk_preamp.rs` (outer loop) | Series-series negative feedback | Ce1 is DC-blocking short at audio freq |
+| **Preamp Stage 1 (TR-1)** | TR-1 (2N5089), Rc1=150K, Re1=33K | `spice/subcircuits/preamp.cir`, `spice/testbench/tb_preamp_dc.cir` | `dk_preamp_legacy.rs` (hand-written 9-node, default); `dk_preamp/melange_adapter.rs` + `gen_preamp.rs` (melange 12-node, opt-in `--features melange-preamp`) | Ebers-Moll: `Ic = Is(e^(Vbe/Vt) - 1)` | Headroom: 1.96 V sat / 10.52 V cutoff (dk-preamp-derivation.md §13) |
+| **Preamp Stage 2 (TR-2)** | TR-2 (2N5089), Rc2=1.8K, Re2a=270Ω, Re2b=820Ω | Same as above | Same as above | Direct-coupled from TR-1 collector; C-7 AC-grounds the emitter (the high-gain stage) | Clips first; near-symmetric (1.21:1, dk-preamp-derivation.md §13) |
+| **Miller caps (C-3, C-4)** | C-3=100pF (TR-1), C-4=100pF (TR-2) | `spice/testbench/tb_preamp_ac.cir` (bandwidth) | `dk_preamp_legacy.rs` (inner loop) | Trapezoidal companion: `i = g_c·v + J_prev` | Forms inner BW-controlling feedback loop |
+| **Input network (Cin, R-1)** | Cin=0.022µF, R-1=22K | `spice/testbench/tb_preamp_ac.cir` | `dk_preamp_legacy.rs` (bilinear companion) | `g_cin = 2C/T`, history source `cin_rhs_prev` | See Cin-R1 bug in §4 below |
+| **Feedback network** | R-10=56K, Ce1=4.7µF, Re1=33K | `spice/subcircuits/preamp.cir` | `dk_preamp_legacy.rs` (outer loop) | Series-series negative feedback | Ce1 is DC-blocking short at audio freq |
 | **LDR / Tremolo** | LG-1 (CdS LDR), cable-routed | `spice/subcircuits/tremolo_osc.cir`, `spice/testbench/tb_tremolo_osc.cir` | `tremolo.rs` | Rldr shunts fb_junction to GND | Modulates closed-loop gain, not volume |
-| **Power amplifier** | 7 BJTs (2N5087 diff pair, MPSA06 VAS + drivers, MPSA56 PNP driver, TIP35C/TIP36C outputs), Class AB | `spice/subcircuits/power_amp.cir`, `spice/melange/wurli-power-amp.cir`, `spice/testbench/tb_power_amp.cir` | `gen_power_amp.rs` (melange-generated, default); `power_amp.rs` (adapter + `--features legacy-power-amp` behavioral NR) | Full Gummel-Poon on every transistor; N=20, M=16, Nodal + Backward Euler auto | Crossover suppressed >30 dB by feedback; rail clips ±22 V |
+| **Power amplifier** | 7 BJTs (2N5087 diff pair, MPSA06 VAS + drivers, MPSA56 PNP driver, TIP35C/TIP36C outputs), Class AB | `spice/subcircuits/power_amp.cir`, `spice/melange/wurli-power-amp.cir`, `spice/testbench/tb_power_amp.cir` | `power_amp.rs` (behavioral closed-loop NR, default via feature `legacy-power-amp`); `gen_power_amp.rs` (melange-generated, opt-in with `--no-default-features`) | Full Gummel-Poon on every transistor; N=20, M=16, Nodal + Backward Euler auto | Crossover suppressed >30 dB by feedback; rail clips ±22 V |
 | **Speaker** | 4×8" oval, 16Ω ceramic | (not modeled in SPICE) | `speaker.rs` | Hammerstein polynomial: a2=0.2, a3=0.6 | Variable HPF/LPF + nonlinearity + tanh Xmax |
 | **Full chain** | End-to-end | `spice/testbench/tb_full_chain.cir` | `voice.rs` → plugin `lib.rs` | — | Integration testbench |
 
@@ -40,19 +40,10 @@ Each row maps a circuit block from schematic → SPICE netlist → Rust implemen
 
 ## 2. DK Preamp Node Map
 
-The DK method uses an 8-node MNA system. This is the critical mapping between SPICE nodes and
-the Rust `dk_preamp.rs` matrix indices.
-
-| MNA Index | Circuit Node | SPICE Name | Description |
-|---|---|---|---|
-| 0 | v_in_internal | After Cin-R1 | Internal node past input coupling cap |
-| 1 | v_b1 | TR-1 base | Base of first transistor |
-| 2 | v_c1 = v_b2 | TR-1 collector / TR-2 base | Direct-coupled interstage |
-| 3 | v_e1 | TR-1 emitter | Feedback injection point |
-| 4 | v_c2 | TR-2 collector | Output node |
-| 5 | v_e2 | TR-2 emitter | Second stage emitter |
-| 6 | v_fb | Feedback junction | Where R-10, Ce1, and Rldr meet |
-| 7 | v_out | After D-1/R-9 | Output after clamp diode |
+The default solver (`dk_preamp_legacy.rs`) uses a 9-node MNA system. The node table — the
+critical mapping between SPICE node names and Rust matrix indices — is maintained in
+[DK Preamp Derivation §2](../research/dk-preamp-derivation.md#2-node-numbering); it is not
+restated here.
 
 **Critical cross-check:** When comparing SPICE `.print` statements against Rust node indices,
 verify that node numbering matches. SPICE uses named nodes; Rust uses integer indices.
@@ -99,14 +90,14 @@ IS part of G. The history source completes the average — it's not double-count
 included as an HPF in the signal chain.
 **Fix:** Removed C20 from 200A signal path entirely.
 **Lesson:** Always verify which schematic revision a component appears on. The verified 200A
-schematic (`docs/verified_wurlitzer_200A_series_schematic.pdf`) is the ONLY reference.
+schematic (#203720-S-3, see `docs/SCHEMATIC_SOURCE.md`) is the ONLY reference.
 
 ### Bug 3: Constant-GBW Assumption (Feb 2026)
 **Symptom:** Trem-bright bandwidth was 5.2 kHz (should be ~10 kHz).
 **Root cause:** Decoupled (EbersMoll) model (since deleted) assumed constant GBW like a simple op-amp. But the
 200A preamp has TWO nested feedback loops — inner (C-3/C-4 Miller) controls BW, outer
 (R-10/Ce1/Rldr) controls gain. GBW scales with gain, not constant.
-**Fix:** DK method models both loops as a coupled 8-node MNA system, capturing the interaction.
+**Fix:** DK method models both loops as a coupled MNA system (8-node at the time; 9-node since the 2026-09 drawn-topology revision), capturing the interaction.
 **Lesson:** Don't assume op-amp rules for discrete BJT circuits. Simulate first, simplify later.
 
 ---
@@ -119,7 +110,7 @@ This is the checklist. For each circuit element in SPICE, verify against Rust:
 - [ ] **Sign of off-diagonal entries:** In MNA, conductance between nodes i and j appears as
   `+g` on diagonal (i,i) and (j,j), and `-g` on off-diagonal (i,j) and (j,i). Missing a
   negative sign is the #1 most common MNA bug.
-- [ ] **Ground references:** SPICE node 0 is ground. In the Rust 8-node system, ground is
+- [ ] **Ground references:** SPICE node 0 is ground. In the Rust MNA system, ground is
   implicit (not a matrix row). Every component connected to ground only stamps the diagonal.
   A component between nodes i and ground stamps ONLY `G[i][i]`, not `G[i][0]`.
 - [ ] **Transconductance direction:** `gm` in a BJT stamps `+gm` at (collector, base) and
@@ -204,12 +195,13 @@ fix touches the preamp.
 ### Rust DSP Source
 | File | Purpose |
 |---|---|
-| `crates/openwurli-dsp/src/dk_preamp/` | Preamp (legacy 8-node default since v0.5.2; melange 12-node via --features melange-preamp) |
+| `crates/openwurli-dsp/src/dk_preamp_legacy.rs` | Hand-written 9-node preamp solver (default) |
+| `crates/openwurli-dsp/src/dk_preamp/` | Feature dispatch; `melange_adapter.rs` wraps the opt-in melange 12-node solver (`gen_preamp.rs`, `--features melange-preamp`) |
 | `crates/openwurli-dsp/src/preamp.rs` | PreampModel trait |
 | `crates/openwurli-dsp/src/pickup.rs` | Electrostatic pickup: field-solved overlap law + HPF |
-| `crates/openwurli-dsp/src/gen_power_amp.rs` | Melange-generated 7-BJT Class AB solver (default) |
-| `crates/openwurli-dsp/src/power_amp.rs` | Adapter + `--features legacy-power-amp` behavioral NR fallback |
-| `crates/openwurli-dsp/src/gen_tremolo.rs` | Melange-generated Twin-T oscillator (default) |
+| `crates/openwurli-dsp/src/power_amp.rs` | Behavioral closed-loop NR power amp (default, feature `legacy-power-amp`) + adapter |
+| `crates/openwurli-dsp/src/gen_power_amp.rs` | Melange-generated 7-BJT Class AB solver (opt-in, `--no-default-features`) |
+| `crates/openwurli-dsp/src/gen_tremolo.rs` | Melange-generated Twin-T oscillator (the only oscillator) |
 | `crates/openwurli-dsp/src/tremolo.rs` | Adapter + CdS LDR model (Twin-T oscillator circuit) |
 | `crates/openwurli-dsp/src/speaker.rs` | Hammerstein nonlinearity + HPF/LPF |
 | `crates/openwurli-dsp/src/filters.rs` | Biquad wrapper (backed by melange-primitives) |
@@ -229,5 +221,4 @@ fix touches the preamp.
 |---|---|
 | `spice/testbench/tb_preamp_dc.cir`, `tb_preamp_ac.cir` | Preamp DC and AC targets (drawn topology) |
 | `spice/testbench/tb_full_chain.cir` | End-to-end simulation |
-| `spice/testbench/preamp_emitter_fb.cir` | Feedback topology reference |
 | `spice/testbench/tb_harmonic_audit.cir` | Per-stage harmonic attribution |

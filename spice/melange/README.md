@@ -16,4 +16,6 @@ them without regenerating the corresponding solver.
 
 ## Last synced
 
-2026-04-09 — identical to upstream at initial circuits repo creation (pre-first-commit).
+2026-09-23 — last change to these netlists in this repo. Functional sync with the upstream
+copies is checked by `crates/openwurli-dsp/tests/netlist_sync.rs` (skipped when no upstream
+checkout is present); the regen manifest pins each netlist to its generated solver.

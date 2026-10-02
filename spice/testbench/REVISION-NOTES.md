@@ -1,6 +1,6 @@
 # Testbench migration state — 2026-09 drawn-topology revision
 
-Branch `revision/drawn-topology`. All benches include the REVISED
+The revision is merged to `main` (released in 0.7.0). All benches include the REVISED
 `subcircuits/preamp.cir` / `tremolo_osc.cir` automatically; every supply
 line is migrated 15 → 14.5 V. Per-bench status below. "RE-BASELINED" =
 run on the revised topology and header targets updated; "PENDING" = runs

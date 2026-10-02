@@ -2,7 +2,7 @@
 
 Comprehensive technical reference for implementing a digital model of the Wurlitzer 200A reed-bar preamplifier: verified topology and component values, DC bias analysis, AC signal analysis, harmonic generation, tremolo integration, and modeling recommendations.
 
-> **See also:** [DK Preamp Derivation](dk-preamp-derivation.md) (MNA math — ⚠ pre-revision, rewrite pending with the 9-node solver), [Output Stage](output-stage.md) (tremolo LDR integration)
+> **See also:** [DK Preamp Derivation](dk-preamp-derivation.md) (MNA math for the 9-node solver), [Output Stage](output-stage.md) (tremolo LDR integration)
 
 ---
 
@@ -438,7 +438,7 @@ TR-2 collector ── C-6 (4.7µF) ── node_c6 (0V DC) ── R-9 (6.8K) ─�
 
 - **R-18 (680 Ω) is NOT in the LDR leg** — it is in the LED drive path on the oscillator side (output-stage.md §2.3). The LDR (LG-1 pins 4→3) connects cable-direct from the wiper branch to ground.
 - Shunt impedance seen by fb_junct: `Z = (R_up ∥ 18K) + (R_low ∥ R_ldr)`, `R_up = 50K·(1−depth)`, `R_low = 50K·depth`. Depth-0 floor = 50K∥18K ≈ **13.24K → ≈ 15.9 dB** (a good match to Avenson's ~15 dB).
-- Because C-6 blocks DC, **no DC crosses R-10 into the LDR leg: the tremolo bias pump of earlier models does not exist** (measured 0.000 mV bias excursion under 19K↔1M LDR cycling — `tb_pump_emit.cir`, now a C-6 regression guard). The shadow-pump compensation in the pre-revision DSP loses its physical basis.
+- Because C-6 blocks DC, **no DC crosses R-10 into the LDR leg: the tremolo bias pump of earlier models does not exist** (measured 0.000 mV bias excursion under 19K↔1M LDR cycling — `tb_pump_emit.cir`, now a C-6 regression guard). The shadow-pump compensation in the pre-revision DSP lost its physical basis and was retired 2026-09-14.
 - ⚠ **Quantitative partition figures are pending**: the pre-revision "no-vib ≈ 13K / 8K↔48K / ~7 dB AM" set was computed with a spurious 680 Ω in the LDR leg AND a fixed-LED-current assumption; both fell. Re-derive with the light-law re-fit (decision test: re-fit the cell range on the drawn LED path; ship changes only if the depth ladder or drive shape audibly differs). Depth-swing shape (≈ 7.9 dB over 8K↔48K) is robust across all card variants.
 
 ### 7.3 Gain modulation
@@ -499,7 +499,7 @@ tool before the fix needs re-taking.
 
 ### 8.3 Simplifications that changed with the revision
 
-- **Shadow-pump subtraction: obsolete.** The real circuit has no pump (C-6). Remove after the 9-node solver lands and the pump guard passes.
+- **Shadow-pump subtraction: retired** (2026-09-14). The real circuit has no pump (C-6); the pump guard passes on the 9-node solver.
 - **Stage-1 asymmetric soft-clip constants: retain but flagged** (§6.2) until directly probed.
 - **"Stage 2 fully linear": no longer safe** — stage 2 is now the gain stage and the first to clip; its exponential is the surviving preamp nonlinearity.
 - Ce1-as-short, Ce2-27 Hz-corner shortcuts: the 27 Hz figure was the *wrong-span* corner; the real C-7 shaping is the 6.6/971 Hz pair, inside the loop — the MNA captures it natively; behavioral models must not drop it.
