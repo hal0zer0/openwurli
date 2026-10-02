@@ -43,8 +43,8 @@ cargo run -p preamp-bench -- render --note 60 --velocity 100 --duration 2.0 --ou
 cargo run -p preamp-bench -- sweep --start 20 --end 20000 --points 50
 cargo run -p preamp-bench -- h2-audit --notes 36,48,60,72,84
 
-# Reed-only renderer
-cargo run -p reed-renderer -- -n 60 -v 100 -d 1.0 -o /tmp/reed.wav
+# Reed + pickup only (no preamp, amp or speaker)
+cargo run -p preamp-bench -- render --note 60 --velocity 100 --duration 1.0 --no-preamp --no-poweramp --speaker 0 --no-mlp --output /tmp/reed.wav
 
 # Release (maintainer only — uses /release skill)
 # /release 0.2.4 SomeCodename
@@ -78,7 +78,6 @@ crates/
     params.rs                 #   Parameter definitions
 tools/
   preamp-bench/               # DSP validation CLI
-  reed-renderer/              # Standalone WAV renderer
 docs/                         # Technical reference (circuit analysis, DSP specs)
 spice/                        # ngspice netlists and testbenches
 ml/                           # MLP training pipeline (Python/PyTorch)

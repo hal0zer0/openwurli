@@ -565,14 +565,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reed-renderer"
-version = "0.9.0"
-dependencies = [
- "hound",
- "openwurli-dsp",
-]
-
-[[package]]
 name = "reflink"
 version = "0.1.3"
 source = "git+https://github.com/nicokoch/reflink.git?rev=e8d93b465f5d9ad340cd052b64bbc77b8ee107e2#e8d93b465f5d9ad340cd052b64bbc77b8ee107e2"

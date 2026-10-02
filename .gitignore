@@ -44,14 +44,13 @@ tools/pulse-visualizer/
 # Audio output (regenerable)
 *.wav
 *.flac
-tools/reed-renderer/output/
 
 # Local diagnostic baselines / regression dumps (regenerate as needed)
 baseline/
 
 # Ad-hoc diagnostic example harnesses (built during debugging sessions,
-# not part of the public API — production demos go through preamp-bench
-# / reed-renderer crates).
+# not part of the public API — production demos go through the preamp-bench
+# crate).
 crates/openwurli-dsp/examples/
 
 # Local SPICE testbenches (auxiliary; canonical netlists are in
