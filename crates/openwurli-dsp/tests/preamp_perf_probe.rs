@@ -34,7 +34,7 @@ fn preamp_tremolo_cpu_probe() {
     let feature = if cfg!(feature = "melange-preamp") {
         "MELANGE 12-node"
     } else {
-        "LEGACY 8-node"
+        "LEGACY 9-node"
     };
     println!(
         "preamp={feature}: {dt:.3}s for {seconds}s audio = {:.1}% of realtime (peak {peak:.3})",

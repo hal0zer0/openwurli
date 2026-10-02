@@ -2,15 +2,15 @@
 //!
 //! Owns voice management (slots, allocation, stealing, sustain pedal)
 //! and the shared signal chain (preamp → fixed circuit drive → power amp
-//! → speaker → PSG × user volume). Framework-agnostic so any host
-//! (nih-plug, custom DAW integration, oomox/Vurli) can wrap it without
+//! → speaker, output at the amp-rail reference). Framework-agnostic so any host
+//! (nih-plug, custom DAW integrations, other library hosts) can wrap it without
 //! copying voice or signal-chain code.
 //!
 //! Smoothing model: the three audio-rate user params (volume, tremolo
 //! depth, speaker character) ramp internally over `SMOOTH_SAMPLES_AT_44K1`
 //! base-rate samples after each setter call to avoid zipper noise on knob
 //! moves. Hosts can call setters at block rate without their own smoothers.
-//! Block-rate params (MLP, DI limiter, noise) take effect immediately.
+//! Block-rate params (MLP, noise) take effect immediately.
 
 use crate::dk_preamp::DkPreamp;
 use crate::oversampler::Oversampler;
@@ -449,8 +449,9 @@ impl WurliEngine {
         self.preamp.set_thermal_gain(gain);
     }
 
-    /// Enable / disable rail sag modeling on the power amp. On by default
-    /// (correct physics; +0.66 % CPU). Toggle off for bit-compat A/B against
+    /// Enable / disable rail sag modeling on the power amp. Only the opt-in
+    /// melange amp models it (on by default there; +0.66 % CPU); on the shipping
+    /// behavioral amp this is a no-op. Toggle off for bit-compat A/B against
     /// the pre-rail-sag adapter. See `power_amp.rs` `RailDynamics` and
     /// `docs/research/output-stage.md` §4.3.1.
     pub fn set_rail_sag(&mut self, on: bool) {
@@ -491,7 +492,7 @@ impl WurliEngine {
             // was applied in render_voices_to_preamp_out. POST_SPEAKER_GAIN is
             // the rail-to-full-scale mapping (0 dB: ±22 V = ±1.0). No
             // nonlinear ceiling — output peak management belongs in the host
-            // / Vurli per project scope rules.
+            // host, per the project's scope rules.
             let post_gain = shaped * tables::POST_SPEAKER_GAIN;
             let sample = post_gain as f32;
             // NaN guard: non-finite samples crash PipeWire/JACK audio engines.
@@ -1241,9 +1242,9 @@ mod tests {
         // converge and produced +20 dBFS spikes. Engine wraps the same
         // power-amp adapter so the guard still applies.
         //
-        // Threshold: +14 dBFS. Normal chord-ff content at default gain
-        // (vol=0.5, PSG=+14.5 dB, no DI limiter) peaks around +5 dBFS
-        // — set the guard well above that and well below the +20 dBFS
+        // Threshold: +14 dBFS. Normal chord-ff content stays below full scale
+        // at the engine's rail reference (the worst case is ~0.52, see
+        // test_output_never_exceeds_full_scale_across_settings) — the guard sits well above that and well below the +20 dBFS
         // catastrophic value the divergence guard exists to prevent.
         let mut e = engine();
         let chords: [[u8; 3]; 4] = [[60, 64, 67], [62, 65, 69], [64, 67, 71], [65, 69, 72]];

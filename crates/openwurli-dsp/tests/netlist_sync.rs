@@ -181,7 +181,7 @@ fn netlist_synced_with_melange_circuits() {
             failures.push(format!(
                 "{name}: UNSANCTIONED functional drift vs melange-circuits.\n  \
                  only in ours: {ours_extra:?}\n  only in theirs: {theirs_extra:?}\n  \
-                 Do not silently adopt either side — reconcile via claudebook \
+                 Do not silently adopt either side — reconcile with the sidecar repo \
                  (canonical source is openwurli's vendored copy)."
             ));
         }

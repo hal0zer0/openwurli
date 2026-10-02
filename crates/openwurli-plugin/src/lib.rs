@@ -3,7 +3,7 @@
 // This file is the nih-plug shell: parameter declarations, MIDI event splitting,
 // and host-buffer fan-out. All synthesis (voices, signal chain, smoothing, NaN
 // guard) lives in `openwurli_dsp::engine::WurliEngine` so any other host —
-// oomox/Vurli, custom DAW integrations, headless CLI tools — can wrap the same
+// other library hosts, custom DAW integrations, headless CLI tools — can wrap the same
 // engine without copying glue.
 
 use nih_plug::midi::control_change;

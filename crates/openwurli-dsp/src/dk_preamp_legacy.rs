@@ -65,8 +65,8 @@ const R10: f64 = 56_000.0; // node_c6 to fb (feedback tapped at the collector)
 /// the re-baselined `tb_preamp_ac` bench measures into. The real load is the
 /// R-11 25K trimmer into the 10K volume pot (10–35 kΩ, ≈−1.7 dB vs 100K at
 /// mid-trim); it is flat, so level calibration absorbs the difference. The
-/// volume path is deliberately decoupled from drive — see the 2026-04-26
-/// drive/volume decoupling.
+/// engine models the real load separately (`tables::volume_pot_gain`, applied
+/// to the open-circuit output).
 const RLOAD: f64 = 100_000.0;
 
 // Input two-port reduction (see module docs): Thévenin as seen from base1.
@@ -87,7 +87,7 @@ const C6: f64 = 4.7e-6; // Output coupling (coll2 ↔ node_c6)
 // The pre-revision kernel was a bare transconductance: Ic = Is·(exp(Vbe/Vt)−1)
 // with NO base current, i.e. β = ∞. That is structurally unable to reproduce
 // the drawn topology's DC point: with no base current there is no drop across
-// R-3, so base1 ≡ emit2b, and the arbiter table puts them 59 mV apart.
+// R-3, so base1 ≡ emit2b, and the independent SPICE cross-check (`tb_preamp_dc`) puts them 59 mV apart.
 //
 // Two terms were added, both still explicit functions of Vbe alone (no new
 // kernel dimension, no implicit inner solve):
@@ -97,7 +97,7 @@ const C6: f64 = 4.7e-6; // Output coupling (coll2 ↔ node_c6)
 //   • high injection — the GP normalised base charge qb from IKF, which is
 //     what drops TR-2's effective β from ~850 to ~700 at its 3.3 mA.
 //
-// Progression of worst-node DC error vs the arbiter table: β=∞ 137 mV →
+// Progression of worst-node DC error vs that SPICE cross-check: β=∞ 137 mV →
 // +base current 27 mV → +high injection 2.70 mV. The remaining ~2.7 mV would
 // need the full GP card (VAF/VAR via q1, RE/RB/RC parasitics); that is the
 // melange-generated solver's job (`--features melange-preamp`), not this one.
@@ -829,7 +829,7 @@ fn stamp_capacitor_to_gnd(c: &mut MatN, i: usize, cap: f64) {
 /// constrain the operating point. Early effect (VAF/VAR) is deliberately NOT
 /// modelled: it would make the device a function of Vbc as well as Vbe, which
 /// costs the kernel a dimension, and the DC point already lands inside the
-/// arbiter tolerance without it (worst node 2.70 mV).
+/// SPICE cross-check's tolerance without it (worst node 2.70 mV).
 #[inline]
 fn bjt(vbe: f64) -> (f64, f64, f64, f64) {
     let v = vbe.clamp(-1.0, VBE_MAX);
@@ -2249,12 +2249,11 @@ mod tests {
             peak_preamp, peak_db
         );
 
-        // Shadow subtraction cancels pump exactly (both instances see same R_ldr,
-        // produce identical pump, difference is zero). Residual is floating-point
-        // noise only.
+        // With C-6 in the drawn topology there is no pump to cancel: the idle
+        // output under tremolo cycling is floating-point noise only.
         assert!(
             peak_db < -100.0,
-            "Shadow pump cancellation residual too large: {peak_db:.1} dB (want < -100 dB)"
+            "Idle pump under tremolo too large: {peak_db:.1} dB (want < -100 dB; C-6 should remove it)"
         );
     }
 

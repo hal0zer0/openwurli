@@ -378,7 +378,7 @@ mod melange_gate_tests {
     /// Phase 5 RAW noise measurement — bypasses the DkPreamp adapter
     /// entirely. Just calls `gen_preamp::process_sample(0.0, &mut state)`
     /// with `noise_enabled=true` on a single CircuitState. Compare against
-    /// Mr Schemey's analytical target of ~34 µV at the output node.
+    /// the circuit analysis's target of ~34 µV at the output node.
     ///
     ///   cargo test -p openwurli-dsp --release -- --ignored --nocapture phase5_raw_noise
     #[test]

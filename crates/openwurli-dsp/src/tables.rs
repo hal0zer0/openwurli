@@ -408,8 +408,8 @@ const PLATE_ACTIVE_LENGTH_MM: f64 = 6.0;
 ///
 /// **Normalized to mode 1**: the returned coefficients are kappa_n / kappa_1, so
 /// mode 1 always returns 1.0. The absolute value of kappa_1 (0.83–0.94 depending
-/// on register) is already absorbed into the pickup's displacement_scale, which
-/// was calibrated against real-world bark levels assuming tip-displacement sensing.
+/// on register) is absorbed into the per-note swing at the pickup, which is
+/// referenced to the reed tip.
 /// What matters for mode suppression is the *differential* attenuation: how much
 /// less the pickup senses mode n relative to mode 1.
 #[allow(clippy::needless_range_loop)]
@@ -450,8 +450,8 @@ pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MOD
     }
 
     // Normalize to mode 1: the reed model outputs tip displacement, and
-    // displacement_scale is calibrated for tip-referenced y. Applying raw kappa_1 < 1
-    // would double-count the spatial averaging (once here, once in the calibrated scale).
+    // the swing table is tip-referenced. Applying raw kappa_1 < 1 would
+    // double-count the spatial averaging (once here, once in the swing).
     // Only the differential suppression (kappa_n / kappa_1) is meaningful.
     let k1 = kappa_raw[0];
     if k1 > 1e-30 {
@@ -625,7 +625,7 @@ pub fn pickup_rms_proxy_numeric(source: impl Fn(f64) -> f64, f0: f64, fc: f64) -
 ///
 /// Corrects the residual imbalance that the multi-harmonic proxy and voicing
 /// slope cannot model analytically: preamp Cin coupling cap HPF (~329 Hz),
-/// speaker coloration, displacement_scale clamp effects, and mode interaction
+/// speaker coloration, pickup-law level effects, and mode interaction
 /// artifacts. Reference: MIDI 60 (C4) = 0.0 dB.
 ///
 /// Positive = boost (note too quiet), negative = cut (note too loud).
@@ -915,7 +915,7 @@ pub fn velocity_exponent(midi: u8) -> f64 {
     // bass growls when played moderately; the old symmetric 1.3 edge kept the
     // bass too clean until ff. The intentional cost is reduced bass dynamic
     // range — acceptable here (openwurli models circuit authenticity; loudness/
-    // dynamics balancing is Vurli's job, per the scope split).
+    // dynamics balancing is a downstream host's job, per the scope split).
     let center = 62.0;
     let sigma = 15.0;
     let max_exp = 1.7;
@@ -1325,7 +1325,7 @@ mod tests {
     #[test]
     fn test_coupling_mode1_is_unity() {
         // After normalization, mode 1 coupling is always exactly 1.0.
-        // The absolute kappa_1 (0.83–0.94) is absorbed into displacement_scale.
+        // The absolute kappa_1 (0.83–0.94) is absorbed into the tip-referenced swing.
         for midi in (MIDI_LO..=MIDI_HI).step_by(4) {
             let mu = tip_mass_ratio(midi);
             let len = reed_length_mm(midi);

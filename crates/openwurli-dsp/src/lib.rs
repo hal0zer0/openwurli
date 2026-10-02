@@ -28,7 +28,7 @@ pub mod power_amp;
 pub mod speaker;
 
 // Synth engine — voice management + signal chain assembly. Library-friendly
-// API for hosts (nih-plug, oomox, custom) to wrap without copying glue.
+// API for hosts (nih-plug, other library hosts, custom) to wrap without copying glue.
 pub mod engine;
 
 // Click-band alias detector — shared between preamp-bench `alias-audit`

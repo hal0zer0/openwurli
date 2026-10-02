@@ -6,7 +6,7 @@ v2 target layout — 11 MLP outputs per observation:
 - ds_correction:    displacement scale multiplier derived from H2/H1 ratio
 
 v1→v2 changes:
-- REMOVED amp_offsets (harmonic-vs-mode domain mismatch, see memory/mlp-v2-plan.md)
+- REMOVED amp_offsets (harmonic-vs-mode domain mismatch)
 - FIXED ds_correction sign bug (v1 used 2^(-delta/6) which INVERTED the correction)
 - REDUCED from 22 to 11 outputs (5 freq + 5 decay + 1 ds)
 - ds_correction now targets H2/H1 RATIO specifically, not H2 amplitude

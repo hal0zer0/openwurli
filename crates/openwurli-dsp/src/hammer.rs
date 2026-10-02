@@ -100,9 +100,9 @@ pub fn dwell_attenuation(
 /// biquad's first output (≈ b0 × noise[0]) at full amplitude — a step
 /// discontinuity. Multiple voices firing simultaneously sum these steps,
 /// producing audible cusps at chord-attack moments. 16 samples ≈ 0.36 ms at
-/// 44.1 kHz — inaudible delay but eliminates the step. See diagnostic in
-/// `memory/chord-attack-cusps-oversampler.md` (the cause turned out to be
-/// here, not the halfband filter).
+/// 44.1 kHz — inaudible delay but eliminates the step. (Diagnosed while
+/// chasing chord-attack cusps: the cause turned out to be here, not the
+/// half-band filter.)
 const NOISE_FADE_IN_SAMPLES: u32 = 16;
 
 pub struct AttackNoise {

@@ -30,13 +30,13 @@ use crate::filters::Biquad;
 /// low bass (A1 = 55 Hz, C2 = 65 Hz), leaving harmonics with no body — the
 /// low end sounded thin and never "growled" even when slammed (user-confirmed).
 /// The 95 Hz roll-off is the small 4×8" speaker's own bass limit, i.e. cabinet
-/// coloration — which per the openwurli/Vurli scope split belongs downstream in
-/// Vurli, not in the raw-physics circuit model. The circuit's genuine bass
+/// coloration — which per the project's scope split belongs downstream in a
+/// cabinet/room host, not in the raw-physics circuit model. The circuit's genuine bass
 /// roll-off is the power amp's R-30/C-10 feedback shelf (−3 dB at 33 Hz; the
 /// amp is split-rail and DC-coupled, there are no output caps), modeled in
 /// `power_amp.rs`. 30 Hz here is subsonic protection only, preserving the full
-/// musical bass the circuit produces; Vurli can impose an authentic speaker
-/// roll-off on top.
+/// musical bass the circuit produces; a downstream host can impose an
+/// authentic speaker roll-off on top.
 const HPF_AUTHENTIC_HZ: f64 = 30.0;
 /// HPF Q (slightly underdamped for speaker resonance bump).
 const HPF_Q: f64 = 0.75;
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_authentic_bass_preserved_subsonic_removed() {
         // 2026-07: the speaker HPF is now subsonic-only (30 Hz) — the cabinet's
-        // own 95 Hz bass roll-off is Vurli's domain (see HPF_AUTHENTIC_HZ). So
+        // own 95 Hz bass roll-off is a downstream host's job (see HPF_AUTHENTIC_HZ). So
         // musical bass (A1 = 55 Hz, C2 = 65 Hz) must pass nearly intact, while
         // deep subsonic (< 20 Hz) is still rolled off for DC/rumble protection.
         let sr = 44100.0;

@@ -363,7 +363,7 @@ mod melange_adapter {
         /// Behavioral rail dynamics; only consulted when `rail_sag_on` is true.
         rails: super::RailDynamics,
         /// When true, push per-sample rail offsets into the solver via runtime V.
-        /// Default false to preserve historical ideal-rail behavior; flip for A/B.
+        /// On by default (`new_at_sample_rate`); turn off for ideal-rail A/B.
         rail_sag_on: bool,
     }
 
@@ -437,8 +437,8 @@ mod melange_adapter {
             // the BE fallback also produces non-physical output (observed
             // internal node voltages up to 1e272 V on stress tests). The
             // visible symptom at the output is a clamp-saturated rail slam
-            // that the speaker's HPF/LPF ring on and POST_SPEAKER_GAIN
-            // amplifies to +20 dBFS spikes — enough to trip DAW peak-protect
+            // that the speaker's HPF/LPF ring on, giving output spikes (+20 dBFS
+            // under the post-speaker gain of the time) — enough to trip DAW peak-protect
             // muting. Three signals we use to detect it:
             //
             //   1. Non-finite raw output (NaN/Inf propagation)
