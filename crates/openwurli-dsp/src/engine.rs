@@ -140,8 +140,8 @@ impl LinearSmoother {
 /// engine.set_tremolo_depth(params.tremolo_depth.value() as f64);
 /// engine.set_speaker_character(params.speaker.value() as f64);
 /// engine.set_mlp_enabled(params.mlp.value());
-/// engine.set_noise_enabled(params.noise_enable.value());
-/// engine.set_noise_gain(params.noise_gain.value() as f64);
+/// // Circuit noise exists only in the opt-in melange preamp (no-op otherwise):
+/// // engine.set_noise_enabled(on); engine.set_noise_gain(gain);
 /// for event in midi_events {
 ///     match event {
 ///         NoteOn(n, v) => engine.note_on(n, v),
@@ -856,137 +856,55 @@ mod tests {
         assert!(e.volume.current < 1.0);
     }
 
-    #[test]
-    fn test_engine_peak_below_unity_at_vol_1() {
-        // PSG sizing invariant (2026-04-26; rebuilt 2026-08-19): worst
-        // documented case — chord-ff at vol=1.0, MLP on, tremolo bright —
-        // must peak ≤ 1.0 IN PRODUCTION CONDITIONS. That means (a) a WARMED
-        // engine (the plugin always warm_up()s; a cold engine is a state no
-        // host produces — the pre-2026-08-19 version of this test measured
-        // exactly that and passed as false assurance), and (b) swept across
-        // tremolo onset phases: the ~40 ms attack ends well inside the
-        // 178 ms tremolo period, so onset phase is frozen into the envelope
-        // and worst-phase peak exceeds lucky-phase peak by ~1.2 dB. Phase
-        // grid covers the measured-broad worst plateau (onset ≈ 160-168 ms
-        // at 2 ms density — see tests/peak_window_probe.rs); breadth of the
-        // plateau is what licenses a coarse grid here.
-        let mut peak = 0.0f32;
-        for delay_ms in [0usize, 44, 89, 133, 162] {
-            let mut e = engine();
-            e.ensure_buffer_capacity(1024);
-            e.set_volume(1.0);
-            e.set_tremolo_depth(1.0);
-            e.set_speaker_character(0.0);
-            e.set_mlp_enabled(true);
-            e.set_noise_enabled(false);
-            e.warm_up();
-
-            // Settle the volume smoother, then place the chord at this
-            // tremolo phase.
-            let mut buf = vec![0.0f32; 1024];
-            for _ in 0..6 {
-                e.render(&mut buf);
-            }
-            let delay = 44_100 * delay_ms / 1000;
-            let mut pos = 0;
-            while pos < delay {
-                let len = 1024.min(delay - pos);
-                e.render(&mut buf[..len]);
-                pos += len;
-            }
-
-            // Canonical worst-case chord (2026-04-25/26 crackle diagnosis):
-            // C minor 7 voicing across the register.
-            for &n in &[48u8, 55, 60, 63, 67, 70] {
-                e.note_on(n, 0.95);
-            }
-
-            // 1.0 s capture: the true peak arrives at t ≈ 39 ms (attack
-            // transient; verified over 8 s — nothing later).
-            let total = 44_100;
-            let mut pos2 = 0;
-            while pos2 < total {
-                let len = 1024.min(total - pos2);
-                e.render(&mut buf[..len]);
-                for &s in &buf[..len] {
-                    peak = peak.max(s.abs());
-                }
-                pos2 += len;
-            }
-        }
-        // Slack of 0.02 leaves room for harmless f32 rounding / minor
-        // stochastic per-voice variation. Crackle threshold is well above 1.0.
-        //
-        // POST_SPEAKER_GAIN_DB is calibrated against the SHIPPING preamp (the
-        // legacy hand solver, the default feature set). The `melange-preamp`
-        // study path is a different solver of the same circuit and lands ~0.5 dB
-        // hotter at the same PSG — it is a diagnostic path ("not normally needed
-        // at runtime", see dk_preamp/mod.rs), not a level-calibrated one, so
-        // trimming PSG to suit it would make the shipping instrument quieter for
-        // no shipping benefit. The bound below is therefore path-specific: the
-        // default build keeps the hard invariant, the study build gets a looser
-        // bound that still catches a real level regression.
-        //
-        // Measured 2026-09-13 at PSG 14.8 after the drawn-topology revision:
-        // legacy 0.980, melange-preamp 1.0356.
-        #[cfg(not(feature = "melange-preamp"))]
-        let (limit, which) = (1.02f32, "shipping (legacy preamp)");
-        #[cfg(feature = "melange-preamp")]
-        let (limit, which) = (1.10f32, "study path (melange-preamp, NOT level-calibrated)");
-        assert!(
-            peak <= limit,
-            "engine peak {peak:.4} exceeds {limit} at vol=1.0 chord-ff on the {which} \
-             (PSG drift suspected — see tables.rs::POST_SPEAKER_GAIN_DB)"
-        );
-    }
-
     /// Structural invariant (2026-09-23): with the mapping FULL_SCALE_VOLTS = the
     /// amp's rail, the output cannot exceed full scale at ANY setting — the rail
     /// tanh bounds the amp and nothing downstream has gain > 1. Sweep the
     /// settings that raise the drive or add downstream stages: trim at its
     /// hottest (0 Ω) and at default, full volume, tremolo off and full, speaker
-    /// bypass and authentic; worst-phase ff chord.
+    /// bypass and authentic, MLP corrections off and on; worst-phase ff chord.
     fn worst_peak_across_settings(sr: f64) -> (f32, String) {
         let mut worst = (0.0f32, String::new());
         for &trim in &[0.0f64, tables::R11_REED_BAR_VOLUME_DEFAULT] {
             for &trem in &[0.0f64, 1.0] {
                 for &spk in &[0.0f64, 1.0] {
-                    let mut e = WurliEngine::new(sr);
-                    e.ensure_buffer_capacity(1024);
-                    e.set_volume(1.0);
-                    e.set_reed_bar_trim(trim);
-                    e.set_tremolo_depth(trem);
-                    e.set_speaker_character(spk);
-                    e.set_mlp_enabled(false);
-                    e.set_noise_enabled(false);
-                    e.warm_up();
-                    let mut buf = vec![0.0f32; 1024];
-                    for _ in 0..6 {
-                        e.render(&mut buf);
-                    }
-                    // Worst-phase onset from the peak-invariant probe (≈162 ms).
-                    let delay = (sr * 0.162) as usize;
-                    let mut pos = 0;
-                    while pos < delay {
-                        let len = 1024.min(delay - pos);
-                        e.render(&mut buf[..len]);
-                        pos += len;
-                    }
-                    for &n in &[48u8, 55, 60, 63, 67, 70] {
-                        e.note_on(n, 1.0);
-                    }
-                    let mut peak = 0.0f32;
-                    let mut pos2 = 0;
-                    while pos2 < sr as usize {
-                        let len = 1024.min(sr as usize - pos2);
-                        e.render(&mut buf[..len]);
-                        for &s in &buf[..len] {
-                            peak = peak.max(s.abs());
+                    for &mlp in &[false, true] {
+                        let mut e = WurliEngine::new(sr);
+                        e.ensure_buffer_capacity(1024);
+                        e.set_volume(1.0);
+                        e.set_reed_bar_trim(trim);
+                        e.set_tremolo_depth(trem);
+                        e.set_speaker_character(spk);
+                        e.set_mlp_enabled(mlp);
+                        e.set_noise_enabled(false);
+                        e.warm_up();
+                        let mut buf = vec![0.0f32; 1024];
+                        for _ in 0..6 {
+                            e.render(&mut buf);
                         }
-                        pos2 += len;
-                    }
-                    if peak > worst.0 {
-                        worst = (peak, format!("trim={trim} trem={trem} spk={spk}"));
+                        // Worst-phase onset from the peak-invariant probe (≈162 ms).
+                        let delay = (sr * 0.162) as usize;
+                        let mut pos = 0;
+                        while pos < delay {
+                            let len = 1024.min(delay - pos);
+                            e.render(&mut buf[..len]);
+                            pos += len;
+                        }
+                        for &n in &[48u8, 55, 60, 63, 67, 70] {
+                            e.note_on(n, 1.0);
+                        }
+                        let mut peak = 0.0f32;
+                        let mut pos2 = 0;
+                        while pos2 < sr as usize {
+                            let len = 1024.min(sr as usize - pos2);
+                            e.render(&mut buf[..len]);
+                            for &s in &buf[..len] {
+                                peak = peak.max(s.abs());
+                            }
+                            pos2 += len;
+                        }
+                        if peak > worst.0 {
+                            worst = (peak, format!("trim={trim} trem={trem} spk={spk} mlp={mlp}"));
+                        }
                     }
                 }
             }

@@ -55,15 +55,8 @@ impl Voice {
         mlp_enabled: bool,
         cfg: &tables::CalibrationConfig,
     ) -> Self {
-        let (reed, swing_mm, detuned_fundamental, air_drag_db_per_mm) = Self::build_reed(
-            midi_note,
-            velocity,
-            sample_rate,
-            noise_seed,
-            mlp_enabled,
-            cfg,
-            None,
-        );
+        let (reed, swing_mm, detuned_fundamental, air_drag_db_per_mm) =
+            Self::build_reed(midi_note, velocity, sample_rate, mlp_enabled, cfg, None);
         let pickup = Pickup::new_for_note(sample_rate, midi_note, swing_mm);
         let noise = AttackNoise::new(velocity, detuned_fundamental, sample_rate, noise_seed);
 
@@ -89,12 +82,10 @@ impl Voice {
     /// zeroes every other mode's amplitude, for measuring one mode on its own (the modes are
     /// independent, so the per-mode renders superpose to the full reed).
     /// Returns (reed, swing_mm, detuned fundamental Hz, air-drag coefficient dB/s/mm).
-    #[allow(clippy::too_many_arguments)]
     pub fn build_reed(
         midi_note: u8,
         velocity: f64,
         sample_rate: f64,
-        noise_seed: u32,
         mlp_enabled: bool,
         cfg: &tables::CalibrationConfig,
         keep_mode: Option<usize>,
@@ -151,9 +142,9 @@ impl Voice {
         }
 
         // Pickup drive: the note's ff swing at the pickup (mm, provisional; the velocity curve
-        // scales the reed's amplitude from there). The MLP's ds_correction is NOT applied: its
-        // training target assumed the old 1/(1-y) law (H2/H1 proportional to the gap fraction),
-        // which the overlap law does not obey. It stays pinned out until the MLP is retrained.
+        // scales the reed's amplitude from there). The MLP has no displacement-scale correction:
+        // its old target assumed the 1/(1-y) law, and the head was retired at the true-pitch
+        // retrain (2026-09-27).
         let swing_mm = tables::pickup_swing_mm_with_config(midi_note, cfg);
 
         if let Some(k) = keep_mode {

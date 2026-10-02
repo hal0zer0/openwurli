@@ -1,13 +1,8 @@
 //! Per-note MLP v2 parameter corrections.
 //!
-//! A tiny neural network (2→8→8→11) runs ONCE at note-on to produce
-//! per-note corrections to mode frequencies, decay rates, and pickup
-//! displacement scale. Zero per-sample CPU cost.
-//!
-//! v2 changes from v1:
-//! - REMOVED amp_offsets (harmonic-vs-mode domain mismatch)
-//! - FIXED ds_correction sign bug (v1 inverted the correction direction)
-//! - REDUCED outputs: 22→11 (5 freq + 5 decay + 1 ds)
+//! A tiny neural network (2→16→16→11) runs ONCE at note-on to produce
+//! per-note corrections to mode frequencies and decay rates. Zero per-sample
+//! CPU cost.
 //!
 //! Trained on OBM recordings vs model output. See `ml/` for the
 //! Python training pipeline.
@@ -20,6 +15,10 @@ use mlp_weights::*;
 
 const MIDI_MIN: f64 = 21.0;
 const MIDI_MAX: f64 = 108.0;
+/// Network outputs: [0:5] freq, [5:10] decay, [10] the retired displacement-
+/// scale head. Output 10 is still produced by the trained weights but ignored
+/// (retired 2026-09-27, see ml/compute_residuals.py TRAIN_DS); keep the count at
+/// 11 so the weights load.
 const N_OUTPUTS: usize = 11;
 
 /// How many harmonic heads the network was actually TRAINED on.
@@ -43,15 +42,6 @@ const N_OUTPUTS: usize = 11;
 const N_TRAINED_HARMONICS: usize = 2;
 const N_FREQ: usize = 5;
 const N_DECAY: usize = 5;
-const DS_IDX: usize = 10;
-
-/// Whether the ds_correction head was trained. Mirrors `TRAIN_DS` in
-/// `ml/compute_residuals.py`: off since the true-pitch fix (2026-09-27), because
-/// the reference's H2/H1 gap to the model in the bass and mid register (20-37 dB)
-/// asks for 1.3x-77x, which a 0.7-1.05 clamp can only rail on. An untrained head
-/// emits identity, as for the harmonic heads above.
-const DS_TRAINED: bool = false;
-
 /// Training data MIDI range: the reference notes at their true pitch, D2-D6
 /// (MIDI 38-86; the recordings' filenames run an octave high, see
 /// `ml/extract_notes.py`). Outside this, corrections fade to identity.
@@ -69,8 +59,6 @@ pub struct MlpCorrections {
     pub freq_offsets_cents: [f64; N_FREQ],
     /// Decay ratio offsets for H2-H6 (>1 = model decays too fast). Applied to modes 1-5.
     pub decay_offsets: [f64; N_DECAY],
-    /// Displacement scale multiplier (1.0 = no change). Derived from H2/H1 ratio.
-    pub ds_correction: f64,
 }
 
 impl MlpCorrections {
@@ -79,7 +67,6 @@ impl MlpCorrections {
         Self {
             freq_offsets_cents: [0.0; N_FREQ],
             decay_offsets: [1.0; N_DECAY],
-            ds_correction: 1.0,
         }
     }
 
@@ -142,7 +129,7 @@ impl MlpCorrections {
             raw[i] = sum * TARGET_STDS[i] + TARGET_MEANS[i];
         }
 
-        // Unpack: [0:5] = freq, [5:10] = decay, [10] = ds
+        // Unpack: [0:5] = freq, [5:10] = decay ([10], the retired ds head, is ignored)
         let mut freq_offsets_cents = [0.0f64; N_FREQ];
         let mut decay_offsets = [1.0f64; N_DECAY];
 
@@ -156,32 +143,9 @@ impl MlpCorrections {
             decay_offsets[h] = 1.0 + (raw_decay - 1.0) * fade;
         }
 
-        // ds_correction: displacement scale multiplier from H2/H1 ratio.
-        // Upper clamp prevents pickup pole-stress at high amplitudes: ds *
-        // displacement near y=0.85 makes 1/(1-y) corner steepness audible as
-        // crackle on chord-ff content, and drives the chord-ff peak above unity.
-        // History: 1.5 -> 1.2 (Apr 25 2026, crackle), 1.2 -> 1.05 (the topology
-        // revision). The revision widened the model's H2/H1 gap against the OBM
-        // reference, so the retrained ds head asks for a bigger boost on nearly
-        // every note and sits on this clamp; at 1.2 the warmed chord-ff peak at
-        // vol=1.0 reached 1.084 (measured), against 0.947 for the shipping
-        // MLP-off default and 0.972 for the pre-revision weights. 1.05 restores
-        // the <= 1.0 posture (0.979) without re-levelling POST_SPEAKER_GAIN_DB,
-        // which would tax the default path for an opt-in correction.
-        // Cost, measured at C5 v80: H2/H1 lift +1.11 dB (clamp 1.2) -> +0.42 dB
-        // (clamp 1.05), against a raw H2 deficit of ~6 dB at that register —
-        // the physics gap dominates either way.
-        let ds_correction = if DS_TRAINED {
-            let raw_ds = raw[DS_IDX].clamp(0.7, 1.05);
-            1.0 + (raw_ds - 1.0) * fade
-        } else {
-            1.0
-        };
-
         Self {
             freq_offsets_cents,
             decay_offsets,
-            ds_correction,
         }
     }
 }
@@ -199,15 +163,13 @@ mod tests {
         for i in 0..N_DECAY {
             assert_eq!(c.decay_offsets[i], 1.0);
         }
-        assert_eq!(c.ds_correction, 1.0);
     }
 
     #[test]
     fn test_infer_produces_corrections() {
         let c = MlpCorrections::infer(60, 0.8);
         let has_correction = c.freq_offsets_cents.iter().any(|&x| x.abs() > 0.01)
-            || c.decay_offsets.iter().any(|&x| (x - 1.0).abs() > 0.01)
-            || (c.ds_correction - 1.0).abs() > 0.01;
+            || c.decay_offsets.iter().any(|&x| (x - 1.0).abs() > 0.01);
         assert!(has_correction, "MLP should produce non-trivial corrections");
     }
 
@@ -238,11 +200,6 @@ mod tests {
                         "decay clamp violated"
                     );
                 }
-                assert!(
-                    (0.7..=1.05).contains(&c.ds_correction),
-                    "ds clamp violated: {}",
-                    c.ds_correction
-                );
             }
         }
     }

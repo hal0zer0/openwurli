@@ -293,13 +293,6 @@ mod behavioral {
             (f_val, f_deriv)
         }
 
-        /// Behavioral model has no solver, no divergence to detect — returns
-        /// the same clamped result as `process`. Exists only for API parity
-        /// with the melange adapter's diagnostic probe.
-        pub fn diag_raw_process(&mut self, input: f64) -> f64 {
-            self.process(input)
-        }
-
         pub fn diag_snapshot(&self) -> (u64, u64, f64) {
             (0, 0, 0.0)
         }
@@ -485,15 +478,6 @@ mod melange_adapter {
             }
 
             clamped
-        }
-
-        /// Raw, pre-clamp output of the melange solver. Audio-unsafe for normal
-        /// use (not bounded), but needed for diagnostic probing of solver
-        /// divergence: if |raw| exceeds the circuit rails (±22 V physically,
-        /// ±1.0 after the HEADROOM normalization), the NR converged to a
-        /// non-physical branch. Not called by the normal plugin path.
-        pub fn diag_raw_process(&mut self, input: f64) -> f64 {
-            gen_power_amp::process_sample(input, &mut self.state)[0] / HEADROOM
         }
 
         /// Snapshot of melange NR diagnostics:

@@ -623,11 +623,6 @@ fn cmd_reed_tap(args: &[String]) {
     let velocity = parse_flag(args, "--velocity", 100.0);
     let duration = parse_flag(args, "--duration", 2.0);
     let sr = parse_flag(args, "--sample-rate", BASE_SR);
-    let seed = parse_flag(
-        args,
-        "--seed",
-        (note as u32).wrapping_mul(2654435761) as f64,
-    ) as u32;
     let swing_pick = match parse_flag_str(args, "--swing-pick", "central") {
         "low" => tables::SwingPick::Low,
         "high" => tables::SwingPick::High,
@@ -644,8 +639,7 @@ fn cmd_reed_tap(args: &[String]) {
     let vel = velocity / 127.0;
 
     let render = |keep: Option<usize>| -> (Vec<f64>, f64) {
-        let (mut reed, mut swing, _, drag) =
-            Voice::build_reed(note, vel, sr, seed, false, &cfg, keep);
+        let (mut reed, mut swing, _, drag) = Voice::build_reed(note, vel, sr, false, &cfg, keep);
         if has_flag(args, "--swing-mm") {
             swing = parse_flag(args, "--swing-mm", swing);
             reed.set_air_drag(drag, swing, sr);
@@ -681,7 +675,7 @@ fn cmd_reed_tap(args: &[String]) {
     let full = law.t_r.min(law.t_p);
     let far = law.t_p;
     println!(
-        "{{\"note\": {note}, \"velocity\": {velocity}, \"seed\": {seed}, \"sample_rate\": {sr}, \
+        "{{\"note\": {note}, \"velocity\": {velocity}, \"sample_rate\": {sr}, \
          \"ff_swing_mm\": {swing:.4}, \"g0_mm\": {g0}, \"t_r_mm\": {}, \"t_p_mm\": {}, \
          \"band_sign\": {sign}, \"mm_full_scale\": {MM_FULL_SCALE}, \"source_full_scale\": {src_fs:.6e}}}",
         law.t_r, law.t_p

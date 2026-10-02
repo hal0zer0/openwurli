@@ -14,10 +14,7 @@ fn dump_mlp_corrections() {
                 .fold(0.0f64, |a, &v| a.max(v.abs()));
             let dmin = c.decay_offsets.iter().cloned().fold(f64::MAX, f64::min);
             let dmax = c.decay_offsets.iter().cloned().fold(f64::MIN, f64::max);
-            println!(
-                "midi {midi:>3}: ds {:.4}  max|freq| {fmax:>6.2}c  decay [{dmin:.3}..{dmax:.3}]",
-                c.ds_correction
-            );
+            println!("midi {midi:>3}: max|freq| {fmax:>6.2}c  decay [{dmin:.3}..{dmax:.3}]");
         }
     }
 }
