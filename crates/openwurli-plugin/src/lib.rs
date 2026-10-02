@@ -212,7 +212,16 @@ impl Vst3Plugin for OpenWurli {
 }
 
 nih_export_clap!(OpenWurli);
-nih_export_vst3!(OpenWurli);
+// The framework's VST3 export (via its vst3_com dependency) leaves a trailing
+// semicolon in a macro used in expression position. Rust 1.99 reports that as a
+// future-incompatibility warning in every crate invoking the macro, which fails
+// `-D warnings`. Allowed here only, until the framework fixes its macro
+// (`unknown_lints` because toolchains before 1.99 do not know the lint).
+#[allow(unknown_lints, semicolon_in_expressions_from_non_local_macros)]
+mod vst3_export {
+    use super::*;
+    nih_export_vst3!(OpenWurli);
+}
 
 #[cfg(test)]
 mod tests {
