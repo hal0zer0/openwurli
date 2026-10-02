@@ -69,7 +69,7 @@ crates/
     mlp_correction.rs         #   Per-note MLP inference (2->8->8->11)
     mlp_weights.rs            #   Trained MLP weights (195 params)
     preamp.rs                 #   PreampModel trait
-    tremolo.rs                #   CdS LDR + melange Twin-T oscillator (--features legacy-tremolo = sine LFO)
+    tremolo.rs                #   CdS LDR + melange Twin-T oscillator
     power_amp.rs              #   Power amp; behavioral NR is the shipping default (feature legacy-power-amp, in default set)
     gen_power_amp.rs          #   Melange-generated 7-BJT Class AB solver (opt-in: build with --no-default-features)
     speaker.rs                #   HPF/LPF cabinet simulation

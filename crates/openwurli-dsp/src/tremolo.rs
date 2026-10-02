@@ -1,14 +1,7 @@
-//! Wurlitzer 200A tremolo — feature-toggled between circuit (default) and behavioral oscillator.
-//!
-//! Default: melange-generated Twin-T oscillator circuit (real waveform shape).
-//! `--features legacy-tremolo`: behavioral sine LFO (for A/B testing).
-//!
-//! Both share the same CdS LDR model (LED drive → asymmetric envelope → power-law R).
+//! Wurlitzer 200A tremolo: the melange-generated Twin-T oscillator circuit (real
+//! waveform shape) driving a CdS LDR model (LED drive → asymmetric envelope →
+//! power-law R).
 
-#[cfg(feature = "legacy-tremolo")]
-use std::f64::consts::PI;
-
-#[cfg(not(feature = "legacy-tremolo"))]
 use crate::gen_tremolo;
 
 /// Empty `.inject` argument for the v0.1.7 generated oscillator.
@@ -121,14 +114,7 @@ const LED_LUT_N: usize = 256;
 
 pub struct Tremolo {
     // --- Oscillator state ---
-    /// Behavioral: LFO phase
-    #[cfg(feature = "legacy-tremolo")]
-    phase: f64,
-    #[cfg(feature = "legacy-tremolo")]
-    phase_inc: f64,
-
-    /// Circuit: Twin-T oscillator state
-    #[cfg(not(feature = "legacy-tremolo"))]
+    /// Twin-T oscillator circuit state
     osc_state: gen_tremolo::CircuitState,
 
     // --- Shared LDR model ---
@@ -147,7 +133,6 @@ pub struct Tremolo {
     ln_r_max: f64,
     ln_min_minus_max: f64,
     /// Precomputed normalised light vs LED current (index ∝ current).
-    #[cfg(not(feature = "legacy-tremolo"))]
     led_lut: [f64; LED_LUT_N],
 }
 
@@ -180,19 +165,9 @@ fn led_intensity(i_ma: f64) -> f64 {
     (ln_at(i_ma) - ln_at(LED_I_FULL_MA)).exp()
 }
 
-/// Fixed oscillator rate for the legacy behavioral LFO (Hz).
-#[cfg(feature = "legacy-tremolo")]
-const LEGACY_RATE_HZ: f64 = 5.63;
-
 impl Tremolo {
     pub fn new(depth: f64, sample_rate: f64) -> Self {
         Self {
-            #[cfg(feature = "legacy-tremolo")]
-            phase: 0.0,
-            #[cfg(feature = "legacy-tremolo")]
-            phase_inc: 2.0 * PI * LEGACY_RATE_HZ / sample_rate,
-
-            #[cfg(not(feature = "legacy-tremolo"))]
             osc_state: {
                 let mut s = gen_tremolo::CircuitState::default();
                 if (sample_rate - gen_tremolo::SAMPLE_RATE).abs() > 0.5 {
@@ -215,7 +190,6 @@ impl Tremolo {
             gamma: GAMMA,
             ln_r_max: R_LDR_MAX.ln(),
             ln_min_minus_max: R_LDR_MIN.ln() - R_LDR_MAX.ln(),
-            #[cfg(not(feature = "legacy-tremolo"))]
             led_lut: std::array::from_fn(|k| {
                 let i_ma = LED_I_FULL_MA * k as f64 / (LED_LUT_N - 1) as f64;
                 led_intensity(i_ma).clamp(0.0, 1.0)
@@ -275,18 +249,7 @@ impl Tremolo {
         top + low
     }
 
-    /// Get the oscillator's LED drive signal (0..1).
-    #[cfg(feature = "legacy-tremolo")]
-    fn oscillator_drive(&mut self) -> f64 {
-        let lfo = self.phase.sin();
-        self.phase += self.phase_inc;
-        if self.phase >= 2.0 * PI {
-            self.phase -= 2.0 * PI;
-        }
-        lfo.max(0.0) // half-wave rectify
-    }
-
-    #[cfg(not(feature = "legacy-tremolo"))]
+    /// The oscillator's LED drive as normalised light (0..1).
     fn oscillator_drive(&mut self) -> f64 {
         // `.1` is `taps_inner` — the raw LED anode/cathode node voltages. The
         // light law consumes REAL LED CURRENT from these taps; the old
@@ -317,28 +280,21 @@ impl Tremolo {
     }
 
     pub fn reset(&mut self) {
-        #[cfg(feature = "legacy-tremolo")]
-        {
-            self.phase = 0.0;
+        // Rebuild the Twin-T oscillator exactly as `new()` does, then settle
+        // it to steady amplitude. `CircuitState::reset()` sets v_prev to the
+        // DC operating point — the oscillator's *unstable equilibrium* — so a
+        // clean solver started there never begins oscillating; the tremolo
+        // stays silent after any host `reset()`. `default()` carries the tiny
+        // startup perturbation that kicks the oscillation off. The settle
+        // touches only the cheap LFO solver, not the preamp chain.
+        let mut s = gen_tremolo::CircuitState::default();
+        if (self.sample_rate - gen_tremolo::SAMPLE_RATE).abs() > 0.5 {
+            s.set_sample_rate(self.sample_rate);
         }
-        #[cfg(not(feature = "legacy-tremolo"))]
-        {
-            // Rebuild the Twin-T oscillator exactly as `new()` does, then settle
-            // it to steady amplitude. `CircuitState::reset()` sets v_prev to the
-            // DC operating point — the oscillator's *unstable equilibrium* — so a
-            // clean solver started there never begins oscillating; the tremolo
-            // stays silent after any host `reset()`. `default()` carries the tiny
-            // startup perturbation that kicks the oscillation off. The settle
-            // touches only the cheap LFO solver, not the preamp chain.
-            let mut s = gen_tremolo::CircuitState::default();
-            if (self.sample_rate - gen_tremolo::SAMPLE_RATE).abs() > 0.5 {
-                s.set_sample_rate(self.sample_rate);
-            }
-            for _ in 0..(self.sample_rate * 2.0) as usize {
-                gen_tremolo::process_sample(0.0, &NO_INJECT, &mut s);
-            }
-            self.osc_state = s;
+        for _ in 0..(self.sample_rate * 2.0) as usize {
+            gen_tremolo::process_sample(0.0, &NO_INJECT, &mut s);
         }
+        self.osc_state = s;
         self.ldr_envelope = 0.0;
         self.r_ldr = self.r_ldr_max;
     }
@@ -351,7 +307,6 @@ mod tests {
     #[test]
     #[ignore]
     fn probe_raw_oscillator() {
-        #[cfg(not(feature = "legacy-tremolo"))]
         {
             let sr = 48000.0;
             let mut s = gen_tremolo::CircuitState::default();

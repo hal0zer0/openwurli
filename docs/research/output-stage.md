@@ -89,7 +89,7 @@ Note: as of the 2026-09-13 revision the subcircuit models the drawn LED path (R-
 
 **Output swing:** 11.8 Vpp (target ~11.5 Vpp). Near rail-to-rail.
 
-**Waveform:** The real twin-T oscillator produces a mildly distorted sinusoid (estimated THD 3-10%). The OpenWurli implementation now uses a melange-generated Twin-T circuit oscillator as the default, which models the real waveform shape including the mild distortion. The behavioral sine LFO is still available behind `--features legacy-tremolo`.
+**Waveform:** The real twin-T oscillator produces a mildly distorted sinusoid (estimated THD 3-10%). The OpenWurli implementation now uses a melange-generated Twin-T circuit oscillator as the default, which models the real waveform shape including the mild distortion. (The behavioral sine LFO it replaced was retired on 2026-10-02.)
 
 **LED drive path (corrected 2026-09-13):** Vcc → R-18 (680 Ω) → LG-1 pin 2 (LED anode) → pin 1 (cathode) → R-17 (4.7K VIBRATO ADJUST trimmer, wiper-strapped) → Node G. The LED current follows the oscillator swing scaled by the trimmer position (~0.4–2.3 mA over the cycle at full R-17; up to ~18 mA peak at R-17 = 0) — the old "fixed ~0.84 mA" figure came from the pre-revision reading with R-18 misplaced in the LDR leg. Front-panel depth lives in the shunt divider (§2.3); R-17 is a second, service-side depth control.
 
@@ -546,7 +546,6 @@ waveform: real oscillator circuit output, half-wave rectified for LED drive.
 // LED drive follows the oscillator swing through +15 V -> R-18 (680) -> LED ->
 // R-17 (4.7K trimmer) -> collector node: ≈0.37–2.28 mA (tremolo.rs LED_I_FULL_MA).
 // Front-panel depth does NOT scale it — depth lives in the shunt divider below.
-// --features legacy-tremolo: behavioral sine LFO at 5.63 Hz (phase.sin())
 
 // CdS LDR time constants (VTL5C-class, datasheet-typical)
 attack_tau  = 2.5 ms  (fast on)

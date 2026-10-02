@@ -13,7 +13,6 @@ default = ["legacy-power-amp"]
 # hand-written 9-node solver on the drawn topology (dk_preamp_legacy.rs),
 # 1.6-7× faster depending on workload.
 melange-preamp = []
-legacy-tremolo = []
 legacy-power-amp = []
 
 [lints.rust]

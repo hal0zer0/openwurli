@@ -533,10 +533,9 @@ The 200A tremolo modulates the preamp's closed-loop gain via an LDR (LG-1) that 
 The oscillator is a twin-T (parallel-T) notch filter oscillator. SPICE-validated at 5.63 Hz with 11.8 Vpp output swing. See `spice/subcircuits/tremolo_osc.cir` and `output-stage.md` Section 2.1 for full topology.
 
 ```
-// Default: melange Twin-T circuit oscillator (5.63 Hz, SPICE-validated).
-// Legacy sine LFO available behind --features legacy-tremolo.
-lfo = sin(2*PI * rate * t)
-led_drive = max(0, lfo)  // half-wave rectified (LED only conducts forward)
+// The Twin-T oscillator circuit (melange-generated, ~5.6 Hz, SPICE-validated) is
+// simulated directly; the LED current read from its taps drives the light law.
+light = led_light_law(i_led(osc_taps))   // 0..1, LED conducts forward only
 ```
 
 ### LDR Response (Asymmetric Attack/Release)

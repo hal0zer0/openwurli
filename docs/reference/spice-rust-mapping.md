@@ -210,7 +210,7 @@ fix touches the preamp.
 | `crates/openwurli-dsp/src/gen_power_amp.rs` | Melange-generated 7-BJT Class AB solver (default) |
 | `crates/openwurli-dsp/src/power_amp.rs` | Adapter + `--features legacy-power-amp` behavioral NR fallback |
 | `crates/openwurli-dsp/src/gen_tremolo.rs` | Melange-generated Twin-T oscillator (default) |
-| `crates/openwurli-dsp/src/tremolo.rs` | Adapter + CdS LDR model; `--features legacy-tremolo` selects sine LFO |
+| `crates/openwurli-dsp/src/tremolo.rs` | Adapter + CdS LDR model (Twin-T oscillator circuit) |
 | `crates/openwurli-dsp/src/speaker.rs` | Hammerstein nonlinearity + HPF/LPF |
 | `crates/openwurli-dsp/src/filters.rs` | Biquad wrapper (backed by melange-primitives) |
 | `crates/openwurli-dsp/src/voice.rs` | Voice assembly (reed→hammer→pickup→preamp→...) |

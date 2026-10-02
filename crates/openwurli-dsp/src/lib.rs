@@ -23,7 +23,6 @@ pub mod tremolo;
 
 // Output stage
 pub mod gen_power_amp;
-#[cfg(not(feature = "legacy-tremolo"))]
 pub mod gen_tremolo;
 pub mod power_amp;
 pub mod speaker;
