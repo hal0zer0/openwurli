@@ -143,8 +143,6 @@ the network now adjusts only H2/H3 mode tuning and decay.
 | `compute_residuals.py` | Stage 5: residual computation |
 | `train_mlp.py` | Stage 6: MLP training (PyTorch) |
 | `generate_rust_weights.py` | Stage 7: weight export to Rust |
-| `h3_analysis.py` | H3 harmonic deep-dive analysis |
-| `h3_analysis_v2.py` | H3 analysis with improved filtering |
 
 ## 2026-09-14 — untrained-head rail fixed (`mlp_correction.rs`)
 
