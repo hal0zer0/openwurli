@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   melange preamp and power amp are opt-in builds). The README had described
   the melange preamp as the default since 0.5.2.
 
+### Known issues
+- Two shipped constants were calibrated against the reference recordings at
+  their mislabelled pitch (an octave high), so they are unverified until
+  re-examined against correctly pitched evidence: the reed decay law
+  (0.005·f^1.22 dB/s) and the authentic-speaker low-pass at 5500 Hz. Both are
+  marked in the code.
+
 ### Added
 - README: a pointer to DiscoDSP's Retromulator, which ports OpenWurli's
   engine to C++ (AU, AAX, standalone).

@@ -466,6 +466,10 @@ pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MOD
 /// Frequency power law calibrated against 10 clean OBM 200A decay rates
 /// (excluding anomalous D6/F#6/D7): `decay = 0.005 * f^1.22`, floored at 3.0 dB/s.
 ///
+/// ⚠ UNVERIFIED: calibrated against OBM reference data at the octave-mislabelled pitch
+/// (docs/reference/calibration-and-evaluation.md, Appendix D notice). Pending
+/// re-examination against correctly pitched evidence: keep, adjust, or label unsourced.
+///
 /// Physical basis: corresponds to Q ∝ f^(-0.22) — a slight Q decrease with
 /// frequency, consistent with thermoelastic (Zener) damping becoming more
 /// significant for shorter, stiffer reeds. A constant-Q model (Q~1636) gives

@@ -910,7 +910,7 @@ For agent reference when selecting evaluation metrics:
 
 The February 2026 comparison of 13 OBM single notes against synthesized notes is void: the OBM recordings sound one octave below the MIDI notes they were assigned (true = label − 12), so every harmonic it compared was the wrong one, at the wrong note. Its result tables were removed on 2026-10-02 (git history keeps them).
 
-Two constants that still ship were calibrated from it and inherit the problem until re-derived:
+Two constants that still ship were calibrated from it and inherit the problem until re-derived. Both are marked UNVERIFIED in the code; a follow-up re-examines them against correctly pitched evidence (recordings as consistency checks, not calibration targets), with the outcome keep, adjust, or label unsourced:
 - the reed decay law `0.005·f^1.22` dB/s, floored at 3.0 (`tables.rs`), which replaced `3.0·(midi/48)^4.5` on 2026-02-19 to match the OBM decays at the mislabelled pitch;
 - the speaker low-pass at 5500 Hz (lowered from 7500 Hz on 2026-02-21 from treble centroids at the mislabelled pitch; it only applies at speaker character > 0).
 

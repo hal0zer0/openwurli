@@ -43,6 +43,9 @@ const HPF_Q: f64 = 0.75;
 /// LPF cutoff at fully authentic position.
 /// 4x8" ceramic speakers roll off well below 7500 Hz. OBM A/B comparison
 /// shows real treble centroids at 0.44-0.48x of f0, consistent with ~5500 Hz.
+/// ⚠ UNVERIFIED: calibrated against OBM reference data at the octave-mislabelled pitch
+/// (docs/reference/calibration-and-evaluation.md, Appendix D notice). Pending
+/// re-examination against correctly pitched evidence: keep, adjust, or label unsourced.
 const LPF_AUTHENTIC_HZ: f64 = 5500.0;
 /// LPF Q (Butterworth).
 const LPF_Q: f64 = 0.707;
