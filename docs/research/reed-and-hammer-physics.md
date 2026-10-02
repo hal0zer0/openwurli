@@ -49,7 +49,7 @@ The 200A increased the thickness of middle and treble reeds:
 - Both the head (screw mounting area) and tongue were thicker
 - Result: "smoother, rounder, mellower tone" vs 200's "long dwell, sharp attack"
 
-**200A thickness values used in the code:** Bass reeds use 0.026", mid/treble reeds use 0.034", with smooth interpolation between the two across reeds 16-26. These values inform the beam compliance calculation in `tables.rs:pickup_displacement_scale()`.
+**200A thickness values (reference data):** bass reeds 0.026", mid/treble reeds 0.034", with a smooth interpolation across reeds 16-26 in the former model. No code consumes these blank dimensions since the swing became a per-note hammer-physics table (the compliance function that used them was removed 2026-10-02); the per-reed beam models behind that table live in `tools/data/`.
 
 Source: [Vintage Vibe Case Study](https://www.vintagevibe.com/blogs/news/wurlitzer-electric-piano-reeds-case-study)
 

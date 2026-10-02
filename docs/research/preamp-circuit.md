@@ -2,7 +2,7 @@
 
 Comprehensive technical reference for implementing a digital model of the Wurlitzer 200A reed-bar preamplifier: verified topology and component values, DC bias analysis, AC signal analysis, harmonic generation, tremolo integration, and modeling recommendations.
 
-> **See also:** [DK Preamp Derivation](dk-preamp-derivation.md) (MNA math — ⚠ pre-revision, rewrite pending with the 9-node solver), [DK Preamp Testing](../reference/dk-preamp-testing.md) (test pyramid), [Output Stage](output-stage.md) (tremolo LDR integration)
+> **See also:** [DK Preamp Derivation](dk-preamp-derivation.md) (MNA math — ⚠ pre-revision, rewrite pending with the 9-node solver), [Output Stage](output-stage.md) (tremolo LDR integration)
 
 ---
 

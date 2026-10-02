@@ -4,7 +4,7 @@
 
 This document provides concrete, source-attributed calibration data and evaluation criteria for building a physically accurate Wurlitzer 200A electric piano synthesizer. Every value has an uncertainty range, every claim has a source, and every metric has an assessment of whether it actually correlates with perceptual quality.
 
-> **See also:** [Reed and Hammer Physics](../research/reed-and-hammer-physics.md) (modal synthesis parameters), [Signal Chain Architecture](../research/signal-chain-architecture.md) (overall DSP spec), [DK Preamp Testing](dk-preamp-testing.md) (preamp validation targets)
+> **See also:** [Reed and Hammer Physics](../research/reed-and-hammer-physics.md) (modal synthesis parameters), [Signal Chain Architecture](../research/signal-chain-architecture.md) (overall DSP spec), [DK Preamp Derivation §13](../research/dk-preamp-derivation.md) (preamp validation)
 
 CRITICAL CONTEXT: A previous iteration of this project achieved good FFT-derived metrics (H2>H3 compliance, decay rates within range, spectral centroid targets met) but sounded terrible to human listeners. This document addresses why that happened and how to prevent it.
 
@@ -906,38 +906,12 @@ For agent reference when selecting evaluation metrics:
 | MUSHRA listening test | Ground truth | Very high (requires humans) | Final quality assessment | Expensive; needs 15+ listeners |
 | KAD (Kernel Audio Distance) | Better alignment with perception than FAD | Medium | Emerging alternative to FAD | Very new (2024), less validated |
 
-## Appendix D: OBM A/B Comparison Results (Feb 2026)
+## Appendix D: OBM A/B comparison (Feb 2026), VOID
 
-Systematic comparison of 13 clean OBM single notes (Freesound Pack 5726, MIDI 50-98) against synthesized notes at matching pitch/velocity, using `wurli_compare.py --tier3`.
+The February 2026 comparison of 13 OBM single notes against synthesized notes is void: the OBM recordings sound one octave below the MIDI notes they were assigned (true = label − 12), so every harmonic it compared was the wrong one, at the wrong note. Its result tables were removed on 2026-10-02 (git history keeps them).
 
-### Tier Selection
+Two constants that still ship were calibrated from it and inherit the problem until re-derived:
+- the reed decay law `0.005·f^1.22` dB/s, floored at 3.0 (`tables.rs`), which replaced `3.0·(midi/48)^4.5` on 2026-02-19 to match the OBM decays at the mislabelled pitch;
+- the speaker low-pass at 5500 Hz (lowered from 7500 Hz on 2026-02-21 from treble centroids at the mislabelled pitch; it only applies at speaker character > 0).
 
-OBM recordings pass through the full real 200A chain (preamp → power amp → speaker → room → mic). Synth renders must match: **always use `--tier3`** (full chain with power amp, speaker, volume 0.50). Tier 2 renders (no power amp, no speaker) produce 39% inflated harmonic distance.
-
-### Key Results
-
-| Metric | Tier 2 | Tier 3 |
-|--------|--------|--------|
-| Mean harmonic distance | 55.2 dB | **33.8 dB** |
-| Median | 44.0 dB | **28.4 dB** |
-| Best match | 24.7 dB (A4) | **11.6 dB (F4)** |
-
-Best matches (octave 3-4): F4=11.6 dB, A4=14.8 dB, A3=15.4 dB. Upper register (octave 6-7) inflated by room resonance artifacts in OBM recordings (see anomalous notes below).
-
-### Anomalous OBM Notes
-
-5 of 13 notes have harmonic content inconsistent with a single vibrating reed. These should be **excluded from automatic calibration** and weighted down in perceptual evaluation:
-
-- **D6 (MIDI 86)**: H6 = +5.6 dB above H1 (ratio 1.91x). Room resonance at ~7 kHz.
-- **D7 (MIDI 98)**: H6 = +13.1 dB above H1 (ratio 4.50x). Room resonance.
-- **A6 (MIDI 93)**: Flat harmonic tail -6.8 to -16.2 dB across H2-H10. Noise floor, not instrument.
-- **D5 (MIDI 74)**: H5/H6 at -10.5/-12.5 dB but H2 at -23.1 dB. Resonance artifact.
-- **D4 (MIDI 62)**: H2 nearly absent at -53.7 dB. Possible dead spot or very light strike.
-
-### Actionable Findings
-
-1. **Decay rate 2-3x too fast in bass (octaves 3-4)**: **DONE (2026-02-19).** Old `3.0*(midi/48)^4.5` replaced with OBM-calibrated frequency power law `0.005*f^1.22` (floored 3.0 dB/s). F#3 deficit: 1.6x→1.03x. All notes within ±30% of OBM.
-
-2. **H2/H1 too clean by 5-8 dB at mid-register**: A4 shows -8.2 dB real vs -16.1 dB synth (7.9 dB deficit). Confirms the MLP ds_correction saturation finding. **DONE (2026-02-19):** DS_AT_C4 increased from 0.70 to 0.85 (+2.69 dB H2/H1 analytically), trim recalibrated. MLP retrain deferred.
-
-3. **Speaker LPF possibly too gentle for upper register**: **DONE (2026-02-21).** LPF lowered from 7500 Hz to 5500 Hz. Real treble centroids at 0.44-0.48x of f0 consistent with ~5500 Hz cutoff.
+A third, `DS_AT_C4` 0.70 → 0.85, was retired with the parallel-plate pickup law.

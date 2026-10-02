@@ -30,7 +30,6 @@ AI assistants alike.
 
 | Document | Description |
 |----------|-------------|
-| [DK Preamp Testing](reference/dk-preamp-testing.md) | Five-layer test pyramid strategy |
 | [Calibration and Evaluation](reference/calibration-and-evaluation.md) | OBM recording analysis, spectral targets, evaluation methodology |
 | [SPICE-Rust Mapping](reference/spice-rust-mapping.md) | SPICE-to-Rust translation guide: node map, discretization, bug archaeology |
 | [Parameter Tuning Guide](reference/parameter-tuning-guide.md) | Parameter interaction chains, calibration workflow, sensitivity analysis |

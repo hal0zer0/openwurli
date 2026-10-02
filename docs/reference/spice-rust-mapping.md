@@ -219,7 +219,6 @@ fix touches the preamp.
 | File | Purpose |
 |---|---|
 | `docs/research/dk-preamp-derivation.md` | Full MNA math, trapezoidal discretization, Sherman-Morrison |
-| `docs/reference/dk-preamp-testing.md` | Five-layer test pyramid strategy |
 | `docs/research/preamp-circuit.md` | Circuit analysis, DC bias, feedback topology |
 | `docs/research/output-stage.md` | Power amp, tremolo, speaker, volume |
 | `docs/research/pickup-system.md` | Electrostatic pickup physics |

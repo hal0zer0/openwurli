@@ -28,11 +28,10 @@ Complete specification for a physically-accurate Wurlitzer 200A electric piano p
 20. [Complete Parameter List](#20-complete-parameter-list)
 21. [Damper and Release Model](#21-damper-and-release-model)
 22. [Polyphony and Voice Management](#22-polyphony-and-voice-management)
-23. [Implementation Order](#23-implementation-order)
-24. [Lessons from Previous Implementation (OpenWurli)](#24-lessons-from-previous-implementation-openwurli)
-25. [Comparison with Existing Plugins](#25-comparison-with-existing-plugins)
-26. [CLAP Plugin Requirements](#26-clap-plugin-requirements)
-27. [References](#27-references)
+23. [Lessons from Previous Implementation (OpenWurli)](#23-lessons-from-previous-implementation-openwurli)
+24. [Comparison with Existing Plugins](#24-comparison-with-existing-plugins)
+25. [CLAP Plugin Requirements](#25-clap-plugin-requirements)
+26. [References](#26-references)
 
 ---
 
@@ -515,105 +514,9 @@ The oversampler uses allpass IIR filters (custom Rust implementation in `oversam
 
 The DkPreamp receives the voice summation output directly. Because the DK method models the full circuit with physical component values, no artificial input drive scaling is needed -- the circuit's gain, impedances, and nonlinear behavior emerge naturally from the MNA equations. The voice output is scaled by `output_scale()` (physics-based, computed from displacement scale and pickup geometry) to approximate millivolt-level signals before entering the preamp.
 
-### BJT Stage Model
+### Preamp Circuit Model
 
-**Historical:** This section describes the `EbersMollPreamp` implementation, deleted in v0.3.0. The shipping preamp is the melange-generated 12-node DK solver.
-
-Each stage implements the Ebers-Moll exponential transfer function solved by Newton-Raphson iteration:
-
-```
-// Implicit equation:
-raw = A * expm1(B * (input_eff - effectiveRe * raw))
-
-// Where:
-//   A = gain / B (normalizes small-signal gain)
-//   B = 1/(n*Vt) = 38.5 V^-1 (physical thermal voltage)
-//   effectiveRe = re + feedbackBeta (emitter degeneration + cap feedback)
-//   input_eff = input + feedbackBeta * fbCapState (cap feedback signal)
-
-// Newton-Raphson (3 iterations):
-for iter in 0..2:
-    arg = clamp(B * (input_eff - effectiveRe * raw), -20, 20)
-    exp_arg = exp(arg)
-    f = A * (exp_arg - 1) - raw
-    df = -A * B * effectiveRe * exp_arg - 1
-    raw -= f / df
-```
-
-Followed by asymmetric exponential soft-clip (collector rail limits):
-```
-if raw >= 0: output = satLimit * (1 - exp(-raw / satLimit))     // toward Vcc
-if raw < 0:  output = -cutoffLimit * (1 - exp(raw / cutoffLimit)) // toward Vce_sat
-```
-
-**H2 mechanism:** The asymmetric soft-clip produces even harmonics because satLimit >> cutoffLimit (e.g., 10.9V vs 2.05V for Stage 1, ratio ~5.3:1). The negative side clips much harder, creating asymmetric compression whose Taylor expansion includes an x^2 term. This is the primary H2 source. The exponential nonlinearity itself is largely linearized by the NR feedback and contributes relatively little H2.
-
-### Stage 1 Parameters
-
-| Parameter | Value | Physical Basis |
-|-----------|-------|---------------|
-| gain | 420 (max) | gm1 × Rc1 = 2.80 mA/V × 150K (open-loop, fb_junct grounded — see note) |
-| B | 38.5 | 1/(n*Vt), n~1.0 for 2N5089 |
-| satLimit | 10.9 V | Vcc - Vc1 = 15 - 4.1 |
-| cutoffLimit | 2.05 V | Vc1 - Ve1 - Vce_sat = 4.1 - 1.95 - 0.1 |
-| re | depends on fb_junct Z | Ce1 (4.7 μF) couples emitter to fb_junct (NOT a simple bypass to ground); effective re depends on LDR path impedance |
-
-### Collector-Base Feedback Caps
-
-The collector-base capacitor creates Miller-effect negative feedback:
-- At HIGH frequencies: cap impedance is low -> MORE current from collector to base -> MORE feedback -> LESS gain
-- At LOW frequencies: cap impedance is high -> LESS feedback -> FULL gain
-
-The correct model:
-```
-// Cap state tracks the DIFFERENCE between output and input (AC component)
-// At HF: cap can track fast changes -> provides feedback
-// At LF: cap charges fully -> no AC feedback
-
-// Corner frequency from Miller multiplication:
-// f_miller = 1 / (2*PI * Ccb * (1+Av) * R_source)
-// For Stage 1: C-3=100pF, Av=420 -> C_miller=42,100pF -> f_dominant ~23 Hz
-
-// Implementation:
-hf_feedback = output - fbCapState  // HF component (what cap can't track)
-fbCapState += fbCapCoeff * (output - fbCapState)  // LPF tracks output
-
-// Apply as degeneration:
-effectiveRe = re + feedbackBeta * (something proportional to HF content)
-```
-
-Target corner frequencies based on physical Miller multiplication (C-3 = C-4 = 100 pF):
-- Stage 1: ~23 Hz open-loop dominant pole (C-3=100pF × (1+420) = 42,100 pF Miller-multiplied)
-- Stage 2: ~81 kHz (C-4=100pF × (1+2.2) = 320 pF, into low source impedance from Stage 1 output)
-- Closed-loop bandwidth: **~10 kHz** (no tremolo) / **~8.3 kHz** (tremolo bright)
-
-### Miller LPF (After Each Stage)
-
-First-order LPF modeling Miller-effect bandwidth limitation. With C-3 = C-4 = 100 pF:
-- After Stage 1: dominant pole at ~23 Hz open-loop
-- After Stage 2: ~81 kHz (Stage 2 has low gain of ~2.2, so Miller multiplication is mild)
-
-Stage 1's Miller pole at ~23 Hz is the dominant open-loop pole. The DkPreamp's coupled MNA solver handles both stages and their feedback interactions as a single system, so separate per-stage Miller LPF modeling is not needed. Full-chain BW: ~15.5 kHz (preamp only), ~11.8 kHz (no trem), ~9.7 kHz (trem bright). See preamp-circuit.md Section 5.5.1 for full analysis.
-
-### Stage 2 Parameters
-
-| Parameter | Value | Physical Basis |
-|-----------|-------|---------------|
-| gain | 238 | gm2 × Rc2 = 132 mA/V × 1.8K (open-loop) |
-| B | 38.5 | Same BJT thermal voltage |
-| satLimit | 6.2 V | Vcc - Vc2 = 15 - 8.8 |
-| cutoffLimit | 5.3 V | Vc2 - Ve2 - Vce_sat = 8.8 - 3.4 - 0.1 |
-| re | 0.456 | Re2_unbypassed / Rc2 = 820Ω / 1.8K |
-
-### Direct Coupling Dynamics
-
-Stage 1 output feeds Stage 2 input directly. At physical millivolt signal levels, DC shifts from asymmetric clipping are small. However, for accurate dynamics, the direct coupling should produce:
-
-1. **Signal-dependent bias modulation:** At ff, Stage 1's average collector voltage sags -> shifts Stage 2 toward cutoff -> compression
-2. **Transient sag:** Hard attacks momentarily shift bias, then recover over 10-100ms
-3. **Velocity-dependent timbral change:** Stage 2 operates at different gain/distortion regimes depending on Stage 1's bias shift
-
-This can be approximated with an envelope follower on Stage 1's output that modulates Stage 2's operating point. Full physical modeling would track the actual DC operating point through the circuit, but the envelope approximation captures the audible effects.
+The preamp is solved as the drawn circuit, not as per-stage behavioural blocks (the Ebers-Moll stage model and envelope-follower coupling that used to be described here were deleted in v0.3.0). Topology, component values, stage gains and headroom: [preamp-circuit.md](preamp-circuit.md). Solver derivation: [dk-preamp-derivation.md](dk-preamp-derivation.md).
 
 ### DC Block
 
@@ -683,12 +586,6 @@ The asymmetric attack/release creates a "choppy" effect: fast dips (2.5 ms), slo
 ### Implementation Note
 
 Because the tremolo modulates the preamp's emitter feedback (via the LDR shunt at fb_junct), it must be implemented INSIDE the preamp processing block (within the 2x oversampled domain), not as a separate post-preamp stage. The LDR state updates at the base sample rate, but the emitter feedback modulation applies per-sample at 2x rate.
-
-### Shadow Preamp Pump Cancellation
-
-R_ldr modulation at 5.63 Hz creates a ~4.5V pp pump at the preamp output via Ce1 transient dynamics (confirmed by SPICE). The pump has harmonics at 28-200+ Hz that overlap bass fundamentals -- no HPF can separate them without cutting bass. Solution: a second `DkState` ("shadow") runs in parallel with zero audio input but the same R_ldr modulation. Its output is pure pump. Subtracting the shadow output from the main output cancels all pump harmonics at every frequency. Pump level after subtraction: < -120 dBFS.
-
-**Shadow bypass:** Removed in v0.2.1. The shadow preamp always runs -- the cost of one extra DK step is negligible vs 64 reed oscillators, and toggling the solver on/off caused clicks that crossfade workarounds could not fully resolve.
 
 ### Parameters
 
@@ -884,12 +781,6 @@ the amp's 22 V rail = 1.0 at the engine output; the OpenWurli plugin adds a fixe
 Polyphonic headroom (measured 2026-09-23, six-note ff chord, speaker off):
 - −11.6 dBFS peak at the default pot position (0.80); −8.6 at full volume; −1.3 at full volume with R-11 at 0 Ω (the amp at its rail = full scale by construction)
 
-### Input Drive (Historical)
-
-**Note:** The `kPreampInputDrive` scaling factor discussed here is historical and applies only to the deleted `EbersMollPreamp` (historical). The shipping `DkPreamp` implementation uses physical component values directly (resistances, capacitances, transistor parameters) and does not require artificial input drive scaling. The DK method MNA solver operates on the actual circuit equations, so signal levels are determined by the component values themselves.
-
-SPICE-measured closed-loop gain: 6.0 dB (2.0x) without tremolo, 12.1 dB (4.0x) at tremolo bright peak. BW: ~15.5 kHz preamp-only, ~11.8 kHz full-chain (no trem) / ~9.7 kHz (trem bright).
-
 ---
 
 ## 17. Oversampling Strategy
@@ -999,17 +890,6 @@ All other parameters (decay rates, pickup gap, preamp component values, mode amp
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| B (thermal voltage) | 38.5 | 1/(n*Vt) for BJT |
-| Stage 1 gain | 420 (max) | gm1 × Rc1 = 2.80 mA/V × 150K (open-loop, fb_junct grounded) |
-| Stage 1 satLimit | 10.9 V | Vcc - Vc1 = 15 - 4.1 |
-| Stage 1 cutoffLimit | 2.05 V | Vc1 - Ve1 - Vce_sat = 4.1 - 1.95 - 0.1 |
-| Stage 2 gain | 238 | gm2 × Rc2 = 132 mA/V × 1.8K (open-loop) |
-| Stage 2 satLimit | 6.2 V | Vcc - Vc2 = 15 - 8.8 |
-| Stage 2 cutoffLimit | 5.3 V | Vc2 - Ve2 - Vce_sat = 8.8 - 3.4 - 0.1 |
-| Stage 2 re | 0.456 | Re2_unbypassed / Rc2 = 820Ω / 1.8K |
-| Miller pole 1 (open-loop) | ~23 Hz | Stage 1 dominant pole (C-3=100pF, Miller-multiplied) |
-| Miller pole 2 | ~81 kHz | Stage 2 (C-4=100pF, low Miller multiplication) |
-| Full-chain bandwidth | ~11800 Hz (no trem) / ~9700 Hz (trem bright) | Preamp-only ~15.5 kHz; full chain includes speaker rolloff |
 | DC block | N/A | Handled internally by DK preamp |
 | Speaker HPF (authentic) | 30 Hz, Q=0.75 | Subsonic only (2026-07; the 95 Hz cabinet roll-off moved to Vurli) |
 | Speaker LPF (authentic) | 5500 Hz, Q=0.707 | Cone breakup (OBM-calibrated, was 7500 Hz) |
@@ -1096,17 +976,13 @@ When a voice is stolen:
 - All voice memory is pre-allocated (no `new`/`delete` in audio thread)
 - Voice rendering is the most CPU-intensive per-voice work
 - Multiplicative decay (`envelope *= decay_mult`) replaces per-sample `exp(-alpha*n)` — saves 7 exp/sample/voice
-- Jitter uses scaled uniform noise (1 LCG call/mode) instead of Box-Muller (2 LCG + ln + sqrt + cos per mode) — saves 3 transcendentals/mode/sample
 - BJT function fusion: `bjt_ic_gm()` computes one exp() for both ic and gm in the NR loop
-- Shadow preamp always runs (bypass optimization was removed in v0.2.1)
 - Tremolo ln() caching: `ln(r_min)`, `ln(r_max)` precomputed at construction
 - The oversampler and preamp run ONCE (shared), not per-voice
 - NaN guard in preamp: `result.is_finite()` check prevents permanent state corruption
 - Plugin-level NaN output guard: final `is_finite()` check after power amp + speaker, resets both on NaN
 - **v0.2.0 optimizations:**
 - Quadrature oscillator: 7 sin() → 0 transcendentals/sample/voice (Mode AoS struct, 616 bytes fits L1)
-- Subsample jitter: OU process updated every 16 samples (amortized cost /16)
-- Pickup division elimination: `beta * (1-y)` replaces `beta / c_n` in RC model
 - Conditional oversampling: 2x bypassed at host rates >= 88.2 kHz (saves ~50% DK preamp cost)
 - Filter precomputes: melange-primitives Biquad coefficients cached at construction/set_type()
 
@@ -1115,12 +991,10 @@ When a voice is stolen:
 | Component | Operations per sample | Notes |
 |-----------|----------------------|-------|
 | N voices x 7 modes | ~28N multiply-adds (quadrature rotation), 0 sin | Per-voice oscillator (multiplicative decay, no exp) |
-| Jitter (N voices x 7 modes) | ~5 LCG + multiply (subsampled every 16 samples) | Scaled uniform, OU filter |
 | Pickup per voice | ~N max/add | Minimal |
 | Voice sum | ~N additions | Trivial |
 | 2x oversampler up | ~12 multiply-adds (bypassed at >= 88.2 kHz) | Allpass polyphase filter |
 | Preamp (2 samples at 2x) | ~2 x (3 NR iterations x 2 fused exp) = 12 exp calls | Most expensive shared stage |
-| Shadow preamp | ~12 exp | Always runs (bypass removed) |
 | 2x oversampler down | ~12 multiply-adds (bypassed at >= 88.2 kHz) | Allpass polyphase filter |
 | Tremolo | ~2 multiply-adds + 1 exp + 1 powf | Cached ln values |
 | Speaker (2 biquads) | ~10 multiply-adds | Trivial |
@@ -1129,117 +1003,7 @@ When a voice is stolen:
 
 ---
 
-## 23. Implementation Order
-
-### Phase 0: Scaffold (1-2 days)
-
-Build the minimum framework that compiles, loads in a DAW, and produces silence:
-
-1. CLAP plugin entry point (descriptor, create, destroy)
-2. Audio ports (stereo output)
-3. Note ports (CLAP + MIDI input)
-4. Parameter definitions (all 12 params)
-5. State save/load
-6. Empty process callback that outputs silence
-
-**Test:** Load in Reaper/Bitwig, verify it appears and doesn't crash.
-
-### Phase 1: Voice and Oscillator (3-5 days)
-
-Get a playable instrument with correct pitch and basic dynamics:
-
-1. Voice struct with state machine (FREE/HELD/RELEASING)
-2. Voice allocator with stealing
-3. Modal oscillator (7 modes, interpolated ratios)
-4. Velocity scaling (register-dependent exponent, S-curve)
-5. Gaussian dwell filter
-6. Decay model (base_decay, mode scales, register scaling)
-7. Phase initialization
-8. Per-note variation
-
-**Test:** Play notes, verify correct pitch across full range, velocity responds, notes decay. No preamp yet -- output is the raw oscillator.
-
-### Phase 2: SPICE Validation (Complete)
-
-All critical analog subcircuits validated in ngspice before DSP implementation:
-
-1. **Preamp** -- `spice/subcircuits/preamp.cir`: Two-stage CE amp with emitter feedback via Ce1. Closed-loop gain 6.0 dB (no tremolo) to 12.1 dB (tremolo bright). THD < 0.04% at normal levels.
-2. **Tremolo oscillator** -- `spice/subcircuits/tremolo_osc.cir`: Twin-T oscillator, TR-3/TR-4 shared collector. Freq=5.63 Hz, Vpp=11.82V.
-3. **LDR behavioral model** -- `spice/models/ldr_behavioral.lib`: VTL5C3-like power-law with asymmetric time constants.
-4. **LDR sweep** -- `spice/testbench/topology_b_ldr_sweep.cir`: 6.1 dB gain modulation range across LDR sweep.
-
-### Phase 3: Pickup and Summation (1 day)
-
-1. Constant-charge pickup model per voice
-2. Gap scaling by register
-3. Voice summation into mono buffer
-
-**Test:** Verify pickup doesn't alter pitch, minGap clamp works at extreme ff.
-
-### Phase 4: Oversampler and Preamp (3-5 days)
-
-This is the most complex and sonically important stage. Component values and topology were validated in SPICE (Phase 2).
-
-1. Build allpass polyphase oversampler wrapper
-2. Implement DkPreamp (8-node coupled MNA solver using DK method)
-3. Miller caps and direct coupling handled within DK circuit equations
-4. Wire up DkPreamp with oversampler and DC block
-5. Implement emitter feedback path: R-10 (56K) -> fb_junction -> Ce1 (4.7µF) -> TR-1 emitter
-6. Validate DkPreamp gain against SPICE targets (2.0x no-trem, 4.0x trem-bright)
-
-**Test:** (1/(1-y)-era expectation, unsourced — see calibration-and-evaluation.md §3 note) Verify H2 > H3 on all notes at mf. Check that pp is clean, mf has moderate bark, ff has aggressive bark. Check dynamic range: pp should be at least 15 dB quieter than ff. Cross-validate gain and THD against SPICE measurements.
-
-### Phase 5: Post-Processing (1-2 days)
-
-1. Tremolo LFO (twin-T oscillator model, ~5.6 Hz, mildly distorted sinusoid)
-2. LDR model (asymmetric attack/release, power-law R vs illumination)
-3. Feedback modulation (LDR path shunts fb_junction — gain modulation, not volume)
-4. Speaker cabinet (biquad HPF + LPF)
-5. Output limiter
-6. Mono-to-stereo
-
-**Test:** Full signal chain test. Compare spectra to OldBassMan recordings. Verify tremolo produces timbral modulation (not just amplitude).
-
-### Phase 6: Release and Polish (2-3 days)
-
-1. Damper model (progressive, per-mode)
-2. Attack noise burst
-3. Denormal protection (FTZ/DAZ)
-4. Note-end events to host
-5. Parameter automation smoothing
-
-**Test:** Play musical passages. Verify damper release sounds natural, no CPU spikes on voice release.
-
-### Phase 7: Tuning and Calibration (Ongoing)
-
-1. Register balance test (10 notes, mf and ff)
-2. Compare H2/H1 slope to target: `H2_dB = -0.48 * MIDI + 17.5`
-3. Decay rate comparison to calibration curve
-4. Dynamic range verification (pp vs ff: target 20-30 dB)
-5. Polyphonic chord test (compression, intermodulation)
-
-### Phase 8: ML Correction (v2 Deployed)
-
-Per-note MLP corrections run at note-on. Architecture: 2 inputs -> 8 hidden -> 8 hidden -> 11 outputs. 195 parameters, <10 us inference, zero per-sample cost.
-
-**v2 (deployed Feb 2026):** Retrained with reduced outputs after v1 harmonic-vs-mode domain mismatch:
-- **Outputs [0:5]: freq_offsets** — per-note mode frequency tuning (cents)
-- **Outputs [5:10]: decay_offsets** — per-note mode decay adjustment (ratio)
-- **Output [10]: ds_correction** — displacement scale correction from H2/H1 ratio. Runtime clamp [0.7, 1.5].
-
-Plugin has BoolParam "MLP Corrections" (id="mlp", default ON) for real-time A/B testing.
-
-Results: Freq 2.2 cents MAE, ds 0.16 MAE, best loss 0.158. 8 OBM training notes (MIDI 65-97, vel=80).
-
-1. Training data: 8 OBM notes (MIDI 65-97, vel=80), SNR-filtered
-2. Weights baked into `mlp_weights.rs` (no external files needed)
-3. Corrections applied at note-on via `mlp_correction.rs`
-4. Outside training range: corrections fade to identity over 12 semitones
-5. See `ml/compute_residuals.py` and `ml/train_mlp.py` for training pipeline
-
----
-
-## 24. Lessons from Previous Implementation (OpenWurli)
+## 23. Lessons from Previous Implementation (OpenWurli)
 
 Key failure patterns from the previous project (40+ tuning rounds without convergence):
 
@@ -1252,7 +1016,7 @@ Key failure patterns from the previous project (40+ tuning rounds without conver
 
 ---
 
-## 25. Comparison with Existing Plugins
+## 24. Comparison with Existing Plugins
 
 ### Pianoteq (Modartt) - Gold Standard for Physical Modeling
 
@@ -1319,7 +1083,7 @@ Key failure patterns from the previous project (40+ tuning rounds without conver
 
 ---
 
-## 26. CLAP Plugin Requirements
+## 25. CLAP Plugin Requirements
 
 ### Minimum CLAP Implementation
 
@@ -1358,7 +1122,7 @@ State serialization uses nih-plug's built-in state persistence mechanism (JSON-b
 
 ---
 
-## 27. References
+## 26. References
 
 ### Papers
 

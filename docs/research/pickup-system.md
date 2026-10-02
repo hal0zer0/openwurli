@@ -12,8 +12,9 @@
 > Capacitance vs displacement is therefore an **overlap law** (reed+lead thickness band
 > against the finger band, fringe-rounded), not `1/(1−y)`, and the load-bearing
 > unknown is the **rest offset** of the reed+lead against the band, not d₀. The model
-> now runs that law — see [pickup-overlap-law.md](pickup-overlap-law.md). Geometry and
-> `1/(1−y)` sections below are the historical record; the RC network sections still hold.
+> now runs that law — see [pickup-overlap-law.md](pickup-overlap-law.md). The `1/(1−y)` and d₀
+> sections were replaced by pointers on 2026-10-02 (git history keeps them); the RC network
+> sections still hold.
 
 ## Document Purpose and Audience
 
@@ -58,14 +59,12 @@ slot widths are therefore unknown. reed-and-hammer-physics.md already had the co
 
 **Patent design specification (US 2,919,616, Miessner, 1960):** The pickup slot is specified as **"0.005 inch greater than the width of the associated reed, thereby providing a normal clearance gap of about 0.0025 inch on either side of the reed."** The patent also references spacing tools of ".002, .0025, .003 inch etc." for adjusting pickup sensitivity. The 0.0025"/side (0.064mm) design specification is tighter than the 140B measurement above (0.0075"-0.0105"); whether that reflects production reality, a model difference, or both is not established.
 
-**Critical note:** These are **slot widths** (lateral clearance), not the vertical gap between the reed face and the bottom of the slot. The vertical gap (d₀) is **not documented in any patent, service manual, or academic source** — confirmed by a 99-agent adversarial deep-research pass (2026-07). Service manual procedures describe voicing only qualitatively (reed flat-face coplanar with the pickup face; the over-loud remedy bends the pickup ends up 1/32″–1/16″), with no absolute gap dimension. **Correction:** an earlier version of this doc cited "Pfeifle's 1.5 mm (EP300)" as the only published d₀ — that is a **misattribution**. The Pfeifle DAFx-17 (2017) paper models the **EP200** (not EP300, not 200A), contains no "1.5 mm" and no rest-gap value at all, and reports its instrument's polarizing voltage as 170 V manual / 130 V measured. There is **no published d₀ for any Wurlitzer** that survives verification. The full provenance and the reason d₀ is *structurally* underdetermined (not merely unfound) live in **[Reed–Pickup Displacement](reed-pickup-displacement.md)**; `DISPLACEMENT_SCALE` absorbs the unknown as an OBM-calibrated constant.
+**Vertical gap (d₀):** no patent, service manual or academic source documents a reed-to-slot-bottom gap, and since the slot has no floor (banner above) there is none to model; the overlap law's unknown is the rest offset instead. An earlier version of this doc cited "Pfeifle's 1.5 mm (EP300)" as a published d₀; that was a misattribution (the Pfeifle DAFx-17 paper models the EP200, gives no rest gap, and reports 170 V manual / 130 V measured polarizing voltage).
 
 ### 1.4 Slot Width Ratios
 
 - Bass (reed 1) to treble (reed 64) slot width ratio: 0.172 / 0.114 = **1.51:1**
 - Bass to treble side clearance ratio (140B): 0.0105 / 0.0075 = **1.4:1**
-
-These ratios constrain any register-dependent gap scaling model. The current OpenWurli model uses `2^((60-key)/60)` which gives a ratio of ~1.74:1 across the keyboard — moderately steeper than the measured 1.51:1 slot width ratio.
 
 ### 1.5 Pickup Plate Dimensions (per reed)
 
@@ -314,7 +313,7 @@ For a treble reed (smaller area, narrower gap):
 
 ### 3.6 Total System Capacitance
 
-A single GroupDIY forum post reports **~240 pF** ("reed pickup capacitance was measured at 240pF"). **Confidence: LOW.** The 2026-07 deep-research pass adversarially **refuted** this figure as unverifiable single-source forum hearsay — no primary source (patent, service manual, or academic paper) gives any pickup-capacitance value for the 200A. We retain 240 pF as the model's `C_total` because (a) it is the only number available and (b) it is geometrically plausible (see below), but it is an **assumption, not a measurement**, and the pickup RC corner (f_c ≈ 880 Hz post-revision) inherits that low confidence. An LCR-meter reading of a real reed bar would settle it. See [Reed–Pickup Displacement §5](reed-pickup-displacement.md).
+A single GroupDIY forum post reports **~240 pF** ("reed pickup capacitance was measured at 240pF"). **Confidence: LOW.** The 2026-07 deep-research pass adversarially **refuted** this figure as unverifiable single-source forum hearsay — no primary source (patent, service manual, or academic paper) gives any pickup-capacitance value for the 200A. We retain 240 pF as the model's `C_total` because (a) it is the only number available and (b) it is geometrically plausible (see below), but it is an **assumption, not a measurement**, and the pickup RC corner (f_c ≈ 880 Hz post-revision) inherits that low confidence. An LCR-meter reading of a real reed bar would settle it.
 
 240 pF cannot be per-reed (64 reeds × 240 pF = 15.4 nF, impossibly large); if real it is the **total system capacitance** at the preamp input node, comprising:
 - 64 reed-to-plate capacitors in parallel: 64 x 2-4 pF = ~130-250 pF
@@ -391,124 +390,7 @@ The remaining 237 pF of static capacitance from the other 63 reeds (and wiring) 
 
 ## 4. Nonlinearity Analysis
 
-### 4.1 Pickup Nonlinearity — Taylor Expansion
-
-In the constant-charge regime, the exact signal voltage is:
-
-```
-V(t) = V_bias * d(t) / d_0 = V_bias * (d_0 + x(t)) / d_0
-V_ac(t) = V_bias * x(t) / d_0
-```
-
-This is **exactly linear** in displacement x(t). There is NO nonlinearity in the constant-charge regime when expressed in terms of gap distance.
-
-However, if we express the signal in terms of the **inverse** relationship (capacitance), nonlinearity appears. From arXiv 2407.17250 (Honzik & Novak), the output voltage of a condenser microphone including parasitic capacitance is:
-
-```
-u(t) = K_0 * [y(t) - y(t)^2 + y(t)^3 - ...]
-```
-
-where:
-- `y(t) = x(t) / d_0` (normalized displacement, positive = reed moving toward plate)
-- `K_0 = V_bias * C_0 / (C_p + C_0)` (effective sensitivity including parasitic cap)
-- `C_p` = parasitic capacitance (other reeds + wiring)
-
-**Wait -- this contradicts the "exactly linear" claim above.** The resolution: the Taylor expansion comes from `V = Q/(C_0 - delta_C)` where `delta_C = C_0 * x/d_0`, which gives `V = V_bias / (1 - x/d_0)`. This is NOT the same as `V = V_bias * (1 + x/d_0)`.
-
-Let me derive this carefully:
-
-### 4.2 Correct Derivation of Pickup Voltage
-
-**Sign convention:** Let x > 0 mean the reed moves TOWARD the plate (gap decreases).
-
-```
-d(t) = d_0 - x(t)        (gap decreases when reed moves toward plate)
-C(t) = C_0 * d_0 / d(t) = C_0 * d_0 / (d_0 - x(t)) = C_0 / (1 - x/d_0)
-```
-
-In the constant-charge regime:
-
-```
-V(t) = Q_0 / C(t) = V_bias * C_0 / C(t) = V_bias * (1 - x(t)/d_0)
-V_ac(t) = -V_bias * x(t) / d_0
-```
-
-This IS linear (just inverted sign). The signal is proportional to displacement.
-
-**But wait** — the arXiv paper uses a DIFFERENT convention. Let me reconcile:
-
-If x > 0 means reed moves AWAY from plate (gap increases):
-
-```
-d(t) = d_0 + x(t)
-C(t) = C_0 * d_0 / (d_0 + x(t)) = C_0 / (1 + x/d_0)
-V(t) = Q_0 / C(t) = V_bias * (1 + x/d_0)
-V_ac(t) = V_bias * x(t) / d_0
-```
-
-Also linear. So where does the nonlinearity come from?
-
-### 4.3 Source of Pickup Nonlinearity
-
-The nonlinearity arises when we consider that **the capacitor connected in parallel with other capacitances** forms a voltage divider. The signal at the preamp input is NOT `V_bias * x/d_0` but rather:
-
-```
-V_signal = V_bias * (C_0 / (C_0 + C_p)) * [y - y^2 + y^3 - ...]
-```
-
-where `y = x/d_0` and `C_p` is the parasitic (stray + other reeds) capacitance.
-
-The nonlinear terms come from the fact that when the vibrating capacitance changes, the voltage division ratio also changes:
-
-```
-V_out = V_bias * C_vibrating / (C_vibrating + C_parasitic)
-     = V_bias * C_0/(1-y) / (C_0/(1-y) + C_p)
-     = V_bias * C_0 / (C_0 + C_p*(1-y))
-```
-
-Expanding as a Taylor series in y (for y << 1):
-
-```
-V_out ≈ V_bias * C_0/(C_0+C_p) * [1 + C_p/(C_0+C_p)*y + (C_p/(C_0+C_p))^2 * y^2 + ...]
-```
-
-The fundamental term gives the linear sensitivity. The y^2 term generates second harmonic (H2). The y^3 term generates third harmonic (H3).
-
-### 4.4 Second Harmonic from Pickup
-
-For harmonic excitation `y(t) = y_m * sin(wt)`:
-
-```
-H2/H1 = y_m * C_p / (2 * (C_0 + C_p))
-```
-
-With the Wurlitzer's values:
-- `y_m` at mf: reed displacement / gap ~ 0.05-0.15 (estimated)
-- `C_0` (per-reed): ~3 pF (estimated)
-- `C_p` (system - this reed): ~237 pF (estimated)
-
-```
-H2/H1 = 0.10 * 237 / (2 * 240) = 0.049 = -26 dB
-```
-
-**Note:** This -26 dB estimate uses the small-signal arXiv formula with parasitic capacitance dilution. SPICE simulation of the full 1/(1-y) model at y=0.10 yields H2/H1 ~ -21 dB (THD ~ 8.7%), which is significantly higher because the full nonlinearity includes terms beyond the first-order Taylor expansion. At millivolt input levels, the preamp itself produces THD < 0.01%, making the pickup the dominant H2 source at normal dynamics. The preamp's asymmetric headroom (5.3:1) contributes additional H2 only at extreme ff where it enters saturation.
-
-### 4.5 When Does the Linear Approximation Break Down?
-
-The linear approximation `V_ac = V_bias * x/d_0` is valid when:
-1. `x/d_0 << 1` (small displacement relative to gap)
-2. The pickup operates in constant-charge regime (f >> f_c)
-3. Parasitic capacitance is accounted for in the sensitivity factor
-
-For the Wurlitzer:
-- At **pp**: x/d_0 ~ 0.02-0.05 -- linear to within 0.1%.
-- At **mf**: x/d_0 ~ 0.05-0.15 -- linear to within 1-2%.
-- At **ff**: x/d_0 ~ 0.15-0.40 -- nonlinear terms become significant (H2 ~ -14 to -20 dB from pickup alone).
-- At **extreme ff**: reed approaches plate (x -> d_0) -- severe nonlinearity, physical clamp. Service manual warns against reed-plate contact.
-
-The **minGap clamp** (reed cannot physically contact the plate) is the most severe nonlinearity at extreme dynamics. When the reed gets very close to the plate, the 1/(d_0 - x) behavior produces extreme voltage spikes that are then clamped by the preamp's input protection (D1 diode).
-
----
+The pickup's nonlinearity is the field-solved overlap law: capacitance against how far the reed+lead band has entered the finger band, per pickup section. It replaced the parallel-plate `1/(1−y)` analysis that stood here (constant-charge Taylor expansion, H2 estimates from y = x/d₀), which assumed a slot floor the 200A does not have. See [pickup-overlap-law.md](pickup-overlap-law.md) for the law, its field solve, and its measured harmonic behaviour.
 
 ## 5. Frequency Response Analysis
 
@@ -584,9 +466,9 @@ The pickup has no inherent upper frequency limit in the audio band. The capaciti
 | Signal level | Very low (millivolts) | Low-moderate (tens of millivolts) |
 | Impedance | Very high (~380 kOhm resistive at TR-1 base) | High (inductive, ~5-10 kOhm at resonance) |
 | Noise susceptibility | EMI sensitive (high-Z capacitive) | EMI sensitive (inductive) |
-| Distortion character | Even harmonics from pickup 1/(1-y) + preamp at ff | Even + odd from magnetic nonlinearity |
+| Distortion character | Harmonics from the pickup's overlap law + preamp at ff | Even + odd from magnetic nonlinearity |
 
-**Key sonic consequence:** The Wurlitzer's "bark" comes primarily from the **pickup's 1/(1-y) nonlinearity** at normal dynamics, with the preamp contributing additional H2 at extreme ff. The Rhodes' growl comes from **both** the pickup (magnetic nonlinearity) and the preamp. Both instruments derive their character from the combined pickup + preamp chain, but the dominant nonlinearity source differs.
+**Key sonic consequence:** The Wurlitzer's harmonic content comes primarily from the **pickup's overlap-law nonlinearity** at normal dynamics, with the preamp contributing additional harmonics at extreme ff. (Which harmonics make the percept players call "bark" is not established.) The Rhodes' growl comes from **both** the pickup (magnetic nonlinearity) and the preamp. Both instruments derive their character from the combined pickup + preamp chain, but the dominant nonlinearity source differs.
 
 ---
 
@@ -620,87 +502,7 @@ The patent describes the general principle; the specific 200A implementation may
 
 ## 8. Modeling Decisions and Recommendations
 
-### 8.1 Current Model (OpenWurli) — post-restructure (2026-09)
-
-`pickup.rs` implements the corrected physics: **the 1/(1−y) nonlinearity
-lives in the SOURCE (the moving reed's charge injection), and the network
-is nearly LTI** (one ~3 pF reed against the fixed ~240 pF node — the node
-capacitance swings only 240→274 pF even at y = 0.92). The node equation
-`C_node(t)·dv/dt + v/R_net = −V_pol·dC_reed/dt` is discretized exactly
-(trapezoidal); the differentiator-inside-a-lag structure IS the jω-driven
-high-pass the circuit reference specifies.
-
-```rust
-// pickup.rs core (post-restructure)
-let y = pickup_soft_saturate(sample * scale);   // physical gap fraction
-let s = y / (1.0 - y);        // SOURCE: reed charge — THE nonlinearity
-let m = 1.0 + C_REED_RATIO * s;   // NETWORK: ~LTI (ratio ≈ 1/80)
-// exact trapezoidal step of C_node·dv/dt + v/R_net = −V_pol·dC_reed/dt
-w = (w * (m_avg - beta) - (s - s_prev)) / (m_avg + beta);
-out = w * PICKUP_SENSITIVITY;
-```
-
-**Key parameters:**
-
-| Parameter | Value | Derivation |
-|-----------|-------|------------|
-| `C_TOTAL` | 240 pF | nominal, LOW confidence (§3.6); corner scales with it |
-| `C2_BASE` | 220 pF | C-2, bridged to the plate at audio; `C2_RETURNS_TO_GROUND = true` (the one open fork — flipping it moves the corner to ≈1.4 kHz) |
-| `PICKUP_FC` | 880.5 Hz | one-pole fit to the cross-verified network response (0.23 dB max error 55 Hz–10 kHz) |
-| `C_REED_RATIO` | ≈ 1/80 | one reed's capacitance vs the node — the physical modulation depth |
-| `DISPLACEMENT_SCALE` | per-note, `tables.rs` | now honestly a **gap-fraction calibration** (it previously absorbed the 80× depth error) |
-| soft saturation | knee → asymptotic `PICKUP_MAX_Y` | replaced the hard clamp (derivative discontinuity was audible HF distortion) |
-
-**What the restructure fixed** (full story: preamp-circuit.md §11 and the
-pickup.rs module docs): the previous model modulated the ENTIRE node as
-`1/(1−y)` — 80× the physical depth — which made its HF asymptote linear
-(`SENSITIVITY·y`, no harmonics above the corner, per-order harmonic
-falloff) and its 12.5× time-constant swing an intermodulation generator
-(inharmonic hash, since measured −13 dB improved). Its asymmetry was also
-inverted relative to its own documentation.
-
-### 8.2 Assessment
-
-**What it gets right:** physically-placed 1/(1−y) (H2-dominant, correct
-asymmetry direction, frequency-independent above the corner); one-pole
-HPF at 880 Hz matching the verified network to 0.23 dB; register-dependent
-gap-fraction scaling; shared-plate mono summation; hash-free harmonic
-generation (harmonic-to-hash ≈ 20 dB at C2 ff).
-
-**Open refinements:** the `ds_correction` MLP head's out-of-distribution
-velocity behavior (opt-in path); Miessner/U-channel asymmetry beyond
-1/(1−y) (deferred); real measured `C_TOTAL` and the C-2 return fork
-(hardware pending).
-
-### 8.3 Implementation Status
-
-Implemented: the source-honest restructure above, the 880 Hz corner with
-the C_TOTAL scaling law, the C-2 fork as a one-constant switch, soft
-saturation. The pre-revision "future refinement: full time-varying RC"
-section is obsolete — the shipped model IS the full network model now,
-with the time variation placed where physics puts it.
-
-### 8.4 Signal Level Estimation
-
-The AC signal voltage at the preamp input can be estimated:
-
-```
-V_ac_peak = V_bias * x_peak / d0 * C_reed / (C_reed + C_parasitic) * |H(f)|
-```
-
-For C4 at mf (values below predate the corner revision; rescale by 880/2312 where precision matters):
-- V_bias = 147V
-- x_peak / d0 ~ 0.10 (estimated)
-- C_reed / C_total = 3/240 = 0.0125
-- |H_pickup(262 Hz)| = 262/sqrt(262^2 + 880^2) = 0.285  (corrected corner)
-
-```
-V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
-```
-
-> **Note:** C20 (220 pF) is a 206A component, NOT present on the 200A. Without C20, the estimated preamp input at C4 mf is ~21 mV. Brad Avenson measured **2-7 mV AC at the volume pot output** (AFTER ~6 dB of preamp gain in the stock 200A — SPICE-measured closed-loop gain is 2.0x/6.0 dB at 1 kHz; Avenson's "15 dB" figure was from his replacement preamp design, not the stock 200A). The discrepancy between 21 mV preamp input and 2-7 mV post-gain output suggests the pickup signal estimate above is an upper bound, possibly due to smaller actual reed displacement or higher system capacitance than assumed.
-
----
+`pickup.rs` runs the overlap law as its source nonlinearity, with the network nearly LTI (a differentiator inside a one-pole lag at `PICKUP_FC`, §3.7). The modeling decisions, swing table and validation record live in [pickup-overlap-law.md](pickup-overlap-law.md); the `1/(1−y)` model, its `DISPLACEMENT_SCALE` calibration and the signal-level estimates built on d₀ that stood here are retired.
 
 ## 9. Summary of Key Facts
 
@@ -745,7 +547,7 @@ V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
 | Miessner's asymmetric modulation in 200A | **DEFERRED** to OBM recording comparison phase. Unknown if preserved in production design. Will calibrate against OldBassMan recordings. |
 | Exact signal level at pickup output | Sub-mV to low mV estimated; no direct measurement found |
 
-**Pickup nonlinearity DECISION: IMPLEMENTED.** The full 1/(1-y) nonlinearity is implemented in `pickup.rs` as a bilinear-discretized time-varying RC circuit, with soft saturation toward PICKUP_MAX_Y, f_c = PICKUP_FC ≈ 880 Hz, and register-dependent displacement scaling from beam compliance (`tables.rs:pickup_displacement_scale()`). The two deferred items above affect calibration constants only, not the model topology.
+**Pickup nonlinearity: IMPLEMENTED.** `pickup.rs` runs the field-solved overlap law as its source nonlinearity, inside a nearly LTI network with f_c = PICKUP_FC ≈ 880 Hz; the per-note swing comes from a hammer-physics table (`tables::PROVISIONAL_FF_SWING_MM`). See [pickup-overlap-law.md](pickup-overlap-law.md).
 
 ---
 
@@ -821,115 +623,9 @@ V_ac_peak = 147 * 0.10 * 0.0125 * 0.113 = 0.021 V = 21 mV
 
 ---
 
-## Appendix A: Derivation of Constant-Charge Signal Voltage
+## Appendix A: (retired)
 
-### Setup
-
-A parallel-plate capacitor with:
-- Static gap: d_0
-- Static capacitance: C_0 = epsilon_0 * A / d_0
-- Polarizing voltage: V_bias
-- Static charge: Q_0 = C_0 * V_bias
-- Bias resistor: R (through which charge can flow to/from the voltage source)
-- Reed displacement: x(t), positive = away from plate (gap increases)
-
-### Instantaneous Values
-
-```
-d(t) = d_0 + x(t)
-C(t) = epsilon_0 * A / d(t) = C_0 * d_0 / (d_0 + x(t))
-```
-
-### RC Circuit ODE
-
-The charge on the capacitor evolves according to:
-
-```
-dQ/dt = (V_bias - Q/C(t)) / R
-```
-
-The driving term `(V_bias - Q/C)` is the voltage across the resistor. When `Q/C = V_bias`, no current flows (equilibrium).
-
-### Constant-Charge Approximation (f >> f_c)
-
-When the signal frequency is much higher than `f_c = 1/(2*pi*R*C_0)`, the charge cannot change appreciably during one cycle. We approximate `Q ≈ Q_0 = C_0 * V_bias`.
-
-```
-V(t) = Q_0 / C(t) = V_bias * C_0 / C(t) = V_bias * (d_0 + x(t)) / d_0
-V_ac(t) = V_bias * x(t) / d_0
-```
-
-**Linear in x(t).** Sensitivity: `S = V_bias / d_0`.
-
-### Constant-Voltage Approximation (f << f_c)
-
-When f << f_c, charge adjusts freely to maintain `V = V_bias`:
-
-```
-Q(t) = C(t) * V_bias
-i(t) = dQ/dt = V_bias * dC/dt
-```
-
-Signal current, not voltage. Must be converted to voltage by the load impedance.
-
-### Exact Solution (Numerical)
-
-For intermediate frequencies, the ODE must be solved numerically. The bilinear (trapezoidal) discretization is:
-
-```
-Let c_n = C(t_n) / C_0 = d_0 / (d_0 + x(t_n))     (normalized capacitance)
-Let q_n = Q(t_n) / (C_0 * V_bias)                    (normalized charge)
-
-The continuous ODE in normalized form:
-dq/dt = (1 - q/c) / tau
-
-Bilinear integration:
-alpha_n = beta * (1 - y_n)        // algebraically identical to dt/(2*tau*c_n); avoids division
-beta_n = dt / (2 * tau)
-
-q_{n+1} = (q_n * (1 - alpha_{n+1}) + 2 * beta) / (1 + alpha_{n+1})
-```
-
-**Note on the existing model's bug:** The original wurlitzer-physics.md notes that using `2*alpha` instead of `2*beta` in the driving term forces `q_equilibrium = 1` (constant charge) at all frequencies instead of `q_equilibrium = c` (constant voltage at DC). This is only correct if the system is always in constant-charge regime (f >> f_c). Given f_c ≈ 880 Hz (see Section 3.7), bass fundamentals (55-260 Hz) are still below the corner, and the bug matters.
-
-### Parasitic Capacitance Correction
-
-When other static capacitances `C_p` are in parallel with the vibrating reed capacitance `C_reed`:
-
-```
-V_out = V_bias * C_reed(t) / (C_reed(t) + C_p)
-```
-
-For small x:
-
-```
-V_out ≈ V_bias * C_0 / (C_0 + C_p) * (1 + C_p/(C_0+C_p) * x/d_0 + ...)
-V_ac ≈ V_bias * C_0 * C_p / (C_0 + C_p)^2 * x / d_0
-```
-
-Wait, let me redo this more carefully:
-
-```
-C_reed(t) = C_0 / (1 + y),  where y = x/d_0
-
-V_out = V_bias * (C_0/(1+y)) / (C_0/(1+y) + C_p)
-     = V_bias * C_0 / (C_0 + C_p * (1+y))
-     = V_bias * C_0 / (C_0 + C_p) * 1 / (1 + C_p*y/(C_0+C_p))
-     ≈ V_bias * C_0 / (C_0+C_p) * [1 - C_p*y/(C_0+C_p) + (C_p*y/(C_0+C_p))^2 - ...]
-```
-
-DC component: `V_dc = V_bias * C_0 / (C_0 + C_p)`
-
-AC fundamental (first-order in y):
-```
-V_ac ≈ -V_bias * C_0 * C_p / (C_0 + C_p)^2 * y
-```
-
-The **negative sign** means the output voltage **decreases** when the gap increases (reed moves away). The sensitivity is reduced by the factor `C_p / (C_0 + C_p)` compared to the isolated capacitor case.
-
-For the Wurlitzer: `C_p / (C_0 + C_p) = 237/240 = 0.988`, so the sensitivity reduction is only 1.2%. The parasitic capacitance has negligible effect on linear sensitivity but does reduce nonlinear distortion.
-
----
+The constant-charge derivation of the parallel-plate `1/(1−y)` signal voltage that stood here no longer describes the model; see [pickup-overlap-law.md](pickup-overlap-law.md).
 
 ## Appendix B: Equivalent Circuit
 
@@ -997,11 +693,11 @@ The signal path is:
 
 ### Q4: How does the gap vary by register?
 
-Slot widths vary from 0.172" (bass) to 0.114" (treble), a ratio of **1.51:1**. Side clearances vary from 0.0115" to 0.0085", a ratio of **1.35:1**. The vertical gap is undocumented but likely follows a similar trend.
+Slot widths vary from 0.172" (bass) to 0.114" (treble), a ratio of **1.51:1**. Side clearances (one 140B, §1.3) vary from 0.0105" to 0.0075", a ratio of **1.4:1**. There is no vertical gap to vary (the slot has no floor).
 
 ### Q5: Is the signal truly proportional to displacement?
 
-**Approximately, for small displacements.** V_ac = V_bias * x/d_0 is the first-order approximation. For small displacements (x/d_0 < 0.05), this is linear to better than 1%. At mf (x/d_0 ~ 0.10), the full 1/(1-y) nonlinearity produces H2/H1 ~ -21 dB (SPICE), making the pickup the dominant H2 source at normal dynamics.
+**No, and not through a gap fraction.** The signal follows the overlap of the reed+lead band with the finger band, which is nonlinear in how far the reed enters the band and depends on its rest offset. See [pickup-overlap-law.md](pickup-overlap-law.md).
 
 ### Q6: What is the C20 shunt capacitor value and HPF frequency?
 
@@ -1009,4 +705,4 @@ C-2 = 220 pF at TR-1's base (GroupDIY's 270 pF likely tolerance variation). It d
 
 ### Q7: Does the pickup introduce harmonic distortion?
 
-**Yes, significantly.** SPICE simulation of the full 1/(1-y) model at mf (y_m ~ 0.10) yields H2/H1 ~ -21 dB (THD ~ 8.7%). The earlier -26 dB estimate used a first-order arXiv formula that underestimates the full nonlinearity. At millivolt input levels, the preamp produces THD < 0.01%, making the pickup the dominant H2 source at normal dynamics. At extreme ff (y_m > 0.3), both the pickup and the preamp's asymmetric headroom contribute significantly.
+**Yes; it is the primary harmonic source.** Its harmonic content comes from the overlap law, not from a `1/(1−y)` gap fraction; the earlier SPICE figures here (H2/H1 ≈ −21 dB at y ≈ 0.10) were computed on the retired law. Measured behaviour under the current law: [pickup-overlap-law.md](pickup-overlap-law.md).

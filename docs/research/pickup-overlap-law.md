@@ -47,6 +47,9 @@ source ever gave, has no counterpart in this geometry and is retired.
 | t_p absolutes | 21–42: 0.4–0.8 mm · 1–20: 0.85–1.7 mm · 43–64: 0.85–2.0 mm | **G** — no measurement exists; middle bounded by "bendable by hand" and "somewhat thicker than the reed" (P, US 2,966,821); bass = middle × ratio; treble ≥ bass |
 | Tip swing | **unknown** — no measurement or document gives it | An earlier visual guess from video ("of the order of the finger thickness or less") is WITHDRAWN as a bound (2026-09-26): a guess from a camera angle that cannot show vertical scale, not evidence. Only physics (hammer impact) or a measurement may bound it |
 | Era | early flat bass pickups (later units: bass fingers angled up 20–30°, from about mid-1978) | T; S (docwurly) |
+| Polarizing voltage | 147 V DC via a 1 MΩ feed (200A spec); real units may sit lower: Pfeifle measured an EP200 at 130 V against its 170 V spec | F (200A service manual); P (Pfeifle & Muenster, DAFx-17, EP200, measured) |
+| Pickup axial position | ~0.22 L from the reed tip (node of the 2nd partial); production combs may sit nearer the tip | P (US 2,966,821); production placement not documented |
+| Proximity → tone | closer reed = louder and more harmonic; the over-loud remedy bends the pickup ends up 1/32″–1/16″, and pickup-end position "modulates the tone toward the harmonic or the fundamental" | F (service manual voicing remedy); P (Vintage Vibe US 11,475,868) |
 
 ## 3. The law
 

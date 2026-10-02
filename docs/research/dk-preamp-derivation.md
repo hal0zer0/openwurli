@@ -1,6 +1,6 @@
 # DK Method Preamp Derivation
 
-> **See also:** [Preamp Circuit](preamp-circuit.md) (circuit analysis and component values), [DK Preamp Testing](../reference/dk-preamp-testing.md) (validation test pyramid)
+> **See also:** [Preamp Circuit](preamp-circuit.md) (circuit analysis and component values)
 >
 > **Revised 2026-09-13** for the drawn-topology solver. This document describes
 > `crates/openwurli-dsp/src/dk_preamp_legacy.rs` as it now ships: a 9-node MNA

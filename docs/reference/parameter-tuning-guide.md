@@ -3,22 +3,20 @@
 ## Purpose
 
 Map how changing one DSP parameter cascades into others, so we stop playing
-whack-a-mole. Built from the DS_AT_C4 0.70→0.80 session that exposed tight
-coupling between displacement, output normalization, register trim, and
-speaker saturation.
+whack-a-mole. Written after a calibration session exposed tight coupling between
+the reed's swing at the pickup, output normalization, register trim and speaker
+saturation.
 
 ## Primary Parameters (The Knobs)
 
 | Parameter | Location | Current | Role |
 |-----------|----------|---------|------|
-| `pickup_swing_mm` | tables.rs | per note (C4 1.19 mm) | Provisional ff swing at the pickup — physics-set, NOT a voicing knob |
-| `DS_CLAMP` | tables.rs | [0.02, 0.82] | Physical limit on displacement |
-| `DS_EXPONENT` | tables.rs | 0.75 | Compliance-to-displacement curve shape |
-| `TARGET_DB` | tables.rs | -35.0 | Absolute output level target |
-| `VOICING_SLOPE` | tables.rs | -0.04 | Treble roll-off (dB/semitone above C4) |
-| Register trim `ANCHORS` | tables.rs | 13 anchors | Per-note empirical correction |
-| Speaker Xmax | speaker.rs | tanh(polynomial) | Cone excursion limiting |
-| Volume default | params.rs | 0.50 | Audio-taper attenuator |
+| `pickup_swing_mm` | tables.rs | per note (provisional ff swing table) | Swing at the pickup: physics-set, NOT a voicing knob |
+| `target_db` (`CalibrationConfig`) | tables.rs | −29.55 | Level anchor: holds C4 v100 at the preamp input |
+| `voicing_slope` (`CalibrationConfig`) | tables.rs | −0.04 | Treble roll-off (dB/semitone above C4) |
+| Register trim `ANCHORS` | tables.rs (`register_trim_db`) | 13 anchors | Per-note empirical correction |
+| Speaker Xmax | speaker.rs | tanh(polynomial) | Cone excursion limiting (speaker character > 0 only) |
+| Volume default | plugin params.rs | 0.80 | The drawn volume pot (audio taper) |
 
 ## Known Interaction Chains
 
@@ -35,29 +33,11 @@ swing ↑
   → pickup output ↑
   → output_scale proxy tries to compensate
     → BUT proxy doesn't model preamp Cin HPF or speaker
-    → register trim (calibrated for old DS) is now WRONG
+    → register trim (calibrated at the old swing) is now WRONG
   → pre-speaker level ↑
     → speaker tanh compresses mid-register ff
-    → TARGET_DB adjustments absorbed by tanh (non-linear)
+    → target_db adjustments absorbed by tanh (non-linear)
     → bass/treble shift linearly, mid doesn't
-```
-
-### TARGET_DB and POST_SPEAKER_GAIN
-
-```
-TARGET_DB = -35 dBFS (v0.1.5)
-  → voice output_scale drives preamp at millivolt-level signals
-  → power amp sees ~5-10% of ±22V headroom at ff single notes
-  → polyphonic chords stay clean (4-note ff: ~11% headroom)
-  → speaker tanh operates in linear region (< 8% compression)
-  → register trim now calibrated in linear regime (stable)
-
-POST_SPEAKER_GAIN = +19.5 dB (9.44×)
-  → applied AFTER all analog stages (speaker.process() output)
-  → maps physical SPL to DAW levels (-10 to -14 dBFS single ff at vol=0.50)
-  → does NOT interact with any nonlinear circuit model
-  → safe to adjust independently without recalibrating trim
-  → ff chords peak ~-3 dBFS at default vol=0.50
 ```
 
 ### Register trim domain mismatch
@@ -66,8 +46,8 @@ POST_SPEAKER_GAIN = +19.5 dB (9.44×)
 Trim calibrated at Tier 3 (speaker ON, tanh active)
   → mid-register measurements compressed by tanh
   → trim values "see through" tanh distortion
-  → changing DS shifts pre-tanh levels
-  → old trim + new DS = wrong corrections
+  → changing the swing shifts pre-tanh levels
+  → old trim + new swing = wrong corrections
   → fix requires recalibration, but recalibration
     itself is distorted by tanh (iterative convergence)
 ```
@@ -123,18 +103,18 @@ Scale modes:
 - `zero-trim`: Override the swing scale + zero trim → "what's the natural imbalance?"
 - `freeze`: Shipping swing + current trim → "raw level change from swing alone"
 
-Grid: 8 DS × 8 notes × 3 velocities = 192 renders. ~90 seconds.
+Grid: 5 swing scales (default `--swing-range`) × 8 notes × 3 velocities = 120 renders.
 
 ### Analysis: `tools/analyze_calibration.py`
 
 Reads CSV from either subcommand. Computes (text tables, no graphs):
 
-1. Register spread at each DS
-2. Optimal DS search (minimizes spread)
+1. Register spread at each swing scale
+2. The swing scale that minimizes spread (diagnostic only: the swing is physics-set, never picked from this)
 3. New trim anchor values (ready-to-paste `const ANCHORS` array)
 4. Tanh compression ceiling map
-5. Sensitivity coefficients (∂metric/∂DS per note)
-6. Dynamic range per note at each DS
+5. Sensitivity coefficients (∂metric/∂swing scale per note)
+6. Dynamic range per note at each swing scale
 
 ```bash
 python tools/analyze_calibration.py /tmp/sensitivity.csv
