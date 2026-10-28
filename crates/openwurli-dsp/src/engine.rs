@@ -409,6 +409,50 @@ impl WurliEngine {
         }
     }
 
+    /// Stop every voice on `note` now (a CLAP note choke): each one fades out
+    /// over 5 ms instead of ringing through its damper release, whatever its
+    /// state. Out-of-range notes clamp onto the keyboard like note_on/note_off.
+    pub fn choke(&mut self, note: u8) {
+        let note = note.clamp(tables::MIDI_LO, tables::MIDI_HI);
+        let fade = self.quick_fade_samples();
+        for slot in &mut self.voices {
+            if slot.state != VoiceState::Free && slot.midi_note == note {
+                Self::fade_out_slot(slot, fade);
+            }
+        }
+    }
+
+    /// Silence every voice now (MIDI All Sound Off, a wildcard CLAP choke):
+    /// held, sustained and releasing voices all fade out over 5 ms, so there
+    /// is no click and no release tail. Unlike [`reset`](Self::reset) the
+    /// signal chain keeps its state (no tremolo re-settle), and the pedal
+    /// state is left as it is.
+    pub fn all_sound_off(&mut self) {
+        let fade = self.quick_fade_samples();
+        for slot in &mut self.voices {
+            if slot.state != VoiceState::Free {
+                Self::fade_out_slot(slot, fade);
+            }
+        }
+    }
+
+    /// Length of the stop fade: 5 ms, the same as the voice-steal crossfade.
+    fn quick_fade_samples(&self) -> u32 {
+        ((self.sample_rate * 0.005) as u32).max(1)
+    }
+
+    /// Hand a slot's voice to the steal fade and free the slot. The render
+    /// loop keeps fading `steal_voice` after the slot is free; a fade already
+    /// in progress on this slot is replaced (it is part-way to silence).
+    fn fade_out_slot(slot: &mut VoiceSlot, fade: u32) {
+        if let Some(voice) = slot.voice.take() {
+            slot.steal_voice = Some(voice);
+            slot.steal_fade = fade;
+            slot.steal_fade_len = fade;
+        }
+        slot.state = VoiceState::Free;
+    }
+
     pub fn set_sustain(&mut self, held: bool) {
         if self.sustain_held && !held {
             // Pedal release: damp every voice that was held by the pedal.
@@ -1246,6 +1290,59 @@ mod tests {
         e.all_notes_off();
         assert_eq!(e.held_voice_count(), 0);
         assert_eq!(e.count_voices_in_state(VoiceState::Releasing), 4);
+    }
+
+    #[test]
+    fn test_choke_stops_every_voice_on_the_note_only() {
+        let mut e = engine();
+        e.set_sustain(true);
+        e.note_on(60, 0.8);
+        e.note_off(60); // → Sustained
+        e.note_on(60, 0.8); // re-strike: the sustained 60 damps, a new Held 60
+        e.note_on(64, 0.8); // Held, different note
+        e.choke(60);
+        assert_eq!(e.count_voices_in_state(VoiceState::Releasing), 0);
+        assert_eq!(e.held_voice_count(), 1, "64 must keep sounding");
+        assert!(
+            e.voices
+                .iter()
+                .all(|s| s.state == VoiceState::Free || s.midi_note == 64)
+        );
+        assert!(e.is_sustain_held());
+    }
+
+    #[test]
+    fn test_all_sound_off_frees_every_voice_and_fades_out() {
+        let mut e = engine();
+        e.ensure_buffer_capacity(1024);
+        e.set_sustain(true);
+        for n in [48u8, 60, 64, 67] {
+            e.note_on(n, 1.0);
+        }
+        e.note_off(48); // → Sustained
+        let mut buf = vec![0.0f32; 1024];
+        e.render(&mut buf); // let the notes speak
+        e.all_sound_off();
+        assert_eq!(e.active_voice_count(), 0, "every slot is free at once");
+        assert!(e.is_sustain_held(), "the pedal state is left alone");
+
+        // The 5 ms fade means the next block starts from where the notes were,
+        // not from a step to zero, and the voices are gone within the fade.
+        let fade = (44_100.0f64 * 0.005) as usize;
+        let mut out = vec![0.0f32; 4096];
+        e.render(&mut out);
+        assert!(
+            e.voices.iter().all(|s| s.steal_voice.is_none()),
+            "fades complete"
+        );
+        let tail_start = fade + 2048; // well after the fade, past the chain's short tail
+        let tail_peak = out[tail_start..].iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        let head_peak = out[..fade].iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(head_peak > 0.0, "the fade starts from sounding audio");
+        assert!(
+            tail_peak < head_peak * 0.01,
+            "sound must stop: tail peak {tail_peak} vs head {head_peak}"
+        );
     }
 
     #[test]

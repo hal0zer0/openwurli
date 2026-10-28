@@ -77,6 +77,17 @@ impl OpenWurli {
             NoteEvent::NoteOff { note, .. } => {
                 self.engine.note_off(*note);
             }
+            // CLAP note choke: stop now. The wildcard key (255, see above)
+            // chokes every note.
+            NoteEvent::Choke { note, .. } if *note > 127 => {
+                self.engine.all_sound_off();
+            }
+            NoteEvent::Choke { note, .. } => {
+                self.engine.choke(*note);
+            }
+            NoteEvent::MidiCC { cc, .. } if *cc == control_change::ALL_SOUND_OFF => {
+                self.engine.all_sound_off();
+            }
             NoteEvent::MidiCC { cc, .. } if *cc == control_change::ALL_NOTES_OFF => {
                 self.engine.all_notes_off();
             }
@@ -298,13 +309,51 @@ mod tests {
         for n in [48u8, 60, 64] {
             plugin.handle_event(&note_on(n));
         }
-        plugin.handle_event(&NoteEvent::MidiCC {
+        plugin.handle_event(&cc(control_change::ALL_NOTES_OFF, 0.0));
+        assert_eq!(plugin.engine.held_voice_count(), 0);
+    }
+
+    fn cc(cc: u8, value: f32) -> NoteEvent<()> {
+        NoteEvent::MidiCC {
             timing: 0,
             channel: 0,
-            cc: control_change::ALL_NOTES_OFF,
-            value: 0.0,
-        });
-        assert_eq!(plugin.engine.held_voice_count(), 0);
+            cc,
+            value,
+        }
+    }
+
+    fn choke(note: u8) -> NoteEvent<()> {
+        NoteEvent::Choke {
+            timing: 0,
+            voice_id: None,
+            channel: 0,
+            note,
+        }
+    }
+
+    #[test]
+    fn test_choke_stops_only_its_note() {
+        let mut plugin = OpenWurli::default();
+        plugin.handle_event(&note_on(60));
+        plugin.handle_event(&note_on(64));
+        plugin.handle_event(&choke(60));
+        assert_eq!(plugin.engine.active_voice_count(), 1);
+    }
+
+    #[test]
+    fn test_wildcard_choke_and_all_sound_off_stop_everything() {
+        let mut plugin = OpenWurli::default();
+        for n in [48u8, 60, 64] {
+            plugin.handle_event(&note_on(n));
+        }
+        plugin.handle_event(&choke(255));
+        assert_eq!(plugin.engine.active_voice_count(), 0);
+
+        for n in [48u8, 60, 64] {
+            plugin.handle_event(&note_on(n));
+        }
+        plugin.handle_event(&cc(control_change::ALL_SOUND_OFF, 0.0));
+        assert_eq!(plugin.engine.active_voice_count(), 0);
     }
 
     #[test]
