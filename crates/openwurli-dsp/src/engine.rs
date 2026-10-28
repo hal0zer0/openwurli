@@ -389,6 +389,26 @@ impl WurliEngine {
         }
     }
 
+    /// Release every sounding key: all Held voices and all pedal-Sustained
+    /// voices go through the normal damper release (no hard cut, unlike
+    /// [`reset`](Self::reset)). The pedal state is left as it is, so a note
+    /// played afterwards with the pedal still down sustains as usual.
+    ///
+    /// Use this for host "all notes off" requests. `note_off` alone cannot
+    /// do it: it releases only the oldest Held voice of a note, and a key can
+    /// hold several (re-strikes without a note-off, and out-of-range notes
+    /// clamped onto the keyboard's end keys).
+    pub fn all_notes_off(&mut self) {
+        for slot in &mut self.voices {
+            if matches!(slot.state, VoiceState::Held | VoiceState::Sustained) {
+                slot.state = VoiceState::Releasing;
+                if let Some(ref mut voice) = slot.voice {
+                    voice.note_off();
+                }
+            }
+        }
+    }
+
     pub fn set_sustain(&mut self, held: bool) {
         if self.sustain_held && !held {
             // Pedal release: damp every voice that was held by the pedal.
@@ -1189,6 +1209,43 @@ mod tests {
         e.set_sustain(false);
         assert_eq!(e.sustained_voice_count(), 0);
         assert_eq!(e.held_voice_count(), 1, "held voice must survive pedal up");
+    }
+
+    #[test]
+    fn test_all_notes_off_releases_held_and_sustained_keeps_pedal() {
+        let mut e = engine();
+        e.set_sustain(true);
+        e.note_on(60, 0.8);
+        e.note_off(60); // → Sustained
+        e.note_on(64, 0.8); // → Held
+        e.note_on(64, 0.8); // re-strike without note-off: a second Held voice on 64
+        assert_eq!(e.held_voice_count(), 2);
+        assert_eq!(e.sustained_voice_count(), 1);
+
+        e.all_notes_off();
+        assert_eq!(e.held_voice_count(), 0);
+        assert_eq!(e.sustained_voice_count(), 0);
+        assert_eq!(e.count_voices_in_state(VoiceState::Releasing), 3);
+        assert!(e.is_sustain_held(), "all_notes_off must not lift the pedal");
+
+        // With the pedal still down, a new note sustains after its key-off.
+        e.note_on(67, 0.8);
+        e.note_off(67);
+        assert_eq!(e.sustained_voice_count(), 1);
+    }
+
+    #[test]
+    fn test_all_notes_off_releases_clamped_stack() {
+        // Out-of-range notes clamp onto the end keys, so several Held voices
+        // share one note; note_off would release only the oldest of them.
+        let mut e = engine();
+        for n in [21u8, 24, 28, 30] {
+            e.note_on(n, 0.8); // all clamp onto MIDI_LO
+        }
+        assert_eq!(e.held_voice_count(), 4);
+        e.all_notes_off();
+        assert_eq!(e.held_voice_count(), 0);
+        assert_eq!(e.count_voices_in_state(VoiceState::Releasing), 4);
     }
 
     #[test]

@@ -63,11 +63,22 @@ impl OpenWurli {
 
     fn handle_event(&mut self, event: &NoteEvent<()>) {
         match event {
+            // CLAP's wildcard key -1 ("every key") reaches us as 255: the
+            // framework casts the i16 key to u8. Left alone, the engine would
+            // clamp it onto the top key, so a wildcard note-on would play C7
+            // and a wildcard note-off would release only one C7.
+            NoteEvent::NoteOn { note, .. } if *note > 127 => {}
+            NoteEvent::NoteOff { note, .. } if *note > 127 => {
+                self.engine.all_notes_off();
+            }
             NoteEvent::NoteOn { note, velocity, .. } => {
                 self.engine.note_on(*note, *velocity);
             }
             NoteEvent::NoteOff { note, .. } => {
                 self.engine.note_off(*note);
+            }
+            NoteEvent::MidiCC { cc, .. } if *cc == control_change::ALL_NOTES_OFF => {
+                self.engine.all_notes_off();
             }
             NoteEvent::MidiCC { cc, value, .. } if *cc == control_change::DAMPER_PEDAL => {
                 self.engine.set_sustain(*value >= 0.5);
@@ -240,6 +251,60 @@ mod tests {
         // MLP default OFF (2026-08-20): out-of-distribution velocity
         // extrapolation measurably mutes the harmonic series; see params.rs.
         assert!(!params.mlp_enabled.default_plain_value());
+    }
+
+    fn note_on(note: u8) -> NoteEvent<()> {
+        NoteEvent::NoteOn {
+            timing: 0,
+            voice_id: None,
+            channel: 0,
+            note,
+            velocity: 0.8,
+        }
+    }
+
+    fn note_off(note: u8) -> NoteEvent<()> {
+        NoteEvent::NoteOff {
+            timing: 0,
+            voice_id: None,
+            channel: 0,
+            note,
+            velocity: 0.0,
+        }
+    }
+
+    #[test]
+    fn test_clap_wildcard_note_on_is_ignored() {
+        // CLAP key -1 arrives as 255; it must not play the clamped top key.
+        let mut plugin = OpenWurli::default();
+        plugin.handle_event(&note_on(255));
+        assert_eq!(plugin.engine.active_voice_count(), 0);
+    }
+
+    #[test]
+    fn test_clap_wildcard_note_off_releases_every_key() {
+        let mut plugin = OpenWurli::default();
+        for n in [48u8, 60, 64, 67, 96] {
+            plugin.handle_event(&note_on(n));
+        }
+        assert_eq!(plugin.engine.held_voice_count(), 5);
+        plugin.handle_event(&note_off(255));
+        assert_eq!(plugin.engine.held_voice_count(), 0);
+    }
+
+    #[test]
+    fn test_all_notes_off_cc_releases_every_key() {
+        let mut plugin = OpenWurli::default();
+        for n in [48u8, 60, 64] {
+            plugin.handle_event(&note_on(n));
+        }
+        plugin.handle_event(&NoteEvent::MidiCC {
+            timing: 0,
+            channel: 0,
+            cc: control_change::ALL_NOTES_OFF,
+            value: 0.0,
+        });
+        assert_eq!(plugin.engine.held_voice_count(), 0);
     }
 
     #[test]

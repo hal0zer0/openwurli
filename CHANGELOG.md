@@ -32,6 +32,12 @@ smaller.
 - The never-exceeds-full-scale test now also runs with MLP corrections on.
 
 ### Fixed
+- **CLAP "all keys" note events.** The plugin framework passes CLAP's wildcard
+  key (−1) through as note 255, which the engine clamped onto the top key: a
+  wildcard note-on played a C7, and a wildcard note-off released one C7 and
+  left every other note ringing. A wildcard note-on is now ignored and a
+  wildcard note-off releases every key. MIDI CC 123 (All Notes Off) is now
+  handled too; previously only the damper pedal was.
 - **Builds on Rust 1.99 with warnings denied.** Rust 1.99 reports a
   future-incompatibility lint inside the plugin framework's VST3 export
   macro, which failed `clippy -D warnings`. The lint is allowed on that one
@@ -52,6 +58,9 @@ smaller.
   marked in the code.
 
 ### Added
+- `WurliEngine::all_notes_off()` for library hosts: releases every held and
+  pedal-sustained voice through the normal damper release, leaving the pedal
+  state as it is.
 - README: a pointer to DiscoDSP's Retromulator, which ports OpenWurli's
   engine to C++ (AU, AAX, standalone).
 
