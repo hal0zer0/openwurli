@@ -4,9 +4,17 @@ An *obsessively* physically-modeled Wurlitzer 200A electric piano plugin for CLA
 
 [![OpenWurli Demo](https://img.youtube.com/vi/2ELaBTO087I/maxresdefault.jpg)](https://youtu.be/2ELaBTO087I)
 
-### Also in Retromulator
+### Downstream projects
 
-[DiscoDSP](https://www.discodsp.com/retromulator/) ported OpenWurli's engine to C++ as the Wurlitzer 200A core of **[Retromulator](https://www.discodsp.com/retromulator/)**, their open-source (GPL-3.0) emulation plugin. It has carried OpenWurli since March 2026 and now runs the 0.9 core. If you need AU or AAX (Logic, Pro Tools), or a standalone app, that's the way to play it. It's an independent port, so report Retromulator issues to DiscoDSP, not here.
+OpenWurli is GPL-3.0, and other people have built on it. These are independent ports: report their issues to their authors, not here.
+
+| Project | Runs in | What it is |
+|---|---|---|
+| [Retromulator](https://www.discodsp.com/retromulator/) by DiscoDSP | Standalone, VST3, AU, AAX | Its Wurlitzer 200A core is a C++ port of OpenWurli's engine (currently the 0.9 core). The route for Logic and Pro Tools users. |
+| [TC Wurl](https://community.vcvrack.com/t/tc-wurl-by-twisted-cable/25876) by Twisted Cable ([source](https://github.com/Eurikon/TC-Wurl)) | VCV Rack 2 | A C++ port of OpenWurli as a Rack module, in the VCV Library. |
+| [Wurl for Akai MPC](https://sd88me.github.io/mpc-vst-plugins/index.html#p=wurl) ([source](https://github.com/saustin2010/mpc-vst-wurl)) | Akai MPC standalone (VST2) | Built from the "Wurl" Schwung module, itself a port of OpenWurli, with a touchscreen skin. |
+
+**Built something on OpenWurli?** [Open an issue](https://github.com/hal0zer0/openwurli/issues) with a link and we'll add it to this list.
 
 ## What Is This?
 
