@@ -32,12 +32,19 @@ smaller.
 - The never-exceeds-full-scale test now also runs with MLP corrections on.
 
 ### Fixed
-- **CLAP "all keys" note events.** The plugin framework passes CLAP's wildcard
-  key (−1) through as note 255, which the engine clamped onto the top key: a
-  wildcard note-on played a C7, and a wildcard note-off released one C7 and
-  left every other note ringing. A wildcard note-on is now ignored and a
-  wildcard note-off releases every key. MIDI CC 123 (All Notes Off) is now
-  handled too; previously only the damper pedal was.
+- **MIDI and CLAP note-control messages.** The plugin framework passes CLAP's
+  wildcard key (−1) through as note 255, which the engine clamped onto the top
+  key: a wildcard note-on played a C7, and a wildcard note-off released one C7
+  and left every other note ringing. Now:
+  - a wildcard note-on is ignored; a wildcard note-off lifts every key;
+  - CC 123 (All Notes Off) lifts every key, and so do CC 124-127 (Omni and
+    Mono/Poly mode messages, which the MIDI spec says also cause All Notes
+    Off). Notes held by the sustain pedal keep sounding until the pedal is
+    released, as a lifted key would;
+  - CC 120 (All Sound Off) and a CLAP note choke stop sound at once, through a
+    5 ms fade with no release tail (a wildcard choke stops every note);
+  - CC 121 (Reset All Controllers) lifts the sustain pedal.
+  Previously only the sustain pedal (CC 64) was handled.
 - **Builds on Rust 1.99 with warnings denied.** Rust 1.99 reports a
   future-incompatibility lint inside the plugin framework's VST3 export
   macro, which failed `clippy -D warnings`. The lint is allowed on that one
@@ -58,9 +65,11 @@ smaller.
   marked in the code.
 
 ### Added
-- `WurliEngine::all_notes_off()` for library hosts: releases every held and
-  pedal-sustained voice through the normal damper release, leaving the pedal
-  state as it is.
+- For library hosts, on `WurliEngine`: `release_all_keys()` (MIDI All Notes
+  Off: pedal-held notes keep sounding), `all_notes_off()` (releases held and
+  pedal-held notes alike; the pedal state is unchanged), `choke(note)` and
+  `all_sound_off()` (stop at once through a 5 ms fade, without resetting the
+  signal chain).
 - README: a pointer to DiscoDSP's Retromulator, which ports OpenWurli's
   engine to C++ (AU, AAX, standalone).
 

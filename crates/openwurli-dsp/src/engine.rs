@@ -389,15 +389,38 @@ impl WurliEngine {
         }
     }
 
-    /// Release every sounding key: all Held voices and all pedal-Sustained
-    /// voices go through the normal damper release (no hard cut, unlike
-    /// [`reset`](Self::reset)). The pedal state is left as it is, so a note
-    /// played afterwards with the pedal still down sustains as usual.
+    /// Lift every key at once, as MIDI All Notes Off asks: each Held voice gets
+    /// the note-off its key would give it, so with the pedal down it goes on
+    /// sustaining until the pedal is released, and with the pedal up it damps.
+    /// Pedal-Sustained voices are left to the pedal.
     ///
-    /// Use this for host "all notes off" requests. `note_off` alone cannot
-    /// do it: it releases only the oldest Held voice of a note, and a key can
-    /// hold several (re-strikes without a note-off, and out-of-range notes
-    /// clamped onto the keyboard's end keys).
+    /// `note_off` alone cannot do this: it releases only the oldest Held voice
+    /// of a note, and a key can hold several (re-strikes without a note-off,
+    /// and out-of-range notes clamped onto the keyboard's end keys).
+    pub fn release_all_keys(&mut self) {
+        let sustain = self.sustain_held;
+        for slot in &mut self.voices {
+            if slot.state == VoiceState::Held {
+                if sustain {
+                    slot.state = VoiceState::Sustained;
+                } else {
+                    slot.state = VoiceState::Releasing;
+                    if let Some(ref mut voice) = slot.voice {
+                        voice.note_off();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Release every sounding note, pedal or not: all Held voices and all
+    /// pedal-Sustained voices go through the normal damper release (no hard
+    /// cut, unlike [`reset`](Self::reset)). The pedal state is left as it is,
+    /// so a note played afterwards with the pedal still down sustains.
+    ///
+    /// This is stronger than MIDI All Notes Off, which leaves pedal-held notes
+    /// sounding (see [`release_all_keys`](Self::release_all_keys)); use it for a
+    /// host "release everything" request.
     pub fn all_notes_off(&mut self) {
         for slot in &mut self.voices {
             if matches!(slot.state, VoiceState::Held | VoiceState::Sustained) {
@@ -1276,6 +1299,33 @@ mod tests {
         e.note_on(67, 0.8);
         e.note_off(67);
         assert_eq!(e.sustained_voice_count(), 1);
+    }
+
+    #[test]
+    fn test_release_all_keys_respects_the_pedal() {
+        let mut e = engine();
+        e.set_sustain(true);
+        e.note_on(60, 0.8);
+        e.note_off(60); // → Sustained
+        e.note_on(64, 0.8);
+        e.note_on(64, 0.8); // two Held on 64
+        e.release_all_keys();
+        assert_eq!(e.held_voice_count(), 0);
+        assert_eq!(
+            e.sustained_voice_count(),
+            3,
+            "pedal down: all keep sounding"
+        );
+        e.set_sustain(false);
+        assert_eq!(e.sustained_voice_count(), 0);
+        assert_eq!(e.count_voices_in_state(VoiceState::Releasing), 3);
+
+        // Pedal up: lifted keys damp at once.
+        e.note_on(67, 0.8);
+        e.note_on(67, 0.8);
+        e.release_all_keys();
+        assert_eq!(e.held_voice_count(), 0);
+        assert_eq!(e.sustained_voice_count(), 0);
     }
 
     #[test]

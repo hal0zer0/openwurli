@@ -69,7 +69,7 @@ impl OpenWurli {
             // and a wildcard note-off would release only one C7.
             NoteEvent::NoteOn { note, .. } if *note > 127 => {}
             NoteEvent::NoteOff { note, .. } if *note > 127 => {
-                self.engine.all_notes_off();
+                self.engine.release_all_keys();
             }
             NoteEvent::NoteOn { note, velocity, .. } => {
                 self.engine.note_on(*note, *velocity);
@@ -88,8 +88,19 @@ impl OpenWurli {
             NoteEvent::MidiCC { cc, .. } if *cc == control_change::ALL_SOUND_OFF => {
                 self.engine.all_sound_off();
             }
-            NoteEvent::MidiCC { cc, .. } if *cc == control_change::ALL_NOTES_OFF => {
-                self.engine.all_notes_off();
+            // MIDI channel-mode messages (MMA "Summary of MIDI 1.0 Messages";
+            // RP-015). All Notes Off lifts every key; pedal-held notes keep
+            // sounding until the pedal is released. Omni Off/On, Mono On and
+            // Poly On (CC 124-127) also cause All Notes Off; this instrument
+            // stays omni and polyphonic, so only that part applies. Reset All
+            // Controllers sets the pedals to 0, which lifts the sustain pedal.
+            NoteEvent::MidiCC { cc, .. }
+                if *cc == control_change::ALL_NOTES_OFF || (124..=127).contains(cc) =>
+            {
+                self.engine.release_all_keys();
+            }
+            NoteEvent::MidiCC { cc, .. } if *cc == control_change::RESET_ALL_CONTROLLERS => {
+                self.engine.set_sustain(false);
             }
             NoteEvent::MidiCC { cc, value, .. } if *cc == control_change::DAMPER_PEDAL => {
                 self.engine.set_sustain(*value >= 0.5);
@@ -354,6 +365,43 @@ mod tests {
         }
         plugin.handle_event(&cc(control_change::ALL_SOUND_OFF, 0.0));
         assert_eq!(plugin.engine.active_voice_count(), 0);
+    }
+
+    #[test]
+    fn test_all_notes_off_cc_keeps_pedal_held_notes_until_pedal_up() {
+        let mut plugin = OpenWurli::default();
+        plugin.handle_event(&cc(control_change::DAMPER_PEDAL, 1.0));
+        for n in [48u8, 60] {
+            plugin.handle_event(&note_on(n));
+        }
+        plugin.handle_event(&cc(control_change::ALL_NOTES_OFF, 0.0));
+        assert_eq!(plugin.engine.held_voice_count(), 0);
+        assert_eq!(plugin.engine.sustained_voice_count(), 2);
+        plugin.handle_event(&cc(control_change::DAMPER_PEDAL, 0.0));
+        assert_eq!(plugin.engine.sustained_voice_count(), 0);
+    }
+
+    #[test]
+    fn test_mode_messages_cause_all_notes_off() {
+        for mode_cc in 124u8..=127 {
+            let mut plugin = OpenWurli::default();
+            for n in [48u8, 60, 64] {
+                plugin.handle_event(&note_on(n));
+            }
+            plugin.handle_event(&cc(mode_cc, 0.0));
+            assert_eq!(plugin.engine.held_voice_count(), 0, "CC {mode_cc}");
+        }
+    }
+
+    #[test]
+    fn test_reset_all_controllers_lifts_the_pedal() {
+        let mut plugin = OpenWurli::default();
+        plugin.handle_event(&cc(control_change::DAMPER_PEDAL, 1.0));
+        plugin.handle_event(&note_on(60));
+        plugin.handle_event(&note_off(60)); // → Sustained
+        plugin.handle_event(&cc(control_change::RESET_ALL_CONTROLLERS, 0.0));
+        assert!(!plugin.engine.is_sustain_held());
+        assert_eq!(plugin.engine.sustained_voice_count(), 0);
     }
 
     #[test]
