@@ -9,7 +9,8 @@ eigenproblem, scaled to pitch.
 Prior samples are integrated in lockstep. Each step is an exact modal update (rotation plus the
 particular solution for a force held over the step), so the step size is set by the contact force,
 not by the highest mode. A sample stops once the hammer is moving away and sits below the largest
-reach of the reed patch, or at 4 T1.
+reach of the reed patch, or at 60 T1. (A heavy hammer on a light treble reed can ride it for
+several periods before separating.)
 
 The priors and the falsifier are the ones registered in the plan (§4), stated in PRIORS below.
 
@@ -76,7 +77,7 @@ def reed_data(midi, t_tip, t_root):
                 ph_pick=ph_pick, ph_tip=ph_tip)
 
 
-def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=4.0):
+def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=60.0):
     """Integrate S strikes in lockstep. Returns per-sample results (arrays of length S)."""
     S = len(m_h)
     om = rd["om"]
@@ -87,7 +88,7 @@ def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=
         # Resolve the stiffest contact in the batch: rigid-target compression time ~ delta_max / v.
         dmax = ((p + 1) * 0.5 * m_h * v ** 2 / K) ** (1 / (p + 1))
         dt = float(np.min(dmax / v)) / 200.0
-        dt = min(dt, T1 / 20000.0)
+        dt = min(dt, T1 / 2000.0)  # the free modal flow is exact, so this cap only bounds the contact sampling
     # Modes damped past critical don't ring; cap them just under it so the update stays defined.
     alpha = np.zeros(N_MODES) if alpha is None else np.minimum(alpha, 0.9 * om)
     # Kick-drift-kick (impulse method): half kicks from the contact force, and between them the
@@ -209,11 +210,15 @@ def run(notes, n, damping, seed, out):
             res = strike_batch(rd, pr["m_h"], pr["v_ff"], pr["z_star"], pr["p"], pr["x_s"], alpha=alpha)
             swing = np.abs(res["pick_mm"][:, 0])
             m2_tip = 20 * np.log10(np.maximum(res["tip_mm"][:, 1], 1e-30) / res["tip_mm"][:, 0])
+            m2_pick = 20 * np.log10(np.maximum(np.abs(res["pick_mm"][:, 1]), 1e-30) / np.abs(res["pick_mm"][:, 0]))
             for i in range(len(swing)):
                 rows.append(dict(variant=name, m_h=pr["m_h"][i], v=pr["v_ff"][i], z_star=pr["z_star"][i],
                                  p=pr["p"][i], x_s=pr["x_s"][i], contacts=int(res["n_contacts"][i]),
                                  t_contact_T1=float(res["t_contact_T1"][i]), swing_mm=float(swing[i]),
-                                 m2_tip_db=float(m2_tip[i]), energy_err=float(res["energy_err"][i]),
+                                 m2_tip_db=float(m2_tip[i]), m2_pick_db=float(m2_pick[i]),
+                                 pick_mm=[float(x) for x in res["pick_mm"][i, :7]],
+                                 finished=bool(np.isfinite(res["t_end_T1"][i])),
+                                 energy_err=float(res["energy_err"][i]),
                                  mode_ratios=list((rd["om"][:7] / rd["om"][0]).round(4)),
                                  coupling=list((rd["ph_pick"][:7] / rd["ph_pick"][0]).round(4))))
             print(f"MIDI {midi} {name}: {len(swing)} strikes, dt {res['dt']*1e6:.2f} us, unfinished "
