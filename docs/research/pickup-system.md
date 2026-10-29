@@ -598,7 +598,7 @@ The patent describes the general principle; the specific 200A implementation may
 
 12. **US Patent 2,932,231** — Miessner, B.F. "Tone Generating Apparatus." Issued 1960.
     - [Google Patents](https://patents.google.com/patent/US2932231)
-    - Hammer contact: neoprene foam 1/8-1/4" thick, contact length 10-30% of reed, duration 3/4-1 cycle
+    - Hammer contact (preferred embodiment): neoprene foam ¼-½" thick, contact length 10-30% of reed, duration 3/4-1 cycle. Production 200/200A hammers are felt (service manual)
 
 13. **US Patent 3,215,765** — Miessner, B.F. "Fixed Free-Reed Electronic Piano with Improved Interpartial-Ratio Integralizing Arrangements." Issued 1965.
     - [Google Patents](https://patents.google.com/patent/US3215765)

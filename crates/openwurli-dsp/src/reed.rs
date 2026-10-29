@@ -145,7 +145,8 @@ impl ModalReed {
     /// - `sample_rate`: for time constant conversion
     /// - `damper_scale`: multiplier on the damper rates, 1.0 = shipping (the per-mode cap holds)
     pub fn start_damper(&mut self, midi_note: u8, sample_rate: f64, damper_scale: f64) {
-        // Top 5 keys: no damper (natural decay only)
+        // Top 5 keys (MIDI 92-96): no damper pads; they ring as sympathetics on the A series
+        // (Doc Wurly's reed-era history, docwurly.com). Natural decay only.
         if midi_note >= 92 {
             return;
         }

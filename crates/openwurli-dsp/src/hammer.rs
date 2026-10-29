@@ -20,11 +20,15 @@ use crate::tables::NUM_MODES;
 ///   - C6 (1047 Hz) ff: 0.72 ms  pp: 0.95 ms
 ///
 /// The velocity mapping: ff = 0.75 cycles (hard, brief contact), pp = 1.0 cycle
-/// (soft, lingering contact from neoprene foam compression).
+/// (soft, lingering contact as the felt compresses).
+///
+/// Production hammers are "three ply maple covered with mothproofed felt" (200/200A service
+/// manual, specifications). The patent's preferred neoprene foam pad was not used.
 ///
 /// `contact_scale` multiplies the contact time: 1.0 is the patent's design point (the shipping
-/// voicing). A harder pad rebounds sooner (< 1.0); a softer one lingers (> 1.0). How far pad
-/// condition moves it on a 200A has not been measured.
+/// voicing). A harder felt rebounds sooner (< 1.0); a softer one lingers (> 1.0). Felt hardness
+/// is a serviced variable: the manual (§5D) softens hammer felt with methanol "to remove a
+/// 'clicking' sound". How far it moves the contact time on a 200A has not been measured.
 ///
 /// For the time-domain onset ramp, see `onset_ramp_time`.
 pub fn dwell_time(velocity: f64, fundamental_hz: f64, contact_scale: f64) -> f64 {

@@ -933,12 +933,13 @@ pub fn velocity_exponent(midi: u8) -> f64 {
     min_exp + t * (max_exp - min_exp)
 }
 
-/// Sigmoid velocity shaping — models neoprene foam pad compression curve.
+/// Sigmoid velocity shaping, voiced by ear.
 ///
-/// k=1.5 gives a mild S: pp slightly compressed, mf and ff nearly linear.
-/// Neoprene foam pads (Miessner US 2,932,231) have a more linear compression
-/// curve than piano felt. Used by both voice.rs (reed amplitude scaling) and
-/// output_scale (velocity-aware pickup RMS proxy).
+/// k=1.5 gives a mild S: pp slightly compressed, mf and ff nearly linear. It was once justified
+/// as the compression curve of the patent's neoprene foam pad, but production hammers are felt
+/// (service manual), so it has no physical source. It is inherited from the retired pickup law
+/// and belongs to the excitation revision (docs/research/pickup-overlap-law.md §7). Used by both
+/// voice.rs (reed amplitude scaling) and output_scale (velocity-aware pickup RMS proxy).
 pub fn velocity_scurve(velocity: f64) -> f64 {
     let k = 1.5;
     let s = 1.0 / (1.0 + (-k * (velocity - 0.5)).exp());

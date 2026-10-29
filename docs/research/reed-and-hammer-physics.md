@@ -418,8 +418,8 @@ The deployed code uses OBM-calibrated amplitudes that are 24-37 dB below the the
 ### 4.1 Hammer Construction
 
 Wurlitzer 200/200A uses a simplified piano-style action:
-- Wooden hammer body
-- Felt tip (covering the striking surface)
+- Wooden hammer body: "Three ply maple covered with mothproofed felt" (200/200A service manual, specifications page, which applies to all models)
+- Felt tip (covering the striking surface). The manual's regulation section (§5D) refaces worn hammers and softens hardened felt with a 75 % methanol solution "to remove a 'clicking' sound", so felt hardness changes in service
 - Conventional key mechanism adapted for reed striking (not string striking)
 - The hammer strikes the reed near but not at the free tip
 
@@ -461,7 +461,7 @@ The Wurlitzer hammer strikes a steel cantilever reed, not a tensioned string. Th
 | C5 (523 Hz) | 523 Hz | 1.9 ms | 1.4-1.9 ms |
 | C7 (2093 Hz) | 2093 Hz | 0.48 ms | 0.36-0.48 ms |
 
-**Hammer material (US 2,932,231):** "Neoprene foam rubber pad, 1/8 to 1/4 inch thick," cemented to a wooden member. Contact surface length: **"between 10% and 30% of the reed length"** (i.e., a broad spatial footprint that acts as a spatial low-pass filter on mode excitation). Contact width: "at least as wide as the reed."
+**Hammer material (US 2,932,231, preferred embodiment):** "a neoprene foam rubber pad between ¼ and ½ inch thick", cemented to a wooden member; "Foamed soft plastic materials, as well as very soft felts, may alternatively be used." Production 200/200A hammers are felt (service manual, §4.1), so the patent's material and contact figures describe the design intent, not a measured production hammer. Contact surface length: **"between 10% and 30% of the reed length"** (i.e., a broad spatial footprint that acts as a spatial low-pass filter on mode excitation). Contact width: "at least as wide as the reed."
 
 The spatial contact length is significant: a contact region spanning 10-30% of the reed acts as a sinc-like filter in mode space, suppressing modes whose half-wavelength at the contact point is shorter than the contact length. This provides an additional mechanism for upper mode suppression beyond the temporal dwell filter.
 

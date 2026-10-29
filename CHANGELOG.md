@@ -49,6 +49,11 @@ smaller.
   future-incompatibility lint inside the plugin framework's VST3 export
   macro, which failed `clippy -D warnings`. The lint is allowed on that one
   macro invocation only; exported symbols are unchanged.
+- Docs and code comments: production 200/200A hammers are felt ("three ply
+  maple covered with mothproofed felt", service manual), not the patent's
+  preferred neoprene foam, which the docs also gave the wrong thickness
+  (the patent says ¼-½ inch). The velocity curve's comment no longer claims
+  a foam-pad rationale. It was voiced by ear.
 - The cross-repo netlist sync test finds the sidecar repo's copies by
   filename across its maturity tiers, so promoting a netlist there no
   longer breaks it.
