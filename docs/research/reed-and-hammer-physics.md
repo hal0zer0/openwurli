@@ -861,9 +861,9 @@ The reed vibrates primarily in a SINGLE plane (perpendicular to the reed's flat 
 - The hammer strikes from one direction (below), exciting primarily the out-of-plane bending modes.
 - The pickup measures displacement in one direction (perpendicular to the reed bar face).
 
-Lateral (in-plane) vibrations may exist at much higher frequencies (f_lateral ~ (w/t)^2 * f_fundamental for mode 1), but these are not coupled to the pickup and are acoustically irrelevant.
+Lateral (in-plane) bending sits higher, at f_lateral ≈ (w/t) × f_fundamental for mode 1. The mass per length is the same both ways and f scales as √I, so the ratio is w/t, not (w/t)². For bass reeds w/t ≈ 3.84/0.508 ≈ 7.6, so the first lateral mode is near 7.6 × f0, well inside the audio range. Derived from the tabulated 140B reed widths and 0.51-0.66 mm thicknesses, the ratio runs about 7.5 (reeds 1-14), 4.7-6.0 (middle) and 3.8-4.9 (treble).
 
-For bass reeds: w/t ~ 3.84/0.508 ~ 7.6, so f_lateral_1 ~ 57 * f_fundamental. This is well above audio range for bass notes but could be audible for treble notes.
+Whether it reaches the pickup depends on centring. For a reed centred between its two fingers, the side-gap capacitance is even in lateral offset, so the coupling is second order. Off centre it becomes first order, and the service manual re-centres reeds laterally. Exciting it also needs a sideways force, and the action applies none by design. If it sounded, it would ring as a fixed inharmonic line near (w/t) × f0, not a short burst. The model leaves it out.
 
 ### 6.2 Observability of Inharmonic Modes
 
