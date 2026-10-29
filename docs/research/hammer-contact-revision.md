@@ -440,6 +440,17 @@ Reading (corrected after the physics review's fit; the first reading here overst
       (−97.4 to −103.2 dBFS). The three softest layers share −97.4, which looks like a floor added
       after normalisation, and v84 is out of order. The noise floor can't recover relative note
       levels in this set, so (ii) needs other evidence.
+- **Geometry sources** (shelf search, 2026-10-29):
+  - No damper lift, no damper-to-reed contact point and no hammer-head dimension anywhere in the
+    manual or parts listings.
+  - The damper sits on the reed above the hammer. Practitioners say the bass solder tips face down
+    so that hard-hit reeds don't "whack the dampers", so the damper is a plausible but unsized
+    upward limit.
+  - The strike line is set per hammer at the factory and voiced by ear in service (manual §9 and
+    §18: slide the reed bar, move the hammer "to improve the tone and sustain"). That supports a
+    per-note x_s prior.
+  - No side-on action photo with a scale is held. The candidate frames are in Emma's restoration
+    videos (side-on action segments with known timestamps), which would have to be downloaded.
 - 1000 instruments leave 2–6 survivors per split. A stable posterior needs sequential sampling
   around them (an ABC-SMC step) once (i) is settled.
 
