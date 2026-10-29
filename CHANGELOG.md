@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Mostly housekeeping (the codebase is about 8,300 lines smaller), plus one
-sound change: the hammer's attack noise burst is gone, so note attacks sound
-different and this is a minor version.
+A housekeeping release: the codebase is about 8,300 lines smaller, and the
+sound is unchanged. The one change to the audio path, removing the hammer's
+attack noise burst, was 35-55 dB below the tone and inaudible in A/B listening.
 
 ### Removed
 - **The attack noise burst.** Every note-on used to add a short band-pass
