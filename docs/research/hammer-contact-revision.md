@@ -435,6 +435,11 @@ Reading (corrected after the physics review's fit; the first reading here overst
     - Proposed evidence: relative note levels from the reference set's noise floors (peak
       normalisation at a constant recording gain shifts each file's floor by its own gain).
     - Self-test first: the layers of one note must order by velocity.
+    - **Self-test run 2026-10-29: FAILS.** C4's third-octave bands from 6.3 to 16 kHz are flat and
+      time-invariant (noise), and they fall with velocity, but by only ~6 dB from v10 to v126
+      (−97.4 to −103.2 dBFS). The three softest layers share −97.4, which looks like a floor added
+      after normalisation, and v84 is out of order. The noise floor can't recover relative note
+      levels in this set, so (ii) needs other evidence.
 - 1000 instruments leave 2–6 survivors per split. A stable posterior needs sequential sampling
   around them (an ABC-SMC step) once (i) is settled.
 
