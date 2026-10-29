@@ -121,6 +121,15 @@ transfer is ASSUMED and labelled.
     2.2–3.5; dynamic p runs 2.2 (bass) to 3.0 (C5 and up). Giordano & Winans suggest 3.0.
   - τ_f/T1: the band is set when the prototype is registered. The felt's real constraints are the
     falsifiers (§5) and Fig. 5 (report-only). Miessner's ¾–1 cycle is report-only.
+- **The felt prior decides the regime (open, 2026-10-29).** Piano felt scaled to a 1–5 g hammer
+  (rigid-target contact ~0.25–0.5 ms) puts the bass in a chatter regime.
+  - A1: 2–16 contacts, total contact 0.03–0.15 T1, mode 2 at −11…−32 dB re mode 1. The result is
+    erratic in m_h, and 7 against 14 modes disagree (6.17 vs 2.45 mm at one corner).
+  - C4: 1–12 contacts, total contact 0.09–0.42 T1.
+  - Miessner's ¾–1 cycle at A1 needs felt 30–60× softer (τ_f ≈ 0.75 T1 ≈ 14 ms).
+  - The prior should sit on absolute felt properties per grade, so that τ_f/T1 emerges per note.
+    Bounding it is the open physics question. The manual's hard-felt "clicking" (§5D) may be
+    this chatter.
 - **Hardness (the setter)** scales K. One measured series anchors the range: Hall & Askenfelt
   pricked a hammer in stages from "definitely too hard" to "ruined". Each step raised compliance
   about 10 %, with p from 2.3 (hardest) to 2.8 (softest), then 3.3 after ruining.
@@ -180,7 +189,27 @@ Measured with the Sensor Array. Recordings are trend checks only.
 8. CPU: note-on cost of a 10-note chord, against the engine's budget.
 9. Bass blank: Sensor check of a Keyboard Waves A1 attack for an inharmonic partial at
    6.5–7.5×f0 (.020″) or 7.8–9.0×f0 (.026″). The band edges are a model guess.
-10. The ear gate (the user), at the pick and both corners.
+   **Run 2026-10-29: inconclusive.** Sensor decay mode, 405–520 Hz, layers 4a/5f/74/7e, fitted
+   over 0.13–0.77 s. It found only H8 (441 Hz), H9 (496 Hz) and their ±10 Hz sidebands (the set's
+   known ~9.4 Hz amplitude modulation). Nothing near the 462 Hz the .026″ blank predicts. That
+   doesn't confirm .020″: mode 2 may sit below detection at the pickup, and the .020″ line (384 Hz)
+   lies within 2 Hz of H7, which this window cannot resolve.
+10. **Mode-2 line at C4, falsifier (proposed 2026-10-29, pending physics review).** Keyboard Waves C4
+   (label c3), measured with the Sensor Array before any prototype render:
+   - Method: decay mode, skip 5 ms, window 900 ms, band ±40 Hz, so the fit starts at 85 ms.
+   - Result: a line at 1466–1472 Hz (ratio 5.63, inside the FE band 5.53–5.80) at −59.8 dB re H1
+     (v126), −64.1 (v105), −66.5 (v95) and −67.0 (v74).
+   - In the 0.3–2.8 s window it falls to −74…−83 dB with a stable frequency, and below v52 it is
+     at the noise floor. It decays faster than H1, as a higher reed mode should.
+   - The same runs show the undamped top reeds ringing in sympathy (1665 / 1764 / 1868 Hz, also in
+     E4's sample), which independently confirms that those keys have no dampers.
+   - Falsifier: rendered at the preamp tap with the same measurement, the model's C4 mode-2 line
+     must not exceed the recording's by more than 10 dB (≤ −50 dB re H1 at v126, ≤ −56 at v95).
+     One-sided: a cleaner model is not falsified.
+   - Expected reading: tip-level chatter (−11…−32 dB) would sit 30–50 dB above this; Miessner-soft
+     contact (≤ −41 dB at the tip) is near it.
+   - Report only: the shipped model's mode 2 was voiced to −36 dB at the pickup output.
+11. The ear gate (the user), at the pick and both corners.
 
 ## 6. Steps
 
