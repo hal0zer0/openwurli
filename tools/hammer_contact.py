@@ -39,9 +39,10 @@ PRIORS = dict(
 )
 F_REF = 10.0  # N
 N_MODES = 20
-# Upper damping corner: omega^2 anchored at the faster observed mode-2 loss (G3, ~23 /s at 1295 Hz).
-UPPER_ALPHA_REF = 23.0
-UPPER_F_REF = 1295.0
+# Upper damping corner: omega^2 anchored at C4's mode-2 loss, the only anchor (~10 /s at 1466 Hz).
+# (Pass 1 ran with a G3 anchor, 23 /s at 1295 Hz, withdrawn once G3's line proved fixed.)
+UPPER_ALPHA_REF = 10.0
+UPPER_F_REF = 1466.0
 # Offline falsifier: the swing prior's dynamic admitted edges (mm at the finger region, ff).
 EDGE_MM = {"bass": 4.29, "middle": 2.90, "treble": 2.89}
 
@@ -230,6 +231,71 @@ def run(notes, n, damping, seed, out):
             json.dump(dict(priors=PRIORS, damping=damping, seed=seed, edges=EDGE_MM, results=results), fh)
 
 
+# Keyboard pass: one prior sample = one instrument. Felt is graded (z*_bass >= z*_mid >= z*_treble,
+# drawn as three log-uniform values sorted), p per grade, m_h and v_ff shared, x_s and geometry per
+# reed. Grade boundaries are a nuisance carried over two candidate splits.
+SPLITS = {"damper-felt": (46, 72), "code": (52, 72), "blank-pickup": (52, 74)}
+
+
+def grade_of(midi, split):
+    b, m = SPLITS[split]
+    return 0 if midi <= b else (1 if midi <= m else 2)
+
+
+def draw_instruments(rng, n):
+    lo, hi = PRIORS["z_star"][1], PRIORS["z_star"][2]
+    z = np.sort(np.exp(rng.uniform(np.log(lo), np.log(hi), (n, 3))), axis=1)[:, ::-1]  # bass >= mid >= treble
+    p = rng.uniform(PRIORS["p"][1], PRIORS["p"][2], (n, 3))
+    m = np.exp(rng.uniform(np.log(PRIORS["m_h"][1]), np.log(PRIORS["m_h"][2]), n))
+    v = np.exp(rng.uniform(np.log(PRIORS["v_ff"][1]), np.log(PRIORS["v_ff"][2]), n))
+    return dict(z_star=z, p=p, m_h=m, v=v)
+
+
+def preamp_tilt_db(f):
+    """Model chain tilt: the pickup's 880 Hz one-pole high-pass plus the bench-measured preamp response
+    (flat within 1 dB to ~7.6 kHz, -3 dB at 16 kHz; `preamp-bench sweep`)."""
+    fc = 880.0
+    hp = 20 * np.log10(f / np.sqrt(f ** 2 + fc ** 2))
+    fs = np.array([50, 1500.9, 3144.4, 4900.5, 6587.4, 8854.9, 10266.4, 11902.8, 13800.2, 16000.0])
+    gs = np.array([7.00, 7.02, 6.93, 6.77, 6.53, 6.12, 5.79, 5.36, 4.76, 3.96])
+    return hp + np.interp(f, fs, gs)
+
+
+def keyboard(notes, n, seed, out, split):
+    rng = np.random.default_rng(seed)
+    inst = draw_instruments(rng, n)
+    res = {}
+    for midi in notes:
+        g = grade_of(midi, split)
+        vs = variants(midi)
+        pick = rng.integers(0, len(vs), n)
+        x_s = rng.uniform(PRIORS["x_s"][1], PRIORS["x_s"][2], n)
+        swing = np.zeros(n)
+        m2_out = np.zeros(n)
+        contacts = np.zeros(n, int)
+        t_c = np.zeros(n)
+        for k, (name, t_tip, t_root) in enumerate(vs):
+            sel = np.where(pick == k)[0]
+            if sel.size == 0:
+                continue
+            rd = reed_data(midi, t_tip, t_root)
+            r = strike_batch(rd, inst["m_h"][sel], inst["v"][sel], inst["z_star"][sel, g], inst["p"][sel, g], x_s[sel])
+            f1 = rd["f"]
+            f2 = rd["om"][1] / rd["om"][0] * f1
+            swing[sel] = np.abs(r["pick_mm"][:, 0])
+            ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), 1e-30) / np.maximum(np.abs(r["pick_mm"][:, 0]), 1e-30)
+            m2_out[sel] = 20 * np.log10(ratio) + preamp_tilt_db(f2) - preamp_tilt_db(f1)
+            contacts[sel] = r["n_contacts"]
+            t_c[sel] = r["t_contact_T1"]
+        res[midi] = dict(swing_mm=swing.tolist(), m2_out_db=m2_out.tolist(), contacts=contacts.tolist(),
+                         t_contact_T1=t_c.tolist(), grade=g)
+        print(f"MIDI {midi} (grade {g}) done", flush=True)
+    with open(out, "w") as fh:
+        json.dump(dict(split=split, seed=seed, n=n, priors=PRIORS, instruments={k: np.asarray(v).tolist() for k, v in inst.items()},
+                       notes=res), fh)
+
+
+
 def summarise(midi, rows):
     edge = EDGE_MM[section(midi)]
     sw = np.array([r["swing_mm"] for r in rows])
@@ -253,7 +319,8 @@ def summarise(midi, rows):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("selftest", "run"))
+    ap.add_argument("cmd", choices=("selftest", "run", "keyboard"))
+    ap.add_argument("--split", choices=tuple(SPLITS), default="code")
     ap.add_argument("--n", type=int, default=1000)
     ap.add_argument("--notes", default="33,42,48,52,55,60,66,72,78,84,90,96")
     ap.add_argument("--damping", choices=("floor", "upper"), default="floor")
@@ -262,5 +329,7 @@ if __name__ == "__main__":
     a = ap.parse_args()
     if a.cmd == "selftest":
         selftest()
+    elif a.cmd == "keyboard":
+        keyboard([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split)
     else:
         run([int(x) for x in a.notes.split(",")], a.n, a.damping, a.seed, a.out)

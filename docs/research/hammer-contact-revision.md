@@ -177,10 +177,9 @@ ASSUMED unless marked.
 - Modes: 20 integrated, 7 rendered.
 - High-mode damping during contact, run at both corners and reported side by side:
   - floor: undamped;
-  - upper: ω² anchored at the FASTER observed mode-2 loss. G3's line falls from −48…−62 dB at
-    85 ms to the floor by 0.3 s, roughly 150–200 dB/s relative to H1, so α ≈ 23 /s at 1295 Hz.
-    C4's 35–87 dB/s is the slow note. (Amended after review, before any run. The spread between
-    notes points to per-reed clamp loss; that is a separate decay-law revision.)
+  - upper: ω² anchored at C4's mode-2 loss, the only anchor (α ≈ 4–10 /s at 1466 Hz, upper end).
+    Pass 1 ran with the anchor briefly moved to G3 (23 /s at 1295 Hz). That was withdrawn once G3's
+    line proved fixed. The two corners agreed within ~1 dB in pass 1, so the result stands.
 - Offline falsifier for this pass: the ff swing at the pickup must stay within each note's
   dynamic admitted edge (the swing prior's EDGES, which are the pickup tables' reach). Checks 10a
   and 10b need chain renders and come after.
@@ -342,15 +341,57 @@ had already been run here):
 - one felt gives a monotone fall to near nothing;
 - continuous grading gives a smooth curve.
 
-Reading:
-- **Middle:** falls from B3 −40 to C5 −86.
-- **Middle → treble:** jumps up at D5–F5 (−76, −58, −48), then falls again to −96 at the top.
-  This is the sawtooth, with a boundary at 72|73: both candidate splits (the damper-felt split
-  46|47 · 72|73 and the code's 52|53 · 72|73) place one there.
+Reading (corrected after the physics review's fit; the first reading here overstated it):
+- **Middle:** falls from B3 −40 to C5 −86. **Middle → treble:** a rise at D5–F5 (−76, −58, −48),
+  then a fall to about −96 at the top.
+- **Statistically suggestive, not established.** Fitted over the 21 values B3–C7 (F3 dropped):
+  - one falling line, −1.1 dB per semitone, rms 11.5 dB;
+  - a break at 72|73 is no better (ΔBIC +0.7);
+  - the best break is 75|76 (+27 dB jump, rms 8.9, ΔBIC −4.6), but it was found by searching, on
+    one unit.
+- **74|75 is the pickup's finger-thickness boundary** (reeds 42|43). A pickup-section change moves
+  mode 2 re H1 at the output even under one felt, so the raw pattern cannot locate felt grades.
+  Only the chain-identical per-note test, carrying each section's pickup law, can.
+- **Treble ratios:** D5–E6 drift smoothly from 5.75 to 4.86, consistent with one mode-2 family.
+  F6–C7 sit at −85…−105 dB with erratic ratios (5.64, 5.73, 5.61, 4.96, 5.74) and are doubtful.
+  The FE band is unreliable above MIDI 72 anyway (the length table).
+- **The fixed-line test can't tell a structural resonance from one reed's mode 2 rung through the
+  bar on every strike.** Each fixed line sits in one reed's FE mode-2 band: 1296 Hz in G3's,
+  1719 Hz in D4's, 1151 Hz in F3's.
+  - Discriminator (to do): the line's level re the undamped top reeds' 1760 Hz line, which is a
+    bar-excitation reference present in every sample. A reed's own mode 2 should stand higher in
+    its own sample; a flat ratio across samples means a structural resonance.
+  - G3 and D4 stay excluded until then.
 - **Bass:** too sparse and noisy (±10 dB per-reed scatter) to show a fall, and the bass/middle
   boundary is unresolved: G3 and A3 are lost to the fixed line, and F3 is doubtful.
 - Caveats: one unit, white keys only, and windowed levels rather than intercepts. E6 (−58) is an
   outlier in its run.
+
+## 5d. Pass 2 design: the keyboard pass, scored chain-identically
+
+- **Instruments.** One prior sample is one instrument:
+  - felt graded z*_bass ≥ z*_mid ≥ z*_treble (three log-uniform draws, sorted); the order is
+    documented in US 2,942,512 (pad thickness growing toward the bass); p per grade;
+  - m_h and v_ff shared across the keyboard (contact time is degenerate in m_h and z*, so the
+    per-grade z* absorbs any mass grading);
+  - x_s and geometry per reed.
+  - Grade boundaries are a nuisance over three candidate splits: 46|47 · 72|73 (the damper-felt
+    grades), 52|53 · 72|73 (the code's sections), and 52|53 · 74|75 (the reed-blank and
+    pickup-section splits).
+- **Per-note test.** Falsifier 10a's template applied at every note with a clean own line,
+  scored at the LOW-damping corner so heavy model damping can't hide a loud contact; the high
+  corner is reported alongside.
+  - Notes: B2, C3, D3, B3, C4, F4, G4, A4, B4, C5, D5–E6.
+  - Excluded: G3, A3, D4, E4 (fixed lines); A2, E3 (ambiguous); F3 (ratio outside the band);
+    F6–C7 (doubtful); A1–G2 (unresolved).
+- **Robust rule:** an instrument is falsified if, within any grade, more than a quarter of these
+  notes have the model's mode 2 above the recording's + 10 dB. Per-reed scatter is ±10 dB, so
+  judge the grade, not single notes. Swing edges apply at every note.
+- **Chain-identical scoring.** A bench path renders a prescribed modal excitation (per-mode
+  amplitude, phase and FE frequency at separation) through the real pickup and preamp, measured
+  by the same Sensor procedure as the recording. The renders calibrate the cheap proxy (pickup-
+  region ratio + chain tilt) per note, including each section's pickup law. The calibrated proxy
+  then scores every instrument.
 
 ## 6. Steps
 
