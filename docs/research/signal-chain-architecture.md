@@ -175,8 +175,7 @@ At note-on, the following happens once (not per-sample):
 3. Apply per-note variation (deterministic hash)
 4. Compute decay rates
 5. Initialize pickup gap
-6. Initialize noise burst parameters
-7. Optionally: run MLP correction network to adjust parameters
+6. Optionally: run MLP correction network to adjust parameters
 
 ### Note-Off Processing
 
@@ -370,22 +369,16 @@ Without normalization, the dwell filter would also attenuate the fundamental, ch
 
 ---
 
-## 6. Stage 4: Attack Noise Burst (Per-Voice)
+## 6. Stage 4: Attack Noise Burst (removed)
 
-The felt-tipped hammer striking a steel reed produces a broadband impact noise that lasts 2-5 ms. This is separate from the modal vibration.
-
-```
-noise_amp = 0.025 * vel^2
-noise_decay = 1/0.003  // 3 ms time constant
-noise_cutoff = (5 * f0).clamp(200, 2000)  // tracks fundamental, not velocity
-```
-
-- No floor or register scaling -- amplitude scales purely with velocity squared
-- Noise center frequency tracks the fundamental (5x f0), clamped to 200-2000 Hz, Q=0.7
-- LCG pseudo-random generator -> bandpass at `noise_cutoff` -> exponential decay envelope (3ms decay, 15ms duration)
-- Added to the voice signal BEFORE the pickup model
-
-The noise burst is subtle but contributes to the "woody" percussive attack character. Without it, notes have an artificially pure, synthesizer-like onset.
+Earlier versions added a bandpass noise burst at note-on (0.025·vel², 3 ms decay, 15 ms, centred
+at 5×f0) for the hammer's impact. Every number in it was hand-set, and no 200A source shows an
+impact transient in the electrical output: the electrostatic pickup senses the reed's motion, and
+the documented electrical transients are faults (a reed shorting against the pickup, debris). The
+service manual's "clicking" (§5D, cured by softening hard hammer felt) does not say whether it is
+heard through the amplifier. The burst was removed; the hammer reaches the signal only through
+the reed's modes (dwell filter and onset ramp). It had also been one cause of the chord-attack
+cusps: its first sample stepped to full level, and simultaneous voices summed the steps.
 
 ---
 
@@ -886,7 +879,6 @@ All other parameters (decay rates, pickup gap, preamp component values, mode amp
 | DC block | N/A | Handled internally by DK preamp |
 | Speaker HPF (authentic) | 30 Hz, Q=0.75 | Subsonic only (2026-07; the 95 Hz cabinet roll-off moved to the downstream host) |
 | Speaker LPF (authentic) | 5500 Hz, Q=0.707 | Cone breakup (was 7500 Hz; calibrated at the octave-mislabelled OBM pitch — unverified) |
-| Noise decay | 1/0.003 = 333 Hz | 3ms attack noise time constant |
 | Dwell sigma^2 | 64.0 | Gaussian dwell filter width (sigma=8.0) |
 | kNumModes | 7 | Modal oscillator mode count |
 | kMaxVoices | 64 | Maximum simultaneous voices (matches real 200A key count) |

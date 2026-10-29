@@ -27,7 +27,7 @@ sys.path.insert(0, HERE)
 import pickup_rev_metrics as M  # noqa: E402
 
 BENCH = os.path.join(HERE, "..", "target", "release", "preamp-bench")
-TAPS = {"pickup": ["--no-preamp", "--no-poweramp", "--no-attack-noise"],
+TAPS = {"pickup": ["--no-preamp", "--no-poweramp"],
         "preamp": ["--no-poweramp"], "full": []}
 
 
@@ -88,7 +88,7 @@ def main():
         chord = os.path.join(tmp, f"chord_{tap}.wav")
         subprocess.run(["nice", "-n", "19", BENCH, "render-poly", "--notes",
                         ",".join(map(str, notes)), "--velocities", "127,127,127", "--duration",
-                        "1.2", "--volume", "0.80", "--speaker", "0.0", "--no-mlp", "--single-seeds",
+                        "1.2", "--volume", "0.80", "--speaker", "0.0", "--no-mlp",
                         "--output", chord, *extra],
                        check=True, capture_output=True)
         c = M.read_wav(chord)

@@ -357,14 +357,10 @@ impl WurliEngine {
         }
 
         self.age_counter += 1;
-        let noise_seed = (note as u32)
-            .wrapping_mul(2654435761)
-            .wrapping_add(self.age_counter as u32);
         slot.voice = Some(Voice::note_on_with_config(
             note,
             velocity as f64,
             self.sample_rate,
-            noise_seed,
             self.mlp_enabled,
             &self.voicing,
         ));

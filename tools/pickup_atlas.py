@@ -6,7 +6,7 @@ docs/research/pickup-overlap-law.md §9, "Measurement taps", stimuli (1) and (3)
 atlas:  the static law alone, driven by a clean sinusoidal swing u = -g0 + A sin(2 pi f t) at a fixed
         frequency, amplitude swept; H1..H6 measured with the Sensor Array on the raw source (before
         the pickup's RC network). One map per table case (section x band end).
-known:  a pickup-tap render of the engine (preamp, power amp and attack noise off, speaker
+known:  a pickup-tap render of the engine (preamp and power amp off, speaker
         passthrough) against the atlas at the swing the reed tap reports for the same window (Hann-weighted mean mode-1
         amplitude over the analysed window),
         after removing the RC network's per-harmonic tilt (one-pole high-pass at PICKUP_FC).
@@ -113,7 +113,7 @@ def known(a):
         wav = os.path.join(tmp, f"p{n}.wav")
         subprocess.run([BENCH, "render", "--note", str(n), "--velocity", "127", "--duration", "2.5",
                         "--volume", "0.80", "--speaker", "0.0", "--no-mlp", "--no-preamp",
-                        "--no-poweramp", "--no-attack-noise", "--output", wav],
+                        "--no-poweramp", "--output", wav],
                        check=True, capture_output=True)
         tap = os.path.join(tmp, f"t{n}")
         subprocess.run([BENCH, "reed-tap", "--note", str(n), "--velocity", "127", "--duration", "2.5",

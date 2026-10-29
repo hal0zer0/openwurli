@@ -1,13 +1,13 @@
-//! Hammer model: Gaussian dwell filter + attack noise burst.
+//! Hammer model: Gaussian dwell filter + onset ramp.
 //!
 //! The dwell filter is a one-shot spectral shaping applied at note-on.
 //! It models the finite contact duration of the felt hammer on the reed,
 //! which acts as a low-pass filter on the initial mode excitation.
 //!
-//! The attack noise is an exponentially decaying bandpass-filtered noise burst
-//! that models the mechanical impact transient.
+//! The hammer reaches the signal only through the reed's motion: the pickup senses the reed,
+//! not the impact. The separate attack-noise burst the model once added had no source and was
+//! removed (no 200A document shows an impact transient in the electrical output).
 
-use crate::filters::Biquad;
 use crate::tables::NUM_MODES;
 
 /// Hammer dwell time (contact duration) in seconds — for spectral filtering only.
@@ -101,114 +101,6 @@ pub fn dwell_attenuation(
     atten
 }
 
-/// Attack noise generator — exponentially decaying bandpass noise.
-///
-/// Models the mechanical impact transient of felt hammer on steel reed.
-/// Duration: ~15 ms. Center frequency tracks the note (5× fundamental,
-/// clamped 200–2000 Hz) so the noise sits within the harmonic neighborhood
-/// rather than in a spectrally disconnected band.
-/// Number of samples for the attack-noise envelope to fade IN from 0 to full
-/// amplitude. Without this, sample 0 of every burst contributes the bandpass
-/// biquad's first output (≈ b0 × noise[0]) at full amplitude — a step
-/// discontinuity. Multiple voices firing simultaneously sum these steps,
-/// producing audible cusps at chord-attack moments. 16 samples ≈ 0.36 ms at
-/// 44.1 kHz — inaudible delay but eliminates the step. (Diagnosed while
-/// chasing chord-attack cusps: the cause turned out to be here, not the
-/// half-band filter.)
-const NOISE_FADE_IN_SAMPLES: u32 = 16;
-
-pub struct AttackNoise {
-    amplitude: f64,
-    decay_per_sample: f64,
-    remaining: u32,
-    /// Counts down from `NOISE_FADE_IN_SAMPLES` to 0 during the burst's
-    /// initial fade-in. Once 0, the noise plays at full envelope.
-    fade_in_remaining: u32,
-    bpf: Biquad,
-    rng_state: u32,
-}
-
-impl AttackNoise {
-    /// Create a new attack noise burst.
-    ///
-    /// - `velocity`: 0.0 to 1.0
-    /// - `fundamental_hz`: fundamental frequency of the note (for tracking)
-    /// - `sample_rate`: audio sample rate
-    /// - `seed`: RNG seed (derive from note + counter to decorrelate simultaneous notes)
-    pub fn new(velocity: f64, fundamental_hz: f64, sample_rate: f64, seed: u32) -> Self {
-        let noise_amp = 0.025 * velocity * velocity;
-        let tau = 0.003;
-        let decay_per_sample = (-1.0 / (tau * sample_rate)).exp();
-        let duration_samples = (0.015 * sample_rate) as u32;
-
-        // Center frequency tracks the note: 5× fundamental, clamped to
-        // 200–2000 Hz. Higher multiplier adds more "thwack" to the attack.
-        // Keeps the noise in the harmonic neighborhood so it blends with
-        // the reed tone instead of sounding like a disconnected "poof".
-        let center = (fundamental_hz * 5.0).clamp(200.0, 2000.0);
-
-        Self {
-            amplitude: noise_amp,
-            decay_per_sample,
-            remaining: duration_samples,
-            fade_in_remaining: NOISE_FADE_IN_SAMPLES,
-            bpf: Biquad::bandpass(center, 0.7, sample_rate),
-            rng_state: seed,
-        }
-    }
-
-    /// Render attack noise into the output buffer (additive).
-    /// Returns the number of samples actually rendered.
-    pub fn render(&mut self, output: &mut [f64]) -> usize {
-        let count = (self.remaining as usize).min(output.len());
-        let mut amp = self.amplitude;
-        let mut fade_in = self.fade_in_remaining;
-
-        for sample in &mut output[..count] {
-            // Raised-cosine fade-in for the first NOISE_FADE_IN_SAMPLES samples
-            // of the burst. Forces the contribution to exactly 0 at the first
-            // sample, eliminating the step discontinuity that chord-stab
-            // attacks produced when multiple voices' bandpass biquads
-            // simultaneously emitted nonzero `b0 * noise[0]` first samples.
-            let env = if fade_in > 0 {
-                let pos = NOISE_FADE_IN_SAMPLES - fade_in;
-                let t = pos as f64 / NOISE_FADE_IN_SAMPLES as f64;
-                fade_in -= 1;
-                0.5 * (1.0 - (std::f64::consts::PI * t).cos())
-            } else {
-                1.0
-            };
-            let noise = self.next_noise();
-            let filtered = self.bpf.process(noise);
-            *sample += amp * env * filtered;
-            amp *= self.decay_per_sample;
-        }
-
-        self.amplitude = amp;
-        self.fade_in_remaining = fade_in;
-        self.remaining -= count as u32;
-        count
-    }
-
-    /// Check if the noise burst is complete.
-    pub fn is_done(&self) -> bool {
-        self.remaining == 0
-    }
-
-    /// Disable this noise burst (for A/B testing).
-    pub fn disable(&mut self) {
-        self.remaining = 0;
-    }
-
-    fn next_noise(&mut self) -> f64 {
-        self.rng_state = self
-            .rng_state
-            .wrapping_mul(1664525)
-            .wrapping_add(1013904223);
-        (self.rng_state as i32 as f64) / (i32::MAX as f64)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,25 +121,6 @@ mod tests {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
         let atten = dwell_attenuation(0.5, 440.0, &ratios, 1.0);
         assert!((atten[0] - 1.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_attack_noise_decays() {
-        let mut noise = AttackNoise::new(1.0, 440.0, 44100.0, 0x12345678);
-        let mut buf = vec![0.0f64; 700];
-        noise.render(&mut buf);
-
-        let start_energy: f64 = buf[..100].iter().map(|x| x * x).sum();
-        let end_energy: f64 = buf[600..].iter().map(|x| x * x).sum();
-        assert!(start_energy > end_energy * 5.0);
-    }
-
-    #[test]
-    fn test_attack_noise_is_done() {
-        let mut noise = AttackNoise::new(1.0, 440.0, 44100.0, 0x12345678);
-        let mut buf = vec![0.0f64; 1000];
-        noise.render(&mut buf);
-        assert!(noise.is_done());
     }
 
     #[test]

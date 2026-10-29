@@ -56,7 +56,7 @@ cargo run -p preamp-bench -- render --note 60 --velocity 100 --duration 1.0 --no
 crates/
   openwurli-dsp/src/          # DSP library (pure math, no framework deps)
     reed.rs                   #   Modal oscillator (7 modes)
-    hammer.rs                 #   Dwell filter + attack noise + onset ramp
+    hammer.rs                 #   Dwell filter + onset ramp
     pickup.rs                 #   Capacitive pickup (field-solved overlap law + RC network)
     pickup_tables.rs          #   Generated overlap-law capacitance tables
     voice.rs                  #   Voice assembly (reed + hammer + pickup)

@@ -419,7 +419,6 @@ fn cmd_render(args: &[String]) {
     let no_poweramp = has_flag(args, "--no-poweramp");
     let no_rail_sag = has_flag(args, "--no-rail-sag");
     let no_preamp = has_flag(args, "--no-preamp");
-    let no_attack_noise = has_flag(args, "--no-attack-noise");
     let no_mlp = has_flag(args, "--no-mlp");
     let normalize = has_flag(args, "--normalize");
     let swing_override: Option<f64> = if has_flag(args, "--swing-mm") {
@@ -456,14 +455,9 @@ fn cmd_render(args: &[String]) {
     // Render reed voice (reed → pickup with nonlinearity + HPF)
     let reed_output = {
         let vel_norm = velocity as f64 / 127.0;
-        let noise_seed = (note as u32).wrapping_mul(2654435761);
-        let mut voice =
-            Voice::note_on_with_config(note, vel_norm, sample_rate, noise_seed, !no_mlp, &calib);
+        let mut voice = Voice::note_on_with_config(note, vel_norm, sample_rate, !no_mlp, &calib);
         if let Some(swing) = swing_override {
             voice.set_swing_mm(swing);
-        }
-        if no_attack_noise {
-            voice.disable_attack_noise();
         }
         let num_samples = (duration * sample_rate) as usize;
         let mut output = vec![0.0f64; num_samples];
@@ -1727,17 +1721,7 @@ fn cmd_render_poly(args: &[String]) {
 
     for (i, (&note, &vel)) in notes.iter().zip(velocities.iter()).enumerate() {
         let velocity = vel as f64 / 127.0;
-        // Voice index decorrelates repeated notes; --single-seeds uses the single-note `render`
-        // seed instead, so a chord can be compared with the sum of its single-note renders.
-        let voice_offset = if has_flag(args, "--single-seeds") {
-            0
-        } else {
-            i as u32
-        };
-        let noise_seed = (note as u32)
-            .wrapping_mul(2654435761)
-            .wrapping_add(voice_offset);
-        let mut voice = Voice::note_on(note, velocity, BASE_SR, noise_seed, !no_mlp);
+        let mut voice = Voice::note_on(note, velocity, BASE_SR, !no_mlp);
 
         let mut voice_buf = vec![0.0f64; n_samples];
         let chunk_size = 1024;

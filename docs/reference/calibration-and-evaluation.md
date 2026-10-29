@@ -259,9 +259,9 @@ Sources: Pfeifle DAFx 2017, Euler-Bernoulli beam theory, characteristic equation
 
 The attack is the most perceptually important phase. It establishes the instrument's identity in the first few milliseconds of each note.
 
-**Three components:**
+**Components:**
 
-1. **Hammer noise burst (0-5 ms):** Broadband energy from felt-on-steel impact. Center frequency = `4 * f0` clamped [200, 2000] Hz, Q = 0.7, amplitude = `0.015 * vel^2`, decay tau = 3 ms, duration = 15 ms. Bandwidth is note-tracking (not velocity-dependent). Creates the initial "click" or "thump." Spectral flatness ratio (first 2ms vs 5-10ms) >= 1.0 when present. More prominent in mid register.
+1. **Hammer noise burst: removed.** An earlier design added a hand-set bandpass noise burst here. No 200A source shows an impact transient in the electrical output (the pickup senses reed motion; the documented electrical transients are faults), so the model no longer has one. The hammer shapes the attack only through the reed's modes.
 
 2. **Mode overshoot (2-15 ms):** All reed modes are at their initial amplitudes in the first few ms. Since upper modes decay faster, the initial sum is louder and brighter than the sustained (fundamental-dominant) signal. This creates a natural "overshoot" of 2-5 dB at mf, 5-10 dB at ff.
 

@@ -7,10 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-A housekeeping release: no new features, and the codebase is about 8,300 lines
-smaller.
+Mostly housekeeping (the codebase is about 8,300 lines smaller), plus one
+sound change: the hammer's attack noise burst is gone, so note attacks sound
+different and this is a minor version.
 
 ### Removed
+- **The attack noise burst.** Every note-on used to add a short band-pass
+  noise burst for the hammer's impact (0.025·v², 3 ms decay, centred at 5×f0).
+  Every value in it was hand-set, and no 200A source shows an impact
+  transient in the instrument's electrical output: the pickup senses the
+  reed's motion, and the documented electrical transients are faults. The
+  hammer now reaches the sound only through the reed it strikes. The burst
+  had also been one cause of the chord-attack crackle fixed in 0.5.0: its
+  first sample stepped to full level, and a chord summed the steps. A
+  fade-in reduced that; removing the burst removes the mechanism.
+  `Voice::note_on` loses its noise-seed argument, `Voice::disable_attack_noise`
+  is gone, and the bench's `--no-attack-noise` and `--single-seeds` flags
+  went with it.
 - **"Authentic Noise" and "Noise Level" parameters.** They drove a noise model
   only the opt-in melange preamp has; in the shipping build they did nothing.
   The engine keeps its noise API for library hosts and the full-circuit build.

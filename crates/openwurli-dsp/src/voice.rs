@@ -1,8 +1,7 @@
 //! Single voice: reed + hammer + pickup + decay.
 //!
 //! Signal flow: modal_oscillator -> pickup_hpf -> output
-//! Attack noise mixed in during first ~15 ms.
-use crate::hammer::{AttackNoise, dwell_attenuation, onset_ramp_time};
+use crate::hammer::{dwell_attenuation, onset_ramp_time};
 use crate::mlp_correction::MlpCorrections;
 use crate::pickup::Pickup;
 use crate::reed::ModalReed;
@@ -12,7 +11,6 @@ use crate::variation;
 pub struct Voice {
     reed: ModalReed,
     pickup: Pickup,
-    noise: AttackNoise,
     post_pickup_gain: f64,
     sample_rate: f64,
     midi_note: u8,
@@ -28,19 +26,11 @@ impl Voice {
     /// - `midi_note`: MIDI note number (33-96)
     /// - `velocity`: 0.0 (pp) to 1.0 (ff)
     /// - `sample_rate`: audio sample rate
-    /// - `noise_seed`: RNG seed for attack noise (decorrelates simultaneous notes)
-    pub fn note_on(
-        midi_note: u8,
-        velocity: f64,
-        sample_rate: f64,
-        noise_seed: u32,
-        mlp_enabled: bool,
-    ) -> Self {
+    pub fn note_on(midi_note: u8, velocity: f64, sample_rate: f64, mlp_enabled: bool) -> Self {
         Self::note_on_with_config(
             midi_note,
             velocity,
             sample_rate,
-            noise_seed,
             mlp_enabled,
             &tables::CalibrationConfig::default(),
         )
@@ -53,14 +43,12 @@ impl Voice {
         midi_note: u8,
         velocity: f64,
         sample_rate: f64,
-        noise_seed: u32,
         mlp_enabled: bool,
         cfg: &tables::CalibrationConfig,
     ) -> Self {
-        let (reed, swing_mm, detuned_fundamental, air_drag_db_per_mm) =
+        let (reed, swing_mm, _, air_drag_db_per_mm) =
             Self::build_reed(midi_note, velocity, sample_rate, mlp_enabled, cfg, None);
         let pickup = Pickup::new_for_note(sample_rate, midi_note, swing_mm);
-        let noise = AttackNoise::new(velocity, detuned_fundamental, sample_rate, noise_seed);
 
         // Post-pickup gain: technician voicing (gap adjustment) affects volume
         // without changing the reed's swing.
@@ -71,7 +59,6 @@ impl Voice {
         Self {
             reed,
             pickup,
-            noise,
             post_pickup_gain,
             sample_rate,
             midi_note,
@@ -187,11 +174,6 @@ impl Voice {
             .set_air_drag(self.air_drag_db_per_mm, swing_mm, self.sample_rate);
     }
 
-    /// Disable attack noise (for A/B testing of transient artifacts).
-    pub fn disable_attack_noise(&mut self) {
-        self.noise.disable();
-    }
-
     /// Damper-rate multiplier for this voice's next note-off (1.0 = shipping).
     pub fn set_damper_scale(&mut self, damper_scale: f64) {
         self.damper_scale = damper_scale;
@@ -210,10 +192,6 @@ impl Voice {
         output.fill(0.0);
 
         self.reed.render(output);
-
-        if !self.noise.is_done() {
-            self.noise.render(output);
-        }
 
         self.pickup.process(output);
 
@@ -252,8 +230,7 @@ impl Voice {
         sample_rate: f64,
         swing_mm: Option<f64>,
     ) -> Vec<f64> {
-        let noise_seed = (midi_note as u32).wrapping_mul(2654435761);
-        let mut voice = Voice::note_on(midi_note, velocity, sample_rate, noise_seed, false);
+        let mut voice = Voice::note_on(midi_note, velocity, sample_rate, false);
         if let Some(swing) = swing_mm {
             voice.set_swing_mm(swing);
         }

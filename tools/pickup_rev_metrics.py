@@ -7,7 +7,7 @@ Usage:
 
 Taps (all MLP off, speaker character 0 = passthrough, fixed volume, so every tap is a constant
 gain away from the node it names — comparisons between builds are valid, absolute levels are not):
-    pickup : --no-preamp --no-poweramp --no-attack-noise  (voice output = pickup x output_scale)
+    pickup : --no-preamp --no-poweramp  (voice output = pickup x output_scale)
     preamp : --no-poweramp
     full   : whole chain
 
@@ -17,7 +17,6 @@ Metrics:
     typical_rms  C4 v64/80/100/110 RMS (dBFS) at each tap
     register     full-chain RMS (dBFS) at v100 for C2..C6 in half-octave steps
     hf_ratio     C4 ff 2.5-6 kHz harmonic vs inharmonic energy (dB), preamp tap
-    attack_noise C4 v100 attack-noise-to-tone energy ratio over the first 20 ms (dB), pickup tap
     alias        preamp-bench alias-audit --json for C3/C4/C5/C6/G6 at v120
 
 Harmonics are measured over 100-400 ms after note-on, Hann-windowed, at integer multiples of a
@@ -36,7 +35,7 @@ import numpy as np
 SR = 44100.0
 VOLUME = "0.80"
 TAPS = {
-    "pickup": ["--no-preamp", "--no-poweramp", "--no-attack-noise"],
+    "pickup": ["--no-preamp", "--no-poweramp"],
     "preamp": ["--no-poweramp"],
     "full": [],
 }
@@ -137,11 +136,6 @@ def main():
 
         m["hf_ratio"] = hf_ratio_db(r(60, 127, "preamp"), 60)
 
-        with_noise = render(a.bench, tmp, 60, 100, "preamp", ["--no-preamp"])
-        without = r(60, 100, "pickup")
-        k = int(0.02 * SR)
-        m["attack_noise"] = 10 * np.log10(
-            np.sum((with_noise[:k] - without[:k]) ** 2) / np.sum(without[:k] ** 2))
 
     m["alias"] = {}
     for n in (48, 60, 72, 84, 91):
