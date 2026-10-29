@@ -70,6 +70,15 @@ smaller.
   pedal-held notes alike; the pedal state is unchanged), `choke(note)` and
   `all_sound_off()` (stop at once through a 5 ms fade, without resetting the
   signal chain).
+- Experimental, for library hosts: `WurliEngine::set_hammer_contact_scale()`
+  and `set_damper_scale()`. The first scales the hammer's contact time (the
+  dwell filter and the onset ramp); below 1.0 stands for a harder pad. Each
+  note keeps the value it was struck with. The second scales the damper
+  rates, and each note uses the value set when its damper starts. Both
+  default to 1.0, which reproduces the shipping sound bit for bit. Neither
+  range is sourced. Within 0.7-1.4 the contact scale changes the spectrum by
+  under 0.1 dB in every octave band and mostly moves the bass onset. Not
+  exposed as plugin parameters.
 - README: a pointer to DiscoDSP's Retromulator, which ports OpenWurli's
   engine to C++ (AU, AAX, standalone).
 

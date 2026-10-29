@@ -18,6 +18,8 @@ pub struct Voice {
     midi_note: u8,
     /// Mode-1 air-drag coefficient, dB/s per mm of finger-region swing (0 = off).
     air_drag_db_per_mm: f64,
+    /// Damper-rate multiplier used at note-off (1.0 = shipping).
+    damper_scale: f64,
 }
 
 impl Voice {
@@ -74,6 +76,7 @@ impl Voice {
             sample_rate,
             midi_note,
             air_drag_db_per_mm,
+            damper_scale: cfg.damper_scale,
         }
     }
 
@@ -94,8 +97,13 @@ impl Voice {
 
         let detuned_fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
 
-        let dwell = dwell_attenuation(velocity, detuned_fundamental, &params.mode_ratios);
-        let onset_time = onset_ramp_time(velocity, detuned_fundamental);
+        let dwell = dwell_attenuation(
+            velocity,
+            detuned_fundamental,
+            &params.mode_ratios,
+            cfg.hammer_contact_scale,
+        );
+        let onset_time = onset_ramp_time(velocity, detuned_fundamental, cfg.hammer_contact_scale);
         let amp_offsets = variation::mode_amplitude_offsets(midi_note);
 
         let mut amplitudes = [0.0f64; NUM_MODES];
@@ -184,10 +192,16 @@ impl Voice {
         self.noise.disable();
     }
 
+    /// Damper-rate multiplier for this voice's next note-off (1.0 = shipping).
+    pub fn set_damper_scale(&mut self, damper_scale: f64) {
+        self.damper_scale = damper_scale;
+    }
+
     /// Start the damper (called on note_off).
     /// Activates progressive damping — higher modes die first.
     pub fn note_off(&mut self) {
-        self.reed.start_damper(self.midi_note, self.sample_rate);
+        self.reed
+            .start_damper(self.midi_note, self.sample_rate, self.damper_scale);
     }
 
     /// Render samples into the output buffer.

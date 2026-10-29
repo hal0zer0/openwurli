@@ -345,6 +345,11 @@ pub struct CalibrationConfig {
     /// Multiplier on the air-drag coefficient: 1.0 = C_d 4.47 (shipping), 0.447 / 2.236 = the
     /// C_d 2 / 10 band corners, 0 = off.
     pub air_drag_scale: f64,
+    /// Multiplier on the hammer contact time (dwell filter and onset ramp): 1.0 = shipping.
+    /// Below 1.0 is a harder pad, above it a softer one. Latched at note-on.
+    pub hammer_contact_scale: f64,
+    /// Multiplier on the damper rates, applied when the damper starts: 1.0 = shipping.
+    pub damper_scale: f64,
     pub target_db: f64,
     pub voicing_slope: f64,
     pub zero_trim: bool,
@@ -356,6 +361,8 @@ impl Default for CalibrationConfig {
             swing_pick: SwingPick::Central,
             swing_scale: 1.0,
             air_drag_scale: 1.0,
+            hammer_contact_scale: 1.0,
+            damper_scale: 1.0,
             // Level anchor: C4 v100 at the preamp input held where v0.8.0 put it (~9.5 mV peak
             // at onset, ~19 mV p-p; fundamental ~5.7 mV peak at 100-400 ms). That sits inside
             // the physical estimate for the plate swing at TR-1 (147 V x dC/C_node), at the low

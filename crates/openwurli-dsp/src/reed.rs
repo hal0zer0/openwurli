@@ -143,13 +143,15 @@ impl ModalReed {
     ///
     /// - `midi_note`: for register-dependent ramp time
     /// - `sample_rate`: for time constant conversion
-    pub fn start_damper(&mut self, midi_note: u8, sample_rate: f64) {
+    /// - `damper_scale`: multiplier on the damper rates, 1.0 = shipping (the per-mode cap holds)
+    pub fn start_damper(&mut self, midi_note: u8, sample_rate: f64, damper_scale: f64) {
         // Top 5 keys: no damper (natural decay only)
         if midi_note >= 92 {
             return;
         }
 
-        let base_rate = (55.0 * 2.0_f64.powf((midi_note as f64 - 60.0) / 24.0)).max(0.5);
+        let base_rate =
+            (55.0 * 2.0_f64.powf((midi_note as f64 - 60.0) / 24.0)).max(0.5) * damper_scale;
         for (m, mode) in self.modes.iter_mut().enumerate() {
             let factor = (base_rate * 3.0_f64.powi(m as i32)).min(2000.0);
             mode.damper_rate = factor / sample_rate;

@@ -439,6 +439,7 @@ fn cmd_render(args: &[String]) {
     let calib = CalibrationConfig {
         swing_pick,
         air_drag_scale,
+        hammer_contact_scale: parse_flag(args, "--hammer-contact", 1.0),
         ..CalibrationConfig::default()
     };
     let default_out = temp_default("preamp_render.wav");
@@ -732,7 +733,7 @@ fn cmd_h2_audit(args: &[String]) {
 
             // ── Stage 1: Raw reed ──
             let detuned = params.fundamental_hz * variation::freq_detune(note);
-            let dwell = dwell_attenuation(velocity, detuned, &params.mode_ratios);
+            let dwell = dwell_attenuation(velocity, detuned, &params.mode_ratios, 1.0);
             let amp_offsets = variation::mode_amplitude_offsets(note);
             let vel_exp = tables::velocity_exponent(note);
             let vel_scale = tables::velocity_scurve(velocity).powf(vel_exp);
@@ -1436,7 +1437,12 @@ fn run_calibrate(
 
             // ── T1: Raw reed ──
             let detuned = params.fundamental_hz * variation::freq_detune(note);
-            let dwell = dwell_attenuation(velocity, detuned, &params.mode_ratios);
+            let dwell = dwell_attenuation(
+                velocity,
+                detuned,
+                &params.mode_ratios,
+                cfg.hammer_contact_scale,
+            );
             let amp_offsets = variation::mode_amplitude_offsets(note);
             let vel_exp = tables::velocity_exponent(note);
             let vel_scale = tables::velocity_scurve(velocity).powf(vel_exp);
@@ -2115,6 +2121,8 @@ fn cmd_render_midi(args: &[String]) {
     engine.set_tremolo_depth(tremolo_depth);
     engine.set_reed_bar_trim(reed_bar_trim);
     engine.set_mlp_enabled(mlp);
+    engine.set_hammer_contact_scale(parse_flag(args, "--hammer-contact", 1.0));
+    engine.set_damper_scale(parse_flag(args, "--damper-scale", 1.0));
     engine.ensure_buffer_capacity(64);
     engine.warm_up();
 
@@ -2202,8 +2210,8 @@ fn cmd_bench_reed(args: &[String]) {
         let vel = velocities[i];
         let params = tables::note_params(note);
         let detuned = params.fundamental_hz * variation::freq_detune(note);
-        let dwell = dwell_attenuation(vel, detuned, &params.mode_ratios);
-        let onset = onset_ramp_time(vel, detuned);
+        let dwell = dwell_attenuation(vel, detuned, &params.mode_ratios, 1.0);
+        let onset = onset_ramp_time(vel, detuned, 1.0);
         let amp_off = variation::mode_amplitude_offsets(note);
         let mut amps = [0.0f64; NUM_MODES];
         for m in 0..NUM_MODES {

@@ -22,9 +22,13 @@ use crate::tables::NUM_MODES;
 /// The velocity mapping: ff = 0.75 cycles (hard, brief contact), pp = 1.0 cycle
 /// (soft, lingering contact from neoprene foam compression).
 ///
+/// `contact_scale` multiplies the contact time: 1.0 is the patent's design point (the shipping
+/// voicing). A harder pad rebounds sooner (< 1.0); a softer one lingers (> 1.0). How far pad
+/// condition moves it on a 200A has not been measured.
+///
 /// For the time-domain onset ramp, see `onset_ramp_time`.
-pub fn dwell_time(velocity: f64, fundamental_hz: f64) -> f64 {
-    let cycles = 0.75 + 0.25 * (1.0 - velocity);
+pub fn dwell_time(velocity: f64, fundamental_hz: f64, contact_scale: f64) -> f64 {
+    let cycles = (0.75 + 0.25 * (1.0 - velocity)) * contact_scale;
     (cycles / fundamental_hz).clamp(0.0003, 0.020)
 }
 
@@ -50,9 +54,11 @@ pub fn dwell_time(velocity: f64, fundamental_hz: f64) -> f64 {
 /// primarily speeds up the bass (C2 ff 38 → ~15 ms); treble already sits at the
 /// 2 ms floor and is unchanged. The raised cosine reaches 90% at 79.5% of T, so
 /// 1.0 period ⇒ 90% by ~cycle 0.8.
-pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64) -> f64 {
+///
+/// The ramp stands for the contact, so `contact_scale` (see `dwell_time`) scales it too.
+pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64, contact_scale: f64) -> f64 {
     let period_s = 1.0 / fundamental_hz;
-    let periods = 1.0 + 1.0 * (1.0 - velocity);
+    let periods = (1.0 + 1.0 * (1.0 - velocity)) * contact_scale;
     (periods * period_s).max(0.002)
 }
 
@@ -64,14 +70,16 @@ pub fn onset_ramp_time(velocity: f64, fundamental_hz: f64) -> f64 {
 /// - `velocity`: 0.0 (pp) to 1.0 (ff)
 /// - `fundamental_hz`: fundamental frequency of this note
 /// - `mode_ratios`: f_n/f_1 for each mode
+/// - `contact_scale`: contact-time multiplier, 1.0 = shipping (see `dwell_time`)
 ///
 /// Returns per-mode multipliers (normalized so mode 0 = 1.0).
 pub fn dwell_attenuation(
     velocity: f64,
     fundamental_hz: f64,
     mode_ratios: &[f64; NUM_MODES],
+    contact_scale: f64,
 ) -> [f64; NUM_MODES] {
-    let t_dwell = dwell_time(velocity, fundamental_hz);
+    let t_dwell = dwell_time(velocity, fundamental_hz, contact_scale);
     let sigma_sq = 8.0 * 8.0;
 
     let mut atten = [0.0f64; NUM_MODES];
@@ -204,8 +212,8 @@ mod tests {
     #[test]
     fn test_dwell_ff_brighter_than_pp() {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
-        let ff = dwell_attenuation(1.0, 262.0, &ratios);
-        let pp = dwell_attenuation(0.1, 262.0, &ratios);
+        let ff = dwell_attenuation(1.0, 262.0, &ratios, 1.0);
+        let pp = dwell_attenuation(0.1, 262.0, &ratios, 1.0);
 
         for i in 1..NUM_MODES {
             assert!(ff[i] >= pp[i], "mode {i}: ff={} < pp={}", ff[i], pp[i]);
@@ -215,7 +223,7 @@ mod tests {
     #[test]
     fn test_dwell_fundamental_unity() {
         let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
-        let atten = dwell_attenuation(0.5, 440.0, &ratios);
+        let atten = dwell_attenuation(0.5, 440.0, &ratios, 1.0);
         assert!((atten[0] - 1.0).abs() < 1e-10);
     }
 
@@ -241,9 +249,9 @@ mod tests {
     #[test]
     fn test_onset_ramp_register_dependent() {
         // Bass reeds should have longer onset than treble reeds
-        let bass = onset_ramp_time(1.0, 65.0); // C2 ff
-        let mid = onset_ramp_time(1.0, 262.0); // C4 ff
-        let treble = onset_ramp_time(1.0, 1047.0); // C6 ff
+        let bass = onset_ramp_time(1.0, 65.0, 1.0); // C2 ff
+        let mid = onset_ramp_time(1.0, 262.0, 1.0); // C4 ff
+        let treble = onset_ramp_time(1.0, 1047.0, 1.0); // C6 ff
 
         assert!(
             bass > mid,
@@ -272,10 +280,28 @@ mod tests {
     }
 
     #[test]
+    fn test_contact_scale_moves_brightness_and_onset() {
+        let ratios = [1.0, 6.267, 17.547, 34.386, 56.842, 85.1, 119.3];
+        let hard = dwell_attenuation(0.8, 262.0, &ratios, 0.7);
+        let ship = dwell_attenuation(0.8, 262.0, &ratios, 1.0);
+        let soft = dwell_attenuation(0.8, 262.0, &ratios, 1.4);
+        for i in 1..NUM_MODES {
+            assert!(hard[i] > ship[i] && ship[i] > soft[i], "mode {i}");
+        }
+        let (h, s) = (
+            onset_ramp_time(0.8, 65.0, 0.7),
+            onset_ramp_time(0.8, 65.0, 1.4),
+        );
+        assert!(h < onset_ramp_time(0.8, 65.0, 1.0) && s > onset_ramp_time(0.8, 65.0, 1.0));
+        // The treble ramp sits on the 2 ms floor either way.
+        assert_eq!(onset_ramp_time(1.0, 1047.0, 0.7), 0.002);
+    }
+
+    #[test]
     fn test_onset_ramp_velocity_dependent() {
         // pp should have longer onset than ff (softer hit = longer contact)
-        let ff = onset_ramp_time(1.0, 262.0);
-        let pp = onset_ramp_time(0.0, 262.0);
+        let ff = onset_ramp_time(1.0, 262.0, 1.0);
+        let pp = onset_ramp_time(0.0, 262.0, 1.0);
 
         assert!(pp > ff, "pp onset ({pp:.4}) should exceed ff ({ff:.4})");
         // ff = 1.0 period, pp = 2.0 periods (softer hit = longer contact/ramp)

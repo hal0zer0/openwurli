@@ -197,6 +197,9 @@ pub struct WurliEngine {
     // MIDI state
     sustain_held: bool,
     mlp_enabled: bool,
+    /// Per-voice calibration handed to each note-on. Only the hammer-contact and damper
+    /// multipliers are host-settable; the rest stays at the shipping defaults.
+    voicing: tables::CalibrationConfig,
 
     // Smoothed audio-rate params (target set by host, ramped per sample)
     volume: LinearSmoother,
@@ -250,6 +253,7 @@ impl WurliEngine {
             oversample,
             sustain_held: false,
             mlp_enabled: false,
+            voicing: tables::CalibrationConfig::default(),
             volume: LinearSmoother::new(0.8, ramp),
             tremolo_depth: LinearSmoother::new(0.5, ramp),
             speaker_character: LinearSmoother::new(0.0, ramp),
@@ -356,12 +360,13 @@ impl WurliEngine {
         let noise_seed = (note as u32)
             .wrapping_mul(2654435761)
             .wrapping_add(self.age_counter as u32);
-        slot.voice = Some(Voice::note_on(
+        slot.voice = Some(Voice::note_on_with_config(
             note,
             velocity as f64,
             self.sample_rate,
             noise_seed,
             self.mlp_enabled,
+            &self.voicing,
         ));
         slot.state = VoiceState::Held;
         slot.midi_note = note;
@@ -522,6 +527,30 @@ impl WurliEngine {
 
     pub fn set_speaker_character(&mut self, c: f64) {
         self.speaker_character.set_target(c);
+    }
+
+    /// Hammer contact-time multiplier (experimental; 1.0 = shipping, clamped to 0.5..=2.0).
+    /// Below 1.0 models a harder hammer pad: shorter contact, so the upper modes are excited
+    /// more strongly and the onset ramp is shorter. Above 1.0 models a softer pad. Latched at
+    /// note-on; the range is not sourced (see `hammer::dwell_time`).
+    pub fn set_hammer_contact_scale(&mut self, scale: f64) {
+        self.voicing.hammer_contact_scale = scale.clamp(0.5, 2.0);
+    }
+
+    /// Damper-rate multiplier (experimental; 1.0 = shipping, clamped to 0.25..=4.0). Below 1.0
+    /// is a weaker damper (the release rings longer), above it a firmer one. Every voice uses
+    /// the value current at its note-off; a voice already damping keeps its rate. The shipping
+    /// rates are themselves unsourced, so is any range around them.
+    pub fn set_damper_scale(&mut self, scale: f64) {
+        let scale = scale.clamp(0.25, 4.0);
+        self.voicing.damper_scale = scale;
+        for voice in self
+            .voices
+            .iter_mut()
+            .filter_map(|slot| slot.voice.as_mut())
+        {
+            voice.set_damper_scale(scale);
+        }
     }
 
     pub fn set_mlp_enabled(&mut self, on: bool) {
@@ -1393,6 +1422,58 @@ mod tests {
             tail_peak < head_peak * 0.01,
             "sound must stop: tail peak {tail_peak} vs head {head_peak}"
         );
+    }
+
+    fn render_samples(e: &mut WurliEngine, n: usize) -> Vec<f32> {
+        let mut out = vec![0.0f32; n];
+        for chunk in out.chunks_mut(512) {
+            e.render(chunk);
+        }
+        out
+    }
+
+    #[test]
+    fn test_hammer_contact_latches_at_note_on() {
+        let strike = |before: Option<f64>, after: Option<f64>| {
+            let mut e = engine();
+            e.ensure_buffer_capacity(512);
+            if let Some(s) = before {
+                e.set_hammer_contact_scale(s);
+            }
+            e.note_on(36, 1.0);
+            if let Some(s) = after {
+                e.set_hammer_contact_scale(s);
+            }
+            render_samples(&mut e, 8192)
+        };
+        let ship = strike(None, None);
+        assert_eq!(strike(Some(1.0), None), ship, "1.0 is the shipping voicing");
+        assert_eq!(
+            strike(None, Some(0.5)),
+            ship,
+            "a sounding note keeps its strike"
+        );
+        assert_ne!(
+            strike(Some(0.5), None),
+            ship,
+            "the next strike uses the new pad"
+        );
+    }
+
+    #[test]
+    fn test_damper_scale_reaches_held_voices_at_note_off() {
+        let release_tail = |scale: f64| {
+            let mut e = engine();
+            e.ensure_buffer_capacity(512);
+            e.note_on(48, 1.0);
+            render_samples(&mut e, 4096);
+            e.set_damper_scale(scale); // after note-on: must still apply at note-off
+            e.note_off(48);
+            let out = render_samples(&mut e, 8192);
+            out[2048..].iter().map(|v| (*v as f64).powi(2)).sum::<f64>()
+        };
+        let (weak, ship, firm) = (release_tail(0.25), release_tail(1.0), release_tail(4.0));
+        assert!(weak > ship && ship > firm, "{weak} > {ship} > {firm}");
     }
 
     #[test]
