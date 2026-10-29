@@ -236,13 +236,12 @@ Measured with the Sensor Array. Recordings are trend checks only.
       ratio 5.63, inside the FE band 5.53–5.80. Re H1: −59.8 dB (v126), −64.1 (v105), −66.5 (v95),
       −67.0 (v74). Over 0.3–2.8 s it is still there at −74…−83 dB with a stable frequency, and below
       v52 it is at the noise floor.
-    - Identity check, G3 (label g2): its own line at 1294.5–1296.3 Hz (6.61×, inside the FE band
-      6.17–6.75), −48…−62 dB re H1 from 85 ms, stable across five layers. G3 shows no 1469 Hz line
-      above the noise, so these are reed modes, not a fixed resonance.
-      - G3 sits near the band's thick-tip end where C4 sat near the thin end.
-      - G3's line is gone by 0.3 s, where C4's lingers.
-      - G3 also shows an unexplained line at 1151 Hz (5.88×, −50…−57 dB), outside its mode-2 band.
-        It is recorded, not used.
+    - Identity check, G3 (label g2). **CORRECTED by the survey below.** G3's line at 1294.5–1296.3 Hz
+      (6.61×, inside its FE band) is a FIXED line: the same frequency appears in 10 other notes'
+      samples, against a chance level of 1.2–1.4 at offset controls. It is not G3's own mode 2.
+      - C4's 1466 Hz line does pass the same test (1 other note, chance level 1.2), so C4 stays
+        the anchor.
+      - G3 also shows a line at 1151 Hz (5.88×, −50…−57 dB), unexplained; recorded, not used.
     - Also seen: the undamped top reeds ringing in sympathy (1665 / 1764 / 1868 Hz in the C4 and E4
       samples), confirming that those keys have no dampers.
     - C4 at 5.63× also refutes the uniform beam there: the shipping engine (μ 0) puts C4's mode 2 at
@@ -309,6 +308,49 @@ sensitive input.
 - Field notes: Emma's restorations describe tip felt compacting after decades ("a little
   impacted", sanded back to fresh felt), hammers as "light", and bare wood sounding wrong. These
   are qualitative (auto-captions).
+
+## 5c. Mode-2 survey of the reference set (2026-10-29, `tools/mode2_survey.py`)
+
+Keyboard Waves, every white key at the v126 layer (the set has no black keys).
+- Method: Sensor decay mode, onset window (skip 5 ms, window 900 ms, band ±40 Hz) and late window
+  (0.3–2.8 s).
+- Search band: the FE mode-2 band widened 5 %, clear of harmonics and the sympathetic top reeds by
+  12 Hz, with prominence ≥ 12 dB.
+- Levels are the Sensor's windowed candidate levels re H1. Its fitted intercepts and rates are
+  mostly refused ("maybe a blend"), so none is quoted.
+- Identity: a line counts as the struck reed's own only if the same frequency (±1.5 Hz) does not
+  appear in the other notes' samples above chance. Chance level = matches at 8 offset control
+  frequencies, mean + 3σ.
+
+Results:
+- **FIXED lines (excluded):** 1296 Hz (seen in G3 and A3, 10 other notes) and 1719 Hz (D4 and E4,
+  13–14 other notes). Their origin is unknown: a structural resonance, or one under-damped reed's
+  mode 2 driven through the bar.
+- **Ambiguous:** A2 (681 Hz) and E3 (1061 Hz).
+- **No usable onset line:** A1–G2 (the H1 or line is not resolved at harmonic spacing ≤ 98 Hz).
+- **Own lines, onset level re H1:**
+  - Bass: B2 −35.6, C3 −56.3, D3 −32.7 (E3 −35.3, ambiguous).
+  - Middle: F3 −57.1 (ratio 7.37, above its FE band, doubtful), B3 −39.6, C4 −59.8, F4 −55.9,
+    G4 −65.0, A4 −63.9, B4 −62.6, C5 −86.1.
+  - Treble: D5 −76.1, E5 −58.4, F5 −47.7, G5 −70.0, A5 −65.6, B5 −71.3, C6 −67.0, D6 −81.2,
+    E6 −58.3, F6 −104.6, G6 −85.2, A6 −96.0, B6 −95.2, C7 −95.9.
+
+**Pattern test.** The physics reviewer predicted the pattern without seeing these data (the survey
+had already been run here):
+- with discrete grades, τ is roughly fixed within a grade while T1 shrinks, so mode 2 re H1 FALLS
+  with pitch inside each grade and JUMPS up at each boundary;
+- one felt gives a monotone fall to near nothing;
+- continuous grading gives a smooth curve.
+
+Reading:
+- **Middle:** falls from B3 −40 to C5 −86.
+- **Middle → treble:** jumps up at D5–F5 (−76, −58, −48), then falls again to −96 at the top.
+  This is the sawtooth, with a boundary at 72|73: both candidate splits (the damper-felt split
+  46|47 · 72|73 and the code's 52|53 · 72|73) place one there.
+- **Bass:** too sparse and noisy (±10 dB per-reed scatter) to show a fall, and the bass/middle
+  boundary is unresolved: G3 and A3 are lost to the fixed line, and F3 is doubtful.
+- Caveats: one unit, white keys only, and windowed levels rather than intercepts. E6 (−58) is an
+  outlier in its run.
 
 ## 6. Steps
 
