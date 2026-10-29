@@ -275,6 +275,41 @@ Measured with the Sensor Array. Recordings are trend checks only.
         mode-2 rate, not at H1. That is 4–9× below today's law at mode 2.
 11. The ear gate (the user), at the pick and both corners.
 
+## 5b. First pass results (2026-10-29, `tools/hammer_contact.py`, registered priors, 1000 strikes per note)
+
+All strikes finished (60 T1 window). Energy is conserved to ≤ 2e-9 at the undamped corner. The two
+damping corners agree to within ~1 dB everywhere, so high-mode damping during contact is not a
+sensitive input.
+
+- **Bass (A1–E3):** 35–71 % of strikes stay within the swing edge. Survivors: 52–59 % single
+  contact, contact p50 0.14–0.43 T1, mode 2 at the pickup p50 −35…−40 dB.
+- **Middle (G3–C5):** 77–98 % survive; 76–84 % single contact; mode 2 at the pickup p50
+  −46…−57 dB.
+- **C4, PROXY of falsifier 10a.** The proxy is mode 2 at the pickup + 9.6 dB of RC tilt, against
+  the recording + 10 dB, i.e. ≤ −59.4 dB at the pickup. It is not the registered render test.
+  - 42 % of the edge survivors pass.
+  - They select **soft felt: z* p10/50/90 1.08 / 2.40 / 4.36 mm**, 2–8× softer than piano felt
+    (0.42–0.56 mm). m_h, v, p and x_s stay unconstrained.
+  - The passing strikes are 98 % single contact, with contact p10/50/90 0.48 / 1.02 / 1.45 T1.
+    That is Miessner's ¾–1 cycle, reached from the recording through the model rather than
+    assumed.
+- **One felt cannot serve the whole keyboard.**
+  - Soft felt (z* 1–5 mm), as C4 selects: in the treble, contact lasts 2–5 T1, a quasi-static push,
+    so the reed barely swings (C6 p50 0.02 mm, C7 ≈ 0). In the bass it is mostly single contact
+    (70–86 %), mode 2 −45…−54 dB.
+  - Stiff felt (z* < 0.6 mm): the treble speaks (C7 p50 0.16 mm, near the old table's 0.22), but
+    the bass chatters (32–39 % single contact) and mode 2 is too loud for C4.
+  - So the felt must be graded, harder toward the treble. That matches the three hammer-tip grades
+    restorers buy and piano practice.
+- **Next registration:** a per-grade felt prior. The grade boundaries are undocumented for hammer
+  tips, so the code's sections (≤ 52 / 53–72 / ≥ 73) are proposed, ASSUMED. Each grade then needs
+  evidence. The proposal is a Keyboard Waves survey of the mode-2 line across notes in every
+  section (where the FE band clears the harmonics and the sympathetic reeds). The same survey
+  gives per-reed mode-2 decay for the damping prior.
+- Field notes: Emma's restorations describe tip felt compacting after decades ("a little
+  impacted", sanded back to fresh felt), hammers as "light", and bare wood sounding wrong. These
+  are qualitative (auto-captions).
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
