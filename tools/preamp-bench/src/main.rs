@@ -407,6 +407,43 @@ fn cmd_tremolo_sweep(args: &[String]) {
 
 // ─── Render (reed -> preamp -> WAV) ─────────────────────────────────────────
 
+/// Read a prescribed modal state for `render --modal-spec` (hammer-contact prototype). Plain text,
+/// one key per line followed by its values: `ratios`, `amplitudes`, `phases` and `decay_db_s` with 7
+/// numbers each, and `swing_mm` with one.
+fn read_modal_spec(path: &str) -> openwurli_dsp::voice::ModalSpec {
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("--modal-spec {path}: {e}"));
+    let field = |k: &str| -> Vec<f64> {
+        let line = text
+            .lines()
+            .find(|l| l.split_whitespace().next() == Some(k))
+            .unwrap_or_else(|| panic!("--modal-spec: missing `{k}`"));
+        line.split_whitespace()
+            .skip(1)
+            .map(|x| {
+                x.parse()
+                    .unwrap_or_else(|_| panic!("--modal-spec: bad number in `{k}`"))
+            })
+            .collect()
+    };
+    let arr = |k: &str| -> [f64; tables::NUM_MODES] {
+        let v = field(k);
+        assert_eq!(
+            v.len(),
+            tables::NUM_MODES,
+            "--modal-spec: `{k}` needs {} values",
+            tables::NUM_MODES
+        );
+        std::array::from_fn(|i| v[i])
+    };
+    openwurli_dsp::voice::ModalSpec {
+        ratios: arr("ratios"),
+        amplitudes: arr("amplitudes"),
+        phases: arr("phases"),
+        decay_db_s: arr("decay_db_s"),
+        swing_mm: field("swing_mm")[0],
+    }
+}
+
 fn cmd_render(args: &[String]) {
     let note = parse_flag(args, "--note", 60.0) as u8;
     let velocity = parse_flag(args, "--velocity", 100.0) as u8;
@@ -455,7 +492,12 @@ fn cmd_render(args: &[String]) {
     // Render reed voice (reed → pickup with nonlinearity + HPF)
     let reed_output = {
         let vel_norm = velocity as f64 / 127.0;
-        let mut voice = Voice::note_on_with_config(note, vel_norm, sample_rate, !no_mlp, &calib);
+        let mut voice = match parse_flag_str(args, "--modal-spec", "") {
+            "" => Voice::note_on_with_config(note, vel_norm, sample_rate, !no_mlp, &calib),
+            path => {
+                Voice::note_on_modal(note, vel_norm, sample_rate, &calib, &read_modal_spec(path))
+            }
+        };
         if let Some(swing) = swing_override {
             voice.set_swing_mm(swing);
         }

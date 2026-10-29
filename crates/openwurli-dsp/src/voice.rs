@@ -8,6 +8,18 @@ use crate::reed::ModalReed;
 use crate::tables::{self, NUM_MODES};
 use crate::variation;
 
+/// A prescribed modal state for the reed at the end of hammer contact (see
+/// [`Voice::note_on_modal`]). Amplitudes are signed and relative to mode 1, as seen at the pickup's
+/// finger region; `swing_mm` is mode 1's swing there.
+#[derive(Clone, Debug)]
+pub struct ModalSpec {
+    pub ratios: [f64; NUM_MODES],
+    pub amplitudes: [f64; NUM_MODES],
+    pub phases: [f64; NUM_MODES],
+    pub decay_db_s: [f64; NUM_MODES],
+    pub swing_mm: f64,
+}
+
 pub struct Voice {
     reed: ModalReed,
     pickup: Pickup,
@@ -60,6 +72,42 @@ impl Voice {
             reed,
             pickup,
             post_pickup_gain,
+            sample_rate,
+            midi_note,
+            air_drag_db_per_mm,
+            damper_scale: cfg.damper_scale,
+        }
+    }
+
+    /// A voice whose reed starts from a prescribed modal state instead of the shipping excitation
+    /// (no dwell filter, no onset ramp, no velocity curve). The pickup, its output scale and the
+    /// mode-1 air drag are the shipping ones. For the hammer-contact prototype's chain-identical
+    /// renders (docs/research/hammer-contact-revision.md); the shipping engine never calls it.
+    pub fn note_on_modal(
+        midi_note: u8,
+        velocity: f64,
+        sample_rate: f64,
+        cfg: &tables::CalibrationConfig,
+        spec: &ModalSpec,
+    ) -> Self {
+        let params = tables::note_params(midi_note);
+        let fundamental = params.fundamental_hz * variation::freq_detune(midi_note);
+        let mut reed = ModalReed::new(
+            fundamental,
+            &spec.ratios,
+            &spec.amplitudes,
+            &spec.decay_db_s,
+            0.0,
+            velocity,
+            sample_rate,
+        );
+        reed.set_phases(&spec.phases);
+        let air_drag_db_per_mm = tables::air_drag_db_per_mm_with_config(midi_note, cfg);
+        reed.set_air_drag(air_drag_db_per_mm, spec.swing_mm, sample_rate);
+        Self {
+            reed,
+            pickup: Pickup::new_for_note(sample_rate, midi_note, spec.swing_mm),
+            post_pickup_gain: tables::output_scale_with_config(midi_note, velocity, cfg),
             sample_rate,
             midi_note,
             air_drag_db_per_mm,

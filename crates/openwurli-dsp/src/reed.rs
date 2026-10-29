@@ -126,6 +126,16 @@ impl ModalReed {
         }
     }
 
+    /// Start each mode at a given phase (radians) instead of zero: the mode outputs
+    /// `amplitude * sin(phase + 2 pi f t)`. Used to start the reed from a prescribed modal state
+    /// (see [`crate::voice::Voice::note_on_modal`]); the shipping path never calls it.
+    pub fn set_phases(&mut self, phases: &[f64; NUM_MODES]) {
+        for (mode, &ph) in self.modes.iter_mut().zip(phases) {
+            mode.s = ph.sin();
+            mode.c = ph.cos();
+        }
+    }
+
     /// Enable amplitude-dependent loss on mode 1: quadratic air drag on the moving reed, which
     /// decays the mode as `dA/dt = -beta |A| A`. `beta_db_per_mm` is the extra decay in dB/s per
     /// mm of swing at the pickup's finger region; `swing_mm` is the swing that one unit of model

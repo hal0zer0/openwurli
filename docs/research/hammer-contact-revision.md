@@ -393,6 +393,21 @@ Reading (corrected after the physics review's fit; the first reading here overst
   region ratio + chain tilt) per note, including each section's pickup law. The calibrated proxy
   then scores every instrument.
 
+**Amendments, registered before any keyboard run (2026-10-29):**
+- **Geometry conditioning.** At each note with an own line, the measured mode-2 ratio is evidence
+  about that reed's geometry. The FE variant nearest the measured ratio is used there; elsewhere
+  the variants stay equally weighted.
+- **Calibration.** About 30 prototype strikes per note are rendered through the bench at the
+  LOW-damping corner (`render --modal-spec`, preamp tap, power amp and speaker bypassed) and
+  measured with the survey's onset-window Sensor procedure, at the model line's known frequency
+  (±4 Hz). The chain − proxy offset is fitted per note as a linear function of swing (at C4:
+  median −3.4 dB, r = −0.89 with swing, from the pickup's gating).
+  - A mode 2 below the Sensor's detection counts as passing the one-sided test.
+  - A mode 2 within 25 Hz of a harmonic is unresolvable, and the geometry conditioning above
+    removes it.
+- **Recording side.** The per-note thresholds are the survey's windowed onset levels re H1 at
+  v126 (§5c), + 10 dB.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.

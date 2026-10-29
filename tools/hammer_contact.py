@@ -22,6 +22,7 @@ Usage:
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 import numpy as np
@@ -296,6 +297,85 @@ def keyboard(notes, n, seed, out, split):
 
 
 
+def fundamental_decay_db(midi):
+    """The shipping fundamental decay law (tables::fundamental_decay_rate), dB/s."""
+    f = 440.0 * 2 ** ((midi - 69) / 12)
+    return max(0.005 * f ** 1.22, 3.0)
+
+
+def modal_spec_text(rd, res, i, midi):
+    """The reed's modal state at separation as a `preamp-bench render --modal-spec` file, at the
+    LOW-damping corner: every mode decays at the fundamental's rate (no extra loss on modes 2-7)."""
+    om = rd["om"][:7]
+    q, qd = res["q"][i, :7], res["qd"][i, :7]
+    R = np.sqrt(q ** 2 + (qd / om) ** 2)
+    theta = np.arctan2(q, qd / om)
+    disp = rd["ph_pick"][:7] * R  # signed amplitude at the finger region, m
+    swing_mm = abs(disp[0]) * 1e3
+    amps = disp / abs(disp[0])
+    lines = [("ratios", om / om[0]), ("amplitudes", amps), ("phases", theta),
+             ("decay_db_s", np.full(7, fundamental_decay_db(midi)))]
+    txt = "".join(f"{k} " + " ".join(f"{x:.9g}" for x in v) + "\n" for k, v in lines)
+    return txt + f"swing_mm {swing_mm:.9g}\n", swing_mm, 20 * np.log10(max(abs(amps[1]), 1e-30))
+
+
+def calibrate(notes, n, seed, bench, sensor, workdir, out):
+    """Chain-identical calibration of the mode-2 proxy, per note: render prototype strikes through the
+    bench to the preamp tap and measure them with mode2_survey's Sensor procedure."""
+    from mode2_survey import h1_of, sensor_bands
+
+    rng = np.random.default_rng(seed)
+    os.makedirs(workdir, exist_ok=True)
+    rows = []
+    for midi in notes:
+        vs = variants(midi)
+        for k, (name, t_tip, t_root) in enumerate(vs):
+            rd = reed_data(midi, t_tip, t_root)
+            pr = draw(rng, max(1, n // len(vs)))
+            res = strike_batch(rd, pr["m_h"], pr["v_ff"], pr["z_star"], pr["p"], pr["x_s"])
+            f1 = rd["f"]
+            f2 = rd["om"][1] / rd["om"][0] * f1
+            tilt = preamp_tilt_db(f2) - preamp_tilt_db(f1)
+            for i in range(len(pr["m_h"])):
+                txt, swing, m2_pick = modal_spec_text(rd, res, i, midi)
+                spec = os.path.join(workdir, f"m{midi}_{k}_{i}.spec")
+                wav = os.path.join(workdir, f"m{midi}_{k}_{i}.wav")
+                with open(spec, "w") as fh:
+                    fh.write(txt)
+                subprocess.run([bench, "render", "--note", str(midi), "--velocity", "127", "--duration", "1.0",
+                                "--no-poweramp", "--speaker", "0", "--no-mlp", "--modal-spec", spec, "--output", wav],
+                               check=True, capture_output=True)
+                # Same Sensor procedure as the survey's onset window; the model's line is taken at its
+                # KNOWN frequency (+-4 Hz). A mode 2 within 25 Hz of a harmonic is unresolvable here, as
+                # it would be in a recording, and is not scored.
+                f1n = 440.0 * 2 ** ((midi - 69) / 12)
+                f2n = f1n * rd["om"][1] / rd["om"][0]
+                h = np.arange(1, 40) * f1n
+                if np.min(np.abs(h - f2n)) < 25.0:
+                    o = dict(status="unresolvable")
+                else:
+                    bands = sensor_bands(sensor, wav, 5, 900, 40, max(20.0, 0.8 * f1n), f2n * 1.1)
+                    h1 = h1_of(bands, f1n) if bands else None
+                    near = [b for b in (bands or []) if abs(b["centre_hz"] - f2n) < 4.0]
+                    if h1 is None or not near:
+                        o = dict(status="no line")
+                    else:
+                        b2 = max(near, key=lambda b: b["candidate_dbfs"])
+                        o = dict(status="line", re_h1_db=round(b2["candidate_dbfs"] - h1["candidate_dbfs"], 1))
+                rows.append(dict(midi=midi, variant=name, swing_mm=swing, proxy_db=m2_pick + tilt,
+                                 chain_db=o.get("re_h1_db"), status=o.get("status"), contacts=int(res["n_contacts"][i])))
+        sub = [r for r in rows if r["midi"] == midi and r["chain_db"] is not None]
+        if sub:
+            d = np.array([r["chain_db"] - r["proxy_db"] for r in sub])
+            print(f"MIDI {midi}: {len(sub)} measured; chain - proxy p10/50/90 {np.percentile(d,10):.1f}/"
+                  f"{np.median(d):.1f}/{np.percentile(d,90):.1f} dB", flush=True)
+        else:
+            print(f"MIDI {midi}: no chain measurement resolved a line", flush=True)
+    with open(out, "w") as fh:
+        json.dump(rows, fh, indent=1)
+
+
+
 def summarise(midi, rows):
     edge = EDGE_MM[section(midi)]
     sw = np.array([r["swing_mm"] for r in rows])
@@ -319,7 +399,10 @@ def summarise(midi, rows):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("selftest", "run", "keyboard"))
+    ap.add_argument("cmd", choices=("selftest", "run", "keyboard", "calibrate"))
+    ap.add_argument("--bench", default="target/release/preamp-bench")
+    ap.add_argument("--sensor", default="")
+    ap.add_argument("--workdir", default="")
     ap.add_argument("--split", choices=tuple(SPLITS), default="code")
     ap.add_argument("--n", type=int, default=1000)
     ap.add_argument("--notes", default="33,42,48,52,55,60,66,72,78,84,90,96")
@@ -329,6 +412,8 @@ if __name__ == "__main__":
     a = ap.parse_args()
     if a.cmd == "selftest":
         selftest()
+    elif a.cmd == "calibrate":
+        calibrate([int(x) for x in a.notes.split(",")], a.n, a.seed, a.bench, a.sensor, a.workdir, a.out)
     elif a.cmd == "keyboard":
         keyboard([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split)
     else:
