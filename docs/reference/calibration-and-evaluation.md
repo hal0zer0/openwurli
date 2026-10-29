@@ -261,7 +261,7 @@ The attack is the most perceptually important phase. It establishes the instrume
 
 **Components:**
 
-1. **Hammer noise burst: removed.** An earlier design added a hand-set bandpass noise burst here. No 200A source shows an impact transient in the electrical output (the pickup senses reed motion; the documented electrical transients are faults), so the model no longer has one. The hammer shapes the attack only through the reed's modes.
+1. **Hammer noise burst: removed.** An earlier design added a hand-set bandpass noise burst here. No source documents an impact transient in a 200A's electrical output either way; the documented electrical transients are faults. A physics review found no path for a broadband burst: the impact reaches the pickup as the reed's own modal motion. The hammer shapes the attack only through the reed's modes.
 
 2. **Mode overshoot (2-15 ms):** All reed modes are at their initial amplitudes in the first few ms. Since upper modes decay faster, the initial sum is louder and brighter than the sustained (fundamental-dominant) signal. This creates a natural "overshoot" of 2-5 dB at mf, 5-10 dB at ff.
 
@@ -342,7 +342,7 @@ Based on musician feedback (KVR Audio forums, Gearspace, VI-Control, AudioThing 
 | Priority | What the Ear Cares About | What FFT Shows | Correlation |
 |----------|--------------------------|----------------|-------------|
 | 1 | Velocity-to-bark transition smoothness | H2/H1 vs velocity curve | MODERATE -- ASSUMED (unsourced) that H2/H1 correlates with perceived bark, but the SHARPNESS of the transition (the knee) is not captured by steady-state spectrum |
-| 2 | Attack "feel" -- percussive but not clicky | Overshoot dB, spectral flatness | LOW -- overshoot dB can be correct but still sound wrong if temporal shape is unnatural |
+| 2 | Attack "feel" -- percussive but not clicky | Overshoot dB (the spectral-flatness target belonged to the removed noise burst) | LOW -- overshoot dB can be correct but still sound wrong if temporal shape is unnatural |
 | 3 | Warmth vs harshness of distortion | H2/H3 ratio, THD | MODERATE -- H2>H3 is necessary for warmth, but the shape of the nonlinearity matters more than the ratio |
 | 4 | Register variation (bass/mid/treble character) | Spectral envelope by register | MODERATE -- overall spectral shape correlates, but timbral "character" is multi-dimensional |
 | 5 | Temporal evolution (bright attack -> warm sustain) | Centroid drift | HIGH -- centroid drift is one of the better metrics for this |
@@ -755,7 +755,7 @@ For this project: prioritize getting the attack RIGHT (natural modal superpositi
 **Answer: Based on forum consensus and expert evaluation:**
 
 1. **Velocity-bark transition:** Real instruments have an abrupt "knee" where bark kicks in. Most models smooth this out.
-2. **Attack complexity:** Real instruments have a multi-component attack (hammer noise + modal superposition). Models often simplify to a single envelope.
+2. **Attack complexity:** Real instruments have a multi-component attack (hammer noise + modal superposition). Models often simplify to a single envelope. *(Forum consensus, unsourced. Hammer noise heard in a room is the action's acoustic sound. No source documents an impact transient in the electrical signal, which is why the model's burst was removed; see §4.1.)*
 3. **Polyphonic preamp interaction:** Real instruments compress and distort differently when multiple notes hit the preamp simultaneously. Most models process notes independently.
 4. **"Organic" quality from unit variation:** Real instruments have per-note personality from reed/pickup differences. Models are too uniform.
 5. **Mechanical sounds:** Key clack, damper thump, reed rattle add realism. Most physical models lack these entirely.

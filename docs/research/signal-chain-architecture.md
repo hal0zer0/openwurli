@@ -11,7 +11,7 @@ Complete specification for a physically-accurate Wurlitzer 200A electric piano p
 3. [Stage 1: MIDI Input and Voice Allocation](#3-stage-1-midi-input-and-voice-allocation)
 4. [Stage 2: Modal Reed Oscillator (Per-Voice)](#4-stage-2-modal-reed-oscillator-per-voice)
 5. [Stage 3: Hammer Dwell Filter (Per-Voice)](#5-stage-3-hammer-dwell-filter-per-voice)
-6. [Stage 4: Attack Noise Burst (Per-Voice)](#6-stage-4-attack-noise-burst-per-voice)
+6. [Stage 4: Attack Noise Burst (removed)](#6-stage-4-attack-noise-burst-removed)
 7. [Stage 5: Per-Note Variation (Per-Voice)](#7-stage-5-per-note-variation-per-voice)
 8. [Stage 6: Electrostatic Pickup (Per-Voice)](#8-stage-6-electrostatic-pickup-per-voice)
 9. [Stage 7: Voice Summation (Per-Voice to Mono)](#9-stage-7-voice-summation-per-voice-to-mono)
@@ -104,7 +104,7 @@ MIDI note-on (key, velocity, channel, note_id)
      Per-voice processing (base sample rate):
        [A] Modal Reed Oscillator (7 modes, Euler-Bernoulli + tip mass)
        [B] Gaussian Dwell Filter (hammer contact time spectral shaping, sigma=8.0)
-       [C] Attack Noise Burst (felt-on-steel impact, 2-5 ms)
+       [C] (removed: the attack noise burst, see §6)
        [D] Per-Note Variation (deterministic +-3 cents freq, +-8% amp)
        [E] Electrostatic Pickup (field-solved overlap law, capacitive)
      -> Sum all voices (mono)
@@ -130,7 +130,6 @@ MIDI note-on (key, velocity, channel, note_id)
 |-------|---------|-------------------|------|
 | Modal Oscillator | Yes (sinusoidal sum) | No (bandlimited by construction) | Base |
 | Dwell Filter | Yes (amplitude scaling at note-on) | No (runs once) | N/A |
-| Noise Burst | Yes (filtered noise, envelope) | No (broadband, no harmonics generated) | Base |
 | Pickup | NO (overlap-law nonlinearity, primary H2 source) | No (runs at base rate; harmonics stay within audio band) | Base |
 | Voice Sum | Yes (addition) | No | Base |
 | Preamp Stage 1 | NO (exponential + asymmetric soft-clip) | YES | 2x |
@@ -371,14 +370,19 @@ Without normalization, the dwell filter would also attenuate the fundamental, ch
 
 ## 6. Stage 4: Attack Noise Burst (removed)
 
-Earlier versions added a bandpass noise burst at note-on (0.025·vel², 3 ms decay, 15 ms, centred
-at 5×f0) for the hammer's impact. Every number in it was hand-set, and no 200A source shows an
-impact transient in the electrical output: the electrostatic pickup senses the reed's motion, and
-the documented electrical transients are faults (a reed shorting against the pickup, debris). The
-service manual's "clicking" (§5D, cured by softening hard hammer felt) does not say whether it is
-heard through the amplifier. The burst was removed; the hammer reaches the signal only through
-the reed's modes (dwell filter and onset ramp). It had also been one cause of the chord-attack
-cusps: its first sample stepped to full level, and simultaneous voices summed the steps.
+Earlier versions added a bandpass noise burst at note-on for the hammer's impact (0.025·vel², 3 ms
+decay, 15 ms long, centred at 5×f0). Every number in it was hand-set, and no source documents an
+impact transient in a 200A's electrical output either way. The documented electrical transients
+are faults: a reed shorting against the pickup, or debris. The service manual's "clicking" (§5D,
+cured by softening hard hammer felt) doesn't say whether it is heard through the amplifier.
+
+A physics review then found no path that puts a short broadband burst into the pickup signal. The
+impact reaches the pickup as the reed's own modal motion, and microphonic motion of the comb sits
+about 40 dB down, locked to the note. The burst was removed; the hammer now shapes the attack
+through the reed's modes (the dwell filter and onset ramp).
+
+The burst also caused the chord-attack voice-step cusps fixed in 0.5.0: its first sample stepped to
+full level, and simultaneous voices summed the steps. A 16-sample fade-in eliminated that step.
 
 ---
 

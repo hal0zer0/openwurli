@@ -4,9 +4,10 @@
 //! It models the finite contact duration of the felt hammer on the reed,
 //! which acts as a low-pass filter on the initial mode excitation.
 //!
-//! The hammer reaches the signal only through the reed's motion: the pickup senses the reed,
-//! not the impact. The separate attack-noise burst the model once added had no source and was
-//! removed (no 200A document shows an impact transient in the electrical output).
+//! The model once added a separate attack-noise burst. Its values were hand-set, no source documents
+//! an impact transient in a 200A's electrical output either way, and a physics review found no path
+//! for a broadband burst (the impact reaches the pickup as the reed's own modal motion). It was
+//! removed; the hammer now acts through the reed's modes alone.
 
 use crate::tables::NUM_MODES;
 
