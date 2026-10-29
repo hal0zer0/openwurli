@@ -85,14 +85,22 @@ on its own first would be a separate sound change, then a second one when the FE
   energy stays in mode 1 and throws the hammer back. The string criteria (Hall III's C/C0, α)
   don't map. The map variables are m_h/M_eff and τ_f/T1, where τ_f is the felt's contact time on a
   rigid target.
-  - τ_f ≥ 0.75 T1: a single contact everywhere.
-  - Recontact (2–8 contacts) happens only when m_h ≳ M_eff and τ_f ≤ 0.3 T1. That chatter lifts
-    mode 2 to −13…−25 dB.
-  - Mode 2 re mode 1 is −41…−62 dB at τ_f 0.75 T1 in 7 of 8 cases, bracketing the old −46 dB. The
-    outlier is C4 mid-reed with 5 g, at −23 dB. At τ_f 0.1 T1 it's −13…−38 dB. **Contact time sets
-    the plink.**
-  - Energy binds: 5 g at 2 m/s, mid-reed, lossless felt and τ_f 0.3 T1 swing the A1 tip 18 mm.
-    The swing edges will now condition m_h, v_h and x_s jointly.
+  - τ_f ≥ 0.75 T1: a single contact in every evaluated case.
+  - Recontact at τ_f ≤ 0.3 T1 is not confined to heavy hammers. A 3 g hammer (m_h/M_eff ≈ 0.64)
+    recontacts too. (Corrected 2026-10-29: the first evaluation's stop rule ended a strike 1 mm
+    below the patch's current position and missed late recontacts. It now stops only below the
+    patch's full reach, and the numbers here are from the rerun.)
+  - Mode 2 re mode 1: about −41…−62 dB at τ_f 0.75 T1, bracketing the old −46 dB. Chatter lifts it
+    to tens of dB higher; one case is 5 g at A1 mid-reed, τ_f 0.3 T1: 2 contacts, mode 2 −17.8 dB.
+    **Contact time sets the plink.**
+  - Energy: the swing edges condition m_h, v_h and x_s jointly. Rerun examples, A1 mid-reed at
+    2 m/s:
+    - 5 g, τ_f 0.3 T1: 1.95 mm tip, 2 contacts.
+    - 3 g with piano-stiff felt (0.25–0.5 ms): 5.3–9.6 mm undamped, 5.8–6.3 mm with damping,
+      9–12 contacts. That is still above the 4.29 mm bass edge.
+  - Mode-count convergence holds for point and patch contact (7 / 12 / 24 modes), and damped
+    14-mode runs equal 20-mode runs. Undamped stiff chatter is not converged at 14 modes (2–9 %
+    off), so 20 modes are integrated.
 - **Pickup coupling: moves now**, to the FE φ_n averaged over the finger region, with signs. The
   contact gives FE modal coordinates, and their polarity at the pickup matters once phases are
   real.
@@ -124,7 +132,9 @@ transfer is ASSUMED and labelled.
   - τ_f/T1: the band is set when the prototype is registered. The felt's real constraints are the
     falsifiers (§5) and Fig. 5 (report-only). Miessner's ¾–1 cycle is report-only.
 - **The felt prior decides the regime (open, 2026-10-29).** Piano felt scaled to a 1–5 g hammer
-  (rigid-target contact ~0.25–0.5 ms) puts the bass in a chatter regime.
+  (rigid-target contact ~0.2–0.6 ms; τ ∝ m^(1/(p+1)), not √m) puts the bass in a chatter regime.
+  The numbers in this bullet came from the evaluation before its stop-rule fix; the prototype's
+  first pass supersedes them.
   - A1: 2–16 contacts, total contact 0.03–0.15 T1, mode 2 at −11…−32 dB re mode 1. The result is
     erratic in m_h, and 7 against 14 modes disagree (6.17 vs 2.45 mm at one corner).
   - C4: 1–12 contacts, total contact 0.09–0.42 T1.

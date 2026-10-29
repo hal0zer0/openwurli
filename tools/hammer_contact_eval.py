@@ -51,7 +51,7 @@ def strike(r, xs, mh, v, tau_ratio, p=1.0, nm=7, half=0.1, zeta=0.0):
     dt = T1/20000/max(1, om[-1]/om[0]/50)
     q = np.zeros(nm); qd = np.zeros(nm); y = 0.0; vy = v
     t = 0.0; contacts = []; incontact = False; tc0 = 0
-    Tend = 4*T1
+    Tend = 20*T1
     hist = []
     while t < Tend:
         ws = ph @ q; d = y-ws
@@ -63,7 +63,10 @@ def strike(r, xs, mh, v, tau_ratio, p=1.0, nm=7, half=0.1, zeta=0.0):
         vy += a_h*dt; y += vy*dt
         qd += qdd*dt; q += qd*dt          # semi-implicit Euler
         t += dt
-        if not incontact and contacts and vy < 0 and y < ph @ q - 1e-3: break
+        # Stop only when no recontact is possible: hammer moving away and below the patch's full reach
+        # (sum |phi_n| x modal amplitude). The earlier rule (1 mm below the patch's current position)
+        # missed late recontacts at tau_f <= 0.3 T1 (fixed 2026-10-29).
+        if not incontact and contacts and vy < 0 and y < -np.sum(np.abs(ph)*np.sqrt(q**2 + (qd/om)**2)): break
     amp = np.sqrt(q**2 + (qd/om)**2)                       # modal amplitude (mass-normalised coords)
     tipdisp = amp*np.abs(r['phi'][-1, :nm])                # tip-displacement amplitude per mode
     return contacts, tipdisp, vy/v

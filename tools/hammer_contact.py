@@ -76,7 +76,7 @@ def reed_data(midi, t_tip, t_root):
                 ph_pick=ph_pick, ph_tip=ph_tip)
 
 
-def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=4.0, early_stop=False):
+def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=4.0):
     """Integrate S strikes in lockstep. Returns per-sample results (arrays of length S)."""
     S = len(m_h)
     om = rd["om"]
@@ -145,12 +145,7 @@ def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=
         t_contact[a[now]] += dt
         in_contact[a] = now
         # Done: hammer moving away and below the patch's largest possible reach.
-        # (early_stop reproduces the model evaluation's rule, 1 mm below the patch's CURRENT position,
-        # which can miss a later recontact; kept only for the self-test.)
-        if early_stop:
-            reach = 1e-3 - np.einsum("sn,sn->s", pha, q_new)
-        else:
-            reach = np.einsum("sn,sn->s", np.abs(pha), np.sqrt(q_new ** 2 + (qd_new / om) ** 2))
+        reach = np.einsum("sn,sn->s", np.abs(pha), np.sqrt(q_new ** 2 + (qd_new / om) ** 2))
         done = (~now) & (vya < 0) & (n_contacts[a] > 0) & (ya < -reach)
         t_end[a[done]] = t
         active[a[done]] = False
@@ -192,13 +187,11 @@ def selftest():
         T1 = 1 / r["f"]
         K = mh * (np.pi / (tau_ratio * T1)) ** 2
         c7, d20, rb = eval_strike(r, 0.5, mh, 2.0, tau_ratio, nm=N_MODES)
-        args = (rd_a1, np.array([mh]), np.array([2.0]), np.array([F_REF / K]), np.array([1.0]), np.array([0.5]))
-        for early in (True, False):
-            mine = strike_batch(*args, early_stop=early)
-            print(f"  p=1 tau {tau_ratio} T1, {'its stop rule' if early else 'full-reach stop'}: contacts "
-                  f"{len(c7)} vs {mine['n_contacts'][0]}; tip mode1 {d20[0]*1e3:.3f} vs {mine['tip_mm'][0,0]:.3f} mm; "
-                  f"mode2 {d20[1]*1e3:.4f} vs {mine['tip_mm'][0,1]:.4f} mm; rebound {rb:+.3f} vs "
-                  f"{mine['rebound'][0]:+.3f}; end {mine['t_end_T1'][0]:.2f} T1")
+        mine = strike_batch(rd_a1, np.array([mh]), np.array([2.0]), np.array([F_REF / K]), np.array([1.0]),
+                            np.array([0.5]))
+        print(f"  p=1 tau {tau_ratio} T1: contacts {len(c7)} vs {mine['n_contacts'][0]}; tip mode1 "
+              f"{d20[0]*1e3:.3f} vs {mine['tip_mm'][0,0]:.3f} mm; mode2 {d20[1]*1e3:.4f} vs "
+              f"{mine['tip_mm'][0,1]:.4f} mm; rebound {rb:+.3f} vs {mine['rebound'][0]:+.3f}")
 
 
 def run(notes, n, damping, seed, out):
