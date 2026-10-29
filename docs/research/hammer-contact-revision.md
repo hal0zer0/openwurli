@@ -408,6 +408,36 @@ Reading (corrected after the physics review's fit; the first reading here overst
 - **Recording side.** The per-note thresholds are the survey's windowed onset levels re H1 at
   v126 (§5c), + 10 dB.
 
+## 5e. Pass 2 results (2026-10-29, 1000 instruments × 23 notes per split, registered rules)
+
+`tools/hammer_contact_score.py`, three boundary splits.
+- **Survivors:** 0.6 % (damper-felt split), 0.2 % (code), 0.4 % (blank-pickup). The swing edge
+  falsifies 90 %; the mode-2 rule falsifies 95–98 %.
+- **The survivors are consistent across splits:**
+  - graded felt in the documented direction: z* about 2.4–4.0 mm (bass), 1.6–1.8 (middle) and
+    0.7–0.9 (treble);
+  - single contacts through the middle, about 0.8–1.3 T1;
+  - light hammers (1.1–1.8 g) at low ff speed (1.5–1.9 m/s), both at their prior floors.
+- **That edge-hugging traces to the swing edge, which is a numerical limit** (the pickup tables'
+  reach, per the swing prior's own comment), not physics. Under the mode-2 rule alone:
+  - survivors are 2.5–5.0 %, and m_h and v span their priors;
+  - **the felt grading is robust:** z* about 3.6–4.3 / 2.3 / 0.9–1.2 mm;
+  - C4 contact is 1.0–1.15 T1 (Miessner again);
+  - A1's ff swing is median 4.6–5.6 mm, up to 8–11 mm, beyond the tables.
+- **Open questions:**
+  - **(i) The bass ff swing bound.** What physically limits it (damper clearance, the comb,
+    crit 6's swell defect, which is report-only by operator choice), or do the tables need
+    extending to render larger swings? A numerical edge must not condition physics inputs.
+  - **(ii) The top treble.** It barely swings in every survivor (C7 ≈ 0.00–0.03 mm against the
+    old table's 0.22 mm): a quasi-static push at 2–3 T1. Either the real treble is that weak and
+    the per-note voicing makes up the level, or the top notes need harder felt or a lighter
+    hammer than the measured D5–E6 lines allow.
+    - Proposed evidence: relative note levels from the reference set's noise floors (peak
+      normalisation at a constant recording gain shifts each file's floor by its own gain).
+    - Self-test first: the layers of one note must order by velocity.
+- 1000 instruments leave 2–6 survivors per split. A stable posterior needs sequential sampling
+  around them (an ABC-SMC step) once (i) is settled.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.

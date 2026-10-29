@@ -262,14 +262,26 @@ def preamp_tilt_db(f):
     return hp + np.interp(f, fs, gs)
 
 
-def keyboard(notes, n, seed, out, split):
+def keyboard(notes, n, seed, out, split, survey=""):
+    """One run of the keyboard pass. `survey` (mode2_survey.py JSON) conditions the geometry at each
+    note with an own mode-2 line: the FE variant nearest the measured ratio is used there."""
     rng = np.random.default_rng(seed)
     inst = draw_instruments(rng, n)
+    measured = {}
+    if survey:
+        for row in json.load(open(survey)):
+            o = row.get("onset", {})
+            if o.get("status") == "line":
+                measured[row["midi"]] = o["ratio"]
     res = {}
     for midi in notes:
         g = grade_of(midi, split)
         vs = variants(midi)
         pick = rng.integers(0, len(vs), n)
+        if midi in measured:
+            fe = [reed_data(midi, t_tip, t_root) for _, t_tip, t_root in vs]
+            ratios = [r["om"][1] / r["om"][0] for r in fe]
+            pick[:] = int(np.argmin([abs(r - measured[midi]) for r in ratios]))
         x_s = rng.uniform(PRIORS["x_s"][1], PRIORS["x_s"][2], n)
         swing = np.zeros(n)
         m2_out = np.zeros(n)
@@ -289,7 +301,7 @@ def keyboard(notes, n, seed, out, split):
             contacts[sel] = r["n_contacts"]
             t_c[sel] = r["t_contact_T1"]
         res[midi] = dict(swing_mm=swing.tolist(), m2_out_db=m2_out.tolist(), contacts=contacts.tolist(),
-                         t_contact_T1=t_c.tolist(), grade=g)
+                         t_contact_T1=t_c.tolist(), grade=g, variant=[vs[k][0] for k in pick])
         print(f"MIDI {midi} (grade {g}) done", flush=True)
     with open(out, "w") as fh:
         json.dump(dict(split=split, seed=seed, n=n, priors=PRIORS, instruments={k: np.asarray(v).tolist() for k, v in inst.items()},
@@ -346,8 +358,9 @@ def calibrate(notes, n, seed, bench, sensor, workdir, out):
                                 "--no-poweramp", "--speaker", "0", "--no-mlp", "--modal-spec", spec, "--output", wav],
                                check=True, capture_output=True)
                 # Same Sensor procedure as the survey's onset window; the model's line is taken at its
-                # KNOWN frequency (+-4 Hz). A mode 2 within 25 Hz of a harmonic is unresolvable here, as
-                # it would be in a recording, and is not scored.
+                # KNOWN frequency, within +-0.4 % (the voice detunes each note by up to +-3 cents). A
+                # mode 2 within 25 Hz of a harmonic is unresolvable here, as it would be in a recording,
+                # and is not scored.
                 f1n = 440.0 * 2 ** ((midi - 69) / 12)
                 f2n = f1n * rd["om"][1] / rd["om"][0]
                 h = np.arange(1, 40) * f1n
@@ -356,7 +369,7 @@ def calibrate(notes, n, seed, bench, sensor, workdir, out):
                 else:
                     bands = sensor_bands(sensor, wav, 5, 900, 40, max(20.0, 0.8 * f1n), f2n * 1.1)
                     h1 = h1_of(bands, f1n) if bands else None
-                    near = [b for b in (bands or []) if abs(b["centre_hz"] - f2n) < 4.0]
+                    near = [b for b in (bands or []) if abs(b["centre_hz"] - f2n) < max(4.0, 0.004 * f2n)]
                     if h1 is None or not near:
                         o = dict(status="no line")
                     else:
@@ -403,6 +416,7 @@ if __name__ == "__main__":
     ap.add_argument("--bench", default="target/release/preamp-bench")
     ap.add_argument("--sensor", default="")
     ap.add_argument("--workdir", default="")
+    ap.add_argument("--survey", default="")
     ap.add_argument("--split", choices=tuple(SPLITS), default="code")
     ap.add_argument("--n", type=int, default=1000)
     ap.add_argument("--notes", default="33,42,48,52,55,60,66,72,78,84,90,96")
@@ -415,6 +429,6 @@ if __name__ == "__main__":
     elif a.cmd == "calibrate":
         calibrate([int(x) for x in a.notes.split(",")], a.n, a.seed, a.bench, a.sensor, a.workdir, a.out)
     elif a.cmd == "keyboard":
-        keyboard([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split)
+        keyboard([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split, a.survey)
     else:
         run([int(x) for x in a.notes.split(",")], a.n, a.damping, a.seed, a.out)
