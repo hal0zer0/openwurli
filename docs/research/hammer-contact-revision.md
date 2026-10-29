@@ -151,6 +151,28 @@ transfer is ASSUMED and labelled.
   p / mf / f, peaking at 1 m/s; piano hammer speeds are 1 / 2 / 5 m/s (Askenfelt & Jansson 1991).
   The ff prior stays log-uniform 1.4–3.5 m/s.
 
+**Registered priors for the prototype's first pass (2026-10-29, before any prototype run).** ff
+only; the velocity map is registered separately, before any non-ff render. Every value here is
+ASSUMED unless marked.
+- m_h: log-uniform 1–5 g, the same for every note (as in the swing prior). Survivors are reported
+  per note, so a register trend shows up rather than being imposed.
+- Felt, F = 10 N·(δ/z*)^p:
+  - z* log-uniform 0.1–5 mm. That spans stiffer than piano felt (0.42–0.56 mm, Knabe) to very soft;
+    the upper edge stands for felt thickness, which is unmeasured.
+  - p uniform 2.2–3.5 (Hall & Askenfelt's measured range).
+- x_s: uniform 0.25–0.60 L, over a ±0.1 L patch.
+- v_ff: log-uniform 1.4–3.5 m/s.
+- Reed geometry: equal weight on the FE variants. Tips 0.51 / 0.585 / 0.66 mm (a discrete stand-in
+  for the uniform tip prior); bass blank .020″ / .026″, 50/50.
+- Modes: 20 integrated, 7 rendered.
+- High-mode damping during contact, run at both corners and reported side by side:
+  - floor: undamped;
+  - upper: ω² anchored at C4's measured mode-2 loss, α ≈ 4–10 /s (the Sensor declined a T60;
+    upper end used).
+- Offline falsifier for this pass: the ff swing at the pickup must stay within each note's
+  dynamic admitted edge (the swing prior's EDGES, which are the pickup tables' reach). Checks 10a
+  and 10b need chain renders and come after.
+
 The pick rule is the swing prior's: sample the priors, discard samples that fail the registered
 falsifiers (§5), pick the median of the survivors, and carry the p10 / p90 corners. An ear-test
 conclusion counts only if it holds at both corners.
