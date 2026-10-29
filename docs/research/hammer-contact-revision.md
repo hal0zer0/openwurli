@@ -167,8 +167,10 @@ ASSUMED unless marked.
 - Modes: 20 integrated, 7 rendered.
 - High-mode damping during contact, run at both corners and reported side by side:
   - floor: undamped;
-  - upper: ω² anchored at C4's measured mode-2 loss, α ≈ 4–10 /s (the Sensor declined a T60;
-    upper end used).
+  - upper: ω² anchored at the FASTER observed mode-2 loss. G3's line falls from −48…−62 dB at
+    85 ms to the floor by 0.3 s, roughly 150–200 dB/s relative to H1, so α ≈ 23 /s at 1295 Hz.
+    C4's 35–87 dB/s is the slow note. (Amended after review, before any run. The spread between
+    notes points to per-reed clamp loss; that is a separate decay-law revision.)
 - Offline falsifier for this pass: the ff swing at the pickup must stay within each note's
   dynamic admitted edge (the swing prior's EDGES, which are the pickup tables' reach). Checks 10a
   and 10b need chain renders and come after.
