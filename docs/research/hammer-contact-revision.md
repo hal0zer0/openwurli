@@ -196,31 +196,49 @@ Measured with the Sensor Array. Recordings are trend checks only.
    known ~9.4 Hz amplitude modulation). Nothing near the 462 Hz the .026″ blank predicts. That
    doesn't confirm .020″: mode 2 may sit below detection at the pickup, and the .020″ line (384 Hz)
    lies within 2 Hz of H7, which this window cannot resolve.
-10. **Mode-2 line at C4, falsifier (proposed 2026-10-29, pending physics review).** Keyboard Waves C4
-   (label c3), measured with the Sensor Array before any prototype render:
-   - Method: decay mode, skip 5 ms, window 900 ms, band ±40 Hz, so the fit starts at 85 ms.
-   - Result: a line at 1466–1472 Hz (ratio 5.63, inside the FE band 5.53–5.80) at −59.8 dB re H1
-     (v126), −64.1 (v105), −66.5 (v95) and −67.0 (v74).
-   - In the 0.3–2.8 s window it falls to −74…−83 dB with a stable frequency, and below v52 it is
-     at the noise floor. It decays faster than H1, as a higher reed mode should.
-   - The same runs show the undamped top reeds ringing in sympathy (1665 / 1764 / 1868 Hz, also in
-     E4's sample), which independently confirms that those keys have no dampers.
-   - Falsifier: rendered at the preamp tap with the same measurement, the model's C4 mode-2 line
-     must not exceed the recording's by more than 10 dB (≤ −50 dB re H1 at v126, ≤ −56 at v95).
-     One-sided: a cleaner model is not falsified.
-   - Expected reading: tip-level chatter (−11…−32 dB) would sit 30–50 dB above this; Miessner-soft
-     contact (≤ −41 dB at the tip) is near it.
-   - Report only: the shipped model's mode 2 was voiced to −36 dB at the pickup output.
-   - Persistence, the second half of the same evidence: from 0.3 to 2.8 s the line stands 30–43 dB
-     above the noise, falling only ~15 dB faster than H1 over half a second. The Sensor refused to
-     quote a T60 ("maybe a blend"), so only presence is evidence, not a rate.
-   - At `MODE_DECAY_EXPONENT` 2.0 the model's C4 mode 2 decays at ~326 dB/s and is gone before
-     85 ms, so the one-sided level falsifier above has no teeth until the high-mode decay is
-     sourced.
-   - Proposed second falsifier: the model's C4 mode-2 line must still be measurable (prominence
-     ≥ 12 dB) in the 0.3–2.8 s window at v126.
-   - High-mode damping enters the prototype as an explicit prior with two corners: a floor of
-     thermoelastic ~5 dB/s (flat) up to whatever the falsifiers admit.
+10. **Mode-2 line, real-200A evidence (Keyboard Waves, Sensor Array decay mode), measured before
+    any prototype render.**
+    - C4 (label c3), from 85 ms (skip 5 ms, window 900 ms, band ±40 Hz): a line at 1466–1472 Hz,
+      ratio 5.63, inside the FE band 5.53–5.80. Re H1: −59.8 dB (v126), −64.1 (v105), −66.5 (v95),
+      −67.0 (v74). Over 0.3–2.8 s it is still there at −74…−83 dB with a stable frequency, and below
+      v52 it is at the noise floor.
+    - Identity check, G3 (label g2): its own line at 1294.5–1296.3 Hz (6.61×, inside the FE band
+      6.17–6.75), −48…−62 dB re H1 from 85 ms, stable across five layers. G3 shows no 1469 Hz line
+      above the noise, so these are reed modes, not a fixed resonance.
+      - G3 sits near the band's thick-tip end where C4 sat near the thin end.
+      - G3's line is gone by 0.3 s, where C4's lingers.
+      - G3 also shows an unexplained line at 1151 Hz (5.88×, −50…−57 dB), outside its mode-2 band.
+        It is recorded, not used.
+    - Also seen: the undamped top reeds ringing in sympathy (1665 / 1764 / 1868 Hz in the C4 and E4
+      samples), confirming that those keys have no dampers.
+    - C4 at 5.63× also refutes the uniform beam there: the shipping engine (μ 0) puts C4's mode 2 at
+      6.27× (1640 Hz, +186 c). That is the taper, separate from the §2 table bug, and another reason
+      the frequencies come from the FE.
+
+    **Falsifiers (registered 2026-10-29, after physics review):**
+    - **10a, level, scored at the top layer only** (recording v126 against the model at v_ff).
+      Measure the model's C4 mode-2 line at the preamp tap with the identical Sensor fit.
+      - Its onset intercept re H1 must not exceed the recording's by more than 10 dB (≤ −50 dB).
+      - Decouple the test from the unsourced decay: for this scoring only, render mode 2 at the
+        recording's fitted rate, or with no extra loss, and compare onset intercepts from identical
+        fits. Then the test is about the hammer alone.
+      - One-sided. The v95 layer and the slope across layers are report-only, because they depend
+        on the velocity convention.
+      - Expected: tip-level chatter (−11…−32 dB at the tip) lands 30–50 dB above the recording;
+        Miessner-soft contact (≤ −41 dB) lands near it.
+    - **10b, persistence:** at v126 over 0.3–2.8 s, the model's C4 mode-2 LEVEL re H1, measured
+      identically, must be ≥ the recording's −74 dB minus 15, so ≥ −89 dB. Level, not prominence:
+      a clean render has no noise floor. A decay law that kills mode 2 before 0.3 s (for example
+      today's 326 dB/s) fails by tens of dB.
+    - Report only: the shipped model's mode 2 was voiced to −36 dB at the pickup output.
+    - **High-mode damping prior, two corners.**
+      - Lower: the physics floor. Thermoelastic is flat at ~5 dB/s. Air radiation is dipole-weak,
+        ~f², ≲ 3 dB/s at 1.5 kHz, uncertain ~10×. Viscous and slot-shear loss is ~√f and unsized:
+        the Stokes layer (~57 µm at 1.5 kHz) is comparable to the 50–270 µm finger gaps. Clamp
+        microslip is empirical.
+      - Upper: whatever 10b admits.
+      - A sourced upper corner later, once the Sensor quotes a rate: ω² anchored at the MEASURED
+        mode-2 rate, not at H1. That is 4–9× below today's law at mode 2.
 11. The ear gate (the user), at the pick and both corners.
 
 ## 6. Steps
