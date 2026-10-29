@@ -440,6 +440,26 @@ Reading (corrected after the physics review's fit; the first reading here overst
       (−97.4 to −103.2 dBFS). The three softest layers share −97.4, which looks like a floor added
       after normalisation, and v84 is out of order. The noise floor can't recover relative note
       levels in this set, so (ii) needs other evidence.
+- **(ii) Evidence for the top treble (2026-10-29)**, sought instead of a design-intent assumption:
+  - **Factory target (D):** service manual §18: voicing "insures the tonality, volume, and ring time
+    of the individual notes are uniform and consistent. Loud notes, soft notes, and notes that have
+    a piercing tone, will be eliminated." The means are reed and pickup alignment, lateral centring,
+    and small pickup bends. The manual gives no tolerances. Trouble-shooting covers "extra loud"
+    notes (bend the pickup ends 1/32–1/16″) and "duds"; it has no weak-note entry. Treble pickups
+    are thick and effectively not bendable (Doc Wurly: only F-21 to D-42 flex).
+  - **Physics (model evaluation on the shipping law):** raising a top-treble reed toward the band
+    (from g0 0.10 to 0, since resting inside the pickup is forbidden) adds only 1.2–1.4 dB, because
+    the R43_64 slope is nearly flat there. Even loudness must therefore come from the swing.
+  - **Minimum top-treble swing** to sit within N dB of C4 (0.6–1.2 mm swing, g0 0.085) at the best
+    voicing: 6 dB → 0.06–0.08 mm; 10 dB → 0.04–0.05; 20 dB → 0.012–0.015.
+    - Pass-2 survivors at C7 (0.00–0.03 mm) sit 12–24+ dB below C4 even fully voiced.
+    - Anything under ~0.012 mm fails at any tolerance up to 20 dB, i.e. 100× weaker in power.
+  - **Proposed falsifier (for the operator):** report the tolerance visibly, at 6 / 10 / 20 dB.
+    Reject only at the lenient end: a top-grade note more than 20 dB below C4 at its best voicing.
+    No reading of "uniform volume" admits a 100× power deficit. The caveats (voicing by ear on the
+    speaker, equal-loudness contours) shift this by a few dB, not 20.
+  - Doc's "one or two thousandths makes a big difference" concerns the lateral side gaps (his
+    words), not height, so it does not conflict with the flat height sensitivity.
 - **Geometry sources** (shelf search, 2026-10-29):
   - No damper lift, no damper-to-reed contact point and no hammer-head dimension anywhere in the
     manual or parts listings.
