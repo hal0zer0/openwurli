@@ -254,7 +254,7 @@ decay_rate[m] = base_decay * ratio[m]^2.0          // power-law per-mode scaling
 
 - Base decay rate follows a frequency power law calibrated to OldBassMan 200A recordings (see reed-and-hammer-physics.md Section 5.7)
 - The 3.0 dB/s floor prevents unrealistically long bass sustain
-- Per-mode scaling uses a `ratio^2.0` power law (Zener damping, proportional to omega squared): higher modes (with larger frequency ratios) decay faster
+- Per-mode scaling uses a `ratio^2.0` power law, chosen by ear to cut the mode-2 "plink" short: higher modes (with larger frequency ratios) decay faster. It is unsourced: thermoelastic (Zener) loss is flat, not ∝ ω², above ~75 Hz (reed-and-hammer-physics.md §5.5), and a real 200A's C4 mode 2 rings for seconds
 - This replaces the previous fixed decay scales array `[1.0, 0.20, 0.08, ...]` with a physics-derived power law
 - Higher modes decay faster -> timbre darkens over time (bright attack, sine-like tail)
 

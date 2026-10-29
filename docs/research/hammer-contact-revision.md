@@ -16,8 +16,10 @@ derived from the hammer:
 | Velocity curve: sigmoid k 1.5, then a per-register power law | `tables::velocity_scurve`, `velocity_exponent` | Ear-voiced around the retired 1/(1−y) pickup law; old-law debt (pickup-overlap-law.md §7) |
 | Relative mode amplitudes | `tables::BASE_MODE_AMPLITUDES` | Calibrated against the reference recordings, which were an octave mislabelled; mode 2 halved by ear |
 | ff swing at the pickup | `tables::PROVISIONAL_FF_SWING_MM` | A conditioned prior through a short-contact impulse law (restitution and contact-spread factors stand in for the felt) |
+| High-mode decay: rate × ratio^2.0 | `tables::MODE_DECAY_EXPONENT` | Chosen by ear to cut the plink short. Its Zener basis rests on an arithmetic slip (reed-and-hammer-physics.md §5.5), and a real 200A's C4 mode 2 lingers for seconds (§5, check 10) |
 
-After the revision, one model produces all five: contact time, the attack waveform, the
+The sixth row is in scope because the mode-2 evidence (§5, check 10) can't be read without it.
+After the revision, one model produces the first five: contact time, the attack waveform, the
 velocity response, the modal spectrum and the swing. All five retire. Two stay as report-only
 cross-checks:
 - **The swing table:** same priors, so a new ff swing outside its p10–p90 band needs explaining.
@@ -209,6 +211,16 @@ Measured with the Sensor Array. Recordings are trend checks only.
    - Expected reading: tip-level chatter (−11…−32 dB) would sit 30–50 dB above this; Miessner-soft
      contact (≤ −41 dB at the tip) is near it.
    - Report only: the shipped model's mode 2 was voiced to −36 dB at the pickup output.
+   - Persistence, the second half of the same evidence: from 0.3 to 2.8 s the line stands 30–43 dB
+     above the noise, falling only ~15 dB faster than H1 over half a second. The Sensor refused to
+     quote a T60 ("maybe a blend"), so only presence is evidence, not a rate.
+   - At `MODE_DECAY_EXPONENT` 2.0 the model's C4 mode 2 decays at ~326 dB/s and is gone before
+     85 ms, so the one-sided level falsifier above has no teeth until the high-mode decay is
+     sourced.
+   - Proposed second falsifier: the model's C4 mode-2 line must still be measurable (prominence
+     ≥ 12 dB) in the 0.3–2.8 s window at v126.
+   - High-mode damping enters the prototype as an explicit prior with two corners: a floor of
+     thermoelastic ~5 dB/s (flat) up to whatever the falsifiers admit.
 11. The ear gate (the user), at the pick and both corners.
 
 ## 6. Steps

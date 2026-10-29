@@ -477,9 +477,10 @@ pub fn spatial_coupling_coefficients(mu: f64, reed_len_mm: f64) -> [f64; NUM_MOD
 /// (docs/reference/calibration-and-evaluation.md, Appendix D notice). Pending
 /// re-examination against correctly pitched evidence: keep, adjust, or label unsourced.
 ///
-/// Physical basis: corresponds to Q ∝ f^(-0.22) — a slight Q decrease with
-/// frequency, consistent with thermoelastic (Zener) damping becoming more
-/// significant for shorter, stiffer reeds. A constant-Q model (Q~1636) gives
+/// Physical basis claimed: Q ∝ f^(-0.22), a slight Q decrease with frequency. It was once
+/// attributed to thermoelastic (Zener) damping, but above f_Zener (~40-75 Hz for these reeds)
+/// thermoelastic loss gives a flat decay rate of a few dB/s, not a rising one
+/// (reed-and-hammer-physics.md §5.5). A constant-Q model (Q~1636) gives
 /// exponent 1.0 (decay ∝ f); the slight upward correction captures the trend
 /// in OBM data where treble reeds have modestly lower Q than bass.
 ///
@@ -501,18 +502,18 @@ pub fn fundamental_decay_rate(midi: u8) -> f64 {
 ///
 /// Super-linear damping model: decay_n = decay_1 * mode_ratio_n^p
 ///
-/// Real steel reed damping is NOT constant-Q (p=1.0). Thermoelastic (Zener),
-/// air radiation, and clamping losses all scale faster than linearly with
-/// frequency, giving p ≈ 1.3–2.0 for steel cantilevers in air.
+/// UNSOURCED: chosen by ear. At p=2.0, mode 2 at C4 (1642 Hz) decays at ~326 dB/s, reaching
+/// -10 dB within 9 ms, which confines the inharmonic partials to the first few cycles of the
+/// attack. The previous value (1.5) let mode 2 ring for ~77 ms in mid-register as an audible
+/// metallic "plink".
 ///
-/// At p=2.0, mode 2 at C4 (1642 Hz) decays at ~326 dB/s, reaching -10 dB
-/// within 9ms (~2.5 cycles). This confines the inharmonic partials (which
-/// sit at non-integer ratios like 6.267× and sound "metallic") to the
-/// first 2-3 cycles of the attack, matching real Wurlitzer behavior.
-///
-/// Previous value (1.5) allowed mode 2 to ring for ~77ms in mid-register,
-/// creating an audible metallic "plink" at 1642 Hz — peak ear sensitivity.
-/// The p=2.0 value better matches Zener thermoelastic theory (loss ∝ ω²).
+/// The stated basis does not hold. It claimed thermoelastic (Zener) loss scales as ω², but above
+/// f_Zener (~40-75 Hz for these reeds) the thermoelastic decay rate is flat
+/// (reed-and-hammer-physics.md §5.5). The behaviour it claimed to match isn't seen either: a real
+/// 200A's C4 mode 2 (ratio 5.63) is still present 0.3-2.8 s after the strike, at −74…−83 dB re
+/// H1 (Keyboard Waves sample set, Sensor Array, 2026-10-29). The real partial is weak and lingers;
+/// this model's is louder and short. The hammer-contact revision
+/// (docs/research/hammer-contact-revision.md) revisits both.
 ///
 /// Note: the constant is preserved for documentation; `mode_decay_rates()`
 /// inlines `ratio * ratio` instead of `powf(2.0)` for performance.

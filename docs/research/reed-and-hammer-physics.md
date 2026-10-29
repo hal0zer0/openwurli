@@ -679,7 +679,7 @@ decay_rate_n / decay_rate_1 = f_n / f_1
 
 For mode 2 at f2/f1 = 6.3: mode 2 decays 6.3x faster than mode 1.
 
-**Deployed model:** The code uses a power-law decay model: `decay_rate_n = base_rate * (f_n / f_1)^2.0` where `MODE_DECAY_EXPONENT = 2.0` (Zener thermoelastic ∝ ω²). The fundamental decay rate uses a frequency power law: `base_rate = 0.005 * f^1.22`, floored at `MIN_DECAY_RATE = 3.0 dB/s`. This produces much faster upper-mode decay than the old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` that was analyzed below.
+**Deployed model:** The code uses a power-law decay model: `decay_rate_n = base_rate * (f_n / f_1)^2.0` where `MODE_DECAY_EXPONENT = 2.0`. It was chosen by ear to cut the mode-2 "plink" short. Its stated basis, Zener thermoelastic loss ∝ ω², does not hold here (§5.5: above f_Zener the thermoelastic decay rate is flat). A real 200A's C4 mode-2 line (Keyboard Waves sample set, 2026-10-29) is still present 0.3–2.8 s after the strike, at −74…−83 dB re H1. At p = 2.0 the model's C4 mode 2 decays at ~326 dB/s and is gone within tens of ms. The fundamental decay rate uses a frequency power law: `base_rate = 0.005 * f^1.22`, floored at `MIN_DECAY_RATE = 3.0 dB/s`. This produces much faster upper-mode decay than the old fixed array `[1.0, 0.55, 0.30, 0.18, 0.10, 0.06, 0.035]` that was analyzed below.
 
 **Historical analysis (old fixed array vs constant-Q prediction):**
 
@@ -691,7 +691,7 @@ For mode 2 at f2/f1 = 6.3: mode 2 decays 6.3x faster than mode 1.
 | 4 | 35.4 | 0.028 | 0.180 | 6.4x too slow |
 | 5 | 58.7 | 0.017 | 0.100 | 5.9x too slow |
 
-**Historical note:** An earlier power-law model (p=1.5) produced intermediate decay scaling: for C4 with f2/f1 = 6.3, mode 2 would decay 6.3^1.5 = 15.8x faster than the fundamental. The deployed model uses p=2.0 (see Section 5.2 above), giving 6.3^2.0 = 39.7x, which better matches the Zener-dominated loss scaling observed in OBM recordings.
+**Historical note:** An earlier power-law model (p=1.5) produced intermediate decay scaling: for C4 with f2/f1 = 6.3, mode 2 would decay 6.3^1.5 = 15.8x faster than the fundamental. The deployed model uses p=2.0 (see Section 5.2 above), giving 6.3^2.0 = 39.7x. This was justified as Zener-dominated scaling observed in the OBM recordings. The Zener argument rests on the §5.5 arithmetic slip, and the OBM set was an octave mislabelled, so the value is unsourced (see the deployed-model note above).
 
 ### 5.3 Air Damping (Radiation Losses)
 
@@ -728,25 +728,31 @@ where kappa = thermal diffusivity of steel = 1.2e-5 m^2/s.
 
 For a 200A reed (t = 0.5 mm):
 ```
-f_Zener = pi * 1.2e-5 / (2 * (0.5e-3)^2) = pi * 1.2e-5 / 5e-7 = 75,400 Hz
+f_Zener = pi * 1.2e-5 / (2 * (0.5e-3)^2) = 3.77e-5 / 5e-7 = 75.4 Hz
 ```
+(43 Hz at t = 0.66 mm.) An earlier version of this section printed 75,400 Hz, a factor-of-1000
+arithmetic slip, and drew its conclusions from it. The corrected value puts every reed's
+fundamental above the band and near it, and every higher mode far above it.
 
-Thermoelastic damping peaks at f = f_Zener and is approximately:
+Thermoelastic damping is:
 ```
-Q_TE^{-1} = E * alpha^2 * T / (rho * c_p) * f * f_Zener / (f^2 + f_Zener^2)
+Q_TE^{-1} = Delta * f * f_Zener / (f^2 + f_Zener^2),   Delta = E * alpha^2 * T / (rho * c_p)
 ```
-where alpha = thermal expansion coefficient ~ 12e-6 /K, c_p = specific heat ~ 480 J/(kg*K), T = 300 K.
+with alpha ~ 12e-6 /K, c_p ~ 480 J/(kg*K), T = 300 K:
+```
+Delta = 210e9 * (12e-6)^2 * 300 / (7850 * 480) = 2.4e-3
+```
+(the earlier version printed 9.07e-3, a second arithmetic slip).
 
-At f = 1000 Hz (well below f_Zener for these thin reeds):
+Above f_Zener, Q_TE^{-1} ~ Delta * f_Zener / f, so Q_TE grows in proportion to frequency (about
+1440 at C4's 262 Hz, 5500 at 1 kHz). The amplitude decay rate, alpha = pi * f / Q, is then flat:
 ```
-Q_TE^{-1} ~ (210e9 * (12e-6)^2 * 300) / (7850 * 480) * 1000/75400
-      ~ (9.07e-3) * 0.0133 = 1.2e-4
-Q_TE ~ 8300
+alpha_TE ~ pi * Delta * f_Zener = 0.57 /s  (about 5 dB/s), the same for every mode above f_Zener
 ```
-
-Thermoelastic Q ~ 8000-10000 for Wurlitzer reeds at audio frequencies. This is the same order as internal friction Q, confirming that thermoelastic damping is a SIGNIFICANT contributor to the total loss.
-
-For higher modes (higher frequency), thermoelastic Q actually IMPROVES (because f << f_Zener, the loss scales as f/f_Zener). This partially compensates the 1/Q decay rate increase and could explain why higher modes don't decay as fast as pure constant-Q would predict.
+So thermoelastic damping does NOT scale as omega^2 at these frequencies. The omega^2 branch applies
+only below f_Zener (under ~40-75 Hz here). It supplies a mode-independent floor of a few dB/s and
+gives no basis for making higher modes decay faster. What does damp the higher modes (air
+radiation, clamp losses) needs its own source.
 
 ### 5.6 Combined Damping Model
 
@@ -760,7 +766,7 @@ Practical values for Wurlitzer reeds:
 | Component | Q (fundamental) | Frequency dependence |
 |-----------|----------------|---------------------|
 | Internal friction | 3000-5000 | ~constant |
-| Thermoelastic | 8000-10000 | improves with f (for f << f_Zener) |
+| Thermoelastic | ~1400 at C4 | Q ∝ f above f_Zener (~40-75 Hz): decay rate flat, ~5 dB/s |
 | Air damping | 10000-50000 | complex |
 | Mounting losses | 2000-10000 | ~constant |
 | **Total** | **~1500-3000** | weakly frequency-dependent |
