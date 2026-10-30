@@ -625,6 +625,30 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
 - Caveat: early 200-era "reed plates" at reeds 43–52 could mimic a joint in a photo. The read joint
   showed comb hardware (a slotted hole and bar bolt), and the 206A is 200A-era.
 
+## 5i. Pass 3c registration (2026-10-30, before any pass-3c run)
+
+- **Correction:** the 3.0–3.3 mm felt thickness was read off a 207VA hammer of unknown section,
+  scaled by an assumed pitch. It was never measured on the 206A hammer, which is now known to be
+  reed 38/39, a middle-grade hammer. The treble-only validity flag rested on that misattribution.
+- **Validity flag, all grades, from geometry.**
+  - Hammers sit side by side at the reed pitch. A folded strip is 2·h_leg + blade wide, and its
+    crown is no thicker than its legs. So h ≤ (13.75 − 2.9 − 0.5)/2 ≈ 5 mm in any section (pitch
+    assumed; the reed pitch read is pending).
+  - The 206A frame shows pads at 0.74–0.81 of the pitch, with no row visibly different, which puts h
+    nearer 3–4 mm.
+  - Flag: **peak felt compression ≤ 2.5 mm at every note and grade, at each check's own speed** (v_ff
+    for the random strike; v_max for the voiced offsets and the above-60 shield strike). A voiced
+    offset counts only if it also satisfies the flag.
+- **Registered expectation** (physics review, from pass-3b data): in the middle notes d_peak ≈ 0.27·v·τ,
+  so a 2.5 mm cap at v_ff 2.9 m/s allows τ ≤ ~3.1 ms (0.8 T1 at C4, 1.4 at A4). F1's weak middle mode 2
+  wants longer contacts. Graded m_h cannot relieve this. Only a lower v_ff, more mode 2, or a mode-2
+  loss during contact can.
+- **Run:** fillet origin only, anchor 13.2 mm at L_ref 40.1 mm (reed 38/39); 3 splits × 5000
+  instruments; otherwise §5h. A sequential (SMC) step only once a split has ~20+ survivors.
+- Report only: crit 6 (the swell) once the ±12 mm tables are in; until then any bass output reading at
+  6–8 mm is extrapolated. Fatigue at the bass clamp edge (0.4–0.85 GPa at A1, 7–8.4 mm tip) is at the
+  endurance edge, and bass breakage is documented.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
