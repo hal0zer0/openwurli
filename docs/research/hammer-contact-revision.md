@@ -832,12 +832,25 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
   - Below 3 mm every corner is within 0.2 dB.
   - The corrections are not additive: plane and neighbours interact by up to 3 % of range at
     u < −4.
-- **Verdicts across the bracket** (the pooled pass re-scored; only MIDI 47, 48 and 50 changed):
-  - **19 instruments survive in all eight corners** — the same 19 as the pooled pass.
-  - **4 more survive only in the −12-plane corners: unresolved** (a verdict that flips across the
-    bracket is not decided by the tables).
-  - Survivors per split move across the bracket: code 6–12, damper-felt 16–19, blank-pickup 9–18.
-    So **the split preference is not decided by the tables** either.
+- **Verdicts are scored on two corners; the other six are sensitivity only** (physics review):
+  - Neighbours at rest is the known configuration for the reference samples, not an alternative.
+    They are single notes, and at MIDI 47–50 the neighbours are damped.
+  - Tilt is physics too: the FE gives the reed's bend across the overlap.
+  - So the only unknown left is the closure. The two verdict corners are plane −12 and the
+    converged plane, both with neighbours at rest and tilt. An instrument that survives both is
+    stable; one that survives either alone is unresolved.
+- **Verdicts** (the pooled pass re-scored; only MIDI 47, 48 and 50 changed):
+  - **19 instruments are stable** — the same 19 as the pooled pass. They also survive in all
+    eight corners.
+  - **4 more survive only with the plane at −12 mm: unresolved.**
+  - Survivors per split (code / damper-felt / blank-pickup): 12 / 19 / 18 at plane −12 against
+    6 / 16 / 9 converged. Damper-felt leads clearly only with the converged plane, so **the split
+    preference is not decided by the tables**.
+- **Caveats still open:**
+  - True 3D end fringing is unbracketed. It would act at the same few-percent-of-range level near
+    the band as the closure does, so it sits beside the closure, not with the tails.
+  - The clamp refutation covers the mode-2-re-H1 statistic only. The H1–H2 balance at large swing
+    (criterion 6's swell, report-only) is shaped by the tails and is not covered.
 - **Calibration sampling is a second limit.**
   - Re-measuring the shipping law with n 90 instead of 30 moves the same 4 instruments, because the
     original bass calibration rested on 6 and 9 resolved lines at MIDI 47 and 48.
