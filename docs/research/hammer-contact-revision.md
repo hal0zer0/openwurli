@@ -527,6 +527,25 @@ Reading (corrected after the physics review's fit; the first reading here overst
 set's v126 bass samples, and the treble voicing bound at 6 / 10 / 20 dB. The numerical table edge
 is no longer a falsifier.
 
+## 5g. Pass 3 results (2026-10-29, 1000 instruments × 26 notes, 2 L origins × 3 splits)
+
+Integration is chunked by contact stiffness: each group of 64 samples takes its own step, and the
+result is identical to one batch within 4e-6. Each falsifier alone, then in combination:
+- **F1 (mode 2) alone:** 5.8–12.1 %.
+- **F2 (let-off, 10 reeds, 3.2 mm) alone:** 2.1 % (fillet origin), 0.7 % (bar edge).
+- **F3 (shield):** 83–90 %. **Validity flag:** 94.9 %.
+- **F1 + F3 + valid:** 34–81 survivors. **F2 + F3 + valid:** 4 (fillet), 0 (bar).
+- **All four at the primary (10, 3.2 mm): 0 in every case.** Across the nuisance grid, only (7, 2.4)
+  leaves 1–2, fillet origin only.
+- **The mode-2 evidence and the let-off evidence do not agree under the current model and priors.**
+  Not yet interpretable:
+  - (a) F1's chain calibration for B2, C3 and D3 covers swings only to ~4 mm. The large bass swings
+    that F2 demands are extrapolated and lie beyond the pickup tables (the bass extension had
+    finished 1 of 4 ranges when paused).
+  - (b) F2 alone is barely reachable within the m_h (1–5 g) and v_ff (1.4–3.5 m/s) priors, so
+    either the priors are low or the let-off reading is too strict.
+  - Both go to the physics review before any change.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.

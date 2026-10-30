@@ -19,10 +19,12 @@ Usage:
 """
 
 import json
+import os
 import sys
 
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hammer_contact_score import ALLOW_DB, MAX_FAIL_FRACTION, SCORED, offsets, q
 
 SHIELD_MM = 12.0

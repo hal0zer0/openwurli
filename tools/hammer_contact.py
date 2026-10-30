@@ -477,6 +477,23 @@ def calibrate(notes, n, seed, bench, sensor, workdir, out):
 
 
 
+def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=64):
+    """strike_batch_w in chunks of similar contact stiffness, so the stiffest sample doesn't set every
+    sample's step. Same physics and per-chunk step rule; results reassembled in the input order."""
+    dmax = ((p + 1) * 0.5 * m_h * v ** 2 / (F_REF / z_star ** p)) ** (1 / (p + 1))
+    order = np.argsort(dmax / v)
+    keys = ("n_contacts", "t_contact_T1", "tip_mm", "pick_mm", "crown_end_swing_mm", "d_peak_mm", "energy_err")
+    out = {}
+    for i0 in range(0, len(order), chunk):
+        idx = order[i0:i0 + chunk]
+        r = strike_batch_w(rd, m_h[idx], v[idx], z_star[idx], p[idx], d_s_mm[idx])
+        for k in keys:
+            if k not in out:
+                out[k] = np.zeros((len(m_h),) + np.shape(r[k])[1:], dtype=np.asarray(r[k]).dtype)
+            out[k][idx] = r[k]
+    return out
+
+
 # Pass-3 strike-point law (plan §5f): d_s = d_ref (L / L_ref)^k mm from the clamp, k shared in [0, 2],
 # per-hammer scatter +-1.5 mm, floor 5 mm. Anchor: one photographed hammer on a 206A, 7.1 mm from the
 # bar edge; the L origin is a nuisance until that reed is identified.
@@ -514,7 +531,7 @@ def keyboard3(notes, n, seed, out, split, survey, origin):
             L_mm = rd["L"] * 1e3
             d_s = d_ref * (L_mm / L_ref) ** inst["k"][sel] + scatter[sel]
             d_s = np.clip(d_s, 5.0, L_mm - CROWN_MM / 2)
-            r = strike_batch_w(rd, inst["m_h"][sel], inst["v"][sel], inst["z_star"][sel, g], inst["p"][sel, g], d_s)
+            r = strike_w_chunked(rd, inst["m_h"][sel], inst["v"][sel], inst["z_star"][sel, g], inst["p"][sel, g], d_s)
             f1 = rd["f"]
             f2 = rd["om"][1] / rd["om"][0] * f1
             ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), 1e-30) / np.maximum(np.abs(r["pick_mm"][:, 0]), 1e-30)
