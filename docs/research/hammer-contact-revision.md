@@ -1038,6 +1038,55 @@ p50 [p10, p90] dB:
   nulls. Whether felt loss is needed is to be settled before the velocity map, because it would
   change every stage's contact law.
 
+## 5m. Felt loss registration (2026-10-30, before any implementation or run)
+
+- **Evidence held** (no measured loss or restitution figure exists for any hammer, piano or
+  electric piano):
+  - Stulov 1995 (doi:10.1121/1.411912) Table II fits a hysteresis constant ε 0.936–0.985 and a
+    relaxation time τ0 1.9–20 µs to Yanagisawa & Nakamura's loops. The measured loops survive
+    only as his Figs 1 and 2(a).
+  - Giordano & Winans 2000 (doi:10.1121/1.428505) measure loading and unloading branches ~10 %
+    apart on soft blows and 10–20 % at f–ff. They attribute much of the apparent hysteresis to
+    force propagation within the hammer.
+  - Hall & Askenfelt 1988 read their near-symmetric F(t) as "only a very minor role for
+    dissipative forces".
+  - The 200A's own patent (US 2,942,512, col. 2 ll. 63–67) wants the covering to have "some
+    viscosity, to aid in the damping of upper partials".
+- **Decision (physics review): carry loss as a nuisance band, in Stulov's hereditary form.**
+  - Size: for contacts much longer than τ0, Stulov's law is K[g + τ_d dg/dt] with
+    τ_d = ε τ0 / (1 − ε); at fixed τ_d, ε moves the loop < 0.2 %.
+  - Giordano & Winans' gaps map to τ_d 0.02–0.09 ms; the Yanagisawa & Nakamura loops to
+    ≥ 0.05–0.1 ms, and Stulov's fits to them to 0.10–0.29 ms.
+  - **Prior: τ_d log-uniform 0.01–0.3 ms.** The evidence leans low.
+  - **Why it matters even though it is "minor":** at Giordano & Winans' size, C4's ff mode 2
+    drops 7–9 dB (F1) and C6's ff swing 3–5 dB at fixed contact (F4). A residual 40 dB down the
+    contact cliff is set by small asymmetries.
+  - **It does not cure the treble collapse.** v/8 stays 40–68 dB under its own ff, because the
+    collapse is contact growth, ∝ v^−(p−1)/(p+1). Loss fills the deepest nulls (no +19 dB jumps)
+    but leaves jags of up to ~20 dB.
+- **Form:**
+  - One relaxation state per crown point, with speed-independent constants.
+  - F ≥ 0, with the state carried through separations: the felt is still recovering at a
+    recontact.
+  - z* is defined on the relaxed (slow) law, so the prior keeps its meaning. Stulov's F0 is the
+    instantaneous law.
+  - τ_d → 0 must reproduce the lossless integrator exactly.
+- **Registered test of the form, on held data (to run when the digitised Stulov Fig. 2(a) loops
+  arrive: A1 pliant, 0.52–1.43 m/s):**
+  - The branch gap at half compression grows ×1.3–1.6 across those speeds under Stulov, and
+    ×2.3–3 under Hunt–Crossley.
+  - **Stulov fails at ≥ ×2.1.** Boutillon 1988 (being fetched) can take the same test.
+- **Next stage (to register once the upper-comb read gives the shield band):** from the pooled
+  pass, with τ_d, the shield clearance band and the let-off grid all marginalised. A verdict that
+  flips across τ_d is unresolved.
+  - **Registered prediction:** F1 binds the middle felt (dropping F1 moves z*_m from 1.50 to
+    0.42 mm), so the C4 ff contact median is ≥ 10 % shorter for τ_d ≥ 0.1 ms than for
+    ≤ 0.02 ms.
+  - **Failure clause:** less than 5 % shorter, or longer.
+- **Operator's call, report-only:** whether a real 200A's top octave speaks at a light touch is an
+  observation, not a model output. The model's answer (−40 to −68 dB at v/8 under its own ff) is
+  reported beside it, not tuned to it.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
