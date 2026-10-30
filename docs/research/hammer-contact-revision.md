@@ -493,6 +493,40 @@ Reading (corrected after the physics review's fit; the first reading here overst
 - 1000 instruments leave 2–6 survivors per split. A stable posterior needs sequential sampling
   around them (an ABC-SMC step) once (i) is settled.
 
+## 5f. Pass 3 registration (2026-10-29, before any pass-3 run)
+
+**Model form** (physics review answers to §5e and the photo reads):
+- **Contact: a Winkler layer on the blade.** The crown is a physical length along the reed
+  (9.2 mm; band 8.9–11.6 mm, length changes ≤ 0.4 dB), sampled at 41 points.
+  - Each point compresses locally, δ_i = y_h − w(x_i), with f_i = (10 N / 41)·(δ_i / z*)^p while
+    δ_i > 0, so a uniform compression δ gives the same total as the rigid form.
+  - Modal forces are Σ_i φ_n(x_i) f_i. Crown tilt (unmeasured) is carried as strike-point scatter.
+- **Strike point in mm from the clamp,** shared across the keyboard: d_s = d_ref·(L / L_ref)^k.
+  - k shared, uniform 0–2. (0 = rail parallel to the bar; 1 = a constant fraction of L; > 1 = the
+    bass struck further out, as Emma's let-off evidence requires.)
+  - Per-hammer scatter ±1.5 mm (uniform), floor d_s ≥ 5 mm.
+  - Anchor (the photo, one hammer on a 206A): crown centre 7.1 mm from the bar edge. The L origin
+    is unknown, so it is carried as a nuisance with two cases, pending identification of the
+    photographed reed:
+    - bar edge: d_ref 7.1 mm at L_ref = 31.5 mm;
+    - fillet: d_ref 13.2 mm at L_ref = 37.5 mm.
+- **Felt and hammer:** felt graded z*_bass ≥ z*_mid ≥ z*_treble, p per grade, m_h and v_ff shared,
+  boundaries over the three splits, as in §5d.
+
+**Falsifiers** (each a separate term, so any can be dropped to see whether they agree):
+- **F1 (mode 2):** the §5d per-note rule at the own-line notes, chain-identically calibrated.
+- **F2 (let-off, Emma, 206A, practitioner):** on a loud strike (v_ff), the swing at the crown's
+  tip-ward end must reach the let-off gap for the lowest n_b reeds.
+  - Gap: 1/8″ ± 1/32″ = 2.4–4.0 mm, a nuisance. n_b: 7–13, a nuisance.
+  - It is a LOWER bound; above n_b the absence of complaint is report-only.
+- **F3 (shield):** tip swing ≤ 12 mm (the grounded shield ~½″ above the comb).
+- **Validity flag:** peak felt compression d_max ≤ h_grade / 2, with h_treble 3.0–3.3 mm (photo).
+  Bass and middle are uncapped until their felt thickness is known.
+
+**Report only, pending operator decisions:** the bass fundamental's swell against the reference
+set's v126 bass samples, and the treble voicing bound at 6 / 10 / 20 dB. The numerical table edge
+is no longer a falsifier.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
