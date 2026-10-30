@@ -138,17 +138,35 @@ The model targets the most typical setup of one configuration:
     (`FAR_BELOW`), or 0.6 mm below the reed when the reed sits lower than that. Nothing in the
     evidence puts a conductor there; it is a numerical closure. The RF shield on the finger side is
     physical.
-  - Reeds 1–14, plane at −12 / −24 / −36 mm: C(−4.6) = 15.21 / 16.55 / 17.11 pF/m, and
-    C(−1.0) = 37.03 / 38.56 / 39.52 pF/m. So the plane is not converged at −36 mm. A solve at
-    −60 mm returned nonsense (0.63 pF/m at −4.6), a numerical failure not yet traced.
-  - Inside the shipping range, the −36 mm plane raises C by a smooth 0.4–3.5 % of the law's range
-    (most near rest).
-  - Static H2–H5 at rest −0.085 mm move by ≤ 0.3 dB at swings up to 2 mm (harmonics above the
-    −35 dB resolution limit), 0.3–1 dB at 3 mm and 0.6–2 dB at 4 mm.
-  - Beyond the finger region's length along the reed (~6 mm), a 2D cross-section may not be a fair
-    model of the far field at all.
-  - Open: the real far-side conductors per section, and the law's validity at large swings. The
-    shipping tables are unchanged.
+  - Reeds 15–20 (fixed solver, below; h 0.005 mm), plane at −12 / −36 / −60 / −120 mm:
+    C(−4.6) = 14.69 / 16.29 / 16.53 / 16.69 pF/m. The plane is converged to ~1 % by −60 mm.
+  - Against the converged plane, the −12 mm plane reads low by a near-constant 2.6–2.8 % of the
+    law's range from u = −4.6 to 0. That shrinks to 0.2 % at +4.5 and grows to 4.6 % at −12.
+  - Static H2–H5 at rest −0.085 mm, −12 against −120 mm (a shape comparison on coarse knots):
+    - ≤ 0.3 dB at swings up to 2 mm;
+    - 0.4–0.8 dB at 3 mm;
+    - 0.7–1.5 dB at 4 mm;
+    - 1.5–1.9 dB at 6 mm;
+    - 2.7–3.2 dB at 8 mm.
+  - Beyond the finger region's length along the reed (~6 mm; about l/2 ≈ 3 mm by a rule of thumb),
+    a 2D cross-section may not be a fair model of the far field. The mirror cell also makes the
+    neighbouring reeds swing with this one, whereas real neighbours rest in their slots. The
+    reed's tilt across the 6 mm overlap (displacement varying 0.13–0.50 × the pickup swing, by
+    section) is noted only qualitatively (§8: it averages the law over u) and has not been sized.
+  - Open: the real far-side conductors per section, and the law's validity at large swings
+    (closure, neighbours at rest and tilt, to be taken together). The shipping tables are unchanged.
+- **Solver defect, fixed 2026-10-30:**
+  - The reed and gap edges inserted into the x grid coincided with core grid lines up to rounding,
+    and both were kept: a 1e-14 mm column whose conductance made the operator near-singular. The
+    direct solve's relative residual reached 2e-2 at h 0.01 and 7e-5 at h 0.005, and deep-plane
+    solves returned nonsense.
+  - Lines closer than 1e-9 mm are now merged: residuals ~1e-15, and h 0.0025 / 0.005 agree to
+    0.004 %.
+  - The shipping tables were solved before the fix. Their data sit high by a smooth 0.12 % (reeds
+    15–20) and 0.19 % (21–42) of range, at 14 / 12 re-solved knots.
+  - On resolved harmonics (above −35 dB re H1), static H2–H5 move by ≤ 0.17 dB, inside the 0.5 dB
+    gate. The shipping tables stand, emitted from their stored data. New solves use the fixed
+    operator, so a table extended later must be re-solved whole, keeping one solve path.
 
 ## 7. What this revision deliberately leaves alone
 
