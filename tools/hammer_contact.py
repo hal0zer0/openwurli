@@ -477,6 +477,64 @@ def calibrate(notes, n, seed, bench, sensor, workdir, out):
 
 
 
+# Pass-3 strike-point law (plan §5f): d_s = d_ref (L / L_ref)^k mm from the clamp, k shared in [0, 2],
+# per-hammer scatter +-1.5 mm, floor 5 mm. Anchor: one photographed hammer on a 206A, 7.1 mm from the
+# bar edge; the L origin is a nuisance until that reed is identified.
+ANCHORS = {"bar": (7.1, 31.5), "fillet": (13.2, 37.5)}
+
+
+def keyboard3(notes, n, seed, out, split, survey, origin):
+    rng = np.random.default_rng(seed)
+    inst = draw_instruments(rng, n)
+    inst["k"] = rng.uniform(0.0, 2.0, n)
+    d_ref, L_ref = ANCHORS[origin]
+    measured = {}
+    if survey:
+        for row in json.load(open(survey)):
+            o = row.get("onset", {})
+            if o.get("status") == "line":
+                measured[row["midi"]] = o["ratio"]
+    res = {}
+    for midi in notes:
+        g = grade_of(midi, split)
+        vs = variants(midi)
+        pick = rng.integers(0, len(vs), n)
+        rds = [reed_data(midi, t_tip, t_root) for _, t_tip, t_root in vs]
+        if midi in measured:
+            ratios = [r["om"][1] / r["om"][0] for r in rds]
+            pick[:] = int(np.argmin([abs(r - measured[midi]) for r in ratios]))
+        scatter = rng.uniform(-1.5, 1.5, n)
+        out_cols = {k: np.zeros(n) for k in ("swing_mm", "m2_out_db", "tip_mm", "crown_end_mm", "d_peak_mm",
+                                              "d_s_mm", "t_contact_T1")}
+        contacts = np.zeros(n, int)
+        for kv, rd in enumerate(rds):
+            sel = np.where(pick == kv)[0]
+            if sel.size == 0:
+                continue
+            L_mm = rd["L"] * 1e3
+            d_s = d_ref * (L_mm / L_ref) ** inst["k"][sel] + scatter[sel]
+            d_s = np.clip(d_s, 5.0, L_mm - CROWN_MM / 2)
+            r = strike_batch_w(rd, inst["m_h"][sel], inst["v"][sel], inst["z_star"][sel, g], inst["p"][sel, g], d_s)
+            f1 = rd["f"]
+            f2 = rd["om"][1] / rd["om"][0] * f1
+            ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), 1e-30) / np.maximum(np.abs(r["pick_mm"][:, 0]), 1e-30)
+            out_cols["swing_mm"][sel] = np.abs(r["pick_mm"][:, 0])
+            out_cols["m2_out_db"][sel] = 20 * np.log10(ratio) + preamp_tilt_db(f2) - preamp_tilt_db(f1)
+            out_cols["tip_mm"][sel] = r["tip_mm"][:, 0]
+            out_cols["crown_end_mm"][sel] = r["crown_end_swing_mm"]
+            out_cols["d_peak_mm"][sel] = r["d_peak_mm"]
+            out_cols["d_s_mm"][sel] = d_s
+            out_cols["t_contact_T1"][sel] = r["t_contact_T1"]
+            contacts[sel] = r["n_contacts"]
+        res[midi] = {k: v.tolist() for k, v in out_cols.items()}
+        res[midi].update(contacts=contacts.tolist(), grade=g, L_mm=float(rds[0]["L"] * 1e3))
+        print(f"MIDI {midi} (grade {g}) done", flush=True)
+    with open(out, "w") as fh:
+        json.dump(dict(split=split, origin=origin, seed=seed, n=n, priors=PRIORS,
+                       instruments={k: np.asarray(v).tolist() for k, v in inst.items()}, notes=res), fh)
+
+
+
 def summarise(midi, rows):
     edge = EDGE_MM[section(midi)]
     sw = np.array([r["swing_mm"] for r in rows])
@@ -500,7 +558,8 @@ def summarise(midi, rows):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("selftest", "run", "keyboard", "calibrate"))
+    ap.add_argument("cmd", choices=("selftest", "run", "keyboard", "keyboard3", "calibrate"))
+    ap.add_argument("--origin", choices=("bar", "fillet"), default="fillet")
     ap.add_argument("--bench", default="target/release/preamp-bench")
     ap.add_argument("--sensor", default="")
     ap.add_argument("--workdir", default="")
@@ -516,6 +575,8 @@ if __name__ == "__main__":
         selftest()
     elif a.cmd == "calibrate":
         calibrate([int(x) for x in a.notes.split(",")], a.n, a.seed, a.bench, a.sensor, a.workdir, a.out)
+    elif a.cmd == "keyboard3":
+        keyboard3([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split, a.survey, a.origin)
     elif a.cmd == "keyboard":
         keyboard([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split, a.survey)
     else:
