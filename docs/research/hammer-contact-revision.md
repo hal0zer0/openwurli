@@ -670,6 +670,29 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
   - Hammer mass, felt thickness and the reed pitch from the technician or a photo would narrow the
     prior most.
 
+## 5j. Pass 3d registration (2026-10-30, before any pass-3d run): the strike floor
+
+- **Form error found in review:** the 5 mm strike floor ("half the crown plus clearance") was
+  bar-edge arithmetic, set while the L origin was open. Under the fillet origin, the reed bar
+  casting lies under the reed's first ~6 mm: the bar edge is 5.9–6.3 mm tip-ward of the fillet
+  (photo read). A hammer striking from below cannot reach there.
+- **Pass 3c's survivors at k ≈ 1.89 are therefore non-physical in the treble:** C7's crown at
+  ~5–6 mm sits over the casting. In pass 3c's prior the crown starts within 1 mm of the bar edge for
+  22 % of instruments at MIDI 74, 52 % at 79, 71 % at 84 and 87 % at 96.
+- **Floor (fillet coordinates):** bar edge + half the widest felt, so d_s ≥ 11.5 mm with the widest
+  felt (10.2–11.6 mm) touching the bar edge. The photo's 13.2 mm is the top of that band.
+- **Law:** d_s = max(floor, d_ref·(L/L_ref)^k), with the voiced offsets clipped at the floor too. k
+  then governs only the bass and middle; the treble strike sits at ~11.5–13.2 mm (C7 at 0.45–0.52 L,
+  near the patent's mid-reed and the technician's "halfway").
+- **Registered expectation (physics review, G):** moving the treble strike out lowers treble swing
+  for a given felt, so F4 needs stiffer treble felt than pass 3c's 0.55 mm. **Failure clause:** if
+  treble survivors keep z* ≥ 0.55 mm with F4 passing at the floor, the expectation is wrong.
+- **Run:** otherwise identical to pass 3c (5000 per split, 3 splits). Next: pool the splits for a
+  sequential (SMC) step if the survivors agree, or run a larger prior pass first if there are fewer
+  than ~10.
+- Side check (for the record): the FE clamp stays at the fillet. The bass mode-2 ratios fall inside
+  the FE band for 4 of 5 notes with the clamp at the fillet, against 0 of 5 with it at the bar edge.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
