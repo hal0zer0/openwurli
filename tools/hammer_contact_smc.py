@@ -23,6 +23,9 @@ Commands:
     propose PARTICLES.json --n N --chunks C --seed S --prefix P
                                                       writes P.meta.json and P_c{i}.inst.json (keyboard3b --instruments)
     weigh   CAL SURVEY --prefix P --out PARTICLES.json reads P_c{i}_{split}.json, weights, reports
+    mix     PARTICLES.json ... --out PARTICLES.json     one generation weighed under several calibrations (the bracket's
+                                                      verdict corners): mean of the normalised weights, so the next
+                                                      proposal covers every corner's posterior
 """
 
 import argparse
@@ -229,6 +232,21 @@ def cmd_weigh(args):
                    passes=passes[keep].tolist()), open(args.out, "w"))
 
 
+def cmd_mix(args):
+    sets = [json.load(open(p)) for p in args.particles]
+    if len({s["gen"] for s in sets}) != 1:
+        sys.exit("particle files come from different generations")
+    W = {}
+    for s in sets:
+        for x, w in zip(s["x"], s["W"]):
+            W[tuple(x)] = W.get(tuple(x), 0.0) + w / len(sets)
+    x = np.array(list(W))
+    w = np.array(list(W.values()))
+    json.dump(dict(gen=sets[0]["gen"], x=x.tolist(), W=(w / w.sum()).tolist(), ess=float(1.0 / np.sum((w / w.sum()) ** 2)),
+                   mixed_from=args.particles), open(args.out, "w"))
+    print(f"generation {sets[0]['gen']}: {len(x)} particles mixed from {len(sets)} weightings; ESS {1.0 / np.sum((w / w.sum()) ** 2):.0f}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -242,8 +260,10 @@ def main():
     w = sub.add_parser("weigh")
     w.add_argument("cal"), w.add_argument("survey"), w.add_argument("--prefix", required=True)
     w.add_argument("--out", required=True)
+    x = sub.add_parser("mix")
+    x.add_argument("particles", nargs="+"), x.add_argument("--out", required=True)
     a = ap.parse_args()
-    {"seed": cmd_seed, "propose": cmd_propose, "weigh": cmd_weigh}[a.cmd](a)
+    {"seed": cmd_seed, "propose": cmd_propose, "weigh": cmd_weigh, "mix": cmd_mix}[a.cmd](a)
 
 
 if __name__ == "__main__":
