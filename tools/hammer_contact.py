@@ -76,7 +76,7 @@ def reed_data(midi, t_tip, t_root):
     ph_pick = np.array([np.mean(np.interp(xx, r["xe"], r["phi"][:, n])) for n in range(N_MODES)])
     ph_tip = r["phi"][-1, :N_MODES]
     return dict(f=r["f"], om=om, mu=r["mu"], fe1=r["fe1"], xs_grid=xs_grid, ph_grid=ph_grid,
-                ph_pick=ph_pick, ph_tip=ph_tip)
+                ph_pick=ph_pick, ph_tip=ph_tip, L=L, xe=r["xe"], phi=r["phi"][:, :N_MODES])
 
 
 def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=60.0):
@@ -162,6 +162,94 @@ def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=
         tip_mm=amp * np.abs(rd["ph_tip"])[None, :] * 1e3,
         pick_mm=amp * rd["ph_pick"][None, :] * 1e3,  # signed coupling at the finger region
     )
+
+
+CROWN_MM = 9.2  # measured felt-crown length along the reed (8.9-9.4 mm at the crown)
+CROWN_PTS = 41
+
+
+def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None, dt=None,
+                   t_max_periods=60.0):
+    """Pass-3 contact: a Winkler layer of felt on the hammer's blade. The crown spans crown_mm along
+    the reed, centred d_s_mm from the clamp, sampled at CROWN_PTS points. Each point compresses
+    locally, f_i = (F_REF / N) (delta_i / z*)^p while delta_i > 0, so a uniform compression gives the
+    same total as the rigid form. Same kick-drift-kick integrator as strike_batch."""
+    S = len(m_h)
+    om = rd["om"]
+    T1 = 1.0 / rd["f"]
+    L = rd["L"]
+    off = (np.arange(CROWN_PTS) / (CROWN_PTS - 1) - 0.5) * crown_mm * 1e-3
+    x = np.clip(d_s_mm[:, None] * 1e-3 + off[None, :], 0.0, L)  # (S, P) positions along the reed
+    Phi = np.stack([np.interp(x.ravel(), rd["xe"], rd["phi"][:, n]).reshape(S, CROWN_PTS)
+                    for n in range(N_MODES)], axis=2)  # (S, P, M)
+    Phi_abs_max = np.abs(Phi).max(axis=1)  # (S, M): largest reach of the crown per mode
+    x_end = x[:, -1]  # the crown's tip-ward end
+    phi_end = np.stack([np.interp(x_end, rd["xe"], rd["phi"][:, n]) for n in range(N_MODES)], axis=1)
+    kp = F_REF / CROWN_PTS / z_star ** p  # per-point stiffness
+    if dt is None:
+        dmax = ((p + 1) * 0.5 * m_h * v ** 2 / (F_REF / z_star ** p)) ** (1 / (p + 1))
+        dt = min(float(np.min(dmax / v)) / 200.0, T1 / 2000.0)
+    alpha = np.zeros(N_MODES) if alpha is None else np.minimum(alpha, 0.9 * om)
+    wd = om * np.sqrt(1 - (alpha / om) ** 2)
+    e = np.exp(-alpha * dt)
+    c, s_ = np.cos(wd * dt), np.sin(wd * dt)
+
+    def forces(yy, qq, phi, kk, pp):
+        d = yy[:, None] - np.einsum("spm,sm->sp", phi, qq)
+        f = np.where(d > 0, kk[:, None] * np.power(np.maximum(d, 0.0), pp[:, None]), 0.0)
+        return f.sum(axis=1), np.einsum("spm,sp->sm", phi, f), d.max(axis=1)
+
+    q = np.zeros((S, N_MODES))
+    qd = np.zeros((S, N_MODES))
+    y = np.zeros(S)
+    vy = v.copy()
+    active = np.ones(S, bool)
+    in_contact = np.zeros(S, bool)
+    n_contacts = np.zeros(S, int)
+    t_contact = np.zeros(S)
+    t_end = np.full(S, np.nan)
+    d_peak = np.zeros(S)
+    F_now = np.zeros(S)
+    G_now = np.zeros((S, N_MODES))
+    e0 = 0.5 * m_h * v ** 2
+    idx = np.arange(S)
+    t = 0.0
+    for _ in range(int(t_max_periods * T1 / dt) + 1):
+        a = idx[active]
+        if a.size == 0:
+            break
+        phi_a, ma = Phi[a], m_h[a]
+        vya = vy[a] - F_now[a] / ma * (dt / 2)
+        qda = qd[a] + G_now[a] * (dt / 2)
+        qa = q[a]
+        q_new = e * (qa * c + (qda + alpha * qa) / wd * s_)
+        qd_new = e * (qda * c - (wd * qa + alpha * (qda + alpha * qa) / wd) * s_)
+        ya = y[a] + vya * dt
+        F1, G1, dm = forces(ya, q_new, phi_a, kp[a], p[a])
+        vya = vya - F1 / ma * (dt / 2)
+        qd_new = qd_new + G1 * (dt / 2)
+        q[a], qd[a], y[a], vy[a], F_now[a], G_now[a] = q_new, qd_new, ya, vya, F1, G1
+        d_peak[a] = np.maximum(d_peak[a], dm)
+        now = F1 > 0
+        n_contacts[a[now & ~in_contact[a]]] += 1
+        t += dt
+        t_contact[a[now]] += dt
+        in_contact[a] = now
+        reach = np.einsum("sm,sm->s", Phi_abs_max[a], np.sqrt(q_new ** 2 + (qd_new / om) ** 2))
+        done = (~now) & (vya < 0) & (n_contacts[a] > 0) & (ya < -reach)
+        t_end[a[done]] = t
+        active[a[done]] = False
+    amp = np.sqrt(q ** 2 + (qd / om) ** 2)
+    e_reed = 0.5 * np.sum(qd ** 2 + (om * q) ** 2, axis=1)
+    return dict(
+        dt=dt, unfinished=int(active.sum()), n_contacts=n_contacts, t_contact_T1=t_contact / T1,
+        t_end_T1=t_end / T1, amp=amp, q=q, qd=qd, rebound=vy / v, d_peak_mm=d_peak * 1e3,
+        energy_err=(e_reed + 0.5 * m_h * vy ** 2 - e0) / e0,
+        tip_mm=amp * np.abs(rd["ph_tip"])[None, :] * 1e3,
+        pick_mm=amp * rd["ph_pick"][None, :] * 1e3,
+        crown_end_swing_mm=np.abs(amp[:, 0] * phi_end[:, 0]) * 1e3,
+    )
+
 
 
 def selftest():
