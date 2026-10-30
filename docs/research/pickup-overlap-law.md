@@ -133,6 +133,22 @@ The model targets the most typical setup of one configuration:
   resolved.
 - **Aliasing:** none attributable to the law — pickup harmonics rendered at 44.1 kHz and
   176.4 kHz agree to 0.1 dB (C3, C5 at v120).
+- **Far-field closure (found 2026-10-30; open):**
+  - The solve grounds a flat plane on the reed's far side from the fingers, at y = −12 mm
+    (`FAR_BELOW`), or 0.6 mm below the reed when the reed sits lower than that. Nothing in the
+    evidence puts a conductor there; it is a numerical closure. The RF shield on the finger side is
+    physical.
+  - Reeds 1–14, plane at −12 / −24 / −36 mm: C(−4.6) = 15.21 / 16.55 / 17.11 pF/m, and
+    C(−1.0) = 37.03 / 38.56 / 39.52 pF/m. So the plane is not converged at −36 mm. A solve at
+    −60 mm returned nonsense (0.63 pF/m at −4.6), a numerical failure not yet traced.
+  - Inside the shipping range, the −36 mm plane raises C by a smooth 0.4–3.5 % of the law's range
+    (most near rest).
+  - Static H2–H5 at rest −0.085 mm move by ≤ 0.3 dB at swings up to 2 mm (harmonics above the
+    −35 dB resolution limit), 0.3–1 dB at 3 mm and 0.6–2 dB at 4 mm.
+  - Beyond the finger region's length along the reed (~6 mm), a 2D cross-section may not be a fair
+    model of the far field at all.
+  - Open: the real far-side conductors per section, and the law's validity at large swings. The
+    shipping tables are unchanged.
 
 ## 7. What this revision deliberately leaves alone
 
