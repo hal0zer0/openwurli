@@ -649,6 +649,27 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
   6–8 mm is extrapolated. Fatigue at the bass clamp edge (0.4–0.85 GPa at A1, 7–8.4 mm tip) is at the
   endurance edge, and bass breakage is documented.
 
+**Pass 3c results (2026-10-30; 5000 instruments × 26 notes per split, fillet anchor at reed 38/39).**
+- **Alone:** F1 9–12 %; F2 + F3 voiced, with the compression flag inside the offset choice, 4.6 %;
+  F4 85 %; validity flag (all grades, ≤ 2.5 mm) 64–65 %.
+- **All at the primary: 2 / 4 / 3 survivors** (code / damper-felt / blank-pickup), 9 in total. The
+  survivors agree across splits:
+  - **graded felt, z* about 2.2 / 1.8 / 0.55 mm** (bass / middle / treble). The flag removed pass 3b's
+    soft 3.5 mm middle.
+  - m_h 1.2–2.0 g; **v_ff low at 1.6–2.2 m/s**; v_max 2.6–3.7 m/s;
+  - **k ≈ 1.89**: strike at 0.57 L at A1, 0.31–0.37 L in the middle, 0.20 L at the top;
+  - bass blank .021–.024″.
+- **Contacts:** single contact nearly everywhere. Bass contact 0.2–0.45 T1, middle 0.6–1.25 T1,
+  treble 0.6–1.8 T1.
+- **Swings:** A1 pickup swing ~6 mm at v_ff. C7 0.059 mm (within 10 dB of C4).
+- **This matches the registered expectation:** with the compression cap, only a lower v_ff keeps the
+  middle contacts long enough for the weak middle mode 2.
+- **Open:**
+  - 9 survivors is below the ~20 per split needed for a sequential (SMC) step.
+  - The bass swing (~6 mm) awaits the ±12 mm tables for the swell report and calibration.
+  - Hammer mass, felt thickness and the reed pitch from the technician or a photo would narrow the
+    prior most.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
