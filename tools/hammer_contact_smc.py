@@ -72,6 +72,7 @@ KERNEL_MIN_ESS = 50
 TEMPER_BISECTIONS = 60  # bisection steps for alpha (numerical; resolves alpha far below any effect)
 MAX_GEN = 4            # generations before reporting without reaching ESS_TARGET
 A1_HALFWAY_FRAC = 0.6  # report: posterior share striking A1 beyond this fraction of L ("about halfway", mid-reed)
+M_H_EDGE_FRAC = 0.1    # report (stage 5, plan §5l): bass hammer mass within this fraction of the prior's ceiling
 
 LNZ = (np.log(PRIORS["z_star"][1]), np.log(PRIORS["z_star"][2]))
 P_RANGE = (PRIORS["p"][1], PRIORS["p"][2])
@@ -315,6 +316,11 @@ def cmd_weigh(args):
           f"{k_hi}: {np.sum(W[inst['k'] >= k_hi - K_EDGE_BAND]):.2f} (prior {K_EDGE_BAND / (k_hi - k_lo):.2f})")
     print(f"  A1 struck beyond {A1_HALFWAY_FRAC} L: {np.sum(W[a1_frac[keep] > A1_HALFWAY_FRAC]):.2f}; "
           f"F4 margin < {MARGINAL_F4_DB} dB: {np.sum(W[f4_db[keep] < MARGINAL_F4_DB]):.2f}")
+    if inst["m_h"].ndim == 2:
+        ceil = PRIORS["m_h"][2]
+        print(f"  m_h_bass within {M_H_EDGE_FRAC:.0%} of its {ceil * 1e3:.0f} g ceiling: "
+              f"{np.sum(W[inst['m_h'][:, 0] >= ceil * (1 - M_H_EDGE_FRAC)]):.2f} "
+              f"(prior {1 - (1 - np.log(1 / (1 - M_H_EDGE_FRAC)) / np.log(ceil / PRIORS['m_h'][1])) ** 3:.2f})")
     json.dump(dict(gen=meta["gen"], stage=lay.stage, x=x[keep].tolist(), W=W.tolist(), ess=float(ess),
                    passes=passes[keep].tolist()), open(args.out, "w"))
 
