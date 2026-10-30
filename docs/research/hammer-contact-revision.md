@@ -724,6 +724,21 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
   - Survivors are counted as distinct instruments. The §5i/§5j rule then decides between an SMC
     step and a report.
 
+**Pooled larger pass results (2026-10-30; seeds 51–54, 20 000 instruments per split;
+`tools/hammer_contact_pool.py`).**
+- **6 / 16 / 9 survivors** (code / damper-felt / blank-pickup): **19 distinct instruments**, 6 of
+  which survive in all three splits.
+  - Pass 3d's 0 in the code split was sampling. Every code survivor also survives in the other two
+    splits.
+- Survivors, p10 / 50 / 90:
+  - z* bass 1.43 / 2.16 / 2.72 mm, middle 1.07 / 1.35 / 2.09 mm, treble 0.45 / 0.60 / 0.96 mm;
+  - m_h 1.15 / 2.26 / 3.50 g; v_ff 1.68 / 1.99 / 2.78 m/s; k 1.59 / 1.81 / 1.95.
+- **k piles against the prior edge:** all 19 sit in [1.5, 2.0), and 26 % are within 0.1 of 2
+  (5 % under the prior). Bounded at 2, this gives only a lower bound on k; stage 4 widens the range
+  (§5k).
+- 7 of 19 pass F4 by less than 3 dB.
+- 19 distinct survivors meets the ~20 of the §5i / §5j rule, so stage 4 runs, seeded by these 19.
+
 ## 5k. Stage 4 registration (2026-10-30, before any run): sequential importance sampling
 
 - **Why:** pass 3d keeps ~0.1 % of prior draws. A prior pass large enough for a stable posterior
