@@ -805,6 +805,44 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
     weights stay valid for the new likelihood because every generation carries fresh prior draws.
     The re-weighed posterior supersedes the first, and both are reported.
 
+**Bass calibration bracket results (2026-10-30; `tools/pickup_bracket.py`, overlap-law §6).**
+- **Setup:**
+  - Reeds 15–20 (MIDI 47, 48 and 50 are all in that table) were re-solved whole with the fixed
+    solver to ±12 mm.
+  - Eight corner tables: {plane −12 mm | converged} × {neighbours mirrored | at rest} × {no tilt |
+    tilt-averaged, MIDI 48 mode shape: displacement 0.91–1.09 × pickup swing across the finger
+    region}.
+  - One preamp-bench build per corner, plus the shipping tables built the same way. Each was
+    calibrated on MIDI 47, 48 and 50 with identical strikes (seed 7, n 90) and one Sensor build.
+  - The same tools reproduce the original n 30 calibration exactly (0 of 90 rows differ).
+- **The registered mechanism is refuted: the clamp does not matter.**
+  - Paired per strike, the extended law with the plane at −12 mm matches the clamped shipping law
+    to +0.0 dB at every swing band, up to 13 mm.
+  - The mode-2 line is made where the law bends hardest, near the peak (u 0–3 mm), not in the
+    tails.
+- **The far-field closure does matter.** Paired against the shipping law, by MIDI:
+
+  | Correction | MIDI 48 | MIDI 50 |
+  |---|---|---|
+  | Converged plane, swings 3–6 mm | +1.9 to +3.0 dB | +1.2 to +1.8 dB |
+  | Converged plane + neighbours at rest, swings 3–6 mm | +2.6 to +4.6 dB | +1.9 to +2.4 dB |
+  | Neighbours at rest, plane −12 | −0.9 to −1.0 dB | −0.3 to −0.9 dB |
+  | Tilt (band medians) | ≤ 1.0 dB | ≤ 0.3 dB |
+
+  - Below 3 mm every corner is within 0.2 dB.
+  - The corrections are not additive: plane and neighbours interact by up to 3 % of range at
+    u < −4.
+- **Verdicts across the bracket** (the pooled pass re-scored; only MIDI 47, 48 and 50 changed):
+  - **19 instruments survive in all eight corners** — the same 19 as the pooled pass.
+  - **4 more survive only in the −12-plane corners: unresolved** (a verdict that flips across the
+    bracket is not decided by the tables).
+  - Survivors per split move across the bracket: code 6–12, damper-felt 16–19, blank-pickup 9–18.
+    So **the split preference is not decided by the tables** either.
+- **Calibration sampling is a second limit.**
+  - Re-measuring the shipping law with n 90 instead of 30 moves the same 4 instruments, because the
+    original bass calibration rested on 6 and 9 resolved lines at MIDI 47 and 48.
+  - Stage 4 is therefore weighed under each corner's n-90 calibration, and the spread is reported.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
