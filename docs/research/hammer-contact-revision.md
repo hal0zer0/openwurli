@@ -460,6 +460,25 @@ Reading (corrected after the physics review's fit; the first reading here overst
     speaker, equal-loudness contours) shift this by a few dB, not 20.
   - Doc's "one or two thousandths makes a big difference" concerns the lateral side gaps (his
     words), not height, so it does not conflict with the flat height sensitivity.
+- **Photo measurements (2026-10-29).** 4K stills from Emma Repairs videos, with a steel rule in
+  frame (±4 %), read by the schematic reader:
+  - **Hammer head:** a felt strip folded into an inverted U over a thin wooden blade, the U's axis
+    along the reed.
+    - Contact width along the reed: crown 8.9–9.4 mm (MEASURED), widest 10.2–11.6 mm.
+    - Across the reed: ~10.7 mm (DERIVED, from an assumed 13.75 mm hammer pitch).
+    - Felt over the wood: crown 3.0–3.3 mm, legs 3.7–4.3 mm (DERIVED).
+    - No size difference visible between rows (sections unidentified).
+  - **Strike point** (MEASURED, one hammer, one Model 200, upper middle or treble, ≈ reeds 38–56):
+    - crown centre 7.1 mm from the reed bar's edge;
+    - 0.21–0.24 L from the bar edge, or 0.33–0.37 L from the clamp fillet; the convention depends
+      on where the length table's L starts, which is undocumented.
+    - That is clamp-ward of the 0.40–0.60 L prior and of "about halfway", and consistent with
+      Miessner's 0.25–0.35 L.
+  - **Dampers:** V-notched pads over the reed just tip-ward of the clamp screw (qualitative).
+  - **Implications:** the contact patch becomes a physical width (~9 mm, so ~0.12 L in the bass and
+    ~0.25–0.3 L in the upper middle); the x_s prior must reach nearer the clamp; and ~3 mm of felt
+    bounds z* well below the 4 mm that pass 2's bass survivors used (bass felt is thicker by the
+    patent, but unsized).
 - **Geometry sources** (shelf search, 2026-10-29):
   - No damper lift, no damper-to-reed contact point and no hammer-head dimension anywhere in the
     manual or parts listings.
