@@ -65,6 +65,11 @@ Z_MC = 200_000         # Monte Carlo draws for the kernel mixture's in-support m
 DRAW_BATCH = 4096      # kernel draws per rejection round
 LOGQ_BATCH = 512       # proposals per block when evaluating the kernel mixture density
 ESS_TARGET = 300       # stop when a generation's effective sample size reaches this
+# A generation whose weights rest on a few particles would collapse the next kernel onto them. Below this ESS the
+# kernel is built from tempered weights W^alpha, alpha the largest in (0, 1] giving this ESS (plan §5l amendment).
+# The proposal changes, the target does not: the importance weights stay valid for any proposal with fresh draws.
+KERNEL_MIN_ESS = 50
+TEMPER_BISECTIONS = 60  # bisection steps for alpha (numerical; resolves alpha far below any effect)
 MAX_GEN = 4            # generations before reporting without reaching ESS_TARGET
 A1_HALFWAY_FRAC = 0.6  # report: posterior share striking A1 beyond this fraction of L ("about halfway", mid-reed)
 
@@ -154,6 +159,26 @@ def kernel(particles):
     return x, W, np.linalg.cholesky(sig)
 
 
+def ess(W):
+    W = np.asarray(W) / np.sum(W)
+    return 1.0 / np.sum(W ** 2)
+
+
+def tempered(W):
+    """Kernel mixture weights: W itself, or W^alpha when ess(W) < KERNEL_MIN_ESS. Returns (weights, alpha)."""
+    W = np.asarray(W, float)
+    if ess(W) >= KERNEL_MIN_ESS:
+        return W, 1.0
+    if len(W) <= KERNEL_MIN_ESS:
+        return np.full(len(W), 1.0 / len(W)), 0.0
+    lo, hi = 0.0, 1.0
+    for _ in range(TEMPER_BISECTIONS):
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if ess(W ** mid) >= KERNEL_MIN_ESS else (lo, mid)
+    Wt = W ** lo
+    return Wt / Wt.sum(), lo
+
+
 def kernel_draw(rng, x, W, L, n):
     j = rng.choice(len(x), size=n, p=W)
     return x[j] + rng.standard_normal((n, x.shape[1])) @ L.T
@@ -207,7 +232,8 @@ def cmd_propose(args):
     particles = json.load(open(args.particles))
     lay = layout_of(particles)
     rng = np.random.default_rng(args.seed)
-    x, W, L = kernel(particles)
+    w_kernel, alpha = tempered(particles["W"])
+    x, W, L = kernel(dict(particles, W=w_kernel.tolist()))
     z = np.mean(lay.in_support(kernel_draw(rng, x, W, L, Z_MC)))
     n_fresh = rng.binomial(args.n, FRESH_SHARE)
     got, tried = [], 0
@@ -226,9 +252,10 @@ def cmd_propose(args):
     json.dump(dict(gen=particles["gen"] + 1, stage=lay.stage, n=args.n, chunks=args.chunks, seed=args.seed,
                    x=prop.tolist(),
                    log_q=log_q.tolist(), z=float(z), z_mc_accept=float(len(np.vstack(got))) / tried,
-                   fresh=int(n_fresh)), open(f"{args.prefix}.meta.json", "w"))
+                   fresh=int(n_fresh), kernel_alpha=alpha), open(f"{args.prefix}.meta.json", "w"))
     print(f"generation {particles['gen'] + 1}: {args.n} proposals ({n_fresh} fresh) in {args.chunks} chunks; "
-          f"kernel in-support mass Z {z:.3f}")
+          f"kernel in-support mass Z {z:.3f}; kernel weights alpha {alpha:.3f} (ESS {ess(particles['W']):.0f} -> "
+          f"{ess(w_kernel):.0f})")
 
 
 def cmd_weigh(args):

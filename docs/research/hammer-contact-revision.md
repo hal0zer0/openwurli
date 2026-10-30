@@ -935,6 +935,15 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
   - Generation 0 is stage 4's last-generation survivors at plane −12 with v_ff 2.6–3.2 m/s, their
     mass copied to all three grades. It seeds the proposal only.
   - Up to 4 generations × 6000 proposals; stop at ESS ≥ 300 on both corners.
+  - **Amendment before generation 2 (sampler mechanics only):**
+    - Generation 1 came out degenerate, with ESS 2 / 1. One fresh draw with graded mass
+      (3.75 / 3.33 / 2.75 g) carries 65–83 % of the weight. The seeds' equal masses left the kernel
+      exploring near-equal grades only (survivors' median bass / treble ratio 1.07).
+    - A kernel built from those weights would collapse onto that single particle.
+    - So when a generation's ESS is below 50, the next kernel uses tempered weights W^α, with α the
+      largest giving ESS 50. The target and the importance weights are unchanged, since any
+      proposal that keeps fresh draws is valid.
+    - Stage 4 never triggers it: its proposals reproduce byte for byte.
 - **Registered expectation (physics review), checked on both corners:**
   - the A1 strike median is ≤ 0.58 L, and the posterior median of m_h_bass / m_h_treble is ≥ 1.3.
   - **Failure clause:** the A1 median is ≥ 0.60 L, or the ratio is < 1.2.
