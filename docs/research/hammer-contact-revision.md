@@ -1076,6 +1076,18 @@ p50 [p10, p90] dB:
   - The branch gap at half compression grows ×1.3–1.6 across those speeds under Stulov, and
     ×2.3–3 under Hunt–Crossley.
   - **Stulov fails at ≥ ×2.1.** Boutillon 1988 (being fetched) can take the same test.
+  - **Result (2026-10-30; `tools/felt_loop_check.py` on the digitised loops, Monte Carlo over the
+    stated digitisation uncertainty):**
+    - Growth from 0.52 to 1.43 m/s: ×1.12 [1.00, 1.27] at 0.5 of maximum compression, and
+      ×1.20 [1.07, 1.36] at 0.8 (both 90 %).
+    - **Stulov's form is not falsified** (the line is ×2.1). Hunt–Crossley's ×2.3–3 is excluded.
+    - The measured growth is below even Stulov's ×1.3–1.6.
+    - **Caveat:** the statistic is near-saturated. In all four loops the felt reaches zero force
+      while still 48–60 % compressed, so at half compression the unloading branch has already left
+      contact, and the gap there mostly measures the loading branch.
+    - That slow recovery suggests a millisecond-scale relaxation, not Stulov's microsecond τ0;
+      it is passed to the physics review. These are piano hammers, and Giordano & Winans
+      attribute part of such loops to force propagation within the hammer.
 - **Next stage (to register once the upper-comb read gives the shield band):** from the pooled
   pass, with τ_d, the shield clearance band and the let-off grid all marginalised. A verdict that
   flips across τ_d is unresolved.
