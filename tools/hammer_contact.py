@@ -219,11 +219,14 @@ CROWN_PTS = 41  # crown sample points along the reed (crown-length changes resol
 
 
 def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None, dt=None,
-                   t_max_periods=T_MAX_PERIODS):
+                   t_max_periods=T_MAX_PERIODS, tau_d=None):
     """Pass-3 contact: a Winkler layer of felt on the hammer's blade. The crown spans crown_mm along
     the reed, centred d_s_mm from the clamp, sampled at CROWN_PTS points. Each point compresses
     locally, f_i = (F_REF / N) (delta_i / z*)^p while delta_i > 0, so a uniform compression gives the
-    same total as the rigid form. Same kick-drift-kick integrator as strike_batch."""
+    same total as the rigid form. Same kick-drift-kick integrator as strike_batch.
+
+    tau_d (s, per sample): felt loss in Stulov's hereditary form (plan §5m), one memory state per crown point,
+    carried through separations, force clamped at >= 0. None is the lossless law, unchanged."""
     S = len(m_h)
     om = rd["om"]
     T1 = 1.0 / rd["f"]
@@ -248,6 +251,24 @@ def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None,
         d = yy[:, None] - np.einsum("spm,sm->sp", phi, qq)
         f = np.where(d > 0, kk[:, None] * np.power(np.maximum(d, 0.0), pp[:, None]), 0.0)
         return f.sum(axis=1), np.einsum("spm,sp->sm", phi, f), d.max(axis=1)
+
+    if tau_d is not None:
+        # Stulov memory per crown point, advanced exactly for g linear over a step (first-order hold): the trapezoid
+        # rule when dt << tau0, and g - tau0 dg/dt when dt >> tau0, so the loss survives steps longer than tau0.
+        tau0 = np.asarray(tau_d, float) * (1 - STULOV_EPS) / STULOV_EPS
+        E = np.exp(-dt / tau0)
+        w_new = 1 - (1 - E) * tau0 / dt
+        w_old = (1 - E) * tau0 / dt - E
+        h_mem = np.zeros((S, CROWN_PTS))
+        g_prev = np.zeros((S, CROWN_PTS))
+
+        def forces(yy, qq, phi, kk, pp, a):  # noqa: F811 - the lossy law replaces the lossless one
+            d = yy[:, None] - np.einsum("spm,sm->sp", phi, qq)
+            g = np.where(d > 0, np.power(np.maximum(d, 0.0), pp[:, None]), 0.0)
+            h = h_mem[a] * E[a, None] + g * w_new[a, None] + g_prev[a] * w_old[a, None]
+            h_mem[a], g_prev[a] = h, g
+            f = np.maximum(kk[:, None] / (1 - STULOV_EPS) * (g - STULOV_EPS * h), 0.0)
+            return f.sum(axis=1), np.einsum("spm,sp->sm", phi, f), d.max(axis=1)
 
     q = np.zeros((S, N_MODES))
     qd = np.zeros((S, N_MODES))
@@ -275,7 +296,8 @@ def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None,
         q_new = e * (qa * c + (qda + alpha * qa) / wd * s_)
         qd_new = e * (qda * c - (wd * qa + alpha * (qda + alpha * qa) / wd) * s_)
         ya = y[a] + vya * dt
-        F1, G1, dm = forces(ya, q_new, phi_a, kp[a], p[a])
+        F1, G1, dm = forces(ya, q_new, phi_a, kp[a], p[a]) if tau_d is None else \
+            forces(ya, q_new, phi_a, kp[a], p[a], a)
         vya = vya - F1 / ma * (dt / 2)
         qd_new = qd_new + G1 * (dt / 2)
         q[a], qd[a], y[a], vy[a], F_now[a], G_now[a] = q_new, qd_new, ya, vya, F1, G1
@@ -302,10 +324,19 @@ def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None,
 
 
 
+# Felt loss (plan §5m): Stulov's hereditary law per crown point, F = F0 [g - eps h], h the felt's memory of g
+# (relaxation time tau0). For contacts much longer than tau0 it is K [g + tau_d dg/dt] with
+# tau_d = eps tau0 / (1 - eps); at fixed tau_d, eps moves the loop by < 0.2 % (physics review), so eps is held at the
+# middle of Stulov 1995 Table II's fits (0.936-0.985) and tau_d carries the loss. z* stays on the relaxed (slow) law:
+# F0 = K / (1 - eps).
+STULOV_EPS = 0.95
+
+
 # Self-test fixtures (test cases, not physics inputs): A1 on the .020" blank, a 3 g hammer at 2 m/s,
 # a stiff and a soft felt, and the model evaluation's linear-spring cases.
 SELFTEST = dict(midi=33, blank_in=0.020, batch=200, seed=1, m_h=3e-3, v=2.0, p=3.0, x_s=0.5,
-                z_stiff=0.2e-3, z_soft=3e-3, dt_refine=4, tau_ratios=(0.3, 0.75))
+                z_stiff=0.2e-3, z_soft=3e-3, dt_refine=4, tau_ratios=(0.3, 0.75),
+                stulov_d_s_mm=42.0, stulov_tau_d_tiny=1e-9, stulov_tau_d=0.1e-3)
 
 
 def selftest():
@@ -340,6 +371,20 @@ def selftest():
         print(f"  p=1 tau {tau_ratio} T1: contacts {len(c7)} vs {mine['n_contacts'][0]}; tip mode1 "
               f"{d20[0]*MM_PER_M:.3f} vs {mine['tip_mm'][0,0]:.3f} mm; mode2 {d20[1]*MM_PER_M:.4f} vs "
               f"{mine['tip_mm'][0,1]:.4f} mm; rebound {rb:+.3f} vs {mine['rebound'][0]:+.3f}")
+    # Felt loss (plan §5m): tau_d -> 0 reproduces the lossless crown contact, and the lossy result converges in dt.
+    one = lambda a: np.array([a])  # noqa: E731
+    args = (rd_a1, one(T["m_h"]), one(T["v"]), one(T["z_soft"]), one(T["p"]), one(T["stulov_d_s_mm"]))
+    lossless = strike_batch_w(*args)
+    tiny = strike_batch_w(*args, tau_d=one(T["stulov_tau_d_tiny"]))
+    lossy = strike_batch_w(*args, tau_d=one(T["stulov_tau_d"]))
+    fine = strike_batch_w(*args, tau_d=one(T["stulov_tau_d"]), dt=lossy["dt"] / T["dt_refine"])
+    db = lambda x, y: 20 * np.log10(abs(x) / abs(y))  # noqa: E731
+    print(f"  Stulov tau_d {T['stulov_tau_d_tiny']:.0e} s vs lossless: pickup mode1 "
+          f"{db(tiny['pick_mm'][0, 0], lossless['pick_mm'][0, 0]):+.5f} dB, mode2 "
+          f"{db(tiny['pick_mm'][0, 1], lossless['pick_mm'][0, 1]):+.5f} dB")
+    print(f"  Stulov tau_d {T['stulov_tau_d'] * 1e3:.2f} ms, dt/{T['dt_refine']}: pickup mode1 "
+          f"{db(fine['pick_mm'][0, 0], lossy['pick_mm'][0, 0]):+.4f} dB, mode2 "
+          f"{db(fine['pick_mm'][0, 1], lossy['pick_mm'][0, 1]):+.4f} dB; energy out/in {1 + lossy['energy_err'][0]:.3f}")
 
 
 def run(notes, n, damping, seed, out):
@@ -533,7 +578,7 @@ def calibrate(notes, n, seed, bench, sensor, workdir, out):
 
 
 
-def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=STIFFNESS_CHUNK):
+def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=STIFFNESS_CHUNK, tau_d=None):
     """strike_batch_w in chunks of similar contact stiffness, so the stiffest sample doesn't set every
     sample's step. Same physics and per-chunk step rule; results reassembled in the input order."""
     dmax = ((p + 1) * 0.5 * m_h * v ** 2 / (F_REF / z_star ** p)) ** (1 / (p + 1))
@@ -542,7 +587,8 @@ def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=STIFFNESS_CHUNK):
     out = {}
     for i0 in range(0, len(order), chunk):
         idx = order[i0:i0 + chunk]
-        r = strike_batch_w(rd, m_h[idx], v[idx], z_star[idx], p[idx], d_s_mm[idx])
+        r = strike_batch_w(rd, m_h[idx], v[idx], z_star[idx], p[idx], d_s_mm[idx],
+                           tau_d=None if tau_d is None else np.asarray(tau_d)[idx])
         for k in keys:
             if k not in out:
                 out[k] = np.zeros((len(m_h),) + np.shape(r[k])[1:], dtype=np.asarray(r[k]).dtype)
@@ -674,13 +720,14 @@ def keyboard3b(notes, n, seed, out, split, survey, origin, instruments=""):
             zs, pp = inst["z_star"][sel, g], inst["p"][sel, g]
             # m_h shared across the keyboard (prior draws, stages up to 4) or graded per felt grade (stage 5, plan §5l)
             mh = inst["m_h"][sel, g] if inst["m_h"].ndim == 2 else inst["m_h"][sel]
+            td = inst["tau_d"][sel] if "tau_d" in inst else None  # felt loss, s (plan §5m); absent = lossless
 
             def place(off):
                 return np.clip(law + off, floor_mm, L_mm - CROWN_MM / 2)
 
             # (A) F1 and reports: random offset, v_ff.
             d_s = place(scatter[sel])
-            r = strike_w_chunked(rd, mh, inst["v"][sel], zs, pp, d_s)
+            r = strike_w_chunked(rd, mh, inst["v"][sel], zs, pp, d_s, tau_d=td)
             f1 = rd["f"]
             f2 = rd["om"][1] / rd["om"][0] * f1
             ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), LOG_FLOOR) / np.maximum(np.abs(r["pick_mm"][:, 0]), LOG_FLOOR)
@@ -695,12 +742,12 @@ def keyboard3b(notes, n, seed, out, split, survey, origin, instruments=""):
             # (B) F2/F3 at v_max: voiced offsets at MIDI <= 60, the random offset above.
             if midi <= VOICED_MAX_MIDI:
                 for j, off in enumerate(VOICED_OFFSETS_MM):
-                    rv = strike_w_chunked(rd, mh, inst["v_max"][sel], zs, pp, place(off))
+                    rv = strike_w_chunked(rd, mh, inst["v_max"][sel], zs, pp, place(off), tau_d=td)
                     voiced_tip[sel, j] = rv["tip_mm"][:, 0]
                     voiced_end[sel, j] = rv["crown_end_swing_mm"]
                     voiced_dpeak[sel, j] = rv["d_peak_mm"]
             else:
-                rv = strike_w_chunked(rd, mh, inst["v_max"][sel], zs, pp, d_s)
+                rv = strike_w_chunked(rd, mh, inst["v_max"][sel], zs, pp, d_s, tau_d=td)
                 cols["tip_vmax_mm"][sel] = rv["tip_mm"][:, 0]
                 cols["d_peak_vmax_mm"][sel] = rv["d_peak_mm"]
         res[midi] = {k: v.tolist() for k, v in cols.items()}
