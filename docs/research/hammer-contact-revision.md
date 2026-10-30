@@ -553,6 +553,44 @@ result is identical to one batch within 4e-6. Each falsifier alone, then in comb
     46/47. A 207VA frame weakly favours 42|43.
   - A parts drawing of the comb split would settle it.
 
+## 5h. Pass 3b registration (2026-10-30, before any pass-3b run)
+
+Physics review of the pass-3 conflict: not the calibration extrapolation. In the let-off regime
+(m_h comparable to the bass M_eff, soft felt) contact lasts ~0.8 T1, and at some strike points the
+reed hands its energy back to the hammer. Tip swing then jumps with the strike point by up to ~12×
+within ±2.5 mm (F#2: 16 / 9.7 / 1.3 / 8.9 mm at 0.40 / 0.44 / 0.50 / 0.56 L). Random per-hammer
+offsets make every bass note a lottery.
+
+Three changes, no new physics:
+1. **Voiced per-hammer offsets for F2 and F3.**
+   - §9 and §18 set each hammer by ear for tone, volume and sustain, and nobody leaves a dead note
+     or a reed on the shield. So F2 and F3 pass at a note if ANY offset in {−1.5, −1.0, …, +1.5} mm
+     about the strike-point law satisfies both, at the same offset.
+   - This applies at MIDI ≤ 60. In pass 3, tips above that stayed ≤ 7 mm. Above 60, F3 uses the
+     random offset.
+   - F1 keeps the random offset at v_ff.
+2. **One bass blank per instrument:** thickness uniform .020–.026″, applied to every reed 1–20,
+   evaluated on four FE levels (.020 / .022 / .024 / .026″). The measured mode-2 ratios at MIDI
+   47–50 (6.50–6.54) fall between the .020″ (6.27) and .026″ (6.80–6.94) FE values. Geometry
+   conditioning on the measured ratio stays for reeds 21 and up.
+3. **F2 and F3 at v_max, not v_ff.**
+   - The choke and the shield concern the hardest real playing.
+   - v_max: log-uniform from v_ff to 5 m/s, per instrument. That is Askenfelt & Jansson II's
+     forte 5 m/s over a 47 mm blow, scaled by the 200A's 27.4 mm blow: ~2.9 m/s at forte and ~4.9
+     at the fastest key, graded G.
+   - F1 stays at v_ff (the reference set's top layer).
+
+**F4 (operator-approved 2026-10-30):** treble voicing. At the top-grade sample notes (MIDI 84, 90 and
+96) the pickup swing at v_ff must be ≥ 0.012 mm, the lenient end of the 20 dB bound. 6 and 10 dB are
+reported.
+
+**Not used (operator decision 2026-10-30):** the reference set's bass fundamental swell. Criterion 6
+stays report-only.
+
+**Only if pass 3b still leaves no survivors:** grade m_h with the felt (bass ≥ mid ≥ treble), registered
+before that run. The physics review withdrew its earlier "share m_h", because a swing bound breaks
+the m_h–z* degeneracy.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
