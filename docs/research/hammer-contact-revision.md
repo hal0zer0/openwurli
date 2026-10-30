@@ -652,8 +652,8 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
 **Pass 3c results (2026-10-30; 5000 instruments × 26 notes per split, fillet anchor at reed 38/39).**
 - **Alone:** F1 9–12 %; F2 + F3 voiced, with the compression flag inside the offset choice, 4.6 %;
   F4 85 %; validity flag (all grades, ≤ 2.5 mm) 64–65 %.
-- **All at the primary: 2 / 4 / 3 survivors** (code / damper-felt / blank-pickup), 9 in total. The
-  survivors agree across splits:
+- **All at the primary: 2 / 4 / 3 survivors** (code / damper-felt / blank-pickup): 9 rows but 5
+  distinct instruments, because the splits share one set of draws (correction in §5j). They share:
   - **graded felt, z* about 2.2 / 1.8 / 0.55 mm** (bass / middle / treble). The flag removed pass 3b's
     soft 3.5 mm middle.
   - m_h 1.2–2.0 g; **v_ff low at 1.6–2.2 m/s**; v_max 2.6–3.7 m/s;
@@ -692,6 +692,37 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
   than ~10.
 - Side check (for the record): the FE clamp stays at the fillet. The bass mode-2 ratios fall inside
   the FE band for 4 of 5 notes with the clamp at the fillet, against 0 of 5 with it at the bar edge.
+
+**Pass 3d results (2026-10-30; 5000 instruments × 26 notes per split, floor 11.5 mm, seed 51).**
+- **Alone:** F1 8–11 %; F2 + F3 voiced 4.5–4.7 %; F4 83 %; validity flag 63–64 %.
+- **All at the primary: 0 / 4 / 1 survivors** (code / damper-felt / blank-pickup), 5 distinct
+  instruments.
+  - z* bass 1.0–2.3, middle 1.0–2.2, treble 0.45–0.89 mm.
+  - m_h 1.06–1.40 g, plus one at 3.9 g; v_ff 1.86–2.29 m/s; k 1.57–1.96.
+  - The 3.9 g instrument passes F4 at the margin (C7 swing 0.015 mm against 0.012).
+- **The registered expectation fails, by its own clause.**
+  - All five survivors strike MIDI 84, 90 and 96 at the floor, and three keep z*_treble ≥ 0.55 mm
+    (0.57, 0.79 and 0.89 mm).
+  - Across the prior, the floor lowers top-treble swing: the median at MIDI 96 goes from 0.172 to
+    0.097 mm, and at MIDI 90 from 0.38 to 0.29 mm.
+  - But F4's z* boundary holds. The z*_treble where the local F4 pass rate falls below 50 % is
+    0.76 mm in pass 3c and 0.79 mm in pass 3d, and per-bin pass rates above 0.55 mm agree within
+    sampling noise. Below 0.55 mm the stiffest felt loses 3–5 points (99 → 95 % under 0.2 mm).
+  - F4 failures are the long contacts, about 3 T1 (median) in both passes, against 1.0–1.4 T1 for
+    strikes that pass. The floor moves the bulk of the swing distribution, not this tail. That is a
+    reading of the data, not a derivation.
+- **Correction to §5i: the splits are not independent.**
+  - One seed draws the instruments for all three splits of a pass, and the splits differ only in the
+    grade boundaries.
+  - Pass 3c's 9 survivor rows are 5 instruments; two of them survive in all three splits. The
+    cross-split agreement claimed there is one set of draws scored three ways, not replication.
+  - Within a pass, the splits are a paired comparison of the boundary nuisance.
+- **Next, by the §5j rule (fewer than ~10 survivors): the larger prior pass.**
+  - Three more seeds (52, 53, 54) × 5000 instruments per split. Rules, priors and code are
+    unchanged (`keyboard3b --origin fillet-floor`, scored with `tools/hammer_contact_score3c.py`).
+  - Pooled with pass 3d to 20 000 instruments per split.
+  - Survivors are counted as distinct instruments. The §5i/§5j rule then decides between an SMC
+    step and a report.
 
 ## 6. Steps
 

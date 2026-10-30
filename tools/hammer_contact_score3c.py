@@ -40,11 +40,9 @@ PRIMARY = (10, 3.2)        # the registered primary point of the grid
 
 
 
-def main():
-    kb = json.load(open(sys.argv[1]))
-    fits = offsets(json.load(open(sys.argv[2])))
-    rec = {r["midi"]: r["onset"]["re_h1_db"] for r in json.load(open(sys.argv[3]))
-           if r.get("onset", {}).get("status") == "line"}
+def score(kb, fits, rec):
+    """Apply the §5i rules. Returns (notes, inst, f1, f23, f3_only, f4, valid); f23(n_b, gap) gives the let-off +
+    shield mask at one grid point."""
     n = kb["n"]
     notes = {int(m): {k: (np.array(v, dtype=float) if isinstance(v, list) else v) for k, v in d.items()}
              for m, d in kb["notes"].items()}
@@ -86,7 +84,27 @@ def main():
     valid = np.ones(n, bool)
     for m, v in notes.items():
         valid &= v["d_peak_mm"] <= DPEAK_MAX_MM
+    return notes, inst, f1, f23, f3_only, f4, valid
 
+
+def survivors(kb, fits, rec):
+    """All four checks at the registered primary let-off point."""
+    _, _, f1, f23, _, f4, valid = score(kb, fits, rec)
+    return f1 & f23(*PRIMARY) & f4 & valid
+
+
+def load_refs(cal_path, survey_path):
+    fits = offsets(json.load(open(cal_path)))
+    rec = {r["midi"]: r["onset"]["re_h1_db"] for r in json.load(open(survey_path))
+           if r.get("onset", {}).get("status") == "line"}
+    return fits, rec
+
+
+def main():
+    kb = json.load(open(sys.argv[1]))
+    fits, rec = load_refs(sys.argv[2], sys.argv[3])
+    notes, inst, f1, f23, f3_only, f4, valid = score(kb, fits, rec)
+    n = kb["n"]
     prim = f23(*PRIMARY)
     print(f"pass 3c | origin {kb['origin']}, split {kb['split']}, {n} instruments")
     print(f"  alone: F1 {f1.mean()*100:.1f}% | F2+F3 voiced {PRIMARY} {prim.mean()*100:.1f}% | F3 alone "
