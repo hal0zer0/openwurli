@@ -591,6 +591,19 @@ stays report-only.
 before that run. The physics review withdrew its earlier "share m_h", because a swing bound breaks
 the m_h–z* degeneracy.
 
+**Anchor refinement (2026-10-30, registered after pass 3b was launched with the §5f anchor and
+before any pass-3b result was read).** The manual's service parts list (PDF p74) lists the pickup as
+four parts by reed range: 1–20, 21–32, 33–42 and 43–64. So a comb joint sits at 42|43, and 50|51 is
+not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 42|43.
+- The photographed hammer, reed #4/#5 bass-ward of a comb joint with the solder switch, is
+  therefore reed 38 or 39 (MIDI 70/71).
+- Its length-table length is 39.8–40.4 mm, consistent with the photo's 35–40 mm at the fillet
+  origin.
+- Anchor for the next pass: d_ref = 13.2 mm from the fillet, L_ref = 40.1 mm. The bar-edge origin is
+  dropped.
+- Caveat: early 200-era "reed plates" at reeds 43–52 could mimic a joint in a photo. The read joint
+  showed comb hardware (a slotted hole and bar bolt), and the 206A is 200A-era.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
