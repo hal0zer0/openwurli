@@ -772,6 +772,23 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
     handful of survivors, so it is falsified only if the posterior favours a different split.
   - If the k mass piles within 0.1 of 2.5 as well, the result gives only a lower bound on k and is
     reported as such.
+- **Calibration caveat, found in pass 3d's F1 failures and registered before any stage-4 result:**
+  - F1 fails in every grade, and among the pass-3d instruments that pass everything else it is the
+    whole difference between the splits.
+  - In the code and blank-pickup splits, the bass grade has 3 scored notes (MIDI 47, 48, 50), none
+    of which may fail. MIDI 48 alone fails it in 173 of 202 instruments, at a median pickup swing of
+    4.7 mm.
+  - The chain renders behind F1's offsets use the shipping tables (u within ±4.5 mm, rest at
+    u = −0.085 mm). So any pickup swing above 4.415 mm reaches a clamped law, and MIDI 48's offset
+    there is fitted partly on clamped renders. The split posterior therefore leans on a provisional
+    bass calibration.
+  - Elsewhere the offsets are extrapolated in swing: for 30–45 % of the F1 failures at MIDI 71, 74,
+    81, 84, 86 and 88, the swing lies beyond the calibrated range. The chain–proxy offset is within
+    ±1 dB there, so the risk is smaller.
+  - **Fix, registered now:** once the bass tables reach ±12 mm, recalibrate over the posterior's
+    swing range and re-weigh every generation. Only the scores change, not the integration, and the
+    weights stay valid for the new likelihood because every generation carries fresh prior draws.
+    The re-weighed posterior supersedes the first, and both are reported.
 
 ## 6. Steps
 
