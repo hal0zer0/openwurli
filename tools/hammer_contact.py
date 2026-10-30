@@ -671,7 +671,9 @@ def keyboard3b(notes, n, seed, out, split, survey, origin, instruments=""):
                 continue
             L_mm = rd["L"] * MM_PER_M
             law = d_ref * (L_mm / L_ref) ** inst["k"][sel]
-            zs, pp, mh = inst["z_star"][sel, g], inst["p"][sel, g], inst["m_h"][sel]
+            zs, pp = inst["z_star"][sel, g], inst["p"][sel, g]
+            # m_h shared across the keyboard (prior draws, stages up to 4) or graded per felt grade (stage 5, plan §5l)
+            mh = inst["m_h"][sel, g] if inst["m_h"].ndim == 2 else inst["m_h"][sel]
 
             def place(off):
                 return np.clip(law + off, floor_mm, L_mm - CROWN_MM / 2)

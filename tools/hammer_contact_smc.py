@@ -6,9 +6,12 @@ Target: prior(theta) x (1/3) sum over splits of P(pass | theta, split). The felt
 with a uniform prior; every proposal is scored under all three splits (one keyboard3b seed per chunk draws the
 per-note nuisances for all three).
 
-Coordinates x, in which the prior is uniform on a box intersected with the felt-grade ordering z*_b >= z*_m >= z*_t:
-    ln z*_b, ln z*_m, ln z*_t | p_b, p_m, p_t | ln m_h | ln v_ff | u_vmax | k | t_bass (in)
+Coordinates x, in which the prior is uniform on a box intersected with the grade orderings (bass >= middle >= treble):
+    stage 4 (plan §5k): ln z*_b, ln z*_m, ln z*_t | p_b, p_m, p_t | ln m_h | ln v_ff | u_vmax | k | t_bass (in)
+    stage 5 (plan §5l): ln z*_b, ln z*_m, ln z*_t | p_b, p_m, p_t | ln m_h_b, ln m_h_m, ln m_h_t | u_vmax | k | t_bass
+                        (hammer mass graded and ordered like the felt; v_ff fixed at V_FF_STAGE5)
 with u_vmax = ln(v_max / v_ff) / ln(V_MAX_CEIL / v_ff): v_max log-uniform on [v_ff, V_MAX_CEIL] is uniform in u.
+Every particle and meta file records its stage.
 
 Proposal of generation g: with probability FRESH_SHARE a prior draw; otherwise a weighted particle of generation
 g - 1 plus a Gaussian perturbation (covariance KERNEL_SCALE x the weighted particle covariance, plus a ridge),
@@ -18,8 +21,10 @@ K the kernel mixture, Z its mass inside the support (Monte Carlo), |S| the suppo
 weight is (1 / |S|) / q(x) x (splits passed) / 3.
 
 Commands:
-    seed    CAL SURVEY KB... --out PARTICLES.json     generation 0 from a pooled prior pass (seeds the proposal only:
-                                                      it was scored under the previous stage's rules)
+    seed    CAL SURVEY KB... --out PARTICLES.json [--stage 5 --vff-window LO HI]
+                                                      generation 0 from earlier keyboard runs (seeds the proposal only:
+                                                      they were scored under the previous stage's rules); for stage 5,
+                                                      only instruments with v_ff in the window, mass copied to all grades
     propose PARTICLES.json --n N --chunks C --seed S --prefix P
                                                       writes P.meta.json and P_c{i}.inst.json (keyboard3b --instruments)
     weigh   CAL SURVEY --prefix P --out PARTICLES.json reads P_c{i}_{split}.json, weights, reports
@@ -47,6 +52,10 @@ from hammer_contact_score3c import F4_MIN_SWING_MM, F4_NOTES, load_refs, survivo
 # so inside [0, 2.5] the ceiling never binds. k > 2 is checked against the technician's "about halfway" and the
 # patent's mid-reed on the posterior, not bounded in the prior.
 SMC_K_RANGE = (0.0, 2.5)
+# Stage 5 (plan §5l): the ff hammer speed is a convention, fixed once. Plan §4: action ratio ~2.9 (manual: blow
+# 27.4 mm, key dip 9.5 mm) x peak piano key speed 1 m/s; Askenfelt & Jansson's forte 5 m/s over a 47 mm blow, scaled
+# to the 200A's 27.4 mm blow, gives the same ~2.9 m/s.
+V_FF_STAGE5 = 2.9
 
 # --- Sampler controls (numerical; checked by the ESS and by generation-to-generation agreement) -------------------
 FRESH_SHARE = 0.2      # share of fresh prior draws per generation, so a few seeds cannot lock onto one mode
@@ -64,44 +73,83 @@ P_RANGE = (PRIORS["p"][1], PRIORS["p"][2])
 LNM = (np.log(PRIORS["m_h"][1]), np.log(PRIORS["m_h"][2]))
 LNV = (np.log(PRIORS["v_ff"][1]), np.log(PRIORS["v_ff"][2]))
 UNIT = (0.0, 1.0)
-BOX = np.array([LNZ, LNZ, LNZ, P_RANGE, P_RANGE, P_RANGE, LNM, LNV, UNIT, SMC_K_RANGE, BASS_BLANKS_IN])
-NAMES = ("ln z*_b", "ln z*_m", "ln z*_t", "p_b", "p_m", "p_t", "ln m_h", "ln v_ff", "u_vmax", "k", "t_bass")
-ORDERING_FRACTION = 1.0 / 6.0  # the ordered region is 1/3! of the three log-uniform z* cube
-LOG_VOL = float(np.sum(np.log(BOX[:, 1] - BOX[:, 0])) + np.log(ORDERING_FRACTION))
+ORDERED_GROUP_FRACTION = 1.0 / 6.0  # an ordered triple fills 1/3! of its cube
 SPLIT_NAMES = tuple(sorted(SPLITS))
 
 
-def in_support(x):
-    inside = np.all((x >= BOX[:, 0]) & (x <= BOX[:, 1]), axis=1)
-    return inside & (x[:, 0] >= x[:, 1]) & (x[:, 1] >= x[:, 2])
+class Layout:
+    """One stage's coordinates: the prior box, the ordered triples, and the maps to and from instrument parameters."""
+
+    def __init__(self, stage):
+        self.stage = stage
+        if stage == 4:
+            self.box = np.array([LNZ, LNZ, LNZ, P_RANGE, P_RANGE, P_RANGE, LNM, LNV, UNIT, SMC_K_RANGE, BASS_BLANKS_IN])
+            self.names = ("ln z*_b", "ln z*_m", "ln z*_t", "p_b", "p_m", "p_t", "ln m_h", "ln v_ff", "u_vmax", "k",
+                          "t_bass")
+            self.ordered = ((0, 1, 2),)
+        elif stage == 5:
+            self.box = np.array([LNZ, LNZ, LNZ, P_RANGE, P_RANGE, P_RANGE, LNM, LNM, LNM, UNIT, SMC_K_RANGE,
+                                 BASS_BLANKS_IN])
+            self.names = ("ln z*_b", "ln z*_m", "ln z*_t", "p_b", "p_m", "p_t", "ln m_h_b", "ln m_h_m", "ln m_h_t",
+                          "u_vmax", "k", "t_bass")
+            self.ordered = ((0, 1, 2), (6, 7, 8))
+        else:
+            sys.exit(f"unknown stage {stage}")
+        self.log_vol = float(np.sum(np.log(self.box[:, 1] - self.box[:, 0]))
+                             + len(self.ordered) * np.log(ORDERED_GROUP_FRACTION))
+
+    def in_support(self, x):
+        ok = np.all((x >= self.box[:, 0]) & (x <= self.box[:, 1]), axis=1)
+        for a, b, c in self.ordered:
+            ok &= (x[:, a] >= x[:, b]) & (x[:, b] >= x[:, c])
+        return ok
+
+    def prior_draw(self, rng, n):
+        x = rng.uniform(self.box[:, 0], self.box[:, 1], (n, len(self.box)))
+        for g in self.ordered:
+            x[:, list(g)] = np.sort(x[:, list(g)], axis=1)[:, ::-1]  # uniform on the ordered region
+        return x
+
+    def to_x(self, inst):
+        z, p = np.log(np.asarray(inst["z_star"])), np.asarray(inst["p"])
+        if self.stage == 4:
+            v = np.asarray(inst["v"])
+            u = np.log(np.asarray(inst["v_max"]) / v) / np.log(V_MAX_CEIL / v)
+            return np.column_stack([z, p, np.log(inst["m_h"]), np.log(v), u, inst["k"], inst["t_bass_in"]])
+        m = np.log(np.asarray(inst["m_h"]))
+        m = m if m.ndim == 2 else np.repeat(m[:, None], 3, axis=1)  # a shared mass seeds every grade
+        u = np.clip(np.log(np.asarray(inst["v_max"]) / V_FF_STAGE5) / np.log(V_MAX_CEIL / V_FF_STAGE5), 0.0, 1.0)
+        return np.column_stack([z, p, m, u, inst["k"], inst["t_bass_in"]])
+
+    def to_inst(self, x):
+        if self.stage == 4:
+            v = np.exp(x[:, 7])
+            return dict(z_star=np.exp(x[:, 0:3]), p=x[:, 3:6], m_h=np.exp(x[:, 6]), v=v,
+                        v_max=v * np.exp(x[:, 8] * np.log(V_MAX_CEIL / v)), k=x[:, 9], t_bass_in=x[:, 10])
+        v = np.full(len(x), V_FF_STAGE5)
+        return dict(z_star=np.exp(x[:, 0:3]), p=x[:, 3:6], m_h=np.exp(x[:, 6:9]), v=v,
+                    v_max=v * np.exp(x[:, 9] * np.log(V_MAX_CEIL / v)), k=x[:, 10], t_bass_in=x[:, 11])
 
 
-def prior_draw(rng, n):
-    x = rng.uniform(BOX[:, 0], BOX[:, 1], (n, len(BOX)))
-    x[:, 0:3] = np.sort(x[:, 0:3], axis=1)[:, ::-1]  # uniform on the ordered region
-    return x
+LAYOUTS = {s: Layout(s) for s in (4, 5)}
+# Stage-4 names kept at module level (earlier checks import them).
+BOX, NAMES, LOG_VOL = LAYOUTS[4].box, LAYOUTS[4].names, LAYOUTS[4].log_vol
+in_support, prior_draw, to_x, to_inst = (LAYOUTS[4].in_support, LAYOUTS[4].prior_draw, LAYOUTS[4].to_x,
+                                         LAYOUTS[4].to_inst)
 
 
-def to_x(inst):
-    v = np.asarray(inst["v"])
-    u = np.log(np.asarray(inst["v_max"]) / v) / np.log(V_MAX_CEIL / v)
-    return np.column_stack([np.log(np.asarray(inst["z_star"])), np.asarray(inst["p"]), np.log(inst["m_h"]),
-                            np.log(v), u, inst["k"], inst["t_bass_in"]])
-
-
-def to_inst(x):
-    v = np.exp(x[:, 7])
-    return dict(z_star=np.exp(x[:, 0:3]), p=x[:, 3:6], m_h=np.exp(x[:, 6]), v=v,
-                v_max=v * np.exp(x[:, 8] * np.log(V_MAX_CEIL / v)), k=x[:, 9], t_bass_in=x[:, 10])
+def layout_of(d):
+    return LAYOUTS[d.get("stage", 4)]
 
 
 def kernel(particles):
     x, W = np.asarray(particles["x"]), np.asarray(particles["W"])
+    box = layout_of(particles).box
     if len(x) < 2:
         sys.exit(f"generation {particles['gen']}: {len(x)} particle(s); a kernel needs at least 2")
     mu = W @ x
     cov = (x - mu).T @ ((x - mu) * W[:, None]) / (1.0 - np.sum(W ** 2))
-    prior_var = (BOX[:, 1] - BOX[:, 0]) ** 2 / 12.0
+    prior_var = (box[:, 1] - box[:, 0]) ** 2 / 12.0
     sig = KERNEL_SCALE * cov + RIDGE_FRAC * np.diag(prior_var)
     return x, W, np.linalg.cholesky(sig)
 
@@ -131,6 +179,7 @@ def wquant(a, w, qs=(0.1, 0.5, 0.9)):
 
 
 def cmd_seed(args):
+    lay = LAYOUTS[args.stage]
     fits, rec = load_refs(args.cal, args.survey)
     by_seed = {}
     for path in args.kb:
@@ -142,35 +191,40 @@ def cmd_seed(args):
             sys.exit(f"seed {s}: splits {sorted(runs)}, need all of {SPLIT_NAMES}")
         passes = np.column_stack([survivors(runs[sp], fits, rec) for sp in SPLIT_NAMES])
         keep = passes.any(axis=1)
+        if args.vff_window:
+            v = np.asarray(runs[SPLIT_NAMES[0]]["instruments"]["v"])
+            keep &= (v >= args.vff_window[0]) & (v < args.vff_window[1])
         inst = {k: np.asarray(v)[keep] for k, v in runs[SPLIT_NAMES[0]]["instruments"].items()}
-        xs.append(to_x(inst))
+        xs.append(lay.to_x(inst))
         ws.append(passes[keep].sum(axis=1) / len(SPLIT_NAMES))
     x, w = np.vstack(xs), np.concatenate(ws)
-    json.dump(dict(gen=0, x=x.tolist(), W=(w / w.sum()).tolist(), note="seed only: previous stage's rules"),
-              open(args.out, "w"))
+    json.dump(dict(gen=0, stage=lay.stage, x=x.tolist(), W=(w / w.sum()).tolist(),
+                   note="seed only: previous stage's rules"), open(args.out, "w"))
     print(f"generation 0: {len(x)} particles from seeds {sorted(by_seed)}")
 
 
 def cmd_propose(args):
     particles = json.load(open(args.particles))
+    lay = layout_of(particles)
     rng = np.random.default_rng(args.seed)
     x, W, L = kernel(particles)
-    z = np.mean(in_support(kernel_draw(rng, x, W, L, Z_MC)))
+    z = np.mean(lay.in_support(kernel_draw(rng, x, W, L, Z_MC)))
     n_fresh = rng.binomial(args.n, FRESH_SHARE)
     got, tried = [], 0
     while sum(len(g) for g in got) < args.n - n_fresh:
         y = kernel_draw(rng, x, W, L, DRAW_BATCH)
         tried += DRAW_BATCH
-        got.append(y[in_support(y)])
-    prop = np.vstack([prior_draw(rng, n_fresh)] + got)[:args.n]
+        got.append(y[lay.in_support(y)])
+    prop = np.vstack([lay.prior_draw(rng, n_fresh)] + got)[:args.n]
     prop = prop[rng.permutation(len(prop))]
     log_q = np.logaddexp(np.log1p(-FRESH_SHARE) + log_kernel_density(prop, x, W, L) - np.log(z),
-                         np.log(FRESH_SHARE) - LOG_VOL)
+                         np.log(FRESH_SHARE) - lay.log_vol)
     chunks = np.array_split(np.arange(args.n), args.chunks)
     for i, idx in enumerate(chunks):
-        inst = {k: v.tolist() for k, v in to_inst(prop[idx]).items()}
+        inst = {k: v.tolist() for k, v in lay.to_inst(prop[idx]).items()}
         json.dump(dict(instruments=inst), open(f"{args.prefix}_c{i}.inst.json", "w"))
-    json.dump(dict(gen=particles["gen"] + 1, n=args.n, chunks=args.chunks, seed=args.seed, x=prop.tolist(),
+    json.dump(dict(gen=particles["gen"] + 1, stage=lay.stage, n=args.n, chunks=args.chunks, seed=args.seed,
+                   x=prop.tolist(),
                    log_q=log_q.tolist(), z=float(z), z_mc_accept=float(len(np.vstack(got))) / tried,
                    fresh=int(n_fresh)), open(f"{args.prefix}.meta.json", "w"))
     print(f"generation {particles['gen'] + 1}: {args.n} proposals ({n_fresh} fresh) in {args.chunks} chunks; "
@@ -180,6 +234,7 @@ def cmd_propose(args):
 def cmd_weigh(args):
     fits, rec = load_refs(args.cal, args.survey)
     meta = json.load(open(f"{args.prefix}.meta.json"))
+    lay = layout_of(meta)
     x, log_q = np.asarray(meta["x"]), np.asarray(meta["log_q"])
     chunks = np.array_split(np.arange(meta["n"]), meta["chunks"])
     passes = np.zeros((meta["n"], len(SPLIT_NAMES)), bool)
@@ -191,7 +246,7 @@ def cmd_weigh(args):
             kb = json.load(open(f"{args.prefix}_c{i}_{sp}.json"))
             if kb["n"] != len(idx) or kb["split"] != sp:
                 sys.exit(f"chunk {i} {sp}: n {kb['n']} split {kb['split']}, expected {len(idx)} {sp}")
-            if not np.allclose(kb["instruments"]["m_h"], to_inst(x[idx])["m_h"]):
+            if not np.allclose(kb["instruments"]["m_h"], lay.to_inst(x[idx])["m_h"]):
                 sys.exit(f"chunk {i} {sp}: instruments differ from the proposal")
             seeds.add(kb["seed"])
             passes[idx, s] = survivors(kb, fits, rec)
@@ -202,7 +257,7 @@ def cmd_weigh(args):
                                      for m in F4_NOTES], axis=0)
         if len(seeds) != 1:
             sys.exit(f"chunk {i}: splits run with seeds {sorted(seeds)}; one seed must draw all three")
-    log_base = -LOG_VOL - log_q  # prior / proposal density; normalised away, so shifted by its max for range
+    log_base = -lay.log_vol - log_q  # prior / proposal density; normalised away, so shifted by its max for range
     w_split = np.exp(log_base - log_base.max())[:, None] * passes / len(SPLIT_NAMES)
     w = w_split.sum(axis=1)
     keep = w > 0
@@ -215,10 +270,15 @@ def cmd_weigh(args):
     ess = 1.0 / np.sum(W ** 2)
     print(f"  ESS {ess:.0f} (target {ESS_TARGET}); split posterior "
           + ", ".join(f"{sp} {w_split[:, s].sum() / w.sum():.2f}" for s, sp in enumerate(SPLIT_NAMES)))
-    inst = to_inst(x[keep])
+    inst = lay.to_inst(x[keep])
     rows = [(f"z*_{g} mm", inst["z_star"][:, gi] * 1e3) for gi, g in enumerate(("bass", "middle", "treble"))]
     rows += [(f"p_{g}", inst["p"][:, gi]) for gi, g in enumerate(("bass", "middle", "treble"))]
-    rows += [("m_h g", inst["m_h"] * 1e3), ("v_ff m/s", inst["v"]), ("v_max m/s", inst["v_max"]), ("k", inst["k"]),
+    if inst["m_h"].ndim == 2:
+        rows += [(f"m_h_{g} g", inst["m_h"][:, gi] * 1e3) for gi, g in enumerate(("bass", "middle", "treble"))]
+        rows += [("m_h bass/treble", inst["m_h"][:, 0] / inst["m_h"][:, 2])]
+    else:
+        rows += [("m_h g", inst["m_h"] * 1e3), ("v_ff m/s", inst["v"])]
+    rows += [("v_max m/s", inst["v_max"]), ("k", inst["k"]),
              ("bass blank mil", inst["t_bass_in"] * 1e3), ("A1 strike d_s/L", a1_frac[keep])]
     for name, a in rows:
         print(f"  {name:18s} p10/50/90 " + "/".join(f"{v:.2f}" for v in wquant(a, W)))
@@ -228,21 +288,22 @@ def cmd_weigh(args):
           f"{k_hi}: {np.sum(W[inst['k'] >= k_hi - K_EDGE_BAND]):.2f} (prior {K_EDGE_BAND / (k_hi - k_lo):.2f})")
     print(f"  A1 struck beyond {A1_HALFWAY_FRAC} L: {np.sum(W[a1_frac[keep] > A1_HALFWAY_FRAC]):.2f}; "
           f"F4 margin < {MARGINAL_F4_DB} dB: {np.sum(W[f4_db[keep] < MARGINAL_F4_DB]):.2f}")
-    json.dump(dict(gen=meta["gen"], x=x[keep].tolist(), W=W.tolist(), ess=float(ess),
+    json.dump(dict(gen=meta["gen"], stage=lay.stage, x=x[keep].tolist(), W=W.tolist(), ess=float(ess),
                    passes=passes[keep].tolist()), open(args.out, "w"))
 
 
 def cmd_mix(args):
     sets = [json.load(open(p)) for p in args.particles]
-    if len({s["gen"] for s in sets}) != 1:
-        sys.exit("particle files come from different generations")
+    if len({s["gen"] for s in sets}) != 1 or len({s.get("stage", 4) for s in sets}) != 1:
+        sys.exit("particle files come from different generations or stages")
     W = {}
     for s in sets:
         for x, w in zip(s["x"], s["W"]):
             W[tuple(x)] = W.get(tuple(x), 0.0) + w / len(sets)
     x = np.array(list(W))
     w = np.array(list(W.values()))
-    json.dump(dict(gen=sets[0]["gen"], x=x.tolist(), W=(w / w.sum()).tolist(), ess=float(1.0 / np.sum((w / w.sum()) ** 2)),
+    json.dump(dict(gen=sets[0]["gen"], stage=sets[0].get("stage", 4), x=x.tolist(), W=(w / w.sum()).tolist(),
+                   ess=float(1.0 / np.sum((w / w.sum()) ** 2)),
                    mixed_from=args.particles), open(args.out, "w"))
     print(f"generation {sets[0]['gen']}: {len(x)} particles mixed from {len(sets)} weightings; ESS {1.0 / np.sum((w / w.sum()) ** 2):.0f}")
 
@@ -253,6 +314,9 @@ def main():
     s = sub.add_parser("seed")
     s.add_argument("cal"), s.add_argument("survey"), s.add_argument("kb", nargs="+")
     s.add_argument("--out", required=True)
+    s.add_argument("--stage", type=int, default=4, choices=tuple(LAYOUTS))
+    s.add_argument("--vff-window", type=float, nargs=2, default=None, metavar=("LO", "HI"),
+                   help="stage 5 seeding: keep instruments with v_ff in [LO, HI) m/s")
     p = sub.add_parser("propose")
     p.add_argument("particles"), p.add_argument("--n", type=int, required=True)
     p.add_argument("--chunks", type=int, required=True), p.add_argument("--seed", type=int, required=True)
