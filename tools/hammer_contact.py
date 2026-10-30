@@ -497,7 +497,7 @@ def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=64):
 # Pass-3 strike-point law (plan §5f): d_s = d_ref (L / L_ref)^k mm from the clamp, k shared in [0, 2],
 # per-hammer scatter +-1.5 mm, floor 5 mm. Anchor: one photographed hammer on a 206A, 7.1 mm from the
 # bar edge; the L origin is a nuisance until that reed is identified.
-ANCHORS = {"bar": (7.1, 31.5), "fillet": (13.2, 37.5)}
+ANCHORS = {"bar": (7.1, 31.5), "fillet": (13.2, 37.5), "fillet-reed38": (13.2, 40.1)}  # last: pass 3c (reed 38/39)
 
 
 def keyboard3(notes, n, seed, out, split, survey, origin):
@@ -589,9 +589,10 @@ def keyboard3b(notes, n, seed, out, split, survey, origin):
         scatter = rng.uniform(-1.5, 1.5, n)
         nv = len(VOICED_OFFSETS_MM)
         cols = {k: np.zeros(n) for k in ("swing_mm", "m2_out_db", "tip_mm", "crown_end_mm", "d_peak_mm",
-                                          "d_s_mm", "t_contact_T1", "tip_vmax_mm")}
+                                          "d_s_mm", "t_contact_T1", "tip_vmax_mm", "d_peak_vmax_mm")}
         voiced_tip = np.full((n, nv), np.nan)
         voiced_end = np.full((n, nv), np.nan)
+        voiced_dpeak = np.full((n, nv), np.nan)
         contacts = np.zeros(n, int)
         for kv, rd in enumerate(rds):
             sel = np.where(pick == kv)[0]
@@ -624,14 +625,17 @@ def keyboard3b(notes, n, seed, out, split, survey, origin):
                     rv = strike_w_chunked(rd, mh, inst["v_max"][sel], zs, pp, place(off))
                     voiced_tip[sel, j] = rv["tip_mm"][:, 0]
                     voiced_end[sel, j] = rv["crown_end_swing_mm"]
+                    voiced_dpeak[sel, j] = rv["d_peak_mm"]
             else:
                 rv = strike_w_chunked(rd, mh, inst["v_max"][sel], zs, pp, d_s)
                 cols["tip_vmax_mm"][sel] = rv["tip_mm"][:, 0]
+                cols["d_peak_vmax_mm"][sel] = rv["d_peak_mm"]
         res[midi] = {k: v.tolist() for k, v in cols.items()}
         res[midi].update(contacts=contacts.tolist(), grade=g, L_mm=float(rds[0]["L"] * 1e3),
                          voiced=bool(midi <= VOICED_MAX_MIDI))
         if midi <= VOICED_MAX_MIDI:
-            res[midi].update(voiced_tip_mm=voiced_tip.tolist(), voiced_crown_end_mm=voiced_end.tolist())
+            res[midi].update(voiced_tip_mm=voiced_tip.tolist(), voiced_crown_end_mm=voiced_end.tolist(),
+                             voiced_d_peak_mm=voiced_dpeak.tolist())
         print(f"MIDI {midi} (grade {g}) done", flush=True)
     with open(out, "w") as fh:
         json.dump(dict(split=split, origin=origin, seed=seed, n=n, priors=PRIORS, pass_="3b",
@@ -663,7 +667,7 @@ def summarise(midi, rows):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=("selftest", "run", "keyboard", "keyboard3", "keyboard3b", "calibrate"))
-    ap.add_argument("--origin", choices=("bar", "fillet"), default="fillet")
+    ap.add_argument("--origin", choices=tuple(ANCHORS), default="fillet")
     ap.add_argument("--bench", default="target/release/preamp-bench")
     ap.add_argument("--sensor", default="")
     ap.add_argument("--workdir", default="")
