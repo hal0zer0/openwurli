@@ -67,12 +67,20 @@ def axis(fine_lo, fine_hi, h_fine, lo, hi, growth=1.15, h_max=0.5):
     return merge_close(np.concatenate([[lo], left[::-1], core, right, [hi]]))
 
 
-def solve_case(W, t_r, t_p, g_s, us, h=0.005):
-    """Mutual capacitance (F/m, full reed = 2 x half-domain) at each penetration u."""
+def solve_case(W, t_r, t_p, g_s, us, h=0.005, neighbour_u=None):
+    """Mutual capacitance (F/m, full reed = 2 x half-domain) at each penetration u.
+
+    neighbour_u: None mirrors at the finger centre (P/2), so the neighbouring reeds move with this
+    one. A value holds the neighbours still at that penetration instead: the cell spans [0, P] with
+    mirrors at both reed centres, so only every second reed moves (2P away)."""
     xe = W / 2
     xs = axis(max(0.0, xe - 0.6), xe + g_s + 0.6, h, 0.0, P / 2)
     xs = merge_close(np.concatenate([xs, [xe, xe + g_s]]))
+    if neighbour_u is not None:
+        xs = merge_close(np.concatenate([xs, P - xs]))
     u_lo, u_hi = min(us), max(us)
+    if neighbour_u is not None:
+        u_lo, u_hi = min(u_lo, neighbour_u), max(u_hi, neighbour_u)
     # The uniform fine region always holds the finger (0..t_p) as well as the reed: a per-point
     # solve with u past t_r + 0.6 used to leave the finger's bottom face in the graded cells, whose
     # positions move with u (jitter that halving h does not remove).
@@ -91,6 +99,9 @@ def solve_case(W, t_r, t_p, g_s, us, h=0.005):
     tol = 1e-9
     finger = (X >= xe + g_s - tol) & (Y >= -tol) & (Y <= t_p + tol)
     boundary0 = (np.isclose(Y, ys[0])) | (np.isclose(Y, ys[-1]))
+    if neighbour_u is not None:
+        finger &= X <= P - xe - g_s + tol
+        boundary0 |= (X >= P - xe - tol) & (Y >= neighbour_u - t_r - tol) & (Y <= neighbour_u + tol)
 
     # Assemble the 5-point finite-volume operator once (geometry-independent part).
     rows, cols, vals = [], [], []
@@ -421,11 +432,11 @@ def emit_spice(path_in, path_out):
 
 
 def _solve_point(args):
-    W, t_r, t_p, g_s, u, h = args
-    return float(solve_case(W, t_r, t_p, g_s, np.array([u]), h=h)[0])
+    W, t_r, t_p, g_s, u, h, neighbour_u = args
+    return float(solve_case(W, t_r, t_p, g_s, np.array([u]), h=h, neighbour_u=neighbour_u)[0])
 
 
-def run_refine(section, u_lo, u_hi, h, step, out, jobs, t_p=None, W=None, g_s=None):
+def run_refine(section, u_lo, u_hi, h, step, out, jobs, t_p=None, W=None, g_s=None, neighbour_u=None):
     """Re-solve one shipping section on a sub-range of u at a finer grid, one point per job —
     for a targeted convergence check where a table is resolution-limited."""
     from multiprocessing import Pool
@@ -435,10 +446,12 @@ def run_refine(section, u_lo, u_hi, h, step, out, jobs, t_p=None, W=None, g_s=No
             s[k] = v
     us = np.round(np.arange(u_lo, u_hi + 1e-9, step), 5)
     with Pool(jobs) as pool:
-        C = pool.map(_solve_point, [(s["W"], s["t_r"], s["t_p"], s["g_s"], u, h) for u in us])
+        C = pool.map(_solve_point, [(s["W"], s["t_r"], s["t_p"], s["g_s"], u, h, neighbour_u) for u in us])
     res = {section: {"section": section, "W": s["W"], "t_r": s["t_r"], "t_p": s["t_p"],
                      "g_s": s["g_s"], "h": h, "u": us.tolist(),
                      "C_pF_per_m": (np.array(C) * 1e12).tolist()}}
+    if neighbour_u is not None:
+        res[section]["neighbour_u"] = neighbour_u
     with open(out, "w") as f:
         json.dump(res, f)
     print(f"wrote refined {section} u [{u_lo}, {u_hi}] (h={h}) to {out}")
@@ -630,12 +643,15 @@ def main():
     ap.add_argument("--merge-refine", nargs=3, metavar=("BASE.json", "PART.json", "OUT.json"))
     ap.add_argument("--merge-extension", nargs="+", metavar="JSON",
                     help="BASE.json OUT.json EXT.json [EXT.json ...]: add solves outside a section's range")
+    ap.add_argument("--neighbour-u", type=float, default=None,
+                    help="--refine: hold the neighbouring reeds at this penetration (mm) instead of "
+                         "mirroring them with the solved reed")
     ap.add_argument("--refine", nargs=3, metavar=("SECTION", "U_LO", "U_HI"),
                     help="re-solve one shipping section on a u sub-range (finer --h)")
     a = ap.parse_args()
     if a.refine:
         run_refine(a.refine[0], float(a.refine[1]), float(a.refine[2]), a.h, a.u_step, a.out,
-                   a.jobs, a.t_p, g_s=a.g_s)
+                   a.jobs, a.t_p, g_s=a.g_s, neighbour_u=a.neighbour_u)
         return
     if a.emit_rust:
         emit_rust(*a.emit_rust)
