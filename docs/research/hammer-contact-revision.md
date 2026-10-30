@@ -724,6 +724,55 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
   - Survivors are counted as distinct instruments. The §5i/§5j rule then decides between an SMC
     step and a report.
 
+## 5k. Stage 4 registration (2026-10-30, before any run): sequential importance sampling
+
+- **Why:** pass 3d keeps ~0.1 % of prior draws. A prior pass large enough for a stable posterior
+  is not affordable, but sampling the same target from a proposal adapted to the survivors is.
+- **Physics reading of pass 3d (physics review):**
+  - F4 sits on the shock-spectrum cliff, ~18 dB below the median swing at MIDI 96. The residual
+    swing of a smooth push falls to −9.5 / −23.5 / −31 dB at contacts of 1 / 2 / 3 T1 (half-sine
+    shock spectrum), with nulls between.
+  - The strike point is a 5–10 dB lever at the top notes; contact time is a ~21 dB lever. So F4 is
+    in effect a contact-time bound, τ ≲ 2 T1 at C7 (~1 ms), set by z*_treble and m_h.
+  - No change to the floor (casting geometry) or to F4's form.
+- **Target (rules unchanged):** prior × (1/3) Σ_split 1[pass].
+  - "Pass" means the §5i checks (F1, F2 + F3 voiced, F4, the compression flag) at the primary
+    let-off point, with §5j's fillet-floor strike geometry.
+  - The felt-grade split is a discrete nuisance with a uniform prior, marginalised rather than
+    chosen: every proposal is scored under all three splits.
+- **One prior change, k uniform on [0, 2.5]** (was [0, 2]):
+  - Pass 3d's survivors piled at the old edge: 40 % within 0.1 of 2, against 5 % under the prior.
+  - The new edge is the pickup-comb ceiling at A1. The crown's tip-ward end must stay short of
+    where the reed enters the comb, 0–5 mm before its tip (photo read, one reed; the bass comb is
+    unread). With the +1.5 mm scatter, that is reached at k 2.52–2.64, so inside [0, 2.5] the
+    ceiling never binds and is carried by the bound alone.
+  - k > 2 puts A1 past ~0.6 L, against the technician's "about halfway" and the patent's
+    mid-reed. That is reported as a check on the posterior, not imposed as a prior bound.
+- **Sampler** (`tools/hammer_contact_smc.py`; ABC-PMC with the rules as an indicator likelihood):
+  - Generation 0 is the pooled prior pass's distinct survivors (§5j). It only seeds the proposal,
+    because it was scored with k ≤ 2.
+  - Each generation draws N = 6000 proposals: 20 % fresh prior draws, and the rest a weighted
+    survivor of the previous generation perturbed by a Gaussian kernel (2 × the weighted
+    covariance plus a 1 % ridge), redrawn whole until inside the support. They are scored in 3
+    chunks, one keyboard seed per chunk shared by its three splits.
+  - Weight = prior / proposal density × (splits passed) / 3.
+  - Bookkeeping check: with an always-pass likelihood, the weighted proposals reproduce the prior
+    means within 0.6 % of each range, and E[prior / proposal] = 1.01.
+  - Stop when a generation's effective sample size reaches 300, or after 4 generations. The
+    posterior is that generation's weighted sample, with the previous generation's medians shown
+    for stability.
+- **Reported:**
+  - weighted p10 / 50 / 90 for every parameter;
+  - the split posterior;
+  - the k mass above 2 and within 0.1 of 2.5;
+  - the share with A1 struck beyond 0.6 L;
+  - the share with an F4 margin under 3 dB.
+- **Registered expectations (physics review):**
+  - The split posterior favours damper-felt (46|47): pass 3d gave 0 / 4 / 1. That is weak with a
+    handful of survivors, so it is falsified only if the posterior favours a different split.
+  - If the k mass piles within 0.1 of 2.5 as well, the result gives only a lower bound on k and is
+    reported as such.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.

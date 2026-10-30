@@ -623,12 +623,18 @@ VOICED_MAX_MIDI = 60
 V_MAX_CEIL = 5.0
 
 
-def keyboard3b(notes, n, seed, out, split, survey, origin):
+def keyboard3b(notes, n, seed, out, split, survey, origin, instruments=""):
+    """`instruments`: a JSON of given instrument parameters (tools/hammer_contact_smc.py proposals) in place of prior
+    draws; the per-note nuisances (FE variant, strike scatter) are still drawn from `seed`."""
     rng = np.random.default_rng(seed)
-    inst = draw_instruments(rng, n)
-    inst["k"] = rng.uniform(*STRIKE_K_RANGE, n)
-    inst["v_max"] = np.exp(rng.uniform(np.log(inst["v"]), np.log(V_MAX_CEIL)))
-    inst["t_bass_in"] = rng.uniform(*BASS_BLANKS_IN, n)
+    if instruments:
+        inst = {k: np.asarray(v, dtype=float) for k, v in json.load(open(instruments))["instruments"].items()}
+        n = len(inst["m_h"])
+    else:
+        inst = draw_instruments(rng, n)
+        inst["k"] = rng.uniform(*STRIKE_K_RANGE, n)
+        inst["v_max"] = np.exp(rng.uniform(np.log(inst["v"]), np.log(V_MAX_CEIL)))
+        inst["t_bass_in"] = rng.uniform(*BASS_BLANKS_IN, n)
     level = np.argmin(np.abs(inst["t_bass_in"][:, None] - np.array(BASS_BLANK_LEVELS_IN)[None, :]), axis=1)
     d_ref, L_ref = ANCHORS[origin]
     floor_mm = STRIKE_FLOOR_BY_ANCHOR.get(origin, STRIKE_FLOOR_MM)
@@ -737,6 +743,7 @@ if __name__ == "__main__":
     ap.add_argument("--sensor", default="")
     ap.add_argument("--workdir", default="")
     ap.add_argument("--survey", default="")
+    ap.add_argument("--instruments", default="", help="keyboard3b: given instrument parameters (SMC proposals)")
     ap.add_argument("--split", choices=tuple(SPLITS), default="code")
     ap.add_argument("--n", type=int, default=1000)
     ap.add_argument("--notes", default="33,42,48,52,55,60,66,72,78,84,90,96")
@@ -749,7 +756,7 @@ if __name__ == "__main__":
     elif a.cmd == "calibrate":
         calibrate([int(x) for x in a.notes.split(",")], a.n, a.seed, a.bench, a.sensor, a.workdir, a.out)
     elif a.cmd == "keyboard3b":
-        keyboard3b([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split, a.survey, a.origin)
+        keyboard3b([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split, a.survey, a.origin, a.instruments)
     elif a.cmd == "keyboard3":
         keyboard3([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split, a.survey, a.origin)
     elif a.cmd == "keyboard":
