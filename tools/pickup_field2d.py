@@ -35,9 +35,20 @@ import scipy.sparse.linalg as spla
 from scipy.optimize import least_squares
 
 EPS0 = 8.854e-12  # F/m
+# Grid lines closer than this (mm) are one line. The reed and gap edges inserted into the x axis
+# coincide with core lines up to rounding; kept as separate lines they leave a 1e-14 mm column whose
+# conductance (~1e14 against ~1) makes the operator near-singular, and the direct solve inaccurate
+# (relative residual up to 2e-2; found 2026-10-30).
+GRID_MERGE_MM = 1e-9
 P = 12.0          # reed pitch along the bar, mm (approximate; far compared with the gaps)
 RF_ABOVE = 12.7   # RF plate height above the finger top, mm
 FAR_BELOW = -12.0
+
+
+def merge_close(g):
+    """Sorted unique grid lines with near-duplicates (closer than GRID_MERGE_MM) merged."""
+    g = np.unique(g)
+    return g[np.concatenate([[True], np.diff(g) > GRID_MERGE_MM])]
 
 
 def axis(fine_lo, fine_hi, h_fine, lo, hi, growth=1.15, h_max=0.5):
@@ -53,14 +64,14 @@ def axis(fine_lo, fine_hi, h_fine, lo, hi, growth=1.15, h_max=0.5):
         h = min(h * growth, h_max)
         x += h
         right.append(x)
-    return np.unique(np.concatenate([[lo], left[::-1], core, right, [hi]]))
+    return merge_close(np.concatenate([[lo], left[::-1], core, right, [hi]]))
 
 
 def solve_case(W, t_r, t_p, g_s, us, h=0.005):
     """Mutual capacitance (F/m, full reed = 2 x half-domain) at each penetration u."""
     xe = W / 2
     xs = axis(max(0.0, xe - 0.6), xe + g_s + 0.6, h, 0.0, P / 2)
-    xs = np.unique(np.concatenate([xs, [xe, xe + g_s]]))
+    xs = merge_close(np.concatenate([xs, [xe, xe + g_s]]))
     u_lo, u_hi = min(us), max(us)
     # The uniform fine region always holds the finger (0..t_p) as well as the reed: a per-point
     # solve with u past t_r + 0.6 used to leave the finger's bottom face in the graded cells, whose
