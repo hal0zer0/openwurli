@@ -545,6 +545,13 @@ result is identical to one batch within 4e-6. Each falsifier alone, then in comb
   - (b) F2 alone is barely reachable within the m_h (1–5 g) and v_ff (1.4–3.5 m/s) priors, so
     either the priors are low or the let-off reading is too strict.
   - Both go to the physics review before any change.
+- **L origin (photo read, 2026-10-29): fillet.** Counting reeds from the bass-to-treble solder
+  switch at a comb-section joint puts the measured hammer under reed #4 or #5 bass-ward of it, at
+  ≤ 49 / ≤ 48. The fillet set (39–47) fits; the bar-edge set survives only as reed 49 under narrow
+  conditions. So the fillet-origin runs are the relevant ones.
+  - The absolute reed depends on where the 200A comb splits: 42|43 gives reeds 38/39, 50|51 gives
+    46/47. A 207VA frame weakly favours 42|43.
+  - A parts drawing of the comb split would settle it.
 
 ## 6. Steps
 
