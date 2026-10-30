@@ -856,6 +856,55 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
     original bass calibration rested on 6 and 9 resolved lines at MIDI 47 and 48.
   - Stage 4 is therefore weighed under each corner's n-90 calibration, and the spread is reported.
 
+**Stage 4 results (2026-10-30; 4 generations × 6000 proposals; `tools/hammer_contact_smc.py`).**
+- **Sampler:**
+  - Each generation was weighed on both verdict corners, with plane −12 and the converged plane
+    (both with neighbours at rest and tilt). The next proposal used the mean of the two weightings
+    (`mix`).
+  - Survivors kept: 6–7 % of proposals, against 0.1 % under the prior.
+  - Effective sample size by generation (plane −12 / converged): 28 / 24, 212 / 207, 256 / 179,
+    254 / 216. **The registered target of 300 was not reached in 4 generations**, so this is
+    reported as registered.
+  - From generation 3 to 4 the medians move by ≤ 8 % (largest: m_h, 1.71 → 1.84 g converged). The heavy particles in generation 1 sat at
+    k > 2, where the generation-0 kernel (k ≤ 2) was thin; fresh draws carried 7 % of the weight.
+- **Posterior (generation 4), p10 / 50 / 90, plane −12 | converged, against the prior:**
+
+  | Parameter | Plane −12 | Converged | Prior |
+  |---|---|---|---|
+  | z* bass (mm) | 1.49 / 2.06 / 2.76 | 1.48 / 2.13 / 2.86 | 0.62 / 2.22 / 4.36 |
+  | z* middle (mm) | 1.04 / 1.46 / 2.03 | 0.99 / 1.45 / 2.03 | 0.22 / 0.71 / 2.32 |
+  | z* treble (mm) | 0.46 / 0.65 / 1.03 | 0.45 / 0.62 / 0.91 | 0.11 / 0.22 / 0.82 |
+  | k | 1.49 / 2.02 / 2.31 | 1.55 / 2.06 / 2.35 | 0.25 / 1.25 / 2.25 |
+  | m_h (g) | 1.08 / 1.87 / 2.83 | 1.08 / 1.84 / 2.94 | 1.17 / 2.24 / 4.26 |
+  | v_ff (m/s) | 1.52 / 2.18 / 3.06 | 1.51 / 2.03 / 2.94 | 1.54 / 2.21 / 3.19 |
+  | v_max (m/s) | 2.39 / 3.12 / 4.35 | 2.33 / 3.11 / 4.35 | 2.20 / 3.49 / 4.65 |
+  | bass blank (mil) | 21.1 / 23.6 / 25.6 | 21.4 / 23.9 / 25.6 | 20.6 / 23.0 / 25.4 |
+  | A1 strike (d_s / L) | 0.45 / 0.62 / 0.75 | 0.47 / 0.63 / 0.76 | — |
+
+- **What the data constrain:**
+  - The graded felt (z*) is constrained in every grade: three times narrower than the prior in
+    the bass, and centred well above the prior in the middle and treble.
+  - k is constrained to about 1.5–2.35, inside the widened range: 3–5 % of the mass lies within
+    0.1 of 2.5, against 4 % under the prior.
+  - m_h loses its upper tail.
+  - The felt exponent p, v_ff and the bass blank stay essentially at their priors: these checks do
+    not identify them.
+- **Registered expectations:**
+  - k piling at the new edge: **no**. k is bounded inside [0, 2.5].
+  - Split posterior (blank-pickup / code / damper-felt): 0.38 / 0.23 / 0.39 at plane −12 against
+    0.27 / 0.16 / 0.57 converged. The expectation (favours damper-felt) is not falsified: damper-felt
+    leads in both, but only by 0.01 at plane −12. **Not decided until the closure is.**
+- **Reported checks:**
+  - 58–61 % of the mass strikes A1 beyond 0.6 L (median 0.62–0.63 L). That leans past the
+    technician's "about halfway" and the patent's mid-reed; the lower tail (p10 0.45–0.47 L) agrees
+    with them. A tension to resolve with strike-line evidence, not a falsification.
+  - 26 % of the mass passes F4 by less than 3 dB.
+- **Open, carried into §6 step 3:**
+  - the far-field closure (it decides the split and 4 of the pooled verdicts);
+  - 3D end fringing;
+  - the large-swing H1–H2 balance (criterion 6, report-only);
+  - p, v_ff and the bass blank, which these checks leave unidentified.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
