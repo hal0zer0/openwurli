@@ -905,6 +905,59 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
   - the large-swing H1–H2 balance (criterion 6, report-only);
   - p, v_ff and the bass blank, which these checks leave unidentified.
 
+## 5l. Stage 5 registration (2026-10-30, before any run): graded hammer mass, ff speed fixed
+
+- **Why (physics review, from the stage-4 proposals re-scored leave-one-out):**
+  - F2 drives k, through m_h. With F2 + F3 voiced, the pass rate climbs from 0.09 (A1 struck
+    before 0.45 L) to 0.51 (0.65–0.70 L), while F1 stays flat.
+  - At m_h ≤ 1.5 g, F2 keeps rising out to 0.70 L. At 2.3–5 g it peaks at 0.50–0.55 L.
+  - Heavy hammers are rejected by the other grades' mode 2: at 3.2–5 g, F1 treble passes 0.45
+    against 0.71–0.77 for lighter ones. ρ(ln m_h, k) = −0.5.
+  - With one mass for the whole keyboard, the treble sets the bass hammer's mass, and a light
+    hammer reaches the let-off gap only when struck far out.
+  - Graded mass is the general form: piano hammers run ~12 g bass to ~6 g treble (Hall &
+    Askenfelt, doi:10.1121/1.395917; a piano source, transfer assumed).
+- **Prior changes:**
+  - **m_h per grade**, ordered bass ≥ middle ≥ treble, each log-uniform 1–5 g (the same range,
+    sorted like z*).
+  - **v_ff fixed at 2.9 m/s.** The ff speed is a convention, not a free parameter: stage 4 gives
+    ρ(ln z*_t, ln v_ff) = +0.75, because F1 and F4 pin the ff contact time and the felt follows
+    whatever speed is called ff.
+    - The value is §4's derived one: action ratio ~2.9 × peak key speed 1 m/s, which agrees with
+      Askenfelt & Jansson's forte 5 m/s scaled to the 200A's 27.4 mm blow.
+    - v_max becomes log-uniform 2.9–5 m/s.
+    - In stage 4, 13–20 % of the posterior lay at v_ff 2.6–3.2 m/s.
+  - Everything else as stage 4: k on [0, 2.5], the rules, and the two verdict corners with their
+    n-90 calibrations.
+- **Sampler:** as §5k.
+  - 12 coordinates, with two ordered triples (z* and m_h). Bookkeeping check with an always-pass
+    likelihood: prior means within 0.8 % of each range, E[prior / proposal] = 0.99.
+  - Generation 0 is stage 4's last-generation survivors at plane −12 with v_ff 2.6–3.2 m/s, their
+    mass copied to all three grades. It seeds the proposal only.
+  - Up to 4 generations × 6000 proposals; stop at ESS ≥ 300 on both corners.
+- **Registered expectation (physics review), checked on both corners:**
+  - the A1 strike median is ≤ 0.58 L, and the posterior median of m_h_bass / m_h_treble is ≥ 1.3.
+  - **Failure clause:** the A1 median is ≥ 0.60 L, or the ratio is < 1.2.
+- **Reported:** every parameter's p10 / 50 / 90; the split posterior; m_h_bass's mass within 10 %
+  of its 5 g ceiling; k within 0.1 of 2.5; and the F4 margin. "About halfway" is reported only: it
+  is verbal, of unknown origin, and reads ~0.54 L at A1 from the bar edge or 0.50 L from the fillet.
+- **For §6 step 3 (physics review, registered now):**
+  - Engine values are held until this run.
+  - Ship one coherent instrument: a particle near the posterior's centre in what the checks pin
+    (ff contact time per grade, bass reach, F4 margin), scored at both corners. The ear-gate
+    corners are particles too, not a mix of marginal quantiles.
+  - Freeze the hammer offsets per note, voiced at MIDI ≤ 60. A raw draw can land in a null: F#2's
+    tip swing is 16.2 mm struck at 0.40 L but 1.3 mm at 0.50 L.
+  - p: take the prior median, and hear the corners. With z* re-solved per p to hold the ff contact
+    time, C4 at v/2, v/4 and v/8 reads −6.7, −14.3 and −23 to −25 dB across p 2.36–3.35.
+  - **The treble is the velocity map's real problem.**
+    - At C7 the centre's ff contact is 2.4 T1, past the cliff. At v/2 its swing drops 21–34 dB,
+      then −37 to −88 dB in the nulls.
+    - Report C6 / C7 swing against velocity before registering the map.
+    - If the treble vanishes erratically, suspect pulse symmetry first: lossless felt gives the
+      deepest nulls, and any loss fills them.
+  - Velocity floor: the hammer must fly the 1/8″ let-off against gravity, so v ≥ ~0.25 m/s.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
