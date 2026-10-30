@@ -1004,6 +1004,40 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
   0.17 / 0.12 / 0.71 converged. It still depends on the closure.
 - 19–24 % of the mass passes F4 by less than 3 dB.
 
+**Why the A1 strike stays out (physics review, stage-5 proposals re-weighted one check at a time).**
+- F2 (let-off reach) and F3 (tip ≤ 12 mm shield) together bound one mode-1 amplitude from both
+  sides at the reach reeds. The window at A1 is shut below ~0.38 L and widens further out.
+  - Drop the shield, and A1 moves to 0.46–0.48 L with m_h_bass 3.2–3.7 g. Drop F1 bass or middle,
+    and it moves ≤ 0.01 L.
+  - A heavy bass hammer at ≥ 2.9 m/s overshoots the shield unless struck where the window is wide.
+- **The weak input is the 12 mm.** It is "~½ inch above" from video, with no datum and no read of
+  whether upper-comb metal lies over the bass tip's path.
+  - A1 median against clearance (plane −12 | converged): 11 mm 0.61 | 0.61; 12 mm 0.60 | 0.61;
+    13 mm 0.57 | 0.58; 14 mm 0.54 | 0.56; 16 mm 0.50 | 0.47.
+  - The let-off grid is a nuisance like the split; marginalised at 12 mm it gives 0.57 | 0.61.
+- The posterior's p10–p90 is 0.37–0.72 L, so "about halfway" sits inside it; the median is a weak
+  handle on this width.
+- **Next stage (to register once the shield is read):** the clearance as a band read off the
+  upper comb, with the let-off grid marginalised; run to ESS ≥ 300. Register a distribution (the
+  share beyond 0.6 L), with bands wider than the generation-to-generation movement.
+
+**Treble swing against hammer speed (stage-5 posterior, 300 weight-resampled particles per corner;
+`tools/hammer_velocity_report.py`; report only).** Swing re the same particle's ff swing,
+p50 [p10, p90] dB:
+
+| MIDI | v / 2 | v / 4 | v / 8 |
+|---|---|---|---|
+| 84 (C6) | −11 [−14, −9] | −27 to −32 [−47, −22] | −54 to −55 [−71, −44] |
+| 90 (F#6) | −17 to −20 [−33, −13] | −42 to −45 [−58, −32] | −58 to −61 [−76, −43] |
+| 96 (C7) | −21 to −22 [−41, −9] | −37 [−53, −27] | −53 to −58 [−72, −42] |
+
+- At v/8, 93–100 % of strikes fall more than 40 dB below their ff swing.
+- At F#6 and C7, 7–12 % of strikes are not monotonic in speed: they land in nulls.
+- The contact time lengthens from 1.3–2.4 T1 at ff to 2.8–5.6 T1 at v/8, far past the cliff.
+- **This is the pulse-symmetry signature:** the model's felt is lossless, which gives the deepest
+  nulls. Whether felt loss is needed is to be settled before the velocity map, because it would
+  change every stage's contact law.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
