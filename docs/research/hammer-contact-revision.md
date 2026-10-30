@@ -1085,9 +1085,29 @@ p50 [p10, p90] dB:
     - **Caveat:** the statistic is near-saturated. In all four loops the felt reaches zero force
       while still 48–60 % compressed, so at half compression the unloading branch has already left
       contact, and the gap there mostly measures the loading branch.
-    - That slow recovery suggests a millisecond-scale relaxation, not Stulov's microsecond τ0;
-      it is passed to the physics review. These are piano hammers, and Giordano & Winans
-      attribute part of such loops to force propagation within the hammer.
+    - **Physics review, joint fit of all four loops, one parameter set per hypothesis:**
+      - The slow recovery is the single-state law itself. At zero stress the felt recovers on the
+        retardation time τ_d / ε (≈ 0.31 ms here), not on τ0. In the long-contact form the force
+        reaches zero while U = p τ_d |dU/dt|, with the felt still compressed.
+      - Stulov fitted: τ_d 0.267 ms, p 2.33, m 12.8 g (a bass hammer's mass), RMS 1.11, zero-force
+        residual 0.46–0.57 U_max against the data's 0.48–0.60.
+      - Hunt–Crossley fitted: RMS 1.75. It cannot make the residual: its force returns to zero only
+        at U = 0.
+      - Lossless felt plus a measurement delay (Giordano & Winans' artefact), fitted: RMS 1.83,
+        half the data's residual, and it needs a 6.8 g hammer. A pure delay does not account for
+        these loops, though part delay plus loss is not excluded.
+    - **The registered growth bands were mis-sized.** They came from small-loss scaling; at
+      τ_d / T_contact ~0.2 the gaps saturate. In the joint fits at 0.8 U_max the growth is ×1.27
+      under Stulov and ×1.56 under Hunt–Crossley. **The verdict stands** (Stulov's form, not
+      Hunt–Crossley), but on the residual compression and the fit quality, not on the clause's
+      band. The 0.5 statistic is spent.
+    - **No change for stage 6.**
+      - These loops put one pliant piano hammer at τ_d ~0.27 ms, the top of the band, while
+        Giordano & Winans' Knabe blows sit at 0.03–0.07 ms. Hammer-to-hammer and method-to-method
+        spread cannot be told apart, and the 200A felt is unmeasured, so log-uniform 0.01–0.3 ms
+        stays.
+      - Carrying the state through separations is confirmed to matter: the felt recovers over
+        ~0.3 ms, close to C7's 0.48 ms period, so treble recontacts meet unrecovered felt.
 - **Next stage (to register once the upper-comb read gives the shield band):** from the pooled
   pass, with τ_d, the shield clearance band and the let-off grid all marginalised. A verdict that
   flips across τ_d is unresolved.
