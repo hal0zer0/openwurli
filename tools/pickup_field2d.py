@@ -281,7 +281,7 @@ def normalised_laws(path_in):
     """
     from scipy.interpolate import CubicSpline
     T = json.load(open(path_in))
-    smooth, prov = {}, {}
+    smooth, prov, knots = {}, {}, {}
     for sec in SECTIONS:
         u = np.array(T[sec]["u"])
         C = np.array(T[sec]["C_pF_per_m"])
@@ -291,13 +291,18 @@ def normalised_laws(path_in):
         rms, mx = np.sqrt(np.mean(res ** 2)) / np.ptp(C), np.abs(res).max() / np.ptp(C)
         prov[sec] = (f"lambda {lam:.0e} (h-convergence), residual rms {rms:.2e} / max {mx:.2e} "
                      f"of range")
+        # An extended section (--merge-extension) mixes the shipping grid with coarser far knots;
+        # the plugin's table is uniform, so its smoothed law is sampled on the shipping grid.
+        if not np.allclose(np.diff(u), np.diff(u).mean()):
+            u = u[0] + U_STEP * np.arange(int(round((u[-1] - u[0]) / U_STEP)) + 1)
+            prov[sec] += f", sampled every {U_STEP} mm"
         print(f"{sec}: {prov[sec]}")
-        smooth[sec] = sm(u)
+        smooth[sec], knots[sec] = sm(u), u
     ref = smooth[NORM_SECTION]
     dc_ref = ref.max() - ref[0]
     laws = {}
     for sec in SECTIONS:
-        u = np.array(T[sec]["u"])
+        u = knots[sec]
         y = (smooth[sec] - ref[0]) / dc_ref
         laws[sec] = (u, y, CubicSpline(u, y, bc_type="natural"), prov[sec])
     return T, laws
@@ -447,6 +452,28 @@ def merge_refine(base_path, part_path, out_path):
     print(f"merged {part_path} into {base_path} -> {out_path}")
 
 
+def merge_extension(base_path, out_path, ext_paths):
+    """Add --refine solves outside a section's range (same geometry and h) to a --chosen JSON.
+
+    The far knots may be coarser than the shipping grid; normalised_laws smooths the section's data
+    as one set and samples the law on the shipping grid."""
+    base = json.load(open(base_path))
+    for path in ext_paths:
+        for key, t in json.load(open(path)).items():
+            b = base[key]
+            for f in ("W", "t_r", "t_p", "g_s", "h"):
+                assert abs(b[f] - t[f]) < 1e-12, (path, key, f, b[f], t[f])
+            lo, hi = min(b["u"]), max(b["u"])
+            new = [(u, c) for u, c in zip(t["u"], t["C_pF_per_m"])]
+            assert all(u < lo or u > hi for u, _ in new), f"{path}: knots inside {key}'s range"
+            pts = sorted(list(zip(b["u"], b["C_pF_per_m"])) + new)
+            b["u"], b["C_pF_per_m"] = [u for u, _ in pts], [c for _, c in pts]
+            b.setdefault("extended_by", []).append(path)
+    with open(out_path, "w") as f:
+        json.dump(base, f)
+    print(f"merged {ext_paths} into {base_path} -> {out_path}")
+
+
 def static_harmonics(u, C, g0, A, kmax=8, n=1024):
     """Harmonics (dB re H1) of the static law C(-g0 + A sin), through a GCV smoothing spline.
 
@@ -590,6 +617,8 @@ def main():
     ap.add_argument("--check-window", nargs=2, metavar=("SHIPPING.json", "HALF_H_WINDOW.json"),
                     help="h/2 gate on a --refine window, like for like (same lambda, by h-convergence)")
     ap.add_argument("--merge-refine", nargs=3, metavar=("BASE.json", "PART.json", "OUT.json"))
+    ap.add_argument("--merge-extension", nargs="+", metavar="JSON",
+                    help="BASE.json OUT.json EXT.json [EXT.json ...]: add solves outside a section's range")
     ap.add_argument("--refine", nargs=3, metavar=("SECTION", "U_LO", "U_HI"),
                     help="re-solve one shipping section on a u sub-range (finer --h)")
     a = ap.parse_args()
@@ -614,6 +643,9 @@ def main():
         return
     if a.merge_refine:
         merge_refine(*a.merge_refine)
+        return
+    if a.merge_extension:
+        merge_extension(a.merge_extension[0], a.merge_extension[1], a.merge_extension[2:])
         return
     if a.tables:
         run_tables(a.h, a.u_step, a.out, a.jobs)
