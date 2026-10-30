@@ -1083,6 +1083,11 @@ p50 [p10, p90] dB:
     0.42 mm), so the C4 ff contact median is ≥ 10 % shorter for τ_d ≥ 0.1 ms than for
     ≤ 0.02 ms.
   - **Failure clause:** less than 5 % shorter, or longer.
+  - **Reading (physics review, before any run):** at fixed felt the viscous stiffening shortens C4's
+    contact by only 1.2 / 2.4 / 4.0 % at τ_d 0.02 / 0.05 / 0.1 ms. That costs C4's ff mode 2
+    −2.9 / −5.4 / −8.3 dB with z* held on the relaxed law; this tool gives −4.8 dB at 0.05 ms in a
+    neighbouring setup. So a shortening of ≥ 10 % has to come from F1 re-identifying stiffer felt,
+    and that is the effect the prediction tests.
 - **Operator's call, report-only:** whether a real 200A's top octave speaks at a light touch is an
   observation, not a model output. The model's answer (−40 to −68 dB at v/8 under its own ff) is
   reported beside it, not tuned to it.
