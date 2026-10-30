@@ -553,10 +553,15 @@ def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=STIFFNESS_CHUNK):
 # Pass-3 strike-point law (plan §5f): d_s = d_ref (L / L_ref)^k mm from the clamp, k shared in [0, 2],
 # per-hammer scatter +-1.5 mm, floor 5 mm. Anchor: one photographed hammer on a 206A, 7.1 mm from the
 # bar edge; the L origin is a nuisance until that reed is identified.
-ANCHORS = {"bar": (7.1, 31.5), "fillet": (13.2, 37.5), "fillet-reed38": (13.2, 40.1)}  # last: pass 3c (reed 38/39)
+ANCHORS = {"bar": (7.1, 31.5), "fillet": (13.2, 37.5), "fillet-reed38": (13.2, 40.1),
+           "fillet-floor": (13.2, 40.1)}  # fillet-reed38: pass 3c (reed 38/39); fillet-floor: pass 3d
 STRIKE_K_RANGE = (0.0, 2.0)   # strike-law exponent k, uniform (0: rail parallel to the bar; 1: constant fraction)
 STRIKE_SCATTER_MM = 1.5       # per-hammer scatter, uniform +-, ASSUMED (physics review, G); also stands for crown tilt
-STRIKE_FLOOR_MM = 5.0         # d_s >= half the 9.2 mm crown plus clearance (physics review)
+STRIKE_FLOOR_MM = 5.0         # passes 3-3c: half the 9.2 mm crown plus clearance (bar-edge arithmetic; a form error
+                              # under the fillet origin, see plan §5j)
+# Pass 3d (plan §5j): the reed bar casting covers the first 5.9-6.3 mm from the fillet (photo read); the crown centre
+# must sit at least half the widest felt (10.2-11.6 mm, photo read) past the bar edge.
+STRIKE_FLOOR_BY_ANCHOR = {"fillet-floor": 11.5}
 
 
 def keyboard3(notes, n, seed, out, split, survey, origin):
@@ -626,6 +631,7 @@ def keyboard3b(notes, n, seed, out, split, survey, origin):
     inst["t_bass_in"] = rng.uniform(*BASS_BLANKS_IN, n)
     level = np.argmin(np.abs(inst["t_bass_in"][:, None] - np.array(BASS_BLANK_LEVELS_IN)[None, :]), axis=1)
     d_ref, L_ref = ANCHORS[origin]
+    floor_mm = STRIKE_FLOOR_BY_ANCHOR.get(origin, STRIKE_FLOOR_MM)
     measured = {}
     if survey:
         for row in json.load(open(survey)):
@@ -662,7 +668,7 @@ def keyboard3b(notes, n, seed, out, split, survey, origin):
             zs, pp, mh = inst["z_star"][sel, g], inst["p"][sel, g], inst["m_h"][sel]
 
             def place(off):
-                return np.clip(law + off, STRIKE_FLOOR_MM, L_mm - CROWN_MM / 2)
+                return np.clip(law + off, floor_mm, L_mm - CROWN_MM / 2)
 
             # (A) F1 and reports: random offset, v_ff.
             d_s = place(scatter[sel])
