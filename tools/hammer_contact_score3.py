@@ -27,9 +27,18 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hammer_contact_score import ALLOW_DB, MAX_FAIL_FRACTION, SCORED, offsets, q
 
-SHIELD_MM = 12.0
-TREBLE_DPEAK_MAX_MM = 1.5
-VOICING_MIN_SWING_MM = {6: 0.07, 10: 0.045, 20: 0.0135}  # midpoints of the physics review's bands
+SHIELD_MM = 12.0           # grounded RF shield ~1/2" above the comb: tip swing limit (plan §5f, F3)
+TREBLE_DPEAK_MAX_MM = 1.5  # validity: half of the 3.0-3.3 mm crown read off a photo (superseded in pass 3c)
+TREBLE_GRADE = 2
+# Minimum top-treble pickup swing within 6 / 10 / 20 dB of C4 at the best voicing: midpoints of the
+# physics review's bands (0.06-0.08 / 0.04-0.05 / 0.012-0.015 mm).
+VOICING_MIN_SWING_MM = {6: 0.07, 10: 0.045, 20: 0.0135}
+# Let-off nuisance grid (plan §5f): the lowest n_b reeds must reach the gap; manual §12 sets the gap at
+# 1/8" +- 1/32" (2.4-4.0 mm); the reed count ("the last 10 bass notes or so") is carried as 7-13.
+LETOFF_NB = (7, 10, 13)
+LETOFF_GAP_MM = (2.4, 3.2, 4.0)
+PRIMARY = (10, 3.2)        # the registered primary point of the grid
+
 
 
 def main():
@@ -71,19 +80,19 @@ def main():
     valid = np.ones(n, bool)
     for m, v in notes.items():
         f3 &= v["tip_mm"] <= SHIELD_MM
-        if v["grade"] == 2:
+        if v["grade"] == TREBLE_GRADE:
             valid &= v["d_peak_mm"] <= TREBLE_DPEAK_MAX_MM
 
-    f2p = f2(10, 3.2)
+    f2p = f2(*PRIMARY)
     print(f"origin {kb['origin']}, split {kb['split']}, {n} instruments")
-    print(f"  pass alone: F1 {f1.mean()*100:.1f}% | F2(10, 3.2 mm) {f2p.mean()*100:.1f}% | F3 {f3.mean()*100:.1f}% | "
+    print(f"  pass alone: F1 {f1.mean()*100:.1f}% | F2({PRIMARY[0]}, {PRIMARY[1]} mm) {f2p.mean()*100:.1f}% | F3 {f3.mean()*100:.1f}% | "
           f"valid {valid.mean()*100:.1f}%")
-    grid = " ".join(f"{nb}/{gap}:{(f1 & f2(nb, gap) & f3 & valid).sum()}" for nb in (7, 10, 13) for gap in (2.4, 3.2, 4.0))
+    grid = " ".join(f"{nb}/{gap}:{(f1 & f2(nb, gap) & f3 & valid).sum()}" for nb in LETOFF_NB for gap in LETOFF_GAP_MM)
     print(f"  all four, survivors by (n_b/gap): {grid}")
     print(f"  F1 + F3 + valid (no let-off term): {(f1 & f3 & valid).sum()} | F2 + F3 + valid (no mode-2 term): "
           f"{(f2p & f3 & valid).sum()}")
     ok = f1 & f2p & f3 & valid
-    print(f"  PRIMARY (all four at 10 / 3.2 mm): {ok.sum()} ({ok.mean()*100:.1f}%)")
+    print(f"  PRIMARY (all four at {PRIMARY[0]} / {PRIMARY[1]} mm): {ok.sum()} ({ok.mean()*100:.1f}%)")
     if ok.sum() == 0:
         return
     for gi, gname in enumerate(("bass", "middle", "treble")):

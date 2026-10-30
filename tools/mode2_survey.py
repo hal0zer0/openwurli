@@ -35,24 +35,43 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hammer_contact import variants  # noqa: E402
 from hammer_contact_eval import reed  # noqa: E402
 
-PC = dict(c=0, d=2, e=4, f=5, g=7, a=9, b=11)
+PC = dict(c=0, d=2, e=4, f=5, g=7, a=9, b=11)  # pitch class of each white-note letter
+LABEL_OCTAVE_OFFSET = 2    # MIDI = 12 * (label octave + 2) + pitch class: labels sit one octave below scientific
+SET_A4_HZ = 439.0          # the set is tuned near A = 439 Hz (fundamentals measured on the shelf, notes file)
+A4_MIDI = 69
+UNDAMPED_MIDI = range(92, 97)  # the top five reeds have no dampers and ring in sympathy (Doc Wurly; VV felts 1-59)
+SYMPATHETIC_HARMONICS = (1, 2)  # their fundamentals and 2nd harmonics are excluded from the search
+FE_RATIO_MODES = 3         # FE modes solved for the mode-2 ratio band
+SENSOR_MAX_BANDS = 120     # Sensor decay-mode band cap
+H1_SEARCH_FRAC = 0.04      # H1 is the strongest band within +-4 % of the nominal fundamental
+SEARCH_LO = (20.0, 0.8)    # decay-range low edge: max(20 Hz, 0.8 f1)
+SEARCH_HI = 1.05           # decay-range high edge: 1.05 x the top of the search band
+# Windows (skip ms, window ms, band +-Hz): the onset fit starts ~85 ms after the strike; the late
+# window covers 0.3-2.8 s. Each band width is the narrowest the Sensor accepts for its window.
+WINDOWS = (("onset", 5, 900, 40), ("late", 300, 2500, 20))
+MAX_HARMONIC = 40          # harmonics checked for the band-clearance report
+# Survey settings as registered (plan §5c):
+TOP_LAYER = "7e"           # velocity 126, the set's top layer
+WIDEN_FRAC = 0.05          # FE band widened 5 % for per-reed scatter the band omits (length, taper, solder)
+CLEAR_HZ = 12.0            # a candidate must clear every harmonic and sympathetic line by this much
+PROM_DB = 12.0             # minimum candidate prominence (the Sensor's own model-order gap is 12 dB)
 
 
 def label_to_midi(note, octave):
-    return 12 * (octave + 2) + PC[note]
+    return 12 * (octave + LABEL_OCTAVE_OFFSET) + PC[note]
 
 
 def fe_band(midi):
     rs = []
     for _, t_tip, t_root in variants(midi):
-        r = reed(midi, t_tip, t_root, nm=3)
+        r = reed(midi, t_tip, t_root, nm=FE_RATIO_MODES)
         rs.append(r["om"][1] / r["om"][0])
     return min(rs), max(rs)
 
 
 def sensor_bands(sensor, wav, skip, window, band_hz, lo, hi):
     cmd = [sensor, wav, "--mode", "decay", "--skip-ms", str(skip), "--window-ms", str(window),
-           "--decay-range", f"{lo:.0f},{hi:.0f}", "--decay-band-hz", str(band_hz), "--decay-max-bands", "120",
+           "--decay-range", f"{lo:.0f},{hi:.0f}", "--decay-band-hz", str(band_hz), "--decay-max-bands", str(SENSOR_MAX_BANDS),
            "--json"]
     p = subprocess.run(cmd, capture_output=True, text=True)
     try:
@@ -62,19 +81,19 @@ def sensor_bands(sensor, wav, skip, window, band_hz, lo, hi):
 
 
 def h1_of(bands, f_nom):
-    near = [b for b in bands if abs(b["centre_hz"] / f_nom - 1) < 0.04]
+    near = [b for b in bands if abs(b["centre_hz"] / f_nom - 1) < H1_SEARCH_FRAC]
     return max(near, key=lambda b: b["candidate_dbfs"]) if near else None
 
 
 def survey_note(sensor, wav, midi, a):
-    f_nom = 439.0 * 2 ** ((midi - 69) / 12)  # the set is tuned near A = 439 Hz
+    f_nom = SET_A4_HZ * 2 ** ((midi - A4_MIDI) / 12)
     r_lo, r_hi = fe_band(midi)
     lo, hi = r_lo * f_nom * (1 - a.widen), r_hi * f_nom * (1 + a.widen)
-    symp = [439.0 * 2 ** ((m - 69) / 12) * k for m in range(92, 97) for k in (1, 2)]
+    symp = [SET_A4_HZ * 2 ** ((m - A4_MIDI) / 12) * k for m in UNDAMPED_MIDI for k in SYMPATHETIC_HARMONICS]
     out = dict(midi=midi, file=os.path.basename(wav), fe_ratio_band=[round(r_lo, 3), round(r_hi, 3)],
                search_hz=[round(lo, 1), round(hi, 1)])
-    for tag, skip, window, bw in (("onset", 5, 900, 40), ("late", 300, 2500, 20)):
-        bands = sensor_bands(sensor, wav, skip, window, bw, max(20.0, 0.8 * f_nom), hi * 1.05)
+    for tag, skip, window, bw in WINDOWS:
+        bands = sensor_bands(sensor, wav, skip, window, bw, max(SEARCH_LO[0], SEARCH_LO[1] * f_nom), hi * SEARCH_HI)
         if bands is None:
             out[tag] = dict(status="sensor refused")
             continue
@@ -102,7 +121,7 @@ def survey_note(sensor, wav, midi, a):
                         n_candidates=len(cands))
     # Clearance of the band itself: is any harmonic or sympathetic line inside the search window?
     f1 = out.get("onset", {}).get("h1_hz") or f_nom
-    inside = [k for k in range(1, 40) if lo <= k * f1 <= hi]
+    inside = [k for k in range(1, MAX_HARMONIC) if lo <= k * f1 <= hi]
     out["harmonics_inside_band"] = inside
     out["sympathetic_inside_band"] = [round(s, 0) for s in symp if lo <= s <= hi]
     return out
@@ -112,10 +131,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--samples", required=True)
     ap.add_argument("--sensor", required=True, help="path to the Sensor Array 'analyze' binary")
-    ap.add_argument("--layer", default="7e", help="velocity layer (hex), falls back to the loudest present")
-    ap.add_argument("--widen", type=float, default=0.05, help="fractional widening of the FE band")
-    ap.add_argument("--clear", type=float, default=12.0, help="Hz clearance from harmonics/sympathetics")
-    ap.add_argument("--prom", type=float, default=12.0, help="minimum candidate prominence, dB")
+    ap.add_argument("--layer", default=TOP_LAYER, help="velocity layer (hex), falls back to the loudest present")
+    ap.add_argument("--widen", type=float, default=WIDEN_FRAC, help="fractional widening of the FE band")
+    ap.add_argument("--clear", type=float, default=CLEAR_HZ, help="Hz clearance from harmonics/sympathetics")
+    ap.add_argument("--prom", type=float, default=PROM_DB, help="minimum candidate prominence, dB")
     ap.add_argument("--out", default="")
     a = ap.parse_args()
     rows = []

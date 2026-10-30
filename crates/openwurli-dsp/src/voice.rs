@@ -97,7 +97,7 @@ impl Voice {
             &spec.ratios,
             &spec.amplitudes,
             &spec.decay_db_s,
-            0.0,
+            0.0, // no onset ramp: the prescribed state already includes the contact
             velocity,
             sample_rate,
         );

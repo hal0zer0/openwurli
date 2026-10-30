@@ -38,8 +38,57 @@ PRIORS = dict(
     x_s=("uniform", 0.25, 0.60),  # fraction of L, patch +-0.1 L
     v_ff=("log-uniform", 1.4, 3.5),  # m/s
 )
-F_REF = 10.0  # N
-N_MODES = 20
+# --- Units -----------------------------------------------------------------------------------
+MM = 1e-3          # m per mm
+INCH = 25.4e-3     # m per inch
+A4_HZ = 440.0      # equal-temperament reference: f = A4_HZ * 2^((midi - A4_MIDI) / 12)
+A4_MIDI = 69
+
+# --- Felt law ----------------------------------------------------------------------------------
+F_REF = 10.0       # N: z* is the felt compression at this force (Giordano & Winans 2000 measure z* at 10 N)
+
+# --- Reed model --------------------------------------------------------------------------------
+N_MODES = 20       # modes integrated during contact (model evaluation: >= 14 needed for stiff chatter)
+N_RENDER_MODES = 7  # modes the engine renders (tables::NUM_MODES)
+BASS_REEDS = 20    # reeds 1-20 are the unground bass blanks (MIDI 33-52)
+MIDI_LOWEST = 33   # reed 1 = A1
+BASS_BLANKS_IN = (0.020, 0.026)  # disputed bass blank thickness, in: .020" (Vintage Vibe) / .026" (earlier code)
+TIP_THICKNESS_MM = (0.51, 0.585, 0.66)  # reeds 21-64 tip thickness band (tables / pickup spec), mm
+ROOT_THICKNESS_IN = 0.034  # reeds 21-64 blank root thickness, in (FE reed model)
+FINGER_REGION_MM = (8.0, 2.0)  # pickup finger region: from L-8 mm to L-2 mm (reed_fe_inputs.py)
+FINGER_REGION_PTS = 61
+XS_GRID_FRAC = (0.25, 0.60, 0.01)  # strike-point grid for the pass-1/2 patch tables, fraction of L
+
+# --- Integrator controls (numerics; the self-test checks convergence at a quarter of the step) ---
+STEPS_PER_CONTACT = 200.0  # time steps per rigid-target compression time d_max / v
+STEPS_PER_T1_MIN = 2000.0  # step cap T1 / 2000 (only bounds contact sampling; the modal flow is exact)
+T_MAX_PERIODS = 60.0       # window cap: a heavy hammer can ride a light treble reed for several periods
+OVERDAMP_CAP = 0.9         # modal damping capped at 0.9 of critical so the damped update stays defined
+STIFFNESS_CHUNK = 64       # samples per chunk of similar contact stiffness (each chunk takes its own step)
+MM_PER_M = 1e3             # output conversion, m -> mm
+LOG_FLOOR = 1e-30          # guards log10 of a zero amplitude (reads as -600 dB)
+
+# --- Chain model for the mode-2 proxy (the model's own chain, not a recording's) ---------------
+PICKUP_HP_HZ = 880.0       # pickup one-pole high-pass corner (crate::pickup::PICKUP_FC; pickup spec)
+# Preamp gain vs frequency, `preamp-bench sweep --start 50 --end 16000 --points 40` (LDR 1 MΩ),
+# 2026-10-29: flat within 1 dB to ~7.6 kHz, -3 dB at 16 kHz.
+PREAMP_SWEEP_HZ = (50.0, 1500.9, 3144.4, 4900.5, 6587.4, 8854.9, 10266.4, 11902.8, 13800.2, 16000.0)
+PREAMP_SWEEP_DB = (7.00, 7.02, 6.93, 6.77, 6.53, 6.12, 5.79, 5.36, 4.76, 3.96)
+
+# --- The shipping fundamental decay law (tables::fundamental_decay_rate; UNVERIFIED there) --------
+DECAY_COEF_DB_S = 0.005
+DECAY_EXPONENT = 1.22
+DECAY_FLOOR_DB_S = 3.0     # tables::MIN_DECAY_RATE
+
+# --- Chain-identical calibration (plan §5d amendments) ------------------------------------------
+CAL_VELOCITY = 127         # bench render velocity (output level only; the modal state is prescribed)
+CAL_DURATION_S = 1.0
+CAL_SENSOR_ONSET = (5, 900, 40)  # skip ms, window ms, band +-Hz: the survey's onset window (fit from ~85 ms)
+CAL_SEARCH_LO = (20.0, 0.8)      # decay-range low edge: max(20 Hz, 0.8 f1)
+CAL_SEARCH_HI = 1.1              # decay-range high edge: 1.1 f2
+CAL_UNRESOLVABLE_HZ = 25.0       # a mode 2 this close to a harmonic is unresolvable, as in a recording
+CAL_LINE_TOL = (4.0, 0.004)      # model line search: max(4 Hz, 0.4 % of f2) (voice detune is +-3 cents)
+CAL_MAX_HARMONIC = 40            # harmonics checked for the resolvability test
 # Upper damping corner: omega^2 anchored at C4's mode-2 loss, the only anchor (~10 /s at 1466 Hz).
 # (Pass 1 ran with a G3 anchor, 23 /s at 1295 Hz, withdrawn once G3's line proved fixed.)
 UPPER_ALPHA_REF = 10.0
@@ -54,9 +103,9 @@ def section(midi):
 
 def variants(midi):
     """FE geometry variants (equal weight): bass blanks, or tapered tips."""
-    if midi - 32 <= 20:
-        return [("bass .020", 0.020 * 25.4e-3, 0.020 * 25.4e-3), ("bass .026", 0.026 * 25.4e-3, 0.026 * 25.4e-3)]
-    return [(f"tip {t:.3f}", t * 1e-3, 0.034 * 25.4e-3) for t in (0.51, 0.585, 0.66)]
+    if midi - (MIDI_LOWEST - 1) <= BASS_REEDS:
+        return [(f"bass {t:.3f}", t * INCH, t * INCH) for t in BASS_BLANKS_IN]
+    return [(f"tip {t:.3f}", t * MM, ROOT_THICKNESS_IN * INCH) for t in TIP_THICKNESS_MM]
 
 
 def draw(rng, n):
@@ -70,16 +119,17 @@ def reed_data(midi, t_tip, t_root):
     r = reed(midi, t_tip, t_root, nm=N_MODES)
     om = r["om"][:N_MODES] * (r["f"] / r["fe1"])  # scaled to pitch, as in the model evaluation
     L = r["L"]
-    xs_grid = np.round(np.arange(0.25, 0.6001, 0.01), 2)
+    lo, hi, step = XS_GRID_FRAC
+    xs_grid = np.round(np.arange(lo, hi + step / 100, step), 2)
     ph_grid = np.array([patch(r, xs)[:N_MODES] for xs in xs_grid])
-    xx = np.linspace(L - 8e-3, L - 2e-3, 61)  # finger region, as in reed_fe_inputs.py
+    xx = np.linspace(L - FINGER_REGION_MM[0] * MM, L - FINGER_REGION_MM[1] * MM, FINGER_REGION_PTS)
     ph_pick = np.array([np.mean(np.interp(xx, r["xe"], r["phi"][:, n])) for n in range(N_MODES)])
     ph_tip = r["phi"][-1, :N_MODES]
     return dict(f=r["f"], om=om, mu=r["mu"], fe1=r["fe1"], xs_grid=xs_grid, ph_grid=ph_grid,
                 ph_pick=ph_pick, ph_tip=ph_tip, L=L, xe=r["xe"], phi=r["phi"][:, :N_MODES])
 
 
-def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=60.0):
+def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=T_MAX_PERIODS):
     """Integrate S strikes in lockstep. Returns per-sample results (arrays of length S)."""
     S = len(m_h)
     om = rd["om"]
@@ -89,10 +139,10 @@ def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=
     if dt is None:
         # Resolve the stiffest contact in the batch: rigid-target compression time ~ delta_max / v.
         dmax = ((p + 1) * 0.5 * m_h * v ** 2 / K) ** (1 / (p + 1))
-        dt = float(np.min(dmax / v)) / 200.0
-        dt = min(dt, T1 / 2000.0)  # the free modal flow is exact, so this cap only bounds the contact sampling
+        dt = float(np.min(dmax / v)) / STEPS_PER_CONTACT
+        dt = min(dt, T1 / STEPS_PER_T1_MIN)
     # Modes damped past critical don't ring; cap them just under it so the update stays defined.
-    alpha = np.zeros(N_MODES) if alpha is None else np.minimum(alpha, 0.9 * om)
+    alpha = np.zeros(N_MODES) if alpha is None else np.minimum(alpha, OVERDAMP_CAP * om)
     # Kick-drift-kick (impulse method): half kicks from the contact force, and between them the
     # EXACT free (damped) modal flow plus the hammer's free drift. Second order and symplectic when
     # undamped; the free flow is exact at any mode frequency.
@@ -159,17 +209,17 @@ def strike_batch(rd, m_h, v, z_star, p, x_s, alpha=None, dt=None, t_max_periods=
         dt=dt, unfinished=int(active.sum()), n_contacts=n_contacts, t_contact_T1=t_contact / T1,
         t_first_T1=t_first_end / T1, t_end_T1=t_end / T1, amp=amp, q=q, qd=qd, rebound=vy / v,
         energy_err=(e_reed + e_ham - e0) / e0,
-        tip_mm=amp * np.abs(rd["ph_tip"])[None, :] * 1e3,
-        pick_mm=amp * rd["ph_pick"][None, :] * 1e3,  # signed coupling at the finger region
+        tip_mm=amp * np.abs(rd["ph_tip"])[None, :] * MM_PER_M,
+        pick_mm=amp * rd["ph_pick"][None, :] * MM_PER_M,  # signed coupling at the finger region
     )
 
 
 CROWN_MM = 9.2  # measured felt-crown length along the reed (8.9-9.4 mm at the crown)
-CROWN_PTS = 41
+CROWN_PTS = 41  # crown sample points along the reed (crown-length changes resolve to <= 0.4 dB)
 
 
 def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None, dt=None,
-                   t_max_periods=60.0):
+                   t_max_periods=T_MAX_PERIODS):
     """Pass-3 contact: a Winkler layer of felt on the hammer's blade. The crown spans crown_mm along
     the reed, centred d_s_mm from the clamp, sampled at CROWN_PTS points. Each point compresses
     locally, f_i = (F_REF / N) (delta_i / z*)^p while delta_i > 0, so a uniform compression gives the
@@ -178,8 +228,8 @@ def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None,
     om = rd["om"]
     T1 = 1.0 / rd["f"]
     L = rd["L"]
-    off = (np.arange(CROWN_PTS) / (CROWN_PTS - 1) - 0.5) * crown_mm * 1e-3
-    x = np.clip(d_s_mm[:, None] * 1e-3 + off[None, :], 0.0, L)  # (S, P) positions along the reed
+    off = (np.arange(CROWN_PTS) / (CROWN_PTS - 1) - 0.5) * crown_mm * MM  # crown points about its centre
+    x = np.clip(d_s_mm[:, None] * MM + off[None, :], 0.0, L)  # (S, P) positions along the reed
     Phi = np.stack([np.interp(x.ravel(), rd["xe"], rd["phi"][:, n]).reshape(S, CROWN_PTS)
                     for n in range(N_MODES)], axis=2)  # (S, P, M)
     Phi_abs_max = np.abs(Phi).max(axis=1)  # (S, M): largest reach of the crown per mode
@@ -188,8 +238,8 @@ def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None,
     kp = F_REF / CROWN_PTS / z_star ** p  # per-point stiffness
     if dt is None:
         dmax = ((p + 1) * 0.5 * m_h * v ** 2 / (F_REF / z_star ** p)) ** (1 / (p + 1))
-        dt = min(float(np.min(dmax / v)) / 200.0, T1 / 2000.0)
-    alpha = np.zeros(N_MODES) if alpha is None else np.minimum(alpha, 0.9 * om)
+        dt = min(float(np.min(dmax / v)) / STEPS_PER_CONTACT, T1 / STEPS_PER_T1_MIN)
+    alpha = np.zeros(N_MODES) if alpha is None else np.minimum(alpha, OVERDAMP_CAP * om)
     wd = om * np.sqrt(1 - (alpha / om) ** 2)
     e = np.exp(-alpha * dt)
     c, s_ = np.cos(wd * dt), np.sin(wd * dt)
@@ -243,45 +293,52 @@ def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None,
     e_reed = 0.5 * np.sum(qd ** 2 + (om * q) ** 2, axis=1)
     return dict(
         dt=dt, unfinished=int(active.sum()), n_contacts=n_contacts, t_contact_T1=t_contact / T1,
-        t_end_T1=t_end / T1, amp=amp, q=q, qd=qd, rebound=vy / v, d_peak_mm=d_peak * 1e3,
+        t_end_T1=t_end / T1, amp=amp, q=q, qd=qd, rebound=vy / v, d_peak_mm=d_peak * MM_PER_M,
         energy_err=(e_reed + 0.5 * m_h * vy ** 2 - e0) / e0,
-        tip_mm=amp * np.abs(rd["ph_tip"])[None, :] * 1e3,
-        pick_mm=amp * rd["ph_pick"][None, :] * 1e3,
-        crown_end_swing_mm=np.abs(amp[:, 0] * phi_end[:, 0]) * 1e3,
+        tip_mm=amp * np.abs(rd["ph_tip"])[None, :] * MM_PER_M,
+        pick_mm=amp * rd["ph_pick"][None, :] * MM_PER_M,
+        crown_end_swing_mm=np.abs(amp[:, 0] * phi_end[:, 0]) * MM_PER_M,
     )
 
+
+
+# Self-test fixtures (test cases, not physics inputs): A1 on the .020" blank, a 3 g hammer at 2 m/s,
+# a stiff and a soft felt, and the model evaluation's linear-spring cases.
+SELFTEST = dict(midi=33, blank_in=0.020, batch=200, seed=1, m_h=3e-3, v=2.0, p=3.0, x_s=0.5,
+                z_stiff=0.2e-3, z_soft=3e-3, dt_refine=4, tau_ratios=(0.3, 0.75))
 
 
 def selftest():
     """Energy balance (undamped), dt convergence, and agreement with the model evaluation's strike()."""
     from hammer_contact_eval import strike as eval_strike
-    rd_a1 = reed_data(33, 0.020 * 25.4e-3, 0.020 * 25.4e-3)
-    rng = np.random.default_rng(1)
-    pr = draw(rng, 200)
+    T = SELFTEST
+    rd_a1 = reed_data(T["midi"], T["blank_in"] * INCH, T["blank_in"] * INCH)
+    rng = np.random.default_rng(T["seed"])
+    pr = draw(rng, T["batch"])
     res = strike_batch(rd_a1, pr["m_h"], pr["v_ff"], pr["z_star"], pr["p"], pr["x_s"])
-    print(f"A1 batch of 200: dt {res['dt']*1e6:.3f} us, unfinished {res['unfinished']}, "
+    print(f"A1 batch of {T['batch']}: dt {res['dt']*1e6:.3f} us, unfinished {res['unfinished']}, "
           f"max |energy error| {np.max(np.abs(res['energy_err'])):.2e}")
     # dt convergence on a stiff and a soft case
-    for zs, label in ((0.2e-3, "stiff"), (3e-3, "soft")):
-        one = dict(m_h=np.array([3e-3]), v=np.array([2.0]), z_star=np.array([zs]), p=np.array([3.0]),
-                   x_s=np.array([0.5]))
+    for zs, label in ((T["z_stiff"], "stiff"), (T["z_soft"], "soft")):
+        one = dict(m_h=np.array([T["m_h"]]), v=np.array([T["v"]]), z_star=np.array([zs]), p=np.array([T["p"]]),
+                   x_s=np.array([T["x_s"]]))
         r1 = strike_batch(rd_a1, one["m_h"], one["v"], one["z_star"], one["p"], one["x_s"])
-        r2 = strike_batch(rd_a1, one["m_h"], one["v"], one["z_star"], one["p"], one["x_s"], dt=r1["dt"] / 4)
+        r2 = strike_batch(rd_a1, one["m_h"], one["v"], one["z_star"], one["p"], one["x_s"], dt=r1["dt"] / T["dt_refine"])
         print(f"  {label}: contacts {r1['n_contacts'][0]} vs {r2['n_contacts'][0]} (dt/4); tip mode1 "
               f"{r1['tip_mm'][0,0]:.4f} vs {r2['tip_mm'][0,0]:.4f} mm; mode2 re mode1 "
               f"{20*np.log10(r1['tip_mm'][0,1]/r1['tip_mm'][0,0]):.2f} vs "
               f"{20*np.log10(r2['tip_mm'][0,1]/r2['tip_mm'][0,0]):.2f} dB")
     # Linear spring (p = 1) against the model evaluation (its p = 1 path is closed form), 20 modes.
-    r = reed(33, 0.020 * 25.4e-3, 0.020 * 25.4e-3, nm=N_MODES)
-    for tau_ratio in (0.3, 0.75):
-        mh = 3e-3
+    r = reed(T["midi"], T["blank_in"] * INCH, T["blank_in"] * INCH, nm=N_MODES)
+    for tau_ratio in T["tau_ratios"]:
+        mh = T["m_h"]
         T1 = 1 / r["f"]
-        K = mh * (np.pi / (tau_ratio * T1)) ** 2
-        c7, d20, rb = eval_strike(r, 0.5, mh, 2.0, tau_ratio, nm=N_MODES)
-        mine = strike_batch(rd_a1, np.array([mh]), np.array([2.0]), np.array([F_REF / K]), np.array([1.0]),
-                            np.array([0.5]))
+        K = mh * (np.pi / (tau_ratio * T1)) ** 2  # linear spring with rigid-target contact time tau_ratio * T1
+        c7, d20, rb = eval_strike(r, T["x_s"], mh, T["v"], tau_ratio, nm=N_MODES)
+        mine = strike_batch(rd_a1, np.array([mh]), np.array([T["v"]]), np.array([F_REF / K]), np.array([1.0]),
+                            np.array([T["x_s"]]))
         print(f"  p=1 tau {tau_ratio} T1: contacts {len(c7)} vs {mine['n_contacts'][0]}; tip mode1 "
-              f"{d20[0]*1e3:.3f} vs {mine['tip_mm'][0,0]:.3f} mm; mode2 {d20[1]*1e3:.4f} vs "
+              f"{d20[0]*MM_PER_M:.3f} vs {mine['tip_mm'][0,0]:.3f} mm; mode2 {d20[1]*MM_PER_M:.4f} vs "
               f"{mine['tip_mm'][0,1]:.4f} mm; rebound {rb:+.3f} vs {mine['rebound'][0]:+.3f}")
 
 
@@ -299,18 +356,18 @@ def run(notes, n, damping, seed, out):
             pr = draw(rng, n // len(vs))
             res = strike_batch(rd, pr["m_h"], pr["v_ff"], pr["z_star"], pr["p"], pr["x_s"], alpha=alpha)
             swing = np.abs(res["pick_mm"][:, 0])
-            m2_tip = 20 * np.log10(np.maximum(res["tip_mm"][:, 1], 1e-30) / res["tip_mm"][:, 0])
-            m2_pick = 20 * np.log10(np.maximum(np.abs(res["pick_mm"][:, 1]), 1e-30) / np.abs(res["pick_mm"][:, 0]))
+            m2_tip = 20 * np.log10(np.maximum(res["tip_mm"][:, 1], LOG_FLOOR) / res["tip_mm"][:, 0])
+            m2_pick = 20 * np.log10(np.maximum(np.abs(res["pick_mm"][:, 1]), LOG_FLOOR) / np.abs(res["pick_mm"][:, 0]))
             for i in range(len(swing)):
                 rows.append(dict(variant=name, m_h=pr["m_h"][i], v=pr["v_ff"][i], z_star=pr["z_star"][i],
                                  p=pr["p"][i], x_s=pr["x_s"][i], contacts=int(res["n_contacts"][i]),
                                  t_contact_T1=float(res["t_contact_T1"][i]), swing_mm=float(swing[i]),
                                  m2_tip_db=float(m2_tip[i]), m2_pick_db=float(m2_pick[i]),
-                                 pick_mm=[float(x) for x in res["pick_mm"][i, :7]],
+                                 pick_mm=[float(x) for x in res["pick_mm"][i, :N_RENDER_MODES]],
                                  finished=bool(np.isfinite(res["t_end_T1"][i])),
                                  energy_err=float(res["energy_err"][i]),
-                                 mode_ratios=list((rd["om"][:7] / rd["om"][0]).round(4)),
-                                 coupling=list((rd["ph_pick"][:7] / rd["ph_pick"][0]).round(4))))
+                                 mode_ratios=list((rd["om"][:N_RENDER_MODES] / rd["om"][0]).round(4)),
+                                 coupling=list((rd["ph_pick"][:N_RENDER_MODES] / rd["ph_pick"][0]).round(4))))
             print(f"MIDI {midi} {name}: {len(swing)} strikes, dt {res['dt']*1e6:.2f} us, unfinished "
                   f"{res['unfinished']}, max |energy err| {np.max(np.abs(res['energy_err'])):.1e}", flush=True)
         results[midi] = rows
@@ -343,11 +400,8 @@ def draw_instruments(rng, n):
 def preamp_tilt_db(f):
     """Model chain tilt: the pickup's 880 Hz one-pole high-pass plus the bench-measured preamp response
     (flat within 1 dB to ~7.6 kHz, -3 dB at 16 kHz; `preamp-bench sweep`)."""
-    fc = 880.0
-    hp = 20 * np.log10(f / np.sqrt(f ** 2 + fc ** 2))
-    fs = np.array([50, 1500.9, 3144.4, 4900.5, 6587.4, 8854.9, 10266.4, 11902.8, 13800.2, 16000.0])
-    gs = np.array([7.00, 7.02, 6.93, 6.77, 6.53, 6.12, 5.79, 5.36, 4.76, 3.96])
-    return hp + np.interp(f, fs, gs)
+    hp = 20 * np.log10(f / np.sqrt(f ** 2 + PICKUP_HP_HZ ** 2))
+    return hp + np.interp(f, np.array(PREAMP_SWEEP_HZ), np.array(PREAMP_SWEEP_DB))
 
 
 def keyboard(notes, n, seed, out, split, survey=""):
@@ -384,7 +438,7 @@ def keyboard(notes, n, seed, out, split, survey=""):
             f1 = rd["f"]
             f2 = rd["om"][1] / rd["om"][0] * f1
             swing[sel] = np.abs(r["pick_mm"][:, 0])
-            ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), 1e-30) / np.maximum(np.abs(r["pick_mm"][:, 0]), 1e-30)
+            ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), LOG_FLOOR) / np.maximum(np.abs(r["pick_mm"][:, 0]), LOG_FLOOR)
             m2_out[sel] = 20 * np.log10(ratio) + preamp_tilt_db(f2) - preamp_tilt_db(f1)
             contacts[sel] = r["n_contacts"]
             t_c[sel] = r["t_contact_T1"]
@@ -399,24 +453,24 @@ def keyboard(notes, n, seed, out, split, survey=""):
 
 def fundamental_decay_db(midi):
     """The shipping fundamental decay law (tables::fundamental_decay_rate), dB/s."""
-    f = 440.0 * 2 ** ((midi - 69) / 12)
-    return max(0.005 * f ** 1.22, 3.0)
+    f = A4_HZ * 2 ** ((midi - A4_MIDI) / 12)
+    return max(DECAY_COEF_DB_S * f ** DECAY_EXPONENT, DECAY_FLOOR_DB_S)
 
 
 def modal_spec_text(rd, res, i, midi):
     """The reed's modal state at separation as a `preamp-bench render --modal-spec` file, at the
     LOW-damping corner: every mode decays at the fundamental's rate (no extra loss on modes 2-7)."""
-    om = rd["om"][:7]
-    q, qd = res["q"][i, :7], res["qd"][i, :7]
+    om = rd["om"][:N_RENDER_MODES]
+    q, qd = res["q"][i, :N_RENDER_MODES], res["qd"][i, :N_RENDER_MODES]
     R = np.sqrt(q ** 2 + (qd / om) ** 2)
     theta = np.arctan2(q, qd / om)
-    disp = rd["ph_pick"][:7] * R  # signed amplitude at the finger region, m
-    swing_mm = abs(disp[0]) * 1e3
+    disp = rd["ph_pick"][:N_RENDER_MODES] * R  # signed amplitude at the finger region, m
+    swing_mm = abs(disp[0]) * MM_PER_M
     amps = disp / abs(disp[0])
     lines = [("ratios", om / om[0]), ("amplitudes", amps), ("phases", theta),
-             ("decay_db_s", np.full(7, fundamental_decay_db(midi)))]
+             ("decay_db_s", np.full(N_RENDER_MODES, fundamental_decay_db(midi)))]
     txt = "".join(f"{k} " + " ".join(f"{x:.9g}" for x in v) + "\n" for k, v in lines)
-    return txt + f"swing_mm {swing_mm:.9g}\n", swing_mm, 20 * np.log10(max(abs(amps[1]), 1e-30))
+    return txt + f"swing_mm {swing_mm:.9g}\n", swing_mm, 20 * np.log10(max(abs(amps[1]), LOG_FLOOR))
 
 
 def calibrate(notes, n, seed, bench, sensor, workdir, out):
@@ -442,22 +496,24 @@ def calibrate(notes, n, seed, bench, sensor, workdir, out):
                 wav = os.path.join(workdir, f"m{midi}_{k}_{i}.wav")
                 with open(spec, "w") as fh:
                     fh.write(txt)
-                subprocess.run([bench, "render", "--note", str(midi), "--velocity", "127", "--duration", "1.0",
+                subprocess.run([bench, "render", "--note", str(midi), "--velocity", str(CAL_VELOCITY),
+                                "--duration", str(CAL_DURATION_S),
                                 "--no-poweramp", "--speaker", "0", "--no-mlp", "--modal-spec", spec, "--output", wav],
                                check=True, capture_output=True)
                 # Same Sensor procedure as the survey's onset window; the model's line is taken at its
-                # KNOWN frequency, within +-0.4 % (the voice detunes each note by up to +-3 cents). A
-                # mode 2 within 25 Hz of a harmonic is unresolvable here, as it would be in a recording,
-                # and is not scored.
-                f1n = 440.0 * 2 ** ((midi - 69) / 12)
+                # KNOWN frequency, within CAL_LINE_TOL. A mode 2 within CAL_UNRESOLVABLE_HZ of a harmonic is
+                # unresolvable here, as it would be in a recording, and is not scored.
+                f1n = A4_HZ * 2 ** ((midi - A4_MIDI) / 12)
                 f2n = f1n * rd["om"][1] / rd["om"][0]
-                h = np.arange(1, 40) * f1n
-                if np.min(np.abs(h - f2n)) < 25.0:
+                h = np.arange(1, CAL_MAX_HARMONIC) * f1n
+                if np.min(np.abs(h - f2n)) < CAL_UNRESOLVABLE_HZ:
                     o = dict(status="unresolvable")
                 else:
-                    bands = sensor_bands(sensor, wav, 5, 900, 40, max(20.0, 0.8 * f1n), f2n * 1.1)
+                    lo = max(CAL_SEARCH_LO[0], CAL_SEARCH_LO[1] * f1n)
+                    bands = sensor_bands(sensor, wav, *CAL_SENSOR_ONSET, lo, f2n * CAL_SEARCH_HI)
                     h1 = h1_of(bands, f1n) if bands else None
-                    near = [b for b in (bands or []) if abs(b["centre_hz"] - f2n) < max(4.0, 0.004 * f2n)]
+                    tol = max(CAL_LINE_TOL[0], CAL_LINE_TOL[1] * f2n)
+                    near = [b for b in (bands or []) if abs(b["centre_hz"] - f2n) < tol]
                     if h1 is None or not near:
                         o = dict(status="no line")
                     else:
@@ -477,7 +533,7 @@ def calibrate(notes, n, seed, bench, sensor, workdir, out):
 
 
 
-def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=64):
+def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=STIFFNESS_CHUNK):
     """strike_batch_w in chunks of similar contact stiffness, so the stiffest sample doesn't set every
     sample's step. Same physics and per-chunk step rule; results reassembled in the input order."""
     dmax = ((p + 1) * 0.5 * m_h * v ** 2 / (F_REF / z_star ** p)) ** (1 / (p + 1))
@@ -498,12 +554,15 @@ def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=64):
 # per-hammer scatter +-1.5 mm, floor 5 mm. Anchor: one photographed hammer on a 206A, 7.1 mm from the
 # bar edge; the L origin is a nuisance until that reed is identified.
 ANCHORS = {"bar": (7.1, 31.5), "fillet": (13.2, 37.5), "fillet-reed38": (13.2, 40.1)}  # last: pass 3c (reed 38/39)
+STRIKE_K_RANGE = (0.0, 2.0)   # strike-law exponent k, uniform (0: rail parallel to the bar; 1: constant fraction)
+STRIKE_SCATTER_MM = 1.5       # per-hammer scatter, uniform +-, ASSUMED (physics review, G); also stands for crown tilt
+STRIKE_FLOOR_MM = 5.0         # d_s >= half the 9.2 mm crown plus clearance (physics review)
 
 
 def keyboard3(notes, n, seed, out, split, survey, origin):
     rng = np.random.default_rng(seed)
     inst = draw_instruments(rng, n)
-    inst["k"] = rng.uniform(0.0, 2.0, n)
+    inst["k"] = rng.uniform(*STRIKE_K_RANGE, n)
     d_ref, L_ref = ANCHORS[origin]
     measured = {}
     if survey:
@@ -520,7 +579,7 @@ def keyboard3(notes, n, seed, out, split, survey, origin):
         if midi in measured:
             ratios = [r["om"][1] / r["om"][0] for r in rds]
             pick[:] = int(np.argmin([abs(r - measured[midi]) for r in ratios]))
-        scatter = rng.uniform(-1.5, 1.5, n)
+        scatter = rng.uniform(-STRIKE_SCATTER_MM, STRIKE_SCATTER_MM, n)
         out_cols = {k: np.zeros(n) for k in ("swing_mm", "m2_out_db", "tip_mm", "crown_end_mm", "d_peak_mm",
                                               "d_s_mm", "t_contact_T1")}
         contacts = np.zeros(n, int)
@@ -528,13 +587,13 @@ def keyboard3(notes, n, seed, out, split, survey, origin):
             sel = np.where(pick == kv)[0]
             if sel.size == 0:
                 continue
-            L_mm = rd["L"] * 1e3
+            L_mm = rd["L"] * MM_PER_M
             d_s = d_ref * (L_mm / L_ref) ** inst["k"][sel] + scatter[sel]
-            d_s = np.clip(d_s, 5.0, L_mm - CROWN_MM / 2)
+            d_s = np.clip(d_s, STRIKE_FLOOR_MM, L_mm - CROWN_MM / 2)
             r = strike_w_chunked(rd, inst["m_h"][sel], inst["v"][sel], inst["z_star"][sel, g], inst["p"][sel, g], d_s)
             f1 = rd["f"]
             f2 = rd["om"][1] / rd["om"][0] * f1
-            ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), 1e-30) / np.maximum(np.abs(r["pick_mm"][:, 0]), 1e-30)
+            ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), LOG_FLOOR) / np.maximum(np.abs(r["pick_mm"][:, 0]), LOG_FLOOR)
             out_cols["swing_mm"][sel] = np.abs(r["pick_mm"][:, 0])
             out_cols["m2_out_db"][sel] = 20 * np.log10(ratio) + preamp_tilt_db(f2) - preamp_tilt_db(f1)
             out_cols["tip_mm"][sel] = r["tip_mm"][:, 0]
@@ -544,7 +603,7 @@ def keyboard3(notes, n, seed, out, split, survey, origin):
             out_cols["t_contact_T1"][sel] = r["t_contact_T1"]
             contacts[sel] = r["n_contacts"]
         res[midi] = {k: v.tolist() for k, v in out_cols.items()}
-        res[midi].update(contacts=contacts.tolist(), grade=g, L_mm=float(rds[0]["L"] * 1e3))
+        res[midi].update(contacts=contacts.tolist(), grade=g, L_mm=float(rds[0]["L"] * MM_PER_M))
         print(f"MIDI {midi} (grade {g}) done", flush=True)
     with open(out, "w") as fh:
         json.dump(dict(split=split, origin=origin, seed=seed, n=n, priors=PRIORS,
@@ -562,9 +621,9 @@ V_MAX_CEIL = 5.0
 def keyboard3b(notes, n, seed, out, split, survey, origin):
     rng = np.random.default_rng(seed)
     inst = draw_instruments(rng, n)
-    inst["k"] = rng.uniform(0.0, 2.0, n)
+    inst["k"] = rng.uniform(*STRIKE_K_RANGE, n)
     inst["v_max"] = np.exp(rng.uniform(np.log(inst["v"]), np.log(V_MAX_CEIL)))
-    inst["t_bass_in"] = rng.uniform(0.020, 0.026, n)
+    inst["t_bass_in"] = rng.uniform(*BASS_BLANKS_IN, n)
     level = np.argmin(np.abs(inst["t_bass_in"][:, None] - np.array(BASS_BLANK_LEVELS_IN)[None, :]), axis=1)
     d_ref, L_ref = ANCHORS[origin]
     measured = {}
@@ -576,17 +635,17 @@ def keyboard3b(notes, n, seed, out, split, survey, origin):
     res = {}
     for midi in notes:
         g = grade_of(midi, split)
-        if midi - 32 <= 20:  # bass blank: the instrument's own thickness
-            vs = [(f"bass {t:.3f}", t * 25.4e-3, t * 25.4e-3) for t in BASS_BLANK_LEVELS_IN]
+        if midi - (MIDI_LOWEST - 1) <= BASS_REEDS:  # bass blank: the instrument's own thickness
+            vs = [(f"bass {t:.3f}", t * INCH, t * INCH) for t in BASS_BLANK_LEVELS_IN]
             pick = level.copy()
         else:
             vs = variants(midi)
             pick = rng.integers(0, len(vs), n)
         rds = [reed_data(midi, t_tip, t_root) for _, t_tip, t_root in vs]
-        if midi in measured and midi - 32 > 20:
+        if midi in measured and midi - (MIDI_LOWEST - 1) > BASS_REEDS:
             ratios = [r["om"][1] / r["om"][0] for r in rds]
             pick[:] = int(np.argmin([abs(r - measured[midi]) for r in ratios]))
-        scatter = rng.uniform(-1.5, 1.5, n)
+        scatter = rng.uniform(-STRIKE_SCATTER_MM, STRIKE_SCATTER_MM, n)
         nv = len(VOICED_OFFSETS_MM)
         cols = {k: np.zeros(n) for k in ("swing_mm", "m2_out_db", "tip_mm", "crown_end_mm", "d_peak_mm",
                                           "d_s_mm", "t_contact_T1", "tip_vmax_mm", "d_peak_vmax_mm")}
@@ -598,19 +657,19 @@ def keyboard3b(notes, n, seed, out, split, survey, origin):
             sel = np.where(pick == kv)[0]
             if sel.size == 0:
                 continue
-            L_mm = rd["L"] * 1e3
+            L_mm = rd["L"] * MM_PER_M
             law = d_ref * (L_mm / L_ref) ** inst["k"][sel]
             zs, pp, mh = inst["z_star"][sel, g], inst["p"][sel, g], inst["m_h"][sel]
 
             def place(off):
-                return np.clip(law + off, 5.0, L_mm - CROWN_MM / 2)
+                return np.clip(law + off, STRIKE_FLOOR_MM, L_mm - CROWN_MM / 2)
 
             # (A) F1 and reports: random offset, v_ff.
             d_s = place(scatter[sel])
             r = strike_w_chunked(rd, mh, inst["v"][sel], zs, pp, d_s)
             f1 = rd["f"]
             f2 = rd["om"][1] / rd["om"][0] * f1
-            ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), 1e-30) / np.maximum(np.abs(r["pick_mm"][:, 0]), 1e-30)
+            ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), LOG_FLOOR) / np.maximum(np.abs(r["pick_mm"][:, 0]), LOG_FLOOR)
             cols["swing_mm"][sel] = np.abs(r["pick_mm"][:, 0])
             cols["m2_out_db"][sel] = 20 * np.log10(ratio) + preamp_tilt_db(f2) - preamp_tilt_db(f1)
             cols["tip_mm"][sel] = r["tip_mm"][:, 0]
@@ -631,7 +690,7 @@ def keyboard3b(notes, n, seed, out, split, survey, origin):
                 cols["tip_vmax_mm"][sel] = rv["tip_mm"][:, 0]
                 cols["d_peak_vmax_mm"][sel] = rv["d_peak_mm"]
         res[midi] = {k: v.tolist() for k, v in cols.items()}
-        res[midi].update(contacts=contacts.tolist(), grade=g, L_mm=float(rds[0]["L"] * 1e3),
+        res[midi].update(contacts=contacts.tolist(), grade=g, L_mm=float(rds[0]["L"] * MM_PER_M),
                          voiced=bool(midi <= VOICED_MAX_MIDI))
         if midi <= VOICED_MAX_MIDI:
             res[midi].update(voiced_tip_mm=voiced_tip.tolist(), voiced_crown_end_mm=voiced_end.tolist(),

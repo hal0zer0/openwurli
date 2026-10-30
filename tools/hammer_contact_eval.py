@@ -2,9 +2,19 @@
 + point-mass hammer + felt F = K d^p, one-sided, from below. Regime map and mode-count convergence."""
 import sys, numpy as np, scipy.linalg as sl
 from scipy.optimize import brentq
-from reed_fe import reed_len, width, RHO, E
+from reed_fe import (reed_len, width, RHO, E, A4_HZ, A4_MIDI, N_ELEMENTS, N_ELEMENTS_PITCH, PITCH_TOL,
+                     SOLDER_BRACKET, INCH, MM_PER_M)
 
-def fe_modes(L, W, t_root, t_tip, Mtip, ne=80, nm=20):
+N_MODES_EVAL = 20         # modes solved (the evaluation compares 7 against 20)
+PATCH_HALF = 0.1          # hammer patch half-length, fraction of L
+PATCH_PTS = 61            # points per patch average
+CT_SEARCH_STEPS = 4000    # steps per rigid-target contact time when solving K for p != 1
+K_BRACKET = (1e-3, 1e18)  # stiffness search bracket for p != 1 (N/m^p)
+STEPS_PER_T1 = 20000      # base step, refined further when the top mode exceeds 50 x f1
+TOP_MODE_RATIO = 50
+T_END_PERIODS = 20        # window cap: after the fix, the stop rule rather than this ends a strike
+
+def fe_modes(L, W, t_root, t_tip, Mtip, ne=N_ELEMENTS, nm=N_MODES_EVAL):
     xe = np.linspace(0, L, ne+1); h = L/ne; nd = 2*(ne+1)
     K = np.zeros((nd, nd)); M = np.zeros((nd, nd))
     for e in range(ne):
@@ -18,21 +28,21 @@ def fe_modes(L, W, t_root, t_tip, Mtip, ne=80, nm=20):
     phi = np.vstack([np.zeros(nm), V[0::2, :]])           # displacement DOFs incl. clamp
     return np.sqrt(w2), xe, phi
 
-def reed(midi, t_tip, t_root, nm=20):
-    L = reed_len(midi); W = width(midi); f = 440*2**((midi-69)/12)
+def reed(midi, t_tip, t_root, nm=N_MODES_EVAL):
+    L = reed_len(midi); W = width(midi); f = A4_HZ*2**((midi-A4_MIDI)/12)
     mass = RHO*W*L*(t_root+t_tip)/2
-    om, xe, phi = fe_modes(L, W, t_root, t_tip, 0.0, 40, 1)
+    om, xe, phi = fe_modes(L, W, t_root, t_tip, 0.0, N_ELEMENTS_PITCH, 1)
     mt = 0.0
-    if om[0]/(2*np.pi) > f*1.002:
-        mt = brentq(lambda x: fe_modes(L, W, t_root, t_tip, x, 40, 1)[0][0]/(2*np.pi)-f, 0, 20*mass)
-    om, xe, phi = fe_modes(L, W, t_root, t_tip, mt, 80, nm)
+    if om[0]/(2*np.pi) > f*PITCH_TOL:
+        mt = brentq(lambda x: fe_modes(L, W, t_root, t_tip, x, N_ELEMENTS_PITCH, 1)[0][0]/(2*np.pi)-f, 0, SOLDER_BRACKET*mass)
+    om, xe, phi = fe_modes(L, W, t_root, t_tip, mt, N_ELEMENTS, nm)
     return dict(L=L, f=f, fe1=om[0]/(2*np.pi), om=om, xe=xe, phi=phi, mu=mt/mass)
 
-def patch(r, xs, half=0.1):
-    L = r['L']; xx = np.linspace((xs-half)*L, (xs+half)*L, 61)
+def patch(r, xs, half=PATCH_HALF):
+    L = r['L']; xx = np.linspace((xs-half)*L, (xs+half)*L, PATCH_PTS)
     return np.array([np.mean(np.interp(xx, r['xe'], r['phi'][:, n])) for n in range(r['phi'].shape[1])])
 
-def strike(r, xs, mh, v, tau_ratio, p=1.0, nm=7, half=0.1, zeta=0.0):
+def strike(r, xs, mh, v, tau_ratio, p=1.0, nm=7, half=PATCH_HALF, zeta=0.0):
     """tau_ratio = rigid-target felt contact time / T1, defining K at speed v (linear-equivalent)."""
     T1 = 1/r['f']; om = r['om'][:nm]*(r['f']/r['fe1']); ph = patch(r, xs, half)[:nm]
     tau = tau_ratio*T1
@@ -43,15 +53,15 @@ def strike(r, xs, mh, v, tau_ratio, p=1.0, nm=7, half=0.1, zeta=0.0):
         # rigid target: max compression dm from 0.5 mh v^2 = K dm^(p+1)/(p+1); time ~ c(p) dm/v
         # solve numerically for K giving contact time tau
         def ct(K):
-            dt = tau/4000; y = 0.0; vy = v; t = 0.0
+            dt = tau/CT_SEARCH_STEPS; y = 0.0; vy = v; t = 0.0
             while True:
                 F = K*max(y, 0)**p; vy -= F/mh*dt; y += vy*dt; t += dt
                 if y <= 0 and t > dt: return t
-        K = brentq(lambda K: ct(K)-tau, 1e-3, 1e18)
-    dt = T1/20000/max(1, om[-1]/om[0]/50)
+        K = brentq(lambda K: ct(K)-tau, *K_BRACKET)
+    dt = T1/STEPS_PER_T1/max(1, om[-1]/om[0]/TOP_MODE_RATIO)
     q = np.zeros(nm); qd = np.zeros(nm); y = 0.0; vy = v
     t = 0.0; contacts = []; incontact = False; tc0 = 0
-    Tend = 20*T1
+    Tend = T_END_PERIODS*T1
     hist = []
     while t < Tend:
         ws = ph @ q; d = y-ws
@@ -71,23 +81,31 @@ def strike(r, xs, mh, v, tau_ratio, p=1.0, nm=7, half=0.1, zeta=0.0):
     tipdisp = amp*np.abs(r['phi'][-1, :nm])                # tip-displacement amplitude per mode
     return contacts, tipdisp, vy/v
 
+# Evaluation grid printed by __main__ (the cases quoted in the plan's regime map).
+EVAL_CASES = [(33, 'A1 bass .020', 0.020*INCH, 0.020*INCH), (60, 'C4 tip .585', 0.585e-3, 0.034*INCH)]
+EVAL_XS = (0.30, 0.50)              # strike points, fraction of L
+EVAL_MH = (1e-3, 5e-3)              # hammer masses, kg (the swing prior's 1-5 g ends)
+EVAL_TAU = (0.1, 0.3, 0.75)         # rigid-target felt contact time, fraction of T1
+EVAL_V = 2.0                        # hammer speed, m/s
+EVAL_NM = (7, 20)                   # mode counts compared
+LOG_FLOOR = 1e-30
+
 if __name__ == '__main__':
-    cases = [(33, 'A1 bass .020', 0.020*25.4e-3, 0.020*25.4e-3), (60, 'C4 tip .585', 0.585e-3, 0.034*25.4e-3)]
-    for midi, name, tt, tr in cases:
+    for midi, name, tt, tr in EVAL_CASES:
         r = reed(midi, tt, tr)
         om = r['om']; ratios = om/om[0]
-        print(f"\n{name}: L {r['L']*1e3:.1f} mm, f {r['f']:.1f}, FE f1 {r['fe1']:.1f}, mu {r['mu']:.3f}")
-        print('  FE ratios', np.round(ratios[:7], 2))
+        print(f"\n{name}: L {r['L']*MM_PER_M:.1f} mm, f {r['f']:.1f}, FE f1 {r['fe1']:.1f}, mu {r['mu']:.3f}")
+        print('  FE ratios', np.round(ratios[:EVAL_NM[0]], 2))
         M1tip = 1/r['phi'][-1, 0]**2
-        for xs in (0.30, 0.50):
+        for xs in EVAL_XS:
             ph = patch(r, xs)
-            print(f"  xs {xs:.2f} L: phi1(patch)/phi1(tip) {ph[0]/r['phi'][-1,0]:.3f}  M1tip {M1tip*1e3:.2f} g  Meff(xs) {1e3/ph[0]**2:.1f} g")
-            for mh in (1e-3, 5e-3):
-                for tr_ in (0.1, 0.3, 0.75):
-                    c7, d7, rb = strike(r, xs, mh, 2.0, tr_, nm=7)
-                    c20, d20, _ = strike(r, xs, mh, 2.0, tr_, nm=20)
+            print(f"  xs {xs:.2f} L: phi1(patch)/phi1(tip) {ph[0]/r['phi'][-1,0]:.3f}  M1tip {M1tip*MM_PER_M:.2f} g  Meff(xs) {MM_PER_M/ph[0]**2:.1f} g")
+            for mh in EVAL_MH:
+                for tr_ in EVAL_TAU:
+                    c7, d7, rb = strike(r, xs, mh, EVAL_V, tr_, nm=EVAL_NM[0])
+                    c20, d20, _ = strike(r, xs, mh, EVAL_V, tr_, nm=EVAL_NM[1])
                     dur = sum(b-a for a, b in c7)
-                    up7 = 20*np.log10(np.maximum(d7[1:4], 1e-30)/d7[0])
-                    print(f"    mh {mh*1e3:.0f} g tau/T1 {tr_:.2f}: contacts {len(c7)} (20 modes: {len(c20)}), "
+                    up7 = 20*np.log10(np.maximum(d7[1:4], LOG_FLOOR)/d7[0])
+                    print(f"    mh {mh*MM_PER_M:.0f} g tau/T1 {tr_:.2f}: contacts {len(c7)} (20 modes: {len(c20)}), "
                           f"total {dur:.2f} T1, span {c7[0][0]:.2f}-{c7[-1][1]:.2f} T1, hammer out {rb:+.2f} v, "
-                          f"tip mode1 {d7[0]*1e3:.2f} mm (20m {d20[0]*1e3:.2f}), m2-4 re m1 dB {np.round(up7,1)}")
+                          f"tip mode1 {d7[0]*MM_PER_M:.2f} mm (20m {d20[0]*MM_PER_M:.2f}), m2-4 re m1 dB {np.round(up7,1)}")

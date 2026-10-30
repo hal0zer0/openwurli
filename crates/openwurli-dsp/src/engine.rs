@@ -213,6 +213,14 @@ pub struct WurliEngine {
     nan_guard_fires: u64,
 }
 
+/// Safety clamp for [`WurliEngine::set_hammer_contact_scale`]: keeps the dwell filter and onset ramp
+/// inside the model's valid domain. Not a sourced range; the credible span is unmeasured.
+pub const HAMMER_CONTACT_SCALE_RANGE: (f64, f64) = (0.5, 2.0);
+
+/// Safety clamp for [`WurliEngine::set_damper_scale`]: wide enough to hear the trend, no wider. The
+/// shipping damper rates are unsourced, so no range around them is sourced either.
+pub const DAMPER_SCALE_RANGE: (f64, f64) = (0.25, 4.0);
+
 impl WurliEngine {
     pub fn new(sample_rate: f64) -> Self {
         let oversample = sample_rate < 88_200.0;
@@ -525,20 +533,23 @@ impl WurliEngine {
         self.speaker_character.set_target(c);
     }
 
-    /// Hammer contact-time multiplier (experimental; 1.0 = shipping, clamped to 0.5..=2.0).
+    /// Hammer contact-time multiplier (experimental; 1.0 = shipping, clamped to
+    /// [`HAMMER_CONTACT_SCALE_RANGE`]).
     /// Below 1.0 models a harder hammer pad: shorter contact, so the upper modes are excited
     /// more strongly and the onset ramp is shorter. Above 1.0 models a softer pad. Latched at
     /// note-on; the range is not sourced (see `hammer::dwell_time`).
     pub fn set_hammer_contact_scale(&mut self, scale: f64) {
-        self.voicing.hammer_contact_scale = scale.clamp(0.5, 2.0);
+        let (lo, hi) = HAMMER_CONTACT_SCALE_RANGE;
+        self.voicing.hammer_contact_scale = scale.clamp(lo, hi);
     }
 
-    /// Damper-rate multiplier (experimental; 1.0 = shipping, clamped to 0.25..=4.0). Below 1.0
+    /// Damper-rate multiplier (experimental; 1.0 = shipping, clamped to [`DAMPER_SCALE_RANGE`]). Below 1.0
     /// is a weaker damper (the release rings longer), above it a firmer one. Every voice uses
     /// the value current at its note-off; a voice already damping keeps its rate. The shipping
     /// rates are themselves unsourced, so is any range around them.
     pub fn set_damper_scale(&mut self, scale: f64) {
-        let scale = scale.clamp(0.25, 4.0);
+        let (lo, hi) = DAMPER_SCALE_RANGE;
+        let scale = scale.clamp(lo, hi);
         self.voicing.damper_scale = scale;
         for voice in self
             .voices

@@ -26,10 +26,14 @@ import sys
 
 import numpy as np
 
+# Swing prior's dynamic admitted edges, mm at the finger region (tools/swing_prior.py EDGES): the pickup
+# tables' reach, a NUMERICAL limit; retired as a falsifier from pass 3 on.
 EDGE_MM = {"bass": 4.29, "middle": 2.90, "treble": 2.89}
+# Notes with a clean own mode-2 line in the reference-set survey (plan §5c/§5d; exclusions listed there).
 SCORED = (47, 48, 50, 59, 60, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84, 86, 88)
-ALLOW_DB = 10.0
-MAX_FAIL_FRACTION = 0.25
+ALLOW_DB = 10.0            # falsifier 10a's allowance above the recording (plan §5, registered)
+MAX_FAIL_FRACTION = 0.25   # robust rule: at most a quarter of a grade's scored notes may fail (plan §5d)
+MIN_CAL_POINTS = 5         # chain renders needed to fit a note's calibration line; otherwise no offset
 
 
 def section(m):
@@ -40,7 +44,7 @@ def offsets(cal):
     fits = {}
     for m in {r["midi"] for r in cal}:
         pts = [(r["swing_mm"], r["chain_db"] - r["proxy_db"]) for r in cal if r["midi"] == m and r["status"] == "line"]
-        if len(pts) >= 5:
+        if len(pts) >= MIN_CAL_POINTS:
             x, y = np.array(pts).T
             fits[m] = np.polyfit(x, y, 1) if np.ptp(x) > 0 else np.array([0.0, np.mean(y)])
     return fits
