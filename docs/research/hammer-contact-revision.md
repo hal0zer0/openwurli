@@ -967,6 +967,43 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
       deepest nulls, and any loss fills them.
   - Velocity floor: the hammer must fly the 1/8″ let-off against gravity, so v ≥ ~0.25 m/s.
 
+**Stage 5 results (2026-10-30; 4 generations × 6000 proposals).**
+- **Effective sample size** by generation (plane −12 / converged): 2 / 1, 69 / 63, 77 / 63,
+  158 / 79. The registered target of 300 was not reached, so this is reported as registered on
+  generation 4.
+- **Posterior (generation 4), p10 / 50 / 90, plane −12 | converged** (v_ff fixed at 2.9 m/s):
+
+  | Parameter | Plane −12 | Converged |
+  |---|---|---|
+  | z* bass (mm) | 1.48 / 1.88 / 2.41 | 1.61 / 1.99 / 2.64 |
+  | z* middle (mm) | 1.27 / 1.50 / 1.88 | 1.36 / 1.51 / 1.96 |
+  | z* treble (mm) | 0.65 / 0.86 / 1.08 | 0.68 / 0.89 / 1.09 |
+  | m_h bass (g) | 1.58 / 2.26 / 3.65 | 1.33 / 2.47 / 3.76 |
+  | m_h middle (g) | 1.22 / 1.78 / 2.77 | 1.19 / 1.79 / 3.10 |
+  | m_h treble (g) | 1.04 / 1.29 / 1.92 | 1.04 / 1.36 / 2.08 |
+  | m_h bass / treble | 1.21 / 1.63 / 2.59 | 1.21 / 1.63 / 2.54 |
+  | k | 1.45 / 1.95 / 2.24 | 1.53 / 2.00 / 2.24 |
+  | v_max (m/s) | 2.98 / 3.27 / 4.26 | 2.97 / 3.21 / 4.24 |
+  | A1 strike (d_s / L) | 0.44 / 0.60 / 0.71 | 0.45 / 0.61 / 0.72 |
+
+  - p and the bass blank stay near their priors.
+  - The treble felt is softer than in stage 4 (z* ~0.87 against 0.64 mm). That is the v_ff
+    convention at work: F1 and F4 pin the ff contact time, so a faster ff blow needs softer felt.
+  - The bass mass shows no pile-up at its ceiling: 2–3 % of the mass lies within 10 % of 5 g,
+    against 18 % under the prior. k shows none at 2.5.
+- **Registered expectation: half holds, half fails.**
+  - Mass ratio: median 1.63 at both corners (bootstrap 90 %: 1.56–1.75), above 1.3. **Holds.**
+  - A1 strike median: 0.598 L at plane −12 (bootstrap 90 %: 0.582–0.609) and 0.612 L converged
+    (0.606–0.615). Neither reaches ≤ 0.58. The failure clause (≥ 0.60) triggers on the converged
+    corner and sits on the line at plane −12. **Fails.**
+  - **Reading:** graded mass is real and well constrained, but it moves the A1 strike only from
+    0.62–0.63 L (stage 4) to 0.60–0.61 L, not to ≤ 0.58.
+  - The A1 median also carries Monte Carlo error beyond one generation's bootstrap: generation 3
+    had 0.56 / 0.58. A higher ESS, not a different rule, would settle the plane −12 case.
+- **Split posterior** (blank-pickup / code / damper-felt): 0.38 / 0.18 / 0.44 at plane −12 against
+  0.17 / 0.12 / 0.71 converged. It still depends on the closure.
+- 19–24 % of the mass passes F4 by less than 3 dB.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
