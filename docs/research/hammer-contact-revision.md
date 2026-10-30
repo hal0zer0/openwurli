@@ -591,6 +591,27 @@ stays report-only.
 before that run. The physics review withdrew its earlier "share m_h", because a swing bound breaks
 the m_h–z* degeneracy.
 
+**Pass 3b results (2026-10-30, 1000 instruments × 26 notes, 2 origins × 3 splits).**
+- **F2 + F3 (voiced, at v_max):** 14.6 % pass alone at the fillet origin (2.1 % in pass 3) and 1.9 %
+  at the bar edge. F1 alone 8–16 %; F4 83–86 %; validity flag 95 %.
+- **All registered checks at the primary (10 reeds, 3.2 mm):** fillet 2 / 5 / 4 survivors (code /
+  damper-felt / blank-pickup), bar edge 1 in each split.
+- **Fillet/code survivors:**
+  - k 1.3–1.85, so the strike runs from 0.55 L at A1 through 0.36–0.40 L in the middle to 0.28 L
+    at the top;
+  - z* about 4.0 / 3.5 / 0.84 mm (bass / middle / treble);
+  - m_h 1.2–2.0 g, v_ff 2.5–3.3 m/s, v_max 4.1–4.5 m/s, bass blank .021–.024″.
+- **Bass at v_ff:** pickup swing 6–8 mm, and only 50 % single contact at A1–F#2. That is beyond the
+  shipped tables, in the regime where the overlap law predicts the Andersen swell (criterion 6,
+  report-only) and where the physics review flagged fatigue.
+- **Middle:** single contact, 0.8–1.7 T1.
+- **Treble:** C7 pickup swing 0.049 mm (within 10 dB of C4; not 6 dB).
+- **Open:**
+  - A middle z* of 3.5 mm implies very soft middle felt. The middle felt's thickness is unknown, and
+    the validity flag covers only the treble.
+  - 2–5 survivors per split is too few for a pick. The next pass needs more samples under the
+    refined anchor below.
+
 **Anchor refinement (2026-10-30, registered after pass 3b was launched with the §5f anchor and
 before any pass-3b result was read).** The manual's service parts list (PDF p74) lists the pickup as
 four parts by reed range: 1–20, 21–32, 33–42 and 43–64. So a comb joint sits at 42|43, and 50|51 is

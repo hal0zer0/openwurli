@@ -552,6 +552,93 @@ def keyboard3(notes, n, seed, out, split, survey, origin):
 
 
 
+# Pass 3b (plan §5h): voiced offsets for F2/F3, one bass blank per instrument, F2/F3 at v_max.
+BASS_BLANK_LEVELS_IN = (0.020, 0.022, 0.024, 0.026)
+VOICED_OFFSETS_MM = np.arange(-1.5, 1.5001, 0.5)
+VOICED_MAX_MIDI = 60
+V_MAX_CEIL = 5.0
+
+
+def keyboard3b(notes, n, seed, out, split, survey, origin):
+    rng = np.random.default_rng(seed)
+    inst = draw_instruments(rng, n)
+    inst["k"] = rng.uniform(0.0, 2.0, n)
+    inst["v_max"] = np.exp(rng.uniform(np.log(inst["v"]), np.log(V_MAX_CEIL)))
+    inst["t_bass_in"] = rng.uniform(0.020, 0.026, n)
+    level = np.argmin(np.abs(inst["t_bass_in"][:, None] - np.array(BASS_BLANK_LEVELS_IN)[None, :]), axis=1)
+    d_ref, L_ref = ANCHORS[origin]
+    measured = {}
+    if survey:
+        for row in json.load(open(survey)):
+            o = row.get("onset", {})
+            if o.get("status") == "line":
+                measured[row["midi"]] = o["ratio"]
+    res = {}
+    for midi in notes:
+        g = grade_of(midi, split)
+        if midi - 32 <= 20:  # bass blank: the instrument's own thickness
+            vs = [(f"bass {t:.3f}", t * 25.4e-3, t * 25.4e-3) for t in BASS_BLANK_LEVELS_IN]
+            pick = level.copy()
+        else:
+            vs = variants(midi)
+            pick = rng.integers(0, len(vs), n)
+        rds = [reed_data(midi, t_tip, t_root) for _, t_tip, t_root in vs]
+        if midi in measured and midi - 32 > 20:
+            ratios = [r["om"][1] / r["om"][0] for r in rds]
+            pick[:] = int(np.argmin([abs(r - measured[midi]) for r in ratios]))
+        scatter = rng.uniform(-1.5, 1.5, n)
+        nv = len(VOICED_OFFSETS_MM)
+        cols = {k: np.zeros(n) for k in ("swing_mm", "m2_out_db", "tip_mm", "crown_end_mm", "d_peak_mm",
+                                          "d_s_mm", "t_contact_T1", "tip_vmax_mm")}
+        voiced_tip = np.full((n, nv), np.nan)
+        voiced_end = np.full((n, nv), np.nan)
+        contacts = np.zeros(n, int)
+        for kv, rd in enumerate(rds):
+            sel = np.where(pick == kv)[0]
+            if sel.size == 0:
+                continue
+            L_mm = rd["L"] * 1e3
+            law = d_ref * (L_mm / L_ref) ** inst["k"][sel]
+            zs, pp, mh = inst["z_star"][sel, g], inst["p"][sel, g], inst["m_h"][sel]
+
+            def place(off):
+                return np.clip(law + off, 5.0, L_mm - CROWN_MM / 2)
+
+            # (A) F1 and reports: random offset, v_ff.
+            d_s = place(scatter[sel])
+            r = strike_w_chunked(rd, mh, inst["v"][sel], zs, pp, d_s)
+            f1 = rd["f"]
+            f2 = rd["om"][1] / rd["om"][0] * f1
+            ratio = np.maximum(np.abs(r["pick_mm"][:, 1]), 1e-30) / np.maximum(np.abs(r["pick_mm"][:, 0]), 1e-30)
+            cols["swing_mm"][sel] = np.abs(r["pick_mm"][:, 0])
+            cols["m2_out_db"][sel] = 20 * np.log10(ratio) + preamp_tilt_db(f2) - preamp_tilt_db(f1)
+            cols["tip_mm"][sel] = r["tip_mm"][:, 0]
+            cols["crown_end_mm"][sel] = r["crown_end_swing_mm"]
+            cols["d_peak_mm"][sel] = r["d_peak_mm"]
+            cols["d_s_mm"][sel] = d_s
+            cols["t_contact_T1"][sel] = r["t_contact_T1"]
+            contacts[sel] = r["n_contacts"]
+            # (B) F2/F3 at v_max: voiced offsets at MIDI <= 60, the random offset above.
+            if midi <= VOICED_MAX_MIDI:
+                for j, off in enumerate(VOICED_OFFSETS_MM):
+                    rv = strike_w_chunked(rd, mh, inst["v_max"][sel], zs, pp, place(off))
+                    voiced_tip[sel, j] = rv["tip_mm"][:, 0]
+                    voiced_end[sel, j] = rv["crown_end_swing_mm"]
+            else:
+                rv = strike_w_chunked(rd, mh, inst["v_max"][sel], zs, pp, d_s)
+                cols["tip_vmax_mm"][sel] = rv["tip_mm"][:, 0]
+        res[midi] = {k: v.tolist() for k, v in cols.items()}
+        res[midi].update(contacts=contacts.tolist(), grade=g, L_mm=float(rds[0]["L"] * 1e3),
+                         voiced=bool(midi <= VOICED_MAX_MIDI))
+        if midi <= VOICED_MAX_MIDI:
+            res[midi].update(voiced_tip_mm=voiced_tip.tolist(), voiced_crown_end_mm=voiced_end.tolist())
+        print(f"MIDI {midi} (grade {g}) done", flush=True)
+    with open(out, "w") as fh:
+        json.dump(dict(split=split, origin=origin, seed=seed, n=n, priors=PRIORS, pass_="3b",
+                       instruments={k: np.asarray(v).tolist() for k, v in inst.items()}, notes=res), fh)
+
+
+
 def summarise(midi, rows):
     edge = EDGE_MM[section(midi)]
     sw = np.array([r["swing_mm"] for r in rows])
@@ -575,7 +662,7 @@ def summarise(midi, rows):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("selftest", "run", "keyboard", "keyboard3", "calibrate"))
+    ap.add_argument("cmd", choices=("selftest", "run", "keyboard", "keyboard3", "keyboard3b", "calibrate"))
     ap.add_argument("--origin", choices=("bar", "fillet"), default="fillet")
     ap.add_argument("--bench", default="target/release/preamp-bench")
     ap.add_argument("--sensor", default="")
@@ -592,6 +679,8 @@ if __name__ == "__main__":
         selftest()
     elif a.cmd == "calibrate":
         calibrate([int(x) for x in a.notes.split(",")], a.n, a.seed, a.bench, a.sensor, a.workdir, a.out)
+    elif a.cmd == "keyboard3b":
+        keyboard3b([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split, a.survey, a.origin)
     elif a.cmd == "keyboard3":
         keyboard3([int(x) for x in a.notes.split(",")], a.n, a.seed, a.out, a.split, a.survey, a.origin)
     elif a.cmd == "keyboard":
