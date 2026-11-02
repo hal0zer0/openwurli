@@ -68,9 +68,10 @@ def main():
                     continue
                 L_mm = rd["L"] * MM_PER_M
                 d_s = np.clip(d_ref * (L_mm / L_ref) ** inst["k"][sel] + scatter[sel], floor_mm, L_mm - CROWN_MM / 2)
+                td = inst["tau_d"][sel] if "tau_d" in inst else None  # felt loss (stage 6); absent = lossless
                 for j, frac in enumerate(SPEED_FRACTIONS):
                     r = strike_w_chunked(rd, mh[sel], inst["v"][sel] * frac, inst["z_star"][sel, g],
-                                         inst["p"][sel, g], d_s)
+                                         inst["p"][sel, g], d_s, tau_d=td)
                     swing[sel, j] = np.abs(r["pick_mm"][:, 0])
                     tc[sel, j] = r["t_contact_T1"]
             rel = 20 * np.log10(swing / swing[:, :1])

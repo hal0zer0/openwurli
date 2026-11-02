@@ -24,7 +24,8 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from hammer_contact_score import ALLOW_DB, MAX_FAIL_FRACTION, SCORED, offsets, q
+from hammer_contact import MIDI_LOWEST  # noqa: E402
+from hammer_contact_score import ALLOW_DB, MAX_FAIL_FRACTION, SCORED, offsets, q  # noqa: E402
 
 SHIELD_MM = 12.0           # grounded RF shield ~1/2" above the comb: tip swing limit (plan §5f, F3)
 DPEAK_MAX_MM = 2.5  # validity, every grade: half of the <= ~5 mm felt a hammer at the reed pitch can carry (plan §5i)
@@ -38,6 +39,34 @@ LETOFF_NB = (7, 10, 13)
 LETOFF_GAP_MM = (2.4, 3.2, 4.0)
 PRIMARY = (10, 3.2)        # the registered primary point of the grid
 
+
+
+def shield_need(notes, n, n_b, gap):
+    """The smallest shield clearance (mm) at which each instrument passes F2 + F3 at one let-off grid point; inf where
+    no clearance would do. F3 is a threshold on tip swing and never enters the dynamics, so an instrument passes at
+    clearance S exactly when S >= this. At MIDI <= 60 a note needs its lowest tip among the voiced offsets that satisfy
+    the validity flag and, for the lowest n_b reeds, reach the let-off gap; above 60, its tip at v_max."""
+    need = np.full(n, -np.inf)
+    for m, v in notes.items():
+        if v["voiced"]:
+            tip = v["voiced_tip_mm"]
+            ok = (v["voiced_d_peak_mm"] <= DPEAK_MAX_MM) & np.isfinite(tip)
+            if m - (MIDI_LOWEST - 1) <= n_b:
+                ok &= v["voiced_crown_end_mm"] >= gap
+            note = np.where(ok, tip, np.inf).min(axis=1)
+        else:
+            tip = v["tip_vmax_mm"]
+            note = np.where((v["d_peak_vmax_mm"] <= DPEAK_MAX_MM) & np.isfinite(tip), tip, np.inf)
+        need = np.maximum(need, note)
+    return need
+
+
+def shield_share(need, band):
+    """P(pass | need) with the clearance uniform on band = (lo, hi) mm: the share of the band at or above `need`."""
+    lo, hi = band
+    if not hi > lo:
+        sys.exit(f"shield band {band}: needs hi > lo")
+    return np.clip((hi - need) / (hi - lo), 0.0, 1.0)
 
 
 def score(kb, fits, rec):
@@ -64,17 +93,7 @@ def score(kb, fits, rec):
         f1 &= f <= MAX_FAIL_FRACTION * cnt[g]
 
     def f23(n_b, gap):
-        ok = np.ones(n, bool)
-        for m, v in notes.items():
-            if v["voiced"]:
-                tip, end = v["voiced_tip_mm"], v["voiced_crown_end_mm"]
-                good = (tip <= SHIELD_MM) & (v["voiced_d_peak_mm"] <= DPEAK_MAX_MM)
-                if m - 32 <= n_b:
-                    good &= end >= gap
-                ok &= good.any(axis=1)
-            else:
-                ok &= (v["tip_vmax_mm"] <= SHIELD_MM) & (v["d_peak_vmax_mm"] <= DPEAK_MAX_MM)
-        return ok
+        return shield_need(notes, n, n_b, gap) <= SHIELD_MM
 
     f3_only = f23(0, 0.0)  # shield alone: no reed carries the let-off bound
     f4 = np.ones(n, bool)
@@ -91,6 +110,14 @@ def survivors(kb, fits, rec):
     """All four checks at the registered primary let-off point."""
     _, _, f1, f23, _, f4, valid = score(kb, fits, rec)
     return f1 & f23(*PRIMARY) & f4 & valid
+
+
+def pass_share(kb, fits, rec, band):
+    """Stage 6 (plan §5n): P(pass) with the let-off grid marginalised (its nine points equally likely) and the shield
+    clearance uniform on `band` (mm), exactly. F1, F4 and the validity flag are indicators."""
+    notes, _, f1, _, _, f4, valid = score(kb, fits, rec)
+    grid = [shield_share(shield_need(notes, kb["n"], nb, gap), band) for nb in LETOFF_NB for gap in LETOFF_GAP_MM]
+    return (f1 & f4 & valid) * np.mean(grid, axis=0)
 
 
 def load_refs(cal_path, survey_path):

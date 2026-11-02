@@ -4,12 +4,14 @@ registered pass/fail rules as an indicator likelihood.
 
 Target: prior(theta) x (1/3) sum over splits of P(pass | theta, split). The felt-grade split is a discrete nuisance
 with a uniform prior; every proposal is scored under all three splits (one keyboard3b seed per chunk draws the
-per-note nuisances for all three).
+per-note nuisances for all three). Stage 6 also averages P(pass) over the let-off grid and over the shield clearance
+(uniform on the read band), exactly (hammer_contact_score3c.pass_share).
 
 Coordinates x, in which the prior is uniform on a box intersected with the grade orderings (bass >= middle >= treble):
     stage 4 (plan §5k): ln z*_b, ln z*_m, ln z*_t | p_b, p_m, p_t | ln m_h | ln v_ff | u_vmax | k | t_bass (in)
     stage 5 (plan §5l): ln z*_b, ln z*_m, ln z*_t | p_b, p_m, p_t | ln m_h_b, ln m_h_m, ln m_h_t | u_vmax | k | t_bass
                         (hammer mass graded and ordered like the felt; v_ff fixed at V_FF_STAGE5)
+    stage 6 (plan §5n): stage 5's | ln tau_d (felt loss, log-uniform on TAU_D_PRIOR_S)
 with u_vmax = ln(v_max / v_ff) / ln(V_MAX_CEIL / v_ff): v_max log-uniform on [v_ff, V_MAX_CEIL] is uniform in u.
 Every particle and meta file records its stage.
 
@@ -27,7 +29,9 @@ Commands:
                                                       only instruments with v_ff in the window, mass copied to all grades
     propose PARTICLES.json --n N --chunks C --seed S --prefix P
                                                       writes P.meta.json and P_c{i}.inst.json (keyboard3b --instruments)
-    weigh   CAL SURVEY --prefix P --out PARTICLES.json reads P_c{i}_{split}.json, weights, reports
+    weigh   CAL SURVEY --prefix P --out PARTICLES.json [--shield-band LO HI]
+                                                      reads P_c{i}_{split}.json, weights, reports (band: stage 6)
+    lift    PARTICLES.json --seed S --out PARTICLES.json  stage 6 generation 0: a stage-5 posterior with tau_d prior draws
     mix     PARTICLES.json ... --out PARTICLES.json     one generation weighed under several calibrations (the bracket's
                                                       verdict corners): mean of the normalised weights, so the next
                                                       proposal covers every corner's posterior
@@ -43,7 +47,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hammer_contact import BASS_BLANKS_IN, MIDI_LOWEST, PRIORS, SPLITS, STRIKE_K_RANGE, V_MAX_CEIL
 from hammer_contact_pool import K_EDGE_BAND, MARGINAL_F4_DB
-from hammer_contact_score3c import F4_MIN_SWING_MM, F4_NOTES, load_refs, survivors
+from hammer_contact_score3c import F4_MIN_SWING_MM, F4_NOTES, load_refs, pass_share, survivors
 
 # --- Stage priors (plan §5k) ------------------------------------------------------------------------------------
 # Strike-law exponent: widened from [0, 2] because pass 3d's survivors piled at 2 (physics review). The upper end is
@@ -56,6 +60,16 @@ SMC_K_RANGE = (0.0, 2.5)
 # 27.4 mm, key dip 9.5 mm) x peak piano key speed 1 m/s; Askenfelt & Jansson's forte 5 m/s over a 47 mm blow, scaled
 # to the 200A's 27.4 mm blow, gives the same ~2.9 m/s.
 V_FF_STAGE5 = 2.9
+# Stage 6 (plan §5n): felt loss in Stulov's hereditary form, tau_d log-uniform on this range (plan §5m: Giordano &
+# Winans' branch gaps map to 0.02-0.09 ms, Stulov's fits to Yanagisawa & Nakamura's loops to 0.10-0.29 ms).
+TAU_D_PRIOR_S = (0.01e-3, 0.3e-3)
+# Stage 6's registered prediction (plan §5m): the C4 ff contact median is >= 10 % shorter for tau_d >= 0.1 ms than
+# for tau_d <= 0.02 ms; it fails at < 5 % shorter, or longer.
+PREDICT_MIDI = 60
+TAU_D_LOW_MAX_S = 0.02e-3
+TAU_D_HIGH_MIN_S = 0.1e-3
+PREDICT_SHORTER = 0.10
+PREDICT_FAIL_SHORTER = 0.05
 
 # --- Sampler controls (numerical; checked by the ESS and by generation-to-generation agreement) -------------------
 FRESH_SHARE = 0.2      # share of fresh prior draws per generation, so a few seeds cannot lock onto one mode
@@ -70,14 +84,20 @@ ESS_TARGET = 300       # stop when a generation's effective sample size reaches 
 # The proposal changes, the target does not: the importance weights stay valid for any proposal with fresh draws.
 KERNEL_MIN_ESS = 50
 TEMPER_BISECTIONS = 60  # bisection steps for alpha (numerical; resolves alpha far below any effect)
-MAX_GEN = 4            # generations before reporting without reaching ESS_TARGET
+MAX_GEN = {4: 4, 5: 4, 6: 8}  # per stage: generations before reporting without reaching ESS_TARGET (6: plan §5n)
 A1_HALFWAY_FRAC = 0.6  # report: posterior share striking A1 beyond this fraction of L ("about halfway", mid-reed)
 M_H_EDGE_FRAC = 0.1    # report (stage 5, plan §5l): bass hammer mass within this fraction of the prior's ceiling
+BOOTSTRAP_DRAWS = 1000  # stage 6: weighted bootstrap of the registered quantities (90 % interval)
+BOOTSTRAP_SEED = 0
+BOOTSTRAP_PCT = (5, 95)  # the 90 % interval's percentiles
+BOOTSTRAP_MIN_SIZE = 2   # smallest resample (a median of a bin needs points on both sides)
+LIFT_COPIES = 4        # stage 6 seeding: tau_d prior draws per stage-5 particle (seeds the proposal only)
 
 LNZ = (np.log(PRIORS["z_star"][1]), np.log(PRIORS["z_star"][2]))
 P_RANGE = (PRIORS["p"][1], PRIORS["p"][2])
 LNM = (np.log(PRIORS["m_h"][1]), np.log(PRIORS["m_h"][2]))
 LNV = (np.log(PRIORS["v_ff"][1]), np.log(PRIORS["v_ff"][2]))
+LNT = (np.log(TAU_D_PRIOR_S[0]), np.log(TAU_D_PRIOR_S[1]))
 UNIT = (0.0, 1.0)
 ORDERED_GROUP_FRACTION = 1.0 / 6.0  # an ordered triple fills 1/3! of its cube
 SPLIT_NAMES = tuple(sorted(SPLITS))
@@ -93,11 +113,11 @@ class Layout:
             self.names = ("ln z*_b", "ln z*_m", "ln z*_t", "p_b", "p_m", "p_t", "ln m_h", "ln v_ff", "u_vmax", "k",
                           "t_bass")
             self.ordered = ((0, 1, 2),)
-        elif stage == 5:
+        elif stage in (5, 6):
             self.box = np.array([LNZ, LNZ, LNZ, P_RANGE, P_RANGE, P_RANGE, LNM, LNM, LNM, UNIT, SMC_K_RANGE,
-                                 BASS_BLANKS_IN])
+                                 BASS_BLANKS_IN] + ([LNT] if stage == 6 else []))
             self.names = ("ln z*_b", "ln z*_m", "ln z*_t", "p_b", "p_m", "p_t", "ln m_h_b", "ln m_h_m", "ln m_h_t",
-                          "u_vmax", "k", "t_bass")
+                          "u_vmax", "k", "t_bass") + (("ln tau_d",) if stage == 6 else ())
             self.ordered = ((0, 1, 2), (6, 7, 8))
         else:
             sys.exit(f"unknown stage {stage}")
@@ -125,7 +145,10 @@ class Layout:
         m = np.log(np.asarray(inst["m_h"]))
         m = m if m.ndim == 2 else np.repeat(m[:, None], 3, axis=1)  # a shared mass seeds every grade
         u = np.clip(np.log(np.asarray(inst["v_max"]) / V_FF_STAGE5) / np.log(V_MAX_CEIL / V_FF_STAGE5), 0.0, 1.0)
-        return np.column_stack([z, p, m, u, inst["k"], inst["t_bass_in"]])
+        cols = [z, p, m, u, inst["k"], inst["t_bass_in"]]
+        if self.stage == 6:
+            cols.append(np.log(inst["tau_d"]))
+        return np.column_stack(cols)
 
     def to_inst(self, x):
         if self.stage == 4:
@@ -133,11 +156,14 @@ class Layout:
             return dict(z_star=np.exp(x[:, 0:3]), p=x[:, 3:6], m_h=np.exp(x[:, 6]), v=v,
                         v_max=v * np.exp(x[:, 8] * np.log(V_MAX_CEIL / v)), k=x[:, 9], t_bass_in=x[:, 10])
         v = np.full(len(x), V_FF_STAGE5)
-        return dict(z_star=np.exp(x[:, 0:3]), p=x[:, 3:6], m_h=np.exp(x[:, 6:9]), v=v,
+        inst = dict(z_star=np.exp(x[:, 0:3]), p=x[:, 3:6], m_h=np.exp(x[:, 6:9]), v=v,
                     v_max=v * np.exp(x[:, 9] * np.log(V_MAX_CEIL / v)), k=x[:, 10], t_bass_in=x[:, 11])
+        if self.stage == 6:
+            inst["tau_d"] = np.exp(x[:, 12])
+        return inst
 
 
-LAYOUTS = {s: Layout(s) for s in (4, 5)}
+LAYOUTS = {s: Layout(s) for s in (4, 5, 6)}
 # Stage-4 names kept at module level (earlier checks import them).
 BOX, NAMES, LOG_VOL = LAYOUTS[4].box, LAYOUTS[4].names, LAYOUTS[4].log_vol
 in_support, prior_draw, to_x, to_inst = (LAYOUTS[4].in_support, LAYOUTS[4].prior_draw, LAYOUTS[4].to_x,
@@ -229,6 +255,72 @@ def cmd_seed(args):
     print(f"generation 0: {len(x)} particles from seeds {sorted(by_seed)}")
 
 
+def cmd_lift(args):
+    """Stage 6 generation 0: a stage-5 posterior with ln tau_d drawn from its prior, LIFT_COPIES per particle. Seeds
+    the proposal only (the stage-5 weights were found without felt loss)."""
+    particles = json.load(open(args.particles))
+    if particles.get("stage", 4) != 5:
+        sys.exit(f"{args.particles}: stage {particles.get('stage', 4)}; lift takes a stage-5 posterior")
+    rng = np.random.default_rng(args.seed)
+    x5, W5 = np.asarray(particles["x"]), np.asarray(particles["W"])
+    x = np.repeat(x5, LIFT_COPIES, axis=0)
+    x = np.column_stack([x, rng.uniform(*LNT, len(x))])
+    W = np.repeat(W5, LIFT_COPIES) / LIFT_COPIES
+    lay = LAYOUTS[6]
+    if not lay.in_support(x).all():
+        sys.exit("lifted particles fall outside the stage-6 support")
+    json.dump(dict(gen=0, stage=6, x=x.tolist(), W=(W / W.sum()).tolist(), lifted_from=args.particles,
+                   note="seed only: stage-5 posterior, tau_d from its prior"), open(args.out, "w"))
+    print(f"generation 0 (stage 6): {len(x)} particles, {LIFT_COPIES} tau_d draws per stage-5 particle; "
+          f"ESS {ess(W):.0f}")
+
+
+def wboot(stat, W, rng):
+    """90 % interval of stat(idx) over BOOTSTRAP_DRAWS resamples by weight, each the size of the ESS (so the interval
+    carries the importance sampler's Monte Carlo error, not only the posterior's spread)."""
+    m = max(int(round(ess(W))), BOOTSTRAP_MIN_SIZE)
+    vals = np.array([stat(rng.choice(len(W), size=m, p=W)) for _ in range(BOOTSTRAP_DRAWS)])
+    return np.percentile(vals[np.isfinite(vals)], BOOTSTRAP_PCT) if np.isfinite(vals).any() else (np.nan, np.nan)
+
+
+def report_stage6(W, inst, a1_frac, c4_tc, w_split, rng):
+    """The registered stage-6 quantities (plan §5n): the C4 contact prediction, the A1 strike distribution, and the
+    verdicts per tau_d bin (a verdict that flips across tau_d is unresolved)."""
+    td = inst["tau_d"]
+    lo_b, hi_b = td <= TAU_D_LOW_MAX_S, td >= TAU_D_HIGH_MIN_S
+
+    def shorter(idx):
+        a, b = c4_tc[idx][lo_b[idx]], c4_tc[idx][hi_b[idx]]
+        return 1.0 - np.median(b) / np.median(a) if a.size and b.size else np.nan
+
+    med_lo = wquant(c4_tc[lo_b], W[lo_b], (0.5,))[0] if lo_b.any() else np.nan
+    med_hi = wquant(c4_tc[hi_b], W[hi_b], (0.5,))[0] if hi_b.any() else np.nan
+    s = 1.0 - med_hi / med_lo
+    s_lo, s_hi = wboot(shorter, W, rng)
+    verdict = ("no verdict (a tau_d bin holds no mass)" if not np.isfinite(s) else "HOLDS" if s >= PREDICT_SHORTER
+               else "FAILS" if s < PREDICT_FAIL_SHORTER else "neither (between the clauses)")
+    print(f"  PREDICTION MIDI {PREDICT_MIDI} ff contact: median {med_lo:.3f} T1 at tau_d <= {TAU_D_LOW_MAX_S * 1e3:g} ms "
+          f"(mass {W[lo_b].sum():.2f}), {med_hi:.3f} T1 at >= {TAU_D_HIGH_MIN_S * 1e3:g} ms (mass {W[hi_b].sum():.2f}); "
+          f"shorter by {s * 100:.1f} % [{s_lo * 100:.1f}, {s_hi * 100:.1f}] -> {verdict} "
+          f"(holds >= {PREDICT_SHORTER:.0%}, fails < {PREDICT_FAIL_SHORTER:.0%})")
+    beyond = a1_frac > A1_HALFWAY_FRAC
+    b_lo, b_hi = wboot(lambda idx: np.mean(beyond[idx]), W, rng)
+    print(f"  A1 struck beyond {A1_HALFWAY_FRAC} L: {np.sum(W[beyond]):.2f} [{b_lo:.2f}, {b_hi:.2f}]")
+    edges = (TAU_D_PRIOR_S[0], TAU_D_LOW_MAX_S, TAU_D_HIGH_MIN_S, TAU_D_PRIOR_S[1])
+    for a, b in zip(edges[:-1], edges[1:]):
+        sel = (td >= a) & (td <= b)
+        if not sel.any():
+            print(f"  tau_d {a * 1e3:g}-{b * 1e3:g} ms: no mass")
+            continue
+        Ws = W[sel] / W[sel].sum()
+        ws = w_split[sel]
+        print(f"  tau_d {a * 1e3:g}-{b * 1e3:g} ms (mass {W[sel].sum():.2f}, ESS {ess(Ws):.0f}): split "
+              + ", ".join(f"{sp} {ws[:, k].sum() / ws.sum():.2f}" for k, sp in enumerate(SPLIT_NAMES))
+              + f" | A1 beyond {A1_HALFWAY_FRAC} L {np.sum(Ws[beyond[sel]]):.2f} | A1 d_s/L p50 "
+              f"{wquant(a1_frac[sel], Ws, (0.5,))[0]:.3f} | m_h bass/treble p50 "
+              f"{wquant(inst['m_h'][sel, 0] / inst['m_h'][sel, 2], Ws, (0.5,))[0]:.2f}")
+
+
 def cmd_propose(args):
     particles = json.load(open(args.particles))
     lay = layout_of(particles)
@@ -264,34 +356,47 @@ def cmd_weigh(args):
     meta = json.load(open(f"{args.prefix}.meta.json"))
     lay = layout_of(meta)
     x, log_q = np.asarray(meta["x"]), np.asarray(meta["log_q"])
+    # Stage 6 (plan §5n) marginalises the let-off grid and the shield clearance (uniform on the read band) exactly,
+    # so a proposal passes with a probability; earlier stages score the 12 mm shield at the primary let-off point.
+    if (lay.stage >= 6) != (args.shield_band is not None):
+        sys.exit(f"stage {lay.stage}: --shield-band is {'required' if lay.stage >= 6 else 'stage 6 only'}")
     chunks = np.array_split(np.arange(meta["n"]), meta["chunks"])
-    passes = np.zeros((meta["n"], len(SPLIT_NAMES)), bool)
+    passes = np.zeros((meta["n"], len(SPLIT_NAMES)))
     a1_frac = np.full(meta["n"], np.nan)
     f4_db = np.full(meta["n"], np.nan)
+    c4_tc = np.full(meta["n"], np.nan)
     for i, idx in enumerate(chunks):
         seeds = set()
+        want = lay.to_inst(x[idx])
         for s, sp in enumerate(SPLIT_NAMES):
             kb = json.load(open(f"{args.prefix}_c{i}_{sp}.json"))
             if kb["n"] != len(idx) or kb["split"] != sp:
                 sys.exit(f"chunk {i} {sp}: n {kb['n']} split {kb['split']}, expected {len(idx)} {sp}")
-            if not np.allclose(kb["instruments"]["m_h"], lay.to_inst(x[idx])["m_h"]):
-                sys.exit(f"chunk {i} {sp}: instruments differ from the proposal")
+            for key in ("m_h", "tau_d"):
+                if (key in want) != (key in kb["instruments"]) or \
+                        (key in want and not np.allclose(kb["instruments"][key], want[key])):
+                    sys.exit(f"chunk {i} {sp}: instruments differ from the proposal ({key})")
             seeds.add(kb["seed"])
-            passes[idx, s] = survivors(kb, fits, rec)
+            passes[idx, s] = (pass_share(kb, fits, rec, args.shield_band) if lay.stage >= 6
+                              else survivors(kb, fits, rec))
             if s == 0:
                 a1 = kb["notes"][str(MIDI_LOWEST)]
                 a1_frac[idx] = np.asarray(a1["d_s_mm"]) / a1["L_mm"]
                 f4_db[idx] = np.min([20 * np.log10(np.asarray(kb["notes"][str(m)]["swing_mm"]) / F4_MIN_SWING_MM)
                                      for m in F4_NOTES], axis=0)
+                if str(PREDICT_MIDI) in kb["notes"]:
+                    c4_tc[idx] = kb["notes"][str(PREDICT_MIDI)]["t_contact_T1"]
         if len(seeds) != 1:
             sys.exit(f"chunk {i}: splits run with seeds {sorted(seeds)}; one seed must draw all three")
     log_base = -lay.log_vol - log_q  # prior / proposal density; normalised away, so shifted by its max for range
     w_split = np.exp(log_base - log_base.max())[:, None] * passes / len(SPLIT_NAMES)
     w = w_split.sum(axis=1)
     keep = w > 0
-    print(f"generation {meta['gen']}: {meta['n']} proposals ({meta['fresh']} fresh); survivors by split "
-          + ", ".join(f"{sp} {passes[:, s].sum()}" for s, sp in enumerate(SPLIT_NAMES))
-          + f"; distinct {keep.sum()}")
+    print(f"generation {meta['gen']}: {meta['n']} proposals ({meta['fresh']} fresh); "
+          f"{'summed pass probability' if lay.stage >= 6 else 'survivors'} by split "
+          + ", ".join(f"{sp} {passes[:, s].sum():g}" for s, sp in enumerate(SPLIT_NAMES))
+          + f"; distinct {keep.sum()}" + (f"; shield band {args.shield_band[0]:g}-{args.shield_band[1]:g} mm, "
+                                          f"let-off grid marginalised" if lay.stage >= 6 else ""))
     if not keep.any():
         return
     W = w[keep] / w[keep].sum()
@@ -308,6 +413,8 @@ def cmd_weigh(args):
         rows += [("m_h g", inst["m_h"] * 1e3), ("v_ff m/s", inst["v"])]
     rows += [("v_max m/s", inst["v_max"]), ("k", inst["k"]),
              ("bass blank mil", inst["t_bass_in"] * 1e3), ("A1 strike d_s/L", a1_frac[keep])]
+    if "tau_d" in inst:
+        rows += [("tau_d ms", inst["tau_d"] * 1e3)]
     for name, a in rows:
         print(f"  {name:18s} p10/50/90 " + "/".join(f"{v:.2f}" for v in wquant(a, W)))
     k_lo, k_hi = SMC_K_RANGE
@@ -321,8 +428,11 @@ def cmd_weigh(args):
         print(f"  m_h_bass within {M_H_EDGE_FRAC:.0%} of its {ceil * 1e3:.0f} g ceiling: "
               f"{np.sum(W[inst['m_h'][:, 0] >= ceil * (1 - M_H_EDGE_FRAC)]):.2f} "
               f"(prior {1 - (1 - np.log(1 / (1 - M_H_EDGE_FRAC)) / np.log(ceil / PRIORS['m_h'][1])) ** 3:.2f})")
+    if lay.stage >= 6:
+        report_stage6(W, inst, a1_frac[keep], c4_tc[keep], w_split[keep], np.random.default_rng(BOOTSTRAP_SEED))
     json.dump(dict(gen=meta["gen"], stage=lay.stage, x=x[keep].tolist(), W=W.tolist(), ess=float(ess),
-                   passes=passes[keep].tolist()), open(args.out, "w"))
+                   passes=(passes[keep] if lay.stage >= 6 else passes[keep].astype(bool)).tolist(),
+                   **({"shield_band": list(args.shield_band)} if lay.stage >= 6 else {})), open(args.out, "w"))
 
 
 def cmd_mix(args):
@@ -347,7 +457,7 @@ def main():
     s = sub.add_parser("seed")
     s.add_argument("cal"), s.add_argument("survey"), s.add_argument("kb", nargs="+")
     s.add_argument("--out", required=True)
-    s.add_argument("--stage", type=int, default=4, choices=tuple(LAYOUTS))
+    s.add_argument("--stage", type=int, default=4, choices=(4, 5))
     s.add_argument("--vff-window", type=float, nargs=2, default=None, metavar=("LO", "HI"),
                    help="stage 5 seeding: keep instruments with v_ff in [LO, HI) m/s")
     p = sub.add_parser("propose")
@@ -357,10 +467,15 @@ def main():
     w = sub.add_parser("weigh")
     w.add_argument("cal"), w.add_argument("survey"), w.add_argument("--prefix", required=True)
     w.add_argument("--out", required=True)
+    w.add_argument("--shield-band", type=float, nargs=2, default=None, metavar=("LO", "HI"),
+                   help="stage 6: shield clearance uniform on [LO, HI] mm (the registered read band)")
+    li = sub.add_parser("lift")
+    li.add_argument("particles"), li.add_argument("--seed", type=int, required=True)
+    li.add_argument("--out", required=True)
     x = sub.add_parser("mix")
     x.add_argument("particles", nargs="+"), x.add_argument("--out", required=True)
     a = ap.parse_args()
-    {"seed": cmd_seed, "propose": cmd_propose, "weigh": cmd_weigh, "mix": cmd_mix}[a.cmd](a)
+    {"seed": cmd_seed, "lift": cmd_lift, "propose": cmd_propose, "weigh": cmd_weigh, "mix": cmd_mix}[a.cmd](a)
 
 
 if __name__ == "__main__":

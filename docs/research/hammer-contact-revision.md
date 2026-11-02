@@ -1131,6 +1131,58 @@ p50 [p10, p90] dB:
   observation, not a model output. The model's answer (−40 to −68 dB at v/8 under its own ff) is
   reported beside it, not tuned to it.
 
+## 5n. Stage 6 registration (2026-11-02, before any stage-6 run)
+
+Stage 5 with felt loss added, and the shield and let-off nuisances marginalised. Code:
+`tools/hammer_contact_smc.py` (stage 6, `lift`, `weigh --shield-band`) and
+`tools/hammer_contact_score3c.py` (`shield_need`, `pass_share`).
+
+- **Coordinates:** stage 5's twelve, plus ln τ_d, log-uniform 0.01–0.3 ms (§5m). v_ff stays 2.9 m/s.
+- **Likelihood, per split:** F1, F4 and the validity flag as indicators, times the probability of
+  passing F2 + F3 with both nuisances marginalised.
+  - The let-off grid's nine points (n_b 7 / 10 / 13 × gap 2.4 / 3.2 / 4.0 mm) are equally likely.
+  - The shield clearance is uniform on the read band [lo, hi]. F3 is a threshold on tip swing and never
+    enters the dynamics, so each instrument has an exact smallest passing clearance S*. It passes
+    with probability clip((hi − S*) / (hi − lo), 0, 1), with no sampled coordinate.
+  - Identity check: S* ≤ 12 mm reproduces the 12 mm indicator at every grid point, on all 36 stage-5
+    runs (1,152,000 instrument-points, 0 mismatches). Stage-5 weighing is byte-identical after the change.
+- **The band:** read off the upper comb, from the read alone, and registered here before any stage-6
+  weighing. **Not yet read.**
+- **Corners and seed:**
+  - The two verdict corners (plane −12 and converged; neighbours at rest, tilt on), mixed for each
+    proposal as in stage 5.
+  - Generation 0 is stage 5's final posterior (generation 4, both corners mixed, 260 particles) with
+    four τ_d prior draws each. It seeds the proposal only.
+- **Sampler:**
+  - 12,000 proposals per generation.
+  - Stop when ESS ≥ 300 at both verdict corners. If that never happens, report after 8 generations
+    with the shortfall stated. Stage 5 reached 158 / 79 at its cap of 4.
+- **Order:** generation 1's proposal and runs don't depend on the band, so they may run before the
+  read. No generation is weighed before the band is registered.
+  - A 45-proposal dry run tested the code path, weighed under a placeholder band. Its numbers are
+    not used.
+- **Registered quantities:**
+  1. **The C4 prediction (§5m), with the statistic made exact.**
+     - Quantity: t_contact_T1 at MIDI 60, from the v_ff random-offset strike. It is total time
+       with force > 0, summed over contacts.
+     - Statistic: 1 − (weighted median at τ_d ≥ 0.1 ms) / (weighted median at τ_d ≤ 0.02 ms), with
+       a 90 % weighted bootstrap (resample size = the ESS).
+     - It holds at ≥ 10 % and fails below 5 %. Between the two, it is neither.
+     - **Its null at fixed felt** is −0.5 % [−5.0, +2.8] (`tools/felt_loss_null.py`, 1500 stage-5
+       posterior draws, each struck lossless and lossy with τ_d from the prior).
+       - Paired, loss shortens the contact over τ_d 0.01–0.02 / 0.02–0.05 / 0.05–0.1 / 0.1–0.2 /
+         0.2–0.3 ms by a median 0.7 / 1.4 / 2.9 / 4.4 / 7.6 % among strikes that keep their contact
+         count (all pairs: 0.7 / 1.3 / 2.8 / 4.1 / 5.0 %). That is the physics review's size.
+       - But above 0.1 ms a tail of strikes lengthens (p90 +36 to +49 %): the slower rebound merges
+         with the reed's return. In the median that tail cancels the paired shortening.
+       - So loss alone stays far from the failure line, and ≥ 10 % needs F1 to re-identify
+         stiffer felt.
+  2. **A1 strike:** the posterior share beyond 0.6 L, with its bootstrap interval. The expectation
+     and its bands are registered with the shield band. They come from the physics review, wider
+     than the generation-to-generation movement (§5l).
+  3. **Per τ_d bin** (≤ 0.02, 0.02–0.1, ≥ 0.1 ms): the split posterior, the A1 share and the mass
+     ratio. A verdict that flips across the bins is unresolved.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
