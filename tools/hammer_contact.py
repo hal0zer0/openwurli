@@ -278,6 +278,7 @@ def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None,
     in_contact = np.zeros(S, bool)
     n_contacts = np.zeros(S, int)
     t_contact = np.zeros(S)
+    t_first = np.zeros(S)  # the first contact's own width (plan §5n: reported beside the total, unscored)
     t_end = np.full(S, np.nan)
     d_peak = np.zeros(S)
     F_now = np.zeros(S)
@@ -306,6 +307,7 @@ def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None,
         n_contacts[a[now & ~in_contact[a]]] += 1
         t += dt
         t_contact[a[now]] += dt
+        t_first[a[now & (n_contacts[a] == 1)]] += dt
         in_contact[a] = now
         reach = np.einsum("sm,sm->s", Phi_abs_max[a], np.sqrt(q_new ** 2 + (qd_new / om) ** 2))
         done = (~now) & (vya < 0) & (n_contacts[a] > 0) & (ya < -reach)
@@ -315,7 +317,8 @@ def strike_batch_w(rd, m_h, v, z_star, p, d_s_mm, crown_mm=CROWN_MM, alpha=None,
     e_reed = 0.5 * np.sum(qd ** 2 + (om * q) ** 2, axis=1)
     return dict(
         dt=dt, unfinished=int(active.sum()), n_contacts=n_contacts, t_contact_T1=t_contact / T1,
-        t_end_T1=t_end / T1, amp=amp, q=q, qd=qd, rebound=vy / v, d_peak_mm=d_peak * MM_PER_M,
+        t_first_T1=t_first / T1, t_end_T1=t_end / T1, amp=amp, q=q, qd=qd, rebound=vy / v,
+        d_peak_mm=d_peak * MM_PER_M,
         energy_err=(e_reed + 0.5 * m_h * vy ** 2 - e0) / e0,
         tip_mm=amp * np.abs(rd["ph_tip"])[None, :] * MM_PER_M,
         pick_mm=amp * rd["ph_pick"][None, :] * MM_PER_M,
@@ -583,7 +586,8 @@ def strike_w_chunked(rd, m_h, v, z_star, p, d_s_mm, chunk=STIFFNESS_CHUNK, tau_d
     sample's step. Same physics and per-chunk step rule; results reassembled in the input order."""
     dmax = ((p + 1) * 0.5 * m_h * v ** 2 / (F_REF / z_star ** p)) ** (1 / (p + 1))
     order = np.argsort(dmax / v)
-    keys = ("n_contacts", "t_contact_T1", "tip_mm", "pick_mm", "crown_end_swing_mm", "d_peak_mm", "energy_err")
+    keys = ("n_contacts", "t_contact_T1", "t_first_T1", "tip_mm", "pick_mm", "crown_end_swing_mm", "d_peak_mm",
+            "energy_err")
     out = {}
     for i0 in range(0, len(order), chunk):
         idx = order[i0:i0 + chunk]
@@ -706,7 +710,7 @@ def keyboard3b(notes, n, seed, out, split, survey, origin, instruments=""):
         scatter = rng.uniform(-STRIKE_SCATTER_MM, STRIKE_SCATTER_MM, n)
         nv = len(VOICED_OFFSETS_MM)
         cols = {k: np.zeros(n) for k in ("swing_mm", "m2_out_db", "tip_mm", "crown_end_mm", "d_peak_mm",
-                                          "d_s_mm", "t_contact_T1", "tip_vmax_mm", "d_peak_vmax_mm")}
+                                          "d_s_mm", "t_contact_T1", "t_first_T1", "tip_vmax_mm", "d_peak_vmax_mm")}
         voiced_tip = np.full((n, nv), np.nan)
         voiced_end = np.full((n, nv), np.nan)
         voiced_dpeak = np.full((n, nv), np.nan)
@@ -738,6 +742,7 @@ def keyboard3b(notes, n, seed, out, split, survey, origin, instruments=""):
             cols["d_peak_mm"][sel] = r["d_peak_mm"]
             cols["d_s_mm"][sel] = d_s
             cols["t_contact_T1"][sel] = r["t_contact_T1"]
+            cols["t_first_T1"][sel] = r["t_first_T1"]
             contacts[sel] = r["n_contacts"]
             # (B) F2/F3 at v_max: voiced offsets at MIDI <= 60, the random offset above.
             if midi <= VOICED_MAX_MIDI:

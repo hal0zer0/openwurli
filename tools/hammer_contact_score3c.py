@@ -112,12 +112,19 @@ def survivors(kb, fits, rec):
     return f1 & f23(*PRIMARY) & f4 & valid
 
 
-def pass_share(kb, fits, rec, band):
-    """Stage 6 (plan §5n): P(pass) with the let-off grid marginalised (its nine points equally likely) and the shield
-    clearance uniform on `band` (mm), exactly. F1, F4 and the validity flag are indicators."""
+def shield_inputs(kb, fits, rec):
+    """Stage 6 (plan §5n): what every shield row needs, computed once per run. Returns (ok, needs): ok is F1, F4 and
+    the validity flag together; needs[j] is the smallest passing clearance at the j-th let-off grid point."""
     notes, _, f1, _, _, f4, valid = score(kb, fits, rec)
-    grid = [shield_share(shield_need(notes, kb["n"], nb, gap), band) for nb in LETOFF_NB for gap in LETOFF_GAP_MM]
-    return (f1 & f4 & valid) * np.mean(grid, axis=0)
+    needs = np.array([shield_need(notes, kb["n"], nb, gap) for nb in LETOFF_NB for gap in LETOFF_GAP_MM])
+    return f1 & f4 & valid, needs
+
+
+def band_pass(ok, needs, band):
+    """P(pass) with the let-off grid marginalised (its nine points equally likely) and the shield clearance uniform on
+    band = (lo, hi) mm, exactly; band None is no shield (F3 off, F2 and validity still apply)."""
+    share = np.isfinite(needs).astype(float) if band is None else shield_share(needs, band)
+    return ok * share.mean(axis=0)
 
 
 def load_refs(cal_path, survey_path):

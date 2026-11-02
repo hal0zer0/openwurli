@@ -4,8 +4,9 @@ registered pass/fail rules as an indicator likelihood.
 
 Target: prior(theta) x (1/3) sum over splits of P(pass | theta, split). The felt-grade split is a discrete nuisance
 with a uniform prior; every proposal is scored under all three splits (one keyboard3b seed per chunk draws the
-per-note nuisances for all three). Stage 6 also averages P(pass) over the let-off grid and over the shield clearance
-(uniform on the read band), exactly (hammer_contact_score3c.pass_share).
+per-note nuisances for all three). Stage 6 also averages P(pass) over the let-off grid, and reports every
+shield-dependent result per clearance row (no clearance can be read): its sampling target is the equal mixture of the
+strictest and loosest rows, and each row is an exact reweighting of it (hammer_contact_score3c.band_pass).
 
 Coordinates x, in which the prior is uniform on a box intersected with the grade orderings (bass >= middle >= treble):
     stage 4 (plan §5k): ln z*_b, ln z*_m, ln z*_t | p_b, p_m, p_t | ln m_h | ln v_ff | u_vmax | k | t_bass (in)
@@ -29,8 +30,8 @@ Commands:
                                                       only instruments with v_ff in the window, mass copied to all grades
     propose PARTICLES.json --n N --chunks C --seed S --prefix P
                                                       writes P.meta.json and P_c{i}.inst.json (keyboard3b --instruments)
-    weigh   CAL SURVEY --prefix P --out PARTICLES.json [--shield-band LO HI]
-                                                      reads P_c{i}_{split}.json, weights, reports (band: stage 6)
+    weigh   CAL SURVEY --prefix P --out PARTICLES.json
+                                                      reads P_c{i}_{split}.json, weights, reports (stage 6: per row)
     lift    PARTICLES.json --seed S --out PARTICLES.json  stage 6 generation 0: a stage-5 posterior with tau_d prior draws
     mix     PARTICLES.json ... --out PARTICLES.json     one generation weighed under several calibrations (the bracket's
                                                       verdict corners): mean of the normalised weights, so the next
@@ -47,7 +48,8 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hammer_contact import BASS_BLANKS_IN, MIDI_LOWEST, PRIORS, SPLITS, STRIKE_K_RANGE, V_MAX_CEIL
 from hammer_contact_pool import K_EDGE_BAND, MARGINAL_F4_DB
-from hammer_contact_score3c import F4_MIN_SWING_MM, F4_NOTES, load_refs, pass_share, survivors
+from hammer_contact_score3c import (F4_MIN_SWING_MM, F4_NOTES, LETOFF_GAP_MM, LETOFF_NB, band_pass, load_refs,
+                                    shield_inputs, survivors)
 
 # --- Stage priors (plan §5k) ------------------------------------------------------------------------------------
 # Strike-law exponent: widened from [0, 2] because pass 3d's survivors piled at 2 (physics review). The upper end is
@@ -70,6 +72,13 @@ TAU_D_LOW_MAX_S = 0.02e-3
 TAU_D_HIGH_MIN_S = 0.1e-3
 PREDICT_SHORTER = 0.10
 PREDICT_FAIL_SHORTER = 0.05
+# Stage 6 shield rows (plan §5n amendment, 2026-11-02). No clearance can be read (unsourced in every held document), so
+# every shield-dependent result is reported per row, each row a clearance uniform on its band (mm), and the A1 strike is
+# stated as conditional on an unsourced clearance. Rows, expectations and structural rules are the physics review's,
+# registered before any weighing. Rows are ordered strictest first: P(pass) rises down the rows.
+SHIELD_ROWS_MM = ((11.0, 13.0), (12.0, 14.0), (13.0, 16.0), (14.0, 18.0))
+A1_EXPECT = ((0.20, 0.53), (0.15, 0.45), (0.09, 0.40), (0.05, 0.37))  # registered P(A1 beyond A1_HALFWAY_FRAC), per row
+A1_TAU_ROWS_SCORED = 2  # structural rule 2 (A1 share lower at high tau_d) is scored on the first two rows
 
 # --- Sampler controls (numerical; checked by the ESS and by generation-to-generation agreement) -------------------
 FRESH_SHARE = 0.2      # share of fresh prior draws per generation, so a few seeds cannot lock onto one mode
@@ -283,42 +292,60 @@ def wboot(stat, W, rng):
     return np.percentile(vals[np.isfinite(vals)], BOOTSTRAP_PCT) if np.isfinite(vals).any() else (np.nan, np.nan)
 
 
-def report_stage6(W, inst, a1_frac, c4_tc, w_split, rng):
-    """The registered stage-6 quantities (plan §5n): the C4 contact prediction, the A1 strike distribution, and the
-    verdicts per tau_d bin (a verdict that flips across tau_d is unresolved)."""
-    td = inst["tau_d"]
-    lo_b, hi_b = td <= TAU_D_LOW_MAX_S, td >= TAU_D_HIGH_MIN_S
-
-    def shorter(idx):
-        a, b = c4_tc[idx][lo_b[idx]], c4_tc[idx][hi_b[idx]]
+def shorter_stat(t, lo_b, hi_b, W, rng):
+    """The registered C4 statistic on contact times t: 1 - wmedian(tau_d >= high) / wmedian(tau_d <= low), with its
+    bootstrap interval."""
+    def stat(idx):
+        a, b = t[idx][lo_b[idx]], t[idx][hi_b[idx]]
         return 1.0 - np.median(b) / np.median(a) if a.size and b.size else np.nan
 
-    med_lo = wquant(c4_tc[lo_b], W[lo_b], (0.5,))[0] if lo_b.any() else np.nan
-    med_hi = wquant(c4_tc[hi_b], W[hi_b], (0.5,))[0] if hi_b.any() else np.nan
-    s = 1.0 - med_hi / med_lo
-    s_lo, s_hi = wboot(shorter, W, rng)
+    if not (lo_b.any() and hi_b.any()) or not np.isfinite(t).all():
+        return np.nan, (np.nan, np.nan)
+    s = 1.0 - wquant(t[hi_b], W[hi_b], (0.5,))[0] / wquant(t[lo_b], W[lo_b], (0.5,))[0]
+    return s, wboot(stat, W, rng)
+
+
+def report_row(name, W, inst, a1_frac, c4_tc, c4_first, w_split, expect, scored_tau, rng):
+    """One shield row's registered quantities (plan §5n). W: this row's normalised weights. Returns the A1 share, its
+    bootstrap interval, and the tau_d rule's difference interval."""
+    td = inst["tau_d"]
+    lo_b, hi_b = td <= TAU_D_LOW_MAX_S, td >= TAU_D_HIGH_MIN_S
+    beyond = (a1_frac > A1_HALFWAY_FRAC).astype(float)
+    share = float(np.sum(W * beyond))
+    sh_lo, sh_hi = wboot(lambda idx: np.mean(beyond[idx]), W, rng)
+    print(f"  ROW {name}: ESS {ess(W):.0f}; split "
+          + ", ".join(f"{sp} {w_split[:, k].sum() / w_split.sum():.2f}" for k, sp in enumerate(SPLIT_NAMES)))
+    if expect is not None:
+        inside = expect[0] <= share <= expect[1]
+        print(f"    A1 struck beyond {A1_HALFWAY_FRAC} L: {share:.2f} [{sh_lo:.2f}, {sh_hi:.2f}] -> "
+              f"{'inside' if inside else 'OUTSIDE'} the registered {expect[0]:.2f}-{expect[1]:.2f}")
+    else:
+        print(f"    A1 struck beyond {A1_HALFWAY_FRAC} L: {share:.2f} [{sh_lo:.2f}, {sh_hi:.2f}] (report only)")
+    s, (s_lo, s_hi) = shorter_stat(c4_tc, lo_b, hi_b, W, rng)
     verdict = ("no verdict (a tau_d bin holds no mass)" if not np.isfinite(s) else "HOLDS" if s >= PREDICT_SHORTER
                else "FAILS" if s < PREDICT_FAIL_SHORTER else "neither (between the clauses)")
-    print(f"  PREDICTION MIDI {PREDICT_MIDI} ff contact: median {med_lo:.3f} T1 at tau_d <= {TAU_D_LOW_MAX_S * 1e3:g} ms "
-          f"(mass {W[lo_b].sum():.2f}), {med_hi:.3f} T1 at >= {TAU_D_HIGH_MIN_S * 1e3:g} ms (mass {W[hi_b].sum():.2f}); "
-          f"shorter by {s * 100:.1f} % [{s_lo * 100:.1f}, {s_hi * 100:.1f}] -> {verdict} "
-          f"(holds >= {PREDICT_SHORTER:.0%}, fails < {PREDICT_FAIL_SHORTER:.0%})")
-    beyond = a1_frac > A1_HALFWAY_FRAC
-    b_lo, b_hi = wboot(lambda idx: np.mean(beyond[idx]), W, rng)
-    print(f"  A1 struck beyond {A1_HALFWAY_FRAC} L: {np.sum(W[beyond]):.2f} [{b_lo:.2f}, {b_hi:.2f}]")
+    print(f"    C4 (MIDI {PREDICT_MIDI}) ff total contact: shorter by {s * 100:.1f} % [{s_lo * 100:.1f}, "
+          f"{s_hi * 100:.1f}] at tau_d >= {TAU_D_HIGH_MIN_S * 1e3:g} ms than <= {TAU_D_LOW_MAX_S * 1e3:g} ms "
+          f"(mass {W[hi_b].sum():.2f} / {W[lo_b].sum():.2f}) -> {verdict}")
+    f, (f_lo, f_hi) = shorter_stat(c4_first, lo_b, hi_b, W, rng)
+    print(f"    C4 first-pulse width (unscored): " + (f"shorter by {f * 100:.1f} % [{f_lo * 100:.1f}, {f_hi * 100:.1f}]"
+                                                      if np.isfinite(f) else "not recorded in this generation"))
+    diff = float(np.sum(W[hi_b] * beyond[hi_b]) / W[hi_b].sum() - np.sum(W[lo_b] * beyond[lo_b]) / W[lo_b].sum())
+
+    def dstat(idx):
+        a, b = beyond[idx][lo_b[idx]], beyond[idx][hi_b[idx]]
+        return np.mean(b) - np.mean(a) if a.size and b.size else np.nan
+
+    d_lo, d_hi = wboot(dstat, W, rng)
+    rule = ("FAILS" if d_lo > 0 else "holds") if scored_tau else "report only"
+    bins = []
     edges = (TAU_D_PRIOR_S[0], TAU_D_LOW_MAX_S, TAU_D_HIGH_MIN_S, TAU_D_PRIOR_S[1])
     for a, b in zip(edges[:-1], edges[1:]):
         sel = (td >= a) & (td <= b)
-        if not sel.any():
-            print(f"  tau_d {a * 1e3:g}-{b * 1e3:g} ms: no mass")
-            continue
-        Ws = W[sel] / W[sel].sum()
-        ws = w_split[sel]
-        print(f"  tau_d {a * 1e3:g}-{b * 1e3:g} ms (mass {W[sel].sum():.2f}, ESS {ess(Ws):.0f}): split "
-              + ", ".join(f"{sp} {ws[:, k].sum() / ws.sum():.2f}" for k, sp in enumerate(SPLIT_NAMES))
-              + f" | A1 beyond {A1_HALFWAY_FRAC} L {np.sum(Ws[beyond[sel]]):.2f} | A1 d_s/L p50 "
-              f"{wquant(a1_frac[sel], Ws, (0.5,))[0]:.3f} | m_h bass/treble p50 "
-              f"{wquant(inst['m_h'][sel, 0] / inst['m_h'][sel, 2], Ws, (0.5,))[0]:.2f}")
+        bins.append(f"{np.sum(W[sel] * beyond[sel]) / W[sel].sum():.2f}" if W[sel].sum() > 0 else "-")
+    print(f"    A1 share by tau_d bin (<= {TAU_D_LOW_MAX_S * 1e3:g} / middle / >= {TAU_D_HIGH_MIN_S * 1e3:g} ms): "
+          f"{' / '.join(bins)}; high minus low {diff:+.2f} [{d_lo:+.2f}, {d_hi:+.2f}] -> rule 2 {rule}")
+    return share, (sh_lo, sh_hi)
 
 
 def cmd_propose(args):
@@ -356,12 +383,15 @@ def cmd_weigh(args):
     meta = json.load(open(f"{args.prefix}.meta.json"))
     lay = layout_of(meta)
     x, log_q = np.asarray(meta["x"]), np.asarray(meta["log_q"])
-    # Stage 6 (plan §5n) marginalises the let-off grid and the shield clearance (uniform on the read band) exactly,
-    # so a proposal passes with a probability; earlier stages score the 12 mm shield at the primary let-off point.
-    if (lay.stage >= 6) != (args.shield_band is not None):
-        sys.exit(f"stage {lay.stage}: --shield-band is {'required' if lay.stage >= 6 else 'stage 6 only'}")
+    # Stage 6 (plan §5n) marginalises the let-off grid and reports per shield row, so a proposal passes with a
+    # probability; earlier stages score the 12 mm shield at the primary let-off point.
+    stage6 = lay.stage >= 6
     chunks = np.array_split(np.arange(meta["n"]), meta["chunks"])
     passes = np.zeros((meta["n"], len(SPLIT_NAMES)))
+    n_grid = len(LETOFF_NB) * len(LETOFF_GAP_MM)
+    ok_all = np.zeros((meta["n"], len(SPLIT_NAMES)), bool)
+    needs_all = np.full((meta["n"], len(SPLIT_NAMES), n_grid), np.inf)
+    c4_first = np.full(meta["n"], np.nan)
     a1_frac = np.full(meta["n"], np.nan)
     f4_db = np.full(meta["n"], np.nan)
     c4_tc = np.full(meta["n"], np.nan)
@@ -377,17 +407,28 @@ def cmd_weigh(args):
                         (key in want and not np.allclose(kb["instruments"][key], want[key])):
                     sys.exit(f"chunk {i} {sp}: instruments differ from the proposal ({key})")
             seeds.add(kb["seed"])
-            passes[idx, s] = (pass_share(kb, fits, rec, args.shield_band) if lay.stage >= 6
-                              else survivors(kb, fits, rec))
+            if stage6:
+                ok_all[idx, s], needs = shield_inputs(kb, fits, rec)
+                needs_all[idx, s] = needs.T
+            else:
+                passes[idx, s] = survivors(kb, fits, rec)
             if s == 0:
                 a1 = kb["notes"][str(MIDI_LOWEST)]
                 a1_frac[idx] = np.asarray(a1["d_s_mm"]) / a1["L_mm"]
                 f4_db[idx] = np.min([20 * np.log10(np.asarray(kb["notes"][str(m)]["swing_mm"]) / F4_MIN_SWING_MM)
                                      for m in F4_NOTES], axis=0)
                 if str(PREDICT_MIDI) in kb["notes"]:
-                    c4_tc[idx] = kb["notes"][str(PREDICT_MIDI)]["t_contact_T1"]
+                    c4 = kb["notes"][str(PREDICT_MIDI)]
+                    c4_tc[idx] = c4["t_contact_T1"]
+                    if "t_first_T1" in c4:  # recorded from stage-6 generation 2 on
+                        c4_first[idx] = c4["t_first_T1"]
         if len(seeds) != 1:
             sys.exit(f"chunk {i}: splits run with seeds {sorted(seeds)}; one seed must draw all three")
+    if stage6:
+        def row_lik(band):
+            return np.column_stack([band_pass(ok_all[:, k], needs_all[:, k].T, band) for k in range(len(SPLIT_NAMES))])
+        row_L = [row_lik(b) for b in SHIELD_ROWS_MM]
+        passes = 0.5 * (row_L[0] + row_L[-1])  # sampling target: the strictest and loosest rows, equally
     log_base = -lay.log_vol - log_q  # prior / proposal density; normalised away, so shifted by its max for range
     w_split = np.exp(log_base - log_base.max())[:, None] * passes / len(SPLIT_NAMES)
     w = w_split.sum(axis=1)
@@ -395,8 +436,9 @@ def cmd_weigh(args):
     print(f"generation {meta['gen']}: {meta['n']} proposals ({meta['fresh']} fresh); "
           f"{'summed pass probability' if lay.stage >= 6 else 'survivors'} by split "
           + ", ".join(f"{sp} {passes[:, s].sum():g}" for s, sp in enumerate(SPLIT_NAMES))
-          + f"; distinct {keep.sum()}" + (f"; shield band {args.shield_band[0]:g}-{args.shield_band[1]:g} mm, "
-                                          f"let-off grid marginalised" if lay.stage >= 6 else ""))
+          + f"; distinct {keep.sum()}" + ("; let-off grid marginalised; sampling target = rows "
+                                          f"{SHIELD_ROWS_MM[0]} and {SHIELD_ROWS_MM[-1]} mm equally (not itself a result)"
+                                          if stage6 else ""))
     if not keep.any():
         return
     W = w[keep] / w[keep].sum()
@@ -428,11 +470,35 @@ def cmd_weigh(args):
         print(f"  m_h_bass within {M_H_EDGE_FRAC:.0%} of its {ceil * 1e3:.0f} g ceiling: "
               f"{np.sum(W[inst['m_h'][:, 0] >= ceil * (1 - M_H_EDGE_FRAC)]):.2f} "
               f"(prior {1 - (1 - np.log(1 / (1 - M_H_EDGE_FRAC)) / np.log(ceil / PRIORS['m_h'][1])) ** 3:.2f})")
-    if lay.stage >= 6:
-        report_stage6(W, inst, a1_frac[keep], c4_tc[keep], w_split[keep], np.random.default_rng(BOOTSTRAP_SEED))
+    rows_out = []
+    if stage6:
+        rng = np.random.default_rng(BOOTSTRAP_SEED)
+        inst_all = lay.to_inst(x)
+        base = np.exp(log_base - log_base.max())
+        shares = []
+        named = [(f"{lo:g}-{hi:g} mm", L, A1_EXPECT[r], r < A1_TAU_ROWS_SCORED)
+                 for r, ((lo, hi), L) in enumerate(zip(SHIELD_ROWS_MM, row_L))]
+        named.append(("no F3 (report only)", row_lik(None), None, False))
+        for r, (name, L, expect, scored_tau) in enumerate(named):
+            ws = base[:, None] * L / len(SPLIT_NAMES)
+            wr = ws.sum(axis=1)
+            sel = wr > 0
+            Wr = wr[sel] / wr[sel].sum()
+            shares.append(report_row(name, Wr, {k: v[sel] for k, v in inst_all.items()}, a1_frac[sel], c4_tc[sel],
+                                     c4_first[sel], ws[sel], expect, scored_tau, rng))
+            if expect is not None:
+                rows_out.append(dict(band=list(SHIELD_ROWS_MM[r]), W=(wr[keep] / wr[keep].sum()).tolist(),
+                                     ess=float(1.0 / np.sum(Wr ** 2))))
+        row_ess = ", ".join(f"{d['ess']:.0f}" for d in rows_out)
+        print(f"  ESS per registered row: {row_ess} (target {ESS_TARGET} each)")
+        for r in range(len(SHIELD_ROWS_MM) - 1):
+            (a, (a_lo, a_hi)), (b, (b_lo, b_hi)) = shares[r], shares[r + 1]
+            half = max((a_hi - a_lo) / 2, (b_hi - b_lo) / 2)
+            print(f"  rule 1, {SHIELD_ROWS_MM[r]} -> {SHIELD_ROWS_MM[r + 1]} mm: A1 share {a:.2f} -> {b:.2f} "
+                  f"(rise {b - a:+.2f}, allowed {half:.2f}) -> {'FAILS' if b - a > half else 'holds'}")
     json.dump(dict(gen=meta["gen"], stage=lay.stage, x=x[keep].tolist(), W=W.tolist(), ess=float(ess),
-                   passes=(passes[keep] if lay.stage >= 6 else passes[keep].astype(bool)).tolist(),
-                   **({"shield_band": list(args.shield_band)} if lay.stage >= 6 else {})), open(args.out, "w"))
+                   passes=(passes[keep] if stage6 else passes[keep].astype(bool)).tolist(),
+                   **({"rows": rows_out} if stage6 else {})), open(args.out, "w"))
 
 
 def cmd_mix(args):
@@ -467,8 +533,6 @@ def main():
     w = sub.add_parser("weigh")
     w.add_argument("cal"), w.add_argument("survey"), w.add_argument("--prefix", required=True)
     w.add_argument("--out", required=True)
-    w.add_argument("--shield-band", type=float, nargs=2, default=None, metavar=("LO", "HI"),
-                   help="stage 6: shield clearance uniform on [LO, HI] mm (the registered read band)")
     li = sub.add_parser("lift")
     li.add_argument("particles"), li.add_argument("--seed", type=int, required=True)
     li.add_argument("--out", required=True)

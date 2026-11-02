@@ -1150,8 +1150,8 @@ p50 [p10, p90] dB:
 ## 5n. Stage 6 registration (2026-11-02, before any stage-6 run)
 
 Stage 5 with felt loss added, and the shield and let-off nuisances marginalised. Code:
-`tools/hammer_contact_smc.py` (stage 6, `lift`, `weigh --shield-band`) and
-`tools/hammer_contact_score3c.py` (`shield_need`, `pass_share`).
+`tools/hammer_contact_smc.py` (stage 6, `lift`, `weigh`) and `tools/hammer_contact_score3c.py`
+(`shield_need`, `shield_inputs`, `band_pass`).
 
 - **Coordinates:** stage 5's twelve, plus ln τ_d, log-uniform 0.01–0.3 ms (§5m). v_ff stays 2.9 m/s.
 - **Likelihood, per split:** F1, F4 and the validity flag as indicators, times the probability of
@@ -1169,8 +1169,7 @@ Stage 5 with felt loss added, and the shield and let-off nuisances marginalised.
     or any photo frame (none has a usable scale for vertical spacing).
   - So §5l's A1 failure rests on an unsourced number. Without F3 the strike moved to 0.46–0.48 L
     (§5l).
-  - How stage 6 proceeds without a band is pending physics review. No weighing until that is
-    registered here.
+  - How stage 6 proceeds without a band: the amendment below.
 - **Corners and seed:**
   - The two verdict corners (plane −12 and converged; neighbours at rest, tilt on), mixed for each
     proposal as in stage 5.
@@ -1178,8 +1177,9 @@ Stage 5 with felt loss added, and the shield and let-off nuisances marginalised.
     four τ_d prior draws each. It seeds the proposal only.
 - **Sampler:**
   - 12,000 proposals per generation.
-  - Stop when ESS ≥ 300 at both verdict corners. If that never happens, report after 8 generations
-    with the shortfall stated. Stage 5 reached 158 / 79 at its cap of 4.
+  - Stop when ESS ≥ 300 at both verdict corners (per registered row, by the amendment below). If
+    that never happens, report after 8 generations with the shortfall stated. Stage 5 reached
+    158 / 79 at its cap of 4.
 - **Order:** generation 1's proposal and runs don't depend on the band, so they may run before the
   read. No generation is weighed before the band is registered.
   - A 45-proposal dry run tested the code path, weighed under a placeholder band. Its numbers are
@@ -1201,10 +1201,56 @@ Stage 5 with felt loss added, and the shield and let-off nuisances marginalised.
        - So loss alone stays far from the failure line, and ≥ 10 % needs F1 to re-identify
          stiffer felt.
   2. **A1 strike:** the posterior share beyond 0.6 L, with its bootstrap interval. The expectation
-     and its bands are registered with the shield band. They come from the physics review, wider
-     than the generation-to-generation movement (§5l).
+     and its bands are registered per row in the amendment below.
   3. **Per τ_d bin** (≤ 0.02, 0.02–0.1, ≥ 0.1 ms): the split posterior, the A1 share and the mass
      ratio. A verdict that flips across the bins is unresolved.
+
+**Amendment (2026-11-02, before any stage-6 weighing): no band can be read.** By the physics review:
+- **Rows.** Every shield-dependent result is reported per row, each a clearance uniform on its band:
+  [11, 13], [12, 14], [13, 16] and [14, 18] mm.
+  - The A1 strike is stated as conditional on an unsourced clearance.
+  - No row is picked after seeing them.
+  - A "no F3" row is reported beside them, report only.
+- **Sampling target:** the equal mixture of the strictest and loosest rows. P(pass) rises down the
+  rows, so each row's likelihood is at most twice the target's. Each row is an exact reweighting of
+  the same proposals, with its own ESS.
+- **Stopping:** ESS ≥ 300 for every registered row at both verdict corners, or report after 8
+  generations.
+- **A1 expectation, P(strike > 0.6 L), plane −12 / converged.** Method: the stage-5 generation-4 runs
+  re-weighted under this section's rules. Loss enters as a mode-1 swing scale at every note,
+  marginalised over the τ_d prior: dB = −max(0, 0.8 + 0.55 log2(τ_d / 0.033 ms)). Not modelled:
+  loss moving F1, F4 or d_peak, and re-proposal.
+
+  | Row (mm) | Lossless | Central loss | 2× loss | Registered |
+  |---|---|---|---|---|
+  | [11, 13] | 0.42 / 0.50 | 0.35 / 0.38 | 0.31 / 0.30 | 0.20–0.53 |
+  | [12, 14] | 0.35 / 0.41 | 0.30 / 0.30 | 0.27 / 0.25 | 0.15–0.45 |
+  | [13, 16] | 0.28 / 0.30 | 0.25 / 0.24 | 0.23 / 0.20 | 0.09–0.40 |
+  | [14, 18] | 0.24 / 0.24 | 0.22 / 0.20 | 0.20 / 0.17 | 0.05–0.37 |
+
+  - Registered = central ± 0.15. The 12 mm share moved +0.09 / +0.15 from stage-5 generation 3 to
+    4, the only movement that can be measured.
+  - **Fails:** either corner outside its row's registered band.
+- **Structural rules:**
+  1. The share falls as the band rises. Fails if a higher row exceeds the one below by more than the
+     larger 90 % half-width.
+  2. The share at τ_d ≥ 0.1 ms sits below the share at ≤ 0.02 ms.
+     - Re-weighted, down the rows: −0.10 / −0.08 / −0.04 / −0.02 (plane −12) and
+       −0.19 / −0.16 / −0.09 / −0.05 (converged).
+     - Mechanism: loss lowers the swing at the reach reeds, so F2 wants a heavier bass hammer
+       (0.2–0.6 g heavier in the ≥ 0.1 ms bin), and the strike moves down.
+     - **Fails** if the ≥ 0.1 ms share is higher at [11, 13] or [12, 14] beyond the bootstrap.
+  - Report: the reach reeds set S*. A1 does for 0.42–0.52 of the weight, and MIDI 33–42 together for
+    0.90–0.91, consistent with §5l.
+  - Across 11 → 18 mm the A1 share falls 0.13–0.26. That is as large as loss and sampling together,
+    so any A1 verdict is conditional on the clearance.
+- **C4:** total contact stays the scored statistic, reported per row. The first pulse's width is
+  reported beside it, unscored. It is recorded from generation 2 on (`t_first_T1`); existing outputs
+  are byte-identical.
+- **Boutillon 1988:** the physics review was asked whether it moves the τ_d or p priors before
+  weighing. It requested no change, so the priors stand.
+- **Generation 1** (12,000 proposals) ran before this amendment. Its proposal and runs don't depend on
+  the shield, so it is weighed under the amendment.
 
 ## 6. Steps
 
