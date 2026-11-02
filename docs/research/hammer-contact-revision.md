@@ -623,8 +623,11 @@ the m_h–z* degeneracy.
 before any pass-3b result was read).** The manual's service parts list (PDF p74) lists the pickup as
 four parts by reed range: 1–20, 21–32, 33–42 and 43–64. So a comb joint sits at 42|43, and 50|51 is
 not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 42|43.
-- The photographed hammer, reed #4/#5 bass-ward of a comb joint with the solder switch, is
-  therefore reed 38 or 39 (MIDI 70/71).
+- The photographed hammer, reed #4/#5 bass-ward of a comb joint, is therefore reed 38 or 39
+  (MIDI 70/71).
+  - Correction (2026-11-02, photo read): the joint shows as a VISIBILITY boundary for the tips'
+    solder lumps, because the comb notches are deeper on its bass side. It is not a switch in solder
+    side, and it doesn't locate where the reed tips flip. The count stands.
 - Its length-table length is 39.8–40.4 mm, consistent with the photo's 35–40 mm at the fillet
   origin.
 - Anchor for the next pass: d_ref = 13.2 mm from the fillet, L_ref = 40.1 mm. The bar-edge origin is
