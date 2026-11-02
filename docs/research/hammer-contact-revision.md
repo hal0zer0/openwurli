@@ -1082,7 +1082,19 @@ p50 [p10, p90] dB:
   arrive: A1 pliant, 0.52–1.43 m/s):**
   - The branch gap at half compression grows ×1.3–1.6 across those speeds under Stulov, and
     ×2.3–3 under Hunt–Crossley.
-  - **Stulov fails at ≥ ×2.1.** Boutillon 1988 (being fetched) can take the same test.
+  - **Stulov fails at ≥ ×2.1.**
+  - **Boutillon 1988 (doi:10.1121/1.396117; held 2026-11-02) cannot take this test.** Its loops
+    (Fig. 8) are one strong blow per hammer (B2 and F4 of a Gaveau upright), with no speed series.
+    From its text, report only:
+    - Power-law fits per branch, loading / unloading: 2.1 / 3.6 (B2) and 3.5 / 5 (F4). The author
+      says no precise exponent fits F4, and that the F4 force zero is imprecise. B2's 2.1 falls just
+      below this plan's p prior (2.2–3.5).
+    - Slow recovery, independently: statically loaded felt "never came back immediately to its
+      original position" and recovered "after a short while". His model ends contact at
+      F < F_max/100, "a significant remaining compression of the felt".
+    - Effective hammer mass 8 g (low notes) to 5 g (high notes), that piano only.
+    - Fig. 15: at G3 the radiated efficiency (p_rms / v_i)² falls toward zero at low impact speed.
+      The author says hysteresis cannot explain it.
   - **Result (2026-10-30; `tools/felt_loop_check.py` on the digitised loops, Monte Carlo over the
     stated digitisation uncertainty):**
     - Growth from 0.52 to 1.43 m/s: ×1.12 [1.00, 1.27] at 0.5 of maximum compression, and
