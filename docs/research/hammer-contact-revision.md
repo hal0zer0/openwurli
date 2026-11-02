@@ -313,6 +313,13 @@ sensitive input.
 Keyboard Waves, every white key at the v126 layer (the set has no black keys).
 - Method: Sensor decay mode, onset window (skip 5 ms, window 900 ms, band ±40 Hz) and late window
   (0.3–2.8 s).
+- Sample lengths (checked 2026-11-02): eight treble files end before 2.8 s (D5, A5, D6, E6, F6, G6,
+  A6, C7; 1.17–2.77 s long), so their late window covers only what remains. The Sensor trims the
+  window to the file and says so, but the survey did not record the kept span. No late-window
+  number is quoted here or used anywhere. The onset window lies inside every file.
+- The samples are 16-bit with a live noise floor, with no exact-zero tails (the longest zero run in
+  any window is 0.4 ms). So the Sensor's silent-tail defect (decay fits on digital silence, fixed
+  upstream 2026-10) does not touch these results.
 - Search band: the FE mode-2 band widened 5 %, clear of harmonics and the sympathetic top reeds by
   12 Hz, with prominence ≥ 12 dB.
 - Levels are the Sensor's windowed candidate levels re H1. Its fitted intercepts and rates are
