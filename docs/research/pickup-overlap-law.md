@@ -155,6 +155,13 @@ The model targets the most typical setup of one configuration:
     section) is noted only qualitatively (§8: it averages the law over u) and has not been sized.
   - Open: the real far-side conductors per section, and the law's validity at large swings
     (closure, neighbours at rest and tilt, to be taken together). The shipping tables are unchanged.
+  - Search result (2026-11-02): no held document dimensions any conductor around the pickup.
+    - The service manual has no dimensioned section or exploded view. Its reed-vs-pickup sketches
+      (Figs. N and O) are undimensioned, and the parts list gives spacer part numbers only (PDF p74).
+    - What it does state: the reeds are grounded (PDF p16) and the pickup is polarised at 147 V
+      (PDF p64). A metal shield is screwed over the reed bars (PDF pp. 5, 17), with its height and
+      potential unstated.
+    - The photo frames have no usable scale for vertical spacing.
 - **Solver defect, fixed 2026-10-30:**
   - The reed and gap edges inserted into the x grid coincided with core grid lines up to rounding,
     and both were kept: a 1e-14 mm column whose conductance made the operator near-singular. The

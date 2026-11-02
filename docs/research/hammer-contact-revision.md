@@ -1021,7 +1021,8 @@ not a boundary. Doc Wurly's "F-21 to D-42 much thinner" corroborates 20|21 and 4
     and it moves ≤ 0.01 L.
   - A heavy bass hammer at ≥ 2.9 m/s overshoots the shield unless struck where the window is wide.
 - **The weak input is the 12 mm.** It is "~½ inch above" from video, with no datum and no read of
-  whether upper-comb metal lies over the bass tip's path.
+  whether upper-comb metal lies over the bass tip's path. (2026-11-02: unsourced in every held
+  document; §5n.)
   - A1 median against clearance (plane −12 | converged): 11 mm 0.61 | 0.61; 12 mm 0.60 | 0.61;
     13 mm 0.57 | 0.58; 14 mm 0.54 | 0.56; 16 mm 0.50 | 0.47.
   - The let-off grid is a nuisance like the split; marginalised at 12 mm it gives 0.57 | 0.61.
@@ -1162,7 +1163,14 @@ Stage 5 with felt loss added, and the shield and let-off nuisances marginalised.
   - Identity check: S* ≤ 12 mm reproduces the 12 mm indicator at every grid point, on all 36 stage-5
     runs (1,152,000 instrument-points, 0 mismatches). Stage-5 weighing is byte-identical after the change.
 - **The band:** read off the upper comb, from the read alone, and registered here before any stage-6
-  weighing. **Not yet read.**
+  weighing.
+  - **Unsourced (2026-11-02).** Nothing held gives it: not the service manual (no dimensioned
+    section or exploded view), the four Wurlitzer patents, the forum, supplier or technician pages,
+    or any photo frame (none has a usable scale for vertical spacing).
+  - So §5l's A1 failure rests on an unsourced number. Without F3 the strike moved to 0.46–0.48 L
+    (§5l).
+  - How stage 6 proceeds without a band is pending physics review. No weighing until that is
+    registered here.
 - **Corners and seed:**
   - The two verdict corners (plane −12 and converged; neighbours at rest, tilt on), mixed for each
     proposal as in stage 5.
