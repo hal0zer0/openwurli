@@ -1312,12 +1312,12 @@ From generation 2 to 3 the A1 shares moved ≤ 0.02.
   - Split posterior, blank-pickup / code / damper-felt: 0.40 / 0.20 / 0.41 against
     0.30 / 0.17 / 0.53. It still depends on the closure.
 
-## 5o. Step 3: choosing the shipped instrument (DRAFT under physics review, 2026-11-02)
+## 5o. Step 3: choosing the shipped instrument (registered 2026-11-02, after physics review)
 
 The A1 strike depends on two unmeasured quantities (§5n), so step 3 builds one candidate per
 scored shield row. **User decision (2026-11-02): always an ear gate.** No "differences too small to
-hear" threshold is applied, because none is sourced. Nothing below is run until this section is
-final.
+hear" threshold is applied, because none is sourced. The physics review's answers and guards are
+folded in below.
 
 1. **Candidates:** one per scored row, four in all. The no-F3 row gives a fifth, heard as a
    reference and never shipped.
@@ -1325,7 +1325,9 @@ final.
    at both verdict corners. A pair's weight is the mean over the corners of its normalised row-r
    weight.
 3. **Centre in what the checks pin (§5l), all from the pair's own run:**
-   - ff contact time per grade: the median t_contact_T1 over the run's notes in that grade;
+   - ff contact time per grade: the median t_contact_T1 over the run's notes in that grade. It is the
+     grade median, not a reference note, because z* is a grade parameter and moving p shifts each
+     note's contact differently (T ~ (m_eff / K)^(1/(p+1)));
    - bass reach: the median over MIDI 33, 36, 39 and 42 of the largest crown-end swing at v_max
      among voiced offsets that meet the validity flag;
    - F4 margin: the minimum over MIDI 84, 90 and 96 of 20 log10(swing / 0.012 mm);
@@ -1335,23 +1337,44 @@ final.
      particle.
 4. **p** goes to the prior median, 2.85, in every grade. z* is re-solved per grade so that the
    grade's median ff contact time from 3 is unchanged.
+   - The note set, strikes and reeds are the pair's own run, the same before and after.
+   - Each grade's min and max per-note contact change is reported.
 5. **Strike points, all 64 notes:**
    - Above MIDI 60: the strike law at zero scatter.
    - At MIDI ≤ 60, voiced: the offset in −1.5…+1.5 mm (0.5 mm steps) closest to 0 that passes at
      v_max. Passing means the validity flag; for the reach reeds, the let-off at the primary point
      (10 reeds, 3.2 mm); and tip ≤ the row's lower edge, the strict end.
+   - The lower edge is the only voicing valid at every clearance in the row. Of two passing
+     offsets equally close to 0, the one with the smaller tip swing is taken.
    - If no offset passes, the note is reported and the next pool pair is taken.
+   - Reported: the pair's own S*, and the offset moves that strict voicing needed.
+   - Above MIDI 60, zero scatter. The drawn scatter is one realisation, not inferred: the data
+     constrain its spread, not its values. Near a null the sound is not linear in the offset, so a
+     note whose zero-scatter mode 2 re H1, or swing, falls outside the p10–p90 over its ±1.5 mm
+     range is flagged. Report only, unless many fire.
 6. **Per-note reed:** the measured-ratio FE variant where the survey has a line, otherwise the middle
    entry of the variant set. The bass blank level is the particle's own. The grade split is the
    pair's.
-7. **Re-check:** the finished 64-note candidate is scored under every check at both corners. A
-   candidate that fails is replaced by the next pool pair, and the replacement is reported.
-8. **Difference table, shown to the user before any listening:** MIDI 33–50 at v_ff, v/2 and v/4.
+7. **Re-check:** the finished 64-note candidate is scored under every check at both corners.
+   - F2 is required at the primary let-off point, the voicing's own; the nine-point pass share is
+     reported. F3 means S* ≤ the row's lower edge, above MIDI 60 too.
+   - A candidate that fails is replaced by the next pool pair, and the replacement is reported.
+   - **Drift guards (physics review):** steps 4–6 can move the pulse shape, and with it F1, F4,
+     d_peak and the bass reach. F1-middle binds at MIDI 65–71, which the grade median doesn't hold.
+     1. Every check's margin is reported before and after steps 4–6: the worst passing F1 note per
+        grade (dB), the F4 margin, the largest d_peak against 2.5 mm, and the bass reach against
+        the gap.
+     2. The pinned-vector distance is recomputed after the substitution. If it exceeds the pool's
+        weighted median distance before substitution, the next pool pair is taken, and that is
+        reported.
+8. **Difference table, shown to the user before any listening:** MIDI 33–50, plus the F4 notes
+   84, 90 and 96, at v_ff, v/2 and v/4.
    It gives the H1 swing, mode 2 re H1 at the pickup output, and contact time and count, plus each
    candidate's parameter vector.
 9. **Ear gate:** each candidate is rendered through the full chain (`preamp-bench render
-   --modal-spec`) at MIDI 33, 36, 41, 45, 48, 53, 60, 72 and 84, at v_ff, v/2 and v/4. The user
-   picks.
+   --modal-spec`) at MIDI 33, 36, 41, 45, 48, 53, 60, 72, 84 and 96, at v_ff, v/2 and v/4. MIDI 96
+   is included because the candidates differ in the treble too, and the treble velocity map is §5l's
+   open problem. The user picks.
    - The pick is recorded as a voicing choice. The A1 strike stays "conditional on an unsourced
      clearance and unmeasured felt loss". The chosen row is never cited as a clearance read.
 
