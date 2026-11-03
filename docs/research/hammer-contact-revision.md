@@ -1252,6 +1252,53 @@ Stage 5 with felt loss added, and the shield and let-off nuisances marginalised.
 - **Generation 1** (12,000 proposals) ran before this amendment. Its proposal and runs don't depend on
   the shield, so it is weighed under the amendment.
 
+**Results (2026-11-02, generation 3; tools as committed in e32064a).** The stopping rule was met at
+generation 3. ESS per row: 389 / 488 / 639 / 747 at plane −12, and 322 / 399 / 509 / 575 converged.
+From generation 2 to 3 the A1 shares moved ≤ 0.02.
+- **A1 expectation: holds** at every row and both corners. Share beyond 0.6 L, plane −12 / converged
+  (90 % bootstrap):
+  - [11, 13]: 0.43 [0.39, 0.47] / 0.45 [0.40, 0.49]
+  - [12, 14]: 0.36 [0.32, 0.39] / 0.37 [0.33, 0.41]
+  - [13, 16]: 0.29 [0.26, 0.31] / 0.28 [0.25, 0.31]
+  - [14, 18]: 0.24 [0.21, 0.27] / 0.23 [0.20, 0.26]
+  - No F3 (report only): 0.16 [0.13, 0.18] / 0.14 [0.12, 0.17].
+  - The A1 strike stays conditional on an unsourced clearance: the share falls by about two-thirds
+    from the tightest row to no shield.
+- **Rule 1: holds.** Each step down the rows lowers the share by 0.05–0.09 at both corners.
+- **Rule 2: FAILS** at both corners in both scored rows. The A1 share at τ_d ≥ 0.1 ms is HIGHER than
+  at ≤ 0.02 ms, not lower:
+  - plane −12: +0.31 [+0.18, +0.43] at [11, 13] and +0.28 [+0.17, +0.40] at [12, 14];
+  - converged: +0.27 [+0.13, +0.42] and +0.26 [+0.13, +0.39];
+  - every report-only row has the same sign.
+  - Diagnosis, from posterior medians in the τ_d ≤ 0.02 and ≥ 0.1 ms bins (tightest row,
+    plane −12; the converged corner is the same):
+    - The bass hammer is NOT heavier: 2.70 → 2.84 g, and lighter in the looser rows (3.46 → 3.16 g
+      with no F3).
+    - The strike exponent k rises 1.89 → 2.03, which moves A1 from 0.57 to 0.62 L.
+    - The middle felt is stiffer (z*_m 1.44 → 1.25 mm) and the middle hammer lighter
+      (m_h_m 1.95 → 1.75 g).
+    - A1's ff swing falls, 8.0 → 7.1 mm.
+  - Reading, pending physics review: the expectation's re-weighting did not model loss moving F1,
+    and k is shared across the keyboard. Loss moves F1's identification (the C4 prediction holds),
+    and k moves with it.
+- **C4 prediction: holds** at every row and both corners.
+  - Total contact is 12.2–16.5 % shorter at τ_d ≥ 0.1 ms (plane −12) and 12.7–18.9 % (converged).
+    The lowest bootstrap end is 5.1 %.
+  - The null at fixed felt was −0.5 %, so F1 re-identifies stiffer felt under loss.
+  - The first pulse's width gives the same numbers, because C4 strikes are almost all single
+    contacts.
+- **τ_d posterior:** p10 / 50 / 90 = 0.01 / 0.05 / 0.13 ms.
+  - Mass by bin (≤ 0.02 / middle / ≥ 0.1 ms): 0.15–0.20 / 0.61–0.69 / 0.13–0.21, against the prior's
+    0.20 / 0.47 / 0.32.
+  - The middle of the band (Giordano & Winans' range) is favoured. The high end is disfavoured but
+    not excluded.
+- **Other posteriors** (sampling target, plane −12 / converged):
+  - Mass ratio bass / treble, p50: 2.07 / 2.15. Stage 5 had 1.63; its ≥ 1.3 still holds.
+  - z* bass / middle / treble, p50: 1.68–1.75 / 1.31–1.35 / 0.71–0.72 mm. k p50: 1.79 / 1.78.
+  - A1 strike p50: 0.54 L (p10–p90: 0.36–0.71 / 0.36–0.69).
+  - Split posterior, blank-pickup / code / damper-felt: 0.40 / 0.20 / 0.41 against
+    0.30 / 0.17 / 0.53. It still depends on the closure.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
