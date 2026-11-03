@@ -1278,9 +1278,22 @@ From generation 2 to 3 the A1 shares moved ≤ 0.02.
     - The middle felt is stiffer (z*_m 1.44 → 1.25 mm) and the middle hammer lighter
       (m_h_m 1.95 → 1.75 g).
     - A1's ff swing falls, 8.0 → 7.1 mm.
-  - Reading, pending physics review: the expectation's re-weighting did not model loss moving F1,
-    and k is shared across the keyboard. Loss moves F1's identification (the C4 prediction holds),
-    and k moves with it.
+  - **Reading (physics review, leave-one-check-out on these runs, row [11, 13]):** the route is F1 in
+    the middle grade.
+    - With F1-middle dropped, the slope vanishes: k −0.01 / −0.08 and A1 share −0.01 / −0.06,
+      plane −12 / converged. Dropping F1-bass, F3, F4 or validity leaves A1 at +0.18 to +0.31.
+      Dropping F2 makes the k slope larger (+0.60 / +0.68).
+    - Loss loosens F1-middle at MIDI 65–71: fail rates fall from 0.34–0.89 at τ_d ≤ 0.02 ms to
+      0.14–0.64 at ≥ 0.1 ms. That is the re-identification the C4 prediction confirms.
+    - k is not a lever there: d(d_s/L)/dk ≤ 0.03 near the anchor, under 0.1 dB of F1 margin per
+      0.1 k. In-bin |ρ(k, middle felt or mass)| ≤ 0.12. What carries the k × τ_d interaction
+      within F1-middle cannot be pinned at this ESS.
+    - The expectation's error: it held F1 at its lossless value and listed loss moving F1 as
+      unmodelled without sizing it. It dominates, with the opposite sign. The A1 bands held, but
+      not for the expected reason: the result landed near the lossless column.
+  - **Consequence:** the A1 strike depends on two unmeasured quantities of similar size. Clearance
+    moves the share 0.43 → 0.24 across the rows. Felt loss moves it +0.25 to +0.31 between the
+    τ_d bins.
 - **C4 prediction: holds** at every row and both corners.
   - Total contact is 12.2–16.5 % shorter at τ_d ≥ 0.1 ms (plane −12) and 12.7–18.9 % (converged).
     The lowest bootstrap end is 5.1 %.
