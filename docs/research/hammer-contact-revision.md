@@ -1378,6 +1378,63 @@ folded in below.
    - The pick is recorded as a voicing choice. The A1 strike stays "conditional on an unsourced
      clearance and unmeasured felt loss". The chosen row is never cited as a clearance read.
 
+**Results (2026-11-02, `tools/hammer_step3.py` on stage-6 generation 3).**
+- **The four rows give two instruments.**
+  - A (pair 1644, damper-felt split) is the candidate for rows [11, 13], [12, 14] and [13, 16].
+    At [13, 16], twelve nearer pairs were rejected first: ten had no passing voiced offset at A1
+    with the tip ≤ 13 mm, one left the felt ordering when re-solved, and one failed the converged
+    corner's re-check.
+  - B (pair 2519, damper-felt) is the candidate for row [14, 18].
+  - R (pair 2052, damper-felt) comes from the no-F3 row. It is heard, never shipped.
+- **Parameters, A / B / R:**
+
+  | | A | B | R |
+  |---|---|---|---|
+  | z* bass / middle / treble (mm) | 1.63 / 1.16 / 0.68 | 2.42 / 1.60 / 0.68 | 2.30 / 1.96 / 0.77 |
+  | m_h bass / middle / treble (g) | 3.20 / 2.63 / 1.65 | 2.61 / 2.45 / 1.35 | 2.27 / 2.16 / 1.24 |
+  | k | 1.94 | 1.61 | 1.60 |
+  | τ_d (ms) | 0.049 | 0.037 | 0.033 |
+  | v_max (m/s) | 3.26 | 2.94 | 2.95 |
+  | bass blank (mil) | 24.0 | 22.6 | 20.6 |
+  | A1 strike (L) | 0.59 | 0.48 | 0.48 |
+
+  p is 2.85 in every grade. The posterior pairs had 2.86 / 3.01 / 2.26 (A), 2.67 / 3.30 / 2.99 (B)
+  and 2.24 / 2.66 / 3.21 (R).
+- **Guards:**
+  - Contact change per note in step 4, min / max per grade (bass / middle / treble):
+    - A: 0.0 / +0.1, −0.2 / +1.0, −5.5 / +5.8 %
+    - B: −0.1 / +0.3, −0.9 / +2.5, −0.6 / +1.2 %
+    - R: −3.3 / +4.5, −0.6 / +0.5, −0.9 / +2.8 %
+  - Pinned-vector distance after substitution: A 0.23–0.35, B 0.10, R 0.37. All are below the pools'
+    weighted medians (0.77–0.81).
+  - Margins before → after:
+    - F4: 8.1 → 4.5 dB (A), 8.7 → 6.3 dB (B), 9.6 → 2.5 dB (R).
+    - Bass reach against the gap: +1.35 → +0.27 mm (A), +1.08 → +0.63 (B), +1.13 → +1.07 (R).
+    - Largest d_peak against 2.5 mm: −0.54 → −0.56 (A), −0.01 → −0.03 (B), −0.13 → −0.23 (R).
+    - F1's worst passing note, middle / treble: A 8.9 → 6.4 / 4.0 → 7.4 dB at plane −12 (middle
+      0.4 → 1.3 converged); B 3.9 → 11.2 / 5.3 → 5.2; R 13.1 → 12.5 / 0.0 → 6.6. Fail counts stay
+      within the rule.
+  - S* at the primary let-off point: 9.51 (A), 13.77 (B) and 15.17 mm (R). Let-off grid shares:
+    0.67, 0.78 and 1.00.
+  - No voicing moves: every note at MIDI ≤ 60 passes at offset 0.
+  - Null flags above MIDI 60 (report only), all on mode 2: A 2 notes (71, 73), B 5 (65, 69, 70, 71,
+    76), R 2 (62, 63).
+- **Difference table (step 8), B and R against A:**
+  - Deep bass, A1–A2: B's H1 swing is +2.7 to +4.3 dB at ff and R's +3.5 to +5.2 dB. At C3–D3
+    the difference is +1.3 to +1.9 dB.
+  - A recontacts from A1 to A#2 (2 contacts, 0.40–0.65 T1). B's and R's strikes there are single
+    contacts of 0.23–0.37 T1; R recontacts from E2 up.
+  - Mode 2 re H1 at ff: B is up to +22 dB higher at F#2, where A sits near a null (F2 and F#2 at
+    −46 / −49 dB). The differences are smaller at v/2 and v/4.
+  - Treble: mode 2 at C6 is 14 dB lower for B and 13 dB lower for R. C7's H1 is within ±2 dB.
+- **Renders (step 9):** the bass output falls less than its swing does.
+  - At A1 the output falls −2.2 / −6.3 dB at v/2, v/4 against a swing fall of −5.2 / −10.6 dB.
+    The treble tracks its swing: C7 −11.0 / −27.6 against −11.0 / −27.4.
+  - Large swings are compressed by the overlap law and the swing-dependent air drag. This is an
+    observation, not a check.
+  - The listening copies carry one common +14 dB gain, the plugin's output alignment, so the
+    candidates keep their level differences.
+
 ## 6. Steps
 
 0. Done: the source readings, the Fig. 5 digitisation, and the physics review with the FE code.
