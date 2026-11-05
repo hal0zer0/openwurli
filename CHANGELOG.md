@@ -97,8 +97,9 @@ attack noise burst, was 35-55 dB below the tone and inaudible in A/B listening.
   range is sourced. Within 0.7-1.4 the contact scale changes the spectrum by
   under 0.1 dB in every octave band and mostly moves the bass onset. Not
   exposed as plugin parameters.
-- README: a pointer to DiscoDSP's Retromulator, which ports OpenWurli's
-  engine to C++ (AU, AAX, standalone).
+- README: a "Downstream projects" list of independent ports built on
+  OpenWurli: DiscoDSP's Retromulator (standalone, VST3, AU, AAX), TC Wurl
+  (VCV Rack 2) and Wurl for Akai MPC, each linked to its source where public.
 
 ## [0.9.0] "DocWurlyMakesItLive" - 2026-09-27
 
