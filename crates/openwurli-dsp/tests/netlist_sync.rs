@@ -23,7 +23,7 @@ const NETLISTS: [&str; 3] = [
     "wurli-tremolo.cir",
 ];
 
-/// melange-circuits' maturity tiers. Each netlist is found by FILENAME under
+/// The sidecar-validation repo's maturity tiers. Each netlist is found by FILENAME under
 /// these, not by a fixed path: a deck's tier is designed to change over its
 /// life (the trio moved unstable/ -> testing/ on 2026-09-27), and a promotion
 /// should not break this check. Exactly one match per netlist is required.
@@ -150,13 +150,13 @@ fn netlist_synced_with_melange_circuits() {
             [one] => one.clone(),
             [] => {
                 failures.push(format!(
-                    "{name}: not found under melange-circuits {CIRCUITS_TIERS:?}"
+                    "{name}: not found under the sidecar repo's tiers {CIRCUITS_TIERS:?}"
                 ));
                 continue;
             }
             many => {
                 failures.push(format!(
-                    "{name}: {} copies in melange-circuits, expected one: {many:?}",
+                    "{name}: {} copies in the sidecar repo, expected one: {many:?}",
                     many.len()
                 ));
                 continue;
