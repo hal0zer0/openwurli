@@ -75,13 +75,6 @@ attack noise burst, was 35-55 dB below the tone and inaudible in A/B listening.
   melange preamp and power amp are opt-in builds). The README had described
   the melange preamp as the default since 0.5.2.
 
-### Known issues
-- Two shipped constants were calibrated against the reference recordings at
-  their mislabelled pitch (an octave high), so they are unverified until
-  re-examined against correctly pitched evidence: the reed decay law
-  (0.005·f^1.22 dB/s) and the authentic-speaker low-pass at 5500 Hz. Both are
-  marked in the code.
-
 ### Added
 - For library hosts, on `WurliEngine`: `release_all_keys()` (MIDI All Notes
   Off: pedal-held notes keep sounding), `all_notes_off()` (releases held and
@@ -100,6 +93,18 @@ attack noise burst, was 35-55 dB below the tone and inaudible in A/B listening.
 - README: a "Downstream projects" list of independent ports built on
   OpenWurli: DiscoDSP's Retromulator (standalone, VST3, AU, AAX), TC Wurl
   (VCV Rack 2) and Wurl for Akai MPC, each linked to its source where public.
+- Research, no effect on the plugin: offline tooling and a registered plan for
+  deriving the hammer's contact from the felt, the hammer mass and the reed
+  instead of hand-set tables (`tools/hammer_contact*.py`,
+  `docs/research/hammer-contact-revision.md`). The plugin still uses the
+  existing dwell filter and onset ramp.
+
+### Known issues
+- Two shipped constants were calibrated against the reference recordings at
+  their mislabelled pitch (an octave high), so they are unverified until
+  re-examined against correctly pitched evidence: the reed decay law
+  (0.005·f^1.22 dB/s) and the authentic-speaker low-pass at 5500 Hz. Both are
+  marked in the code.
 
 ## [0.9.0] "DocWurlyMakesItLive" - 2026-09-27
 
