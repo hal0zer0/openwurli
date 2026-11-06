@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.1] "RestlessHeart" - 2026-11-06
 
 A housekeeping release: the codebase is about 8,300 lines smaller, and the
 sound is unchanged. The one change to the audio path, removing the hammer's
@@ -1481,7 +1481,8 @@ derivation, real-instrument DC measurements) before any code moved.
   (Linux, macOS x64/arm64/universal, Windows)
 - GPL-3.0 license
 
-[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/hal0zer0/openwurli/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/hal0zer0/openwurli/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/hal0zer0/openwurli/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/hal0zer0/openwurli/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/hal0zer0/openwurli/compare/v0.6.2...v0.7.0
