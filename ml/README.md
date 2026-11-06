@@ -84,6 +84,16 @@ and taking the lowest validation loss (7: 0.0473 · 42: 0.1132 · 123: 0.0217 ·
 reports validation on the same set — the "validation" loss is a fit quality
 number, not a generalisation estimate.
 
+0.9.1 retrain (2026-11-05): the same procedure, re-run with the reference
+recordings freshly downloaded and with the 0.9.1 chain (attack noise burst
+removed), under torch 2.15.0 (CPU) and numpy 2.5.4.
+- Stages 1-3 reproduced the 0.9.0 outputs byte for byte, which confirms that
+  the download matches the recordings used for 0.9.0.
+- The training data, all four seed losses and the winning seed-123 weights came
+  out byte-identical, so the shipped weights are unchanged.
+- Every residual target lies inside its runtime clamp: freq −6.1 to +12.2
+  cents against ±100, decay 0.40 to 2.69 against [0.3, 3.0].
+
 - Best loss: 0.0217 · freq_H2 0.93 cents MAE · decay_H2 0.10 ratio MAE ·
   ds head not trained (see below). Not comparable with earlier releases' figures,
   which were fitted to octave-shifted targets.
