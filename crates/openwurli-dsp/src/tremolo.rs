@@ -112,6 +112,18 @@ const LED_I_FULL_MA: f64 = 2.279;
 /// tabulated once at construction and linearly interpolated per sample.
 const LED_LUT_N: usize = 256;
 
+/// Depth-only divider terms, evaluated when the pot position changes.
+fn depth_divider(depth: f64) -> (f64, f64) {
+    let r_upper = R_VIB_POT * (1.0 - depth);
+    let r_lower = R_VIB_POT * depth;
+    let top = if r_upper > 0.0 {
+        r_upper * R_VIB_BRIDGE / (r_upper + R_VIB_BRIDGE)
+    } else {
+        0.0
+    };
+    (top, r_lower)
+}
+
 pub struct Tremolo {
     // --- Oscillator state ---
     /// Twin-T oscillator circuit state
@@ -124,6 +136,8 @@ pub struct Tremolo {
     /// oscillator needs ~2 s to build up).
     sample_rate: f64,
     depth: f64,
+    divider_top: f64,
+    divider_lower: f64,
     r_ldr: f64,
     ldr_envelope: f64,
     ldr_attack: f64,
@@ -167,6 +181,7 @@ fn led_intensity(i_ma: f64) -> f64 {
 
 impl Tremolo {
     pub fn new(depth: f64, sample_rate: f64) -> Self {
+        let (divider_top, divider_lower) = depth_divider(depth);
         Self {
             osc_state: {
                 let mut s = gen_tremolo::CircuitState::default();
@@ -182,6 +197,8 @@ impl Tremolo {
 
             sample_rate,
             depth,
+            divider_top,
+            divider_lower,
             r_ldr: R_LDR_MAX,
             ldr_envelope: 0.0,
             ldr_attack: (-1.0 / (ATTACK_TAU * sample_rate)).exp(),
@@ -198,7 +215,11 @@ impl Tremolo {
     }
 
     pub fn set_depth(&mut self, depth: f64) {
-        self.depth = depth.clamp(0.0, 1.0);
+        let depth = depth.clamp(0.0, 1.0);
+        if depth != self.depth {
+            self.depth = depth;
+            (self.divider_top, self.divider_lower) = depth_divider(depth);
+        }
     }
 
     pub fn process(&mut self) -> f64 {
@@ -233,20 +254,14 @@ impl Tremolo {
     /// 50 kΩ pot split by `depth` (wiper). See the constants block for the
     /// topology. At depth = 0 the LDR branch is grounded (vibrato off).
     fn shunt_impedance(&self) -> f64 {
-        let r_upper = R_VIB_POT * (1.0 - self.depth);
-        let r_lower = R_VIB_POT * self.depth;
-        let top = if r_upper > 0.0 {
-            r_upper * R_VIB_BRIDGE / (r_upper + R_VIB_BRIDGE)
-        } else {
-            0.0
-        };
+        let r_lower = self.divider_lower;
         let branch = self.r_ldr;
         let low = if r_lower > 0.0 {
             r_lower * branch / (r_lower + branch)
         } else {
             0.0
         };
-        top + low
+        self.divider_top + low
     }
 
     /// The oscillator's LED drive as normalised light (0..1).
@@ -303,6 +318,63 @@ impl Tremolo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Original per-sample divider calculation, independent of the cache.
+    fn uncached_shunt(trem: &Tremolo) -> f64 {
+        let r_upper = R_VIB_POT * (1.0 - trem.depth);
+        let r_lower = R_VIB_POT * trem.depth;
+        let top = if r_upper > 0.0 {
+            r_upper * R_VIB_BRIDGE / (r_upper + R_VIB_BRIDGE)
+        } else {
+            0.0
+        };
+        let branch = trem.r_ldr;
+        let low = if r_lower > 0.0 {
+            r_lower * branch / (r_lower + branch)
+        } else {
+            0.0
+        };
+        top + low
+    }
+
+    #[test]
+    fn cached_depth_divider_matches_original() {
+        for rate in [44_100.0, 48_000.0, 96_000.0] {
+            let mut trem = Tremolo::new(0.37, rate);
+            assert_eq!(
+                trem.current_resistance().to_bits(),
+                uncached_shunt(&trem).to_bits()
+            );
+            for i in 0..8192 {
+                if i == 4096 {
+                    trem.reset();
+                    assert_eq!(
+                        trem.current_resistance().to_bits(),
+                        uncached_shunt(&trem).to_bits()
+                    );
+                }
+                if i % 64 == 0 {
+                    let depth = [0.0, 1.0, 0.5, 0.5, 1e-12, -0.25, 1.25, 0.37][i / 64 % 8];
+                    trem.set_depth(depth);
+                    assert_eq!(
+                        trem.current_resistance().to_bits(),
+                        uncached_shunt(&trem).to_bits(),
+                        "immediate query: rate {rate}, sample {i}"
+                    );
+                }
+                let actual = trem.process();
+                assert_eq!(
+                    actual.to_bits(),
+                    uncached_shunt(&trem).to_bits(),
+                    "processed: rate {rate}, sample {i}"
+                );
+            }
+            trem.set_depth(0.37);
+            for _ in 0..1024 {
+                assert_eq!(trem.process().to_bits(), uncached_shunt(&trem).to_bits());
+            }
+        }
+    }
 
     #[test]
     #[ignore]
